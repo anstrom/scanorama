@@ -1,0 +1,55 @@
+name: Test and Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.24.5"
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          go version
+
+      - name: Build development image
+        run: docker build -t scanorama-dev -f Dockerfile.dev .
+
+      - name: Build test environment
+        run: test/docker/test-env.sh build
+
+      - name: Run tests
+        run: make docker-test
+
+      - name: Run linter
+        run: make docker-lint
+
+      - name: Run coverage
+        run: |
+          make docker-coverage
+          bash <(curl -s https://codecov.io/bash)
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: coverage.*
+          if-no-files-found: warn
+
+      - name: Clean up
+        if: always()
+        run: |
+          make docker-clean
+          docker system prune -f

@@ -1,0 +1,74 @@
+# Analysis configuration
+run:
+  # Default timeout for analysis
+  timeout: 5m
+
+  # Include test files
+  tests: true
+
+  # Exit code when at least one issue was found
+  issues-exit-code: 1
+
+  # Directories to exclude from analysis
+  issues:
+    exclude-dirs:
+      - vendor
+      - testdata
+
+# Output configuration options
+output:
+  # Sort results by severity
+  sort-results: true
+
+  # Show source code line where issue was found
+  print-issued-lines: true
+
+  # Print linter name at the end of issue text
+  print-linter-name: true
+
+  # Use colors in output
+  colored: true
+
+  # Print paths relative to current directory
+  path-prefix: ""
+
+# All available linters
+linters:
+  enable:
+    - gofmt
+    - govet
+    - errcheck
+    - staticcheck
+    - gosimple
+    - gosec
+    - unconvert
+    - ineffassign
+    - misspell
+  disable-all: true
+
+issues:
+  # Maximum issues count per one linter (0 = no limit)
+  max-issues-per-linter: 0
+
+  # Maximum count of issues with the same text (0 = no limit)
+  max-same-issues: 0
+
+  # Directories to exclude from analysis
+  exclude-dirs:
+    - vendor
+    - testdata
+
+  # Show only new issues
+  new: false
+
+  # Fix issues if possible
+  fix: false
+
+  # Exclude go mod errors
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+    - text: "G108: Profiling endpoint is automatically exposed on /debug/pprof"
+      linters:
+        - gosec
