@@ -1,5 +1,5 @@
 # hadolint ignore=DL3007
-FROM golang:master
+FROM golang:1.24.5
 
 # Install build dependencies and tools
 # hadolint ignore=DL3008
@@ -35,7 +35,7 @@ RUN python3 -m venv /venv && \
 
 # Install other linting tools
 # hadolint ignore=DL3059,DL3016,DL4006
-RUN GOFLAGS="" go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2 && \
+RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2 && \
     npm install -g markdownlint-cli@0.37.0
 
 # Add virtual environment to PATH
@@ -49,7 +49,7 @@ COPY go.mod go.sum ./
 
 # Download dependencies
 RUN --mount=type=cache,target=/go/pkg/mod \
-    GOFLAGS="" go mod download
+    go mod download
 
 # Copy the rest of the source code
 COPY . .
