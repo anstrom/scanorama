@@ -3,6 +3,7 @@ package internal
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -252,9 +253,52 @@ func TestXMLRoundTrip(t *testing.T) {
 			// Verify file contents
 			content, err := os.ReadFile(tmpFile)
 			require.NoError(t, err, "Failed to read XML file")
-			assert.Contains(t, string(content), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
-			assert.Contains(t, string(content), "<scanresult>")
-			assert.Contains(t, string(content), "</scanresult>")
+			xmlContent := string(content)
+			assert.Contains(t, xmlContent, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+			assert.Contains(t, xmlContent, "<scanresult start_time=")
+			assert.Contains(t, xmlContent, "end_time=")
+			assert.Contains(t, xmlContent, "duration=")
+
+			// Verify host data
+			for _, host := range tt.original.Hosts {
+				assert.Contains(t, xmlContent, "<Address>"+host.Address+"</Address>")
+				assert.Contains(t, xmlContent, "<Status>"+host.Status+"</Status>")
+
+				for _, port := range host.Ports {
+					if port.Version != "" {
+						// Handle XML escaping for Version field
+						if port.Version != "" {
+							expectedVersion := port.Version
+							if strings.Contains(expectedVersion, "&") {
+								expectedVersion = strings.ReplaceAll(expectedVersion, "&", "&amp;")
+							}
+							if strings.Contains(expectedVersion, "<") {
+								expectedVersion = strings.ReplaceAll(expectedVersion, "<", "&lt;")
+							}
+							if strings.Contains(expectedVersion, ">") {
+								expectedVersion = strings.ReplaceAll(expectedVersion, ">", "&gt;")
+							}
+							assert.Contains(t, xmlContent, "<Version>"+expectedVersion+"</Version>")
+						}
+					}
+					if port.ServiceInfo != "" {
+						// Handle XML escaping for ServiceInfo field
+						if port.ServiceInfo != "" {
+							expectedServiceInfo := port.ServiceInfo
+							if strings.Contains(expectedServiceInfo, "&") {
+								expectedServiceInfo = strings.ReplaceAll(expectedServiceInfo, "&", "&amp;")
+							}
+							if strings.Contains(expectedServiceInfo, "<") {
+								expectedServiceInfo = strings.ReplaceAll(expectedServiceInfo, "<", "&lt;")
+							}
+							if strings.Contains(expectedServiceInfo, ">") {
+								expectedServiceInfo = strings.ReplaceAll(expectedServiceInfo, ">", "&gt;")
+							}
+							assert.Contains(t, xmlContent, "<ServiceInfo>"+expectedServiceInfo+"</ServiceInfo>")
+						}
+					}
+				}
+			}
 		})
 	}
 }

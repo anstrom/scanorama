@@ -1,61 +1,101 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/anstrom/scanorama/internal"
 )
 
-type scanOptions struct {
-	targets  string
-	ports    string
-	scanType string
-	output   string
+// Version information - populated by build flags
+var (
+	version   = "dev"
+	commit    = "none"
+	buildTime = "unknown"
+)
+
+// ScanOptions holds command-line options for the scanner.
+type ScanOptions struct {
+	Targets     string // Comma-separated list of targets (IPs, hostnames, CIDR ranges)
+	Ports       string // Port specification (e.g., "80,443" or "1-1000")
+	ScanType    string // Type of scan to perform (syn, connect, version)
+	Output      string // Output file path for results (optional)
+	timeout     int    // Scan timeout in seconds
+	showVersion bool   // Display version information
 }
 
 func main() {
-	opts := parseFlags()
+	opts := ParseFlags()
+
+	if opts.showVersion {
+		fmt.Printf("Scanorama %s\nCommit: %s\nBuild Time: %s\n", version, commit, buildTime)
+		os.Exit(0)
+	}
+
+	// Set up context with cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle signals for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\nReceived interrupt signal. Cleaning up...")
+		cancel()
+	}()
 
 	// Validate inputs
-	if opts.targets == "" {
+	if opts.Targets == "" {
 		log.Fatal("Target hosts are required. Use -targets flag.")
 	}
 
-	// Create scanner config
+	// Create scanner config with timeout
 	config := internal.ScanConfig{
-		Targets:  strings.Split(opts.targets, ","),
-		Ports:    opts.ports,
-		ScanType: opts.scanType,
+		Targets:    strings.Split(opts.Targets, ","),
+		Ports:      opts.Ports,
+		ScanType:   opts.ScanType,
+		TimeoutSec: opts.timeout,
 	}
 
-	// Run the scan
-	results, err := internal.RunScan(config)
+	// Run the scan with context
+	results, err := internal.RunScanWithContext(ctx, config)
 	if err != nil {
+		if err == context.Canceled {
+			log.Fatal("Scan was interrupted")
+		}
 		log.Fatalf("Scan failed: %v", err)
 	}
 
 	// Handle output
-	if opts.output != "" {
-		if err := internal.SaveResults(results, opts.output); err != nil {
+	if opts.Output != "" {
+		if err := internal.SaveResults(results, opts.Output); err != nil {
 			log.Fatalf("Failed to save results: %v", err)
 		}
+		log.Printf("Results saved to: %s", opts.Output)
 	} else {
 		// Print to stdout
 		internal.PrintResults(results)
 	}
 }
 
-func parseFlags() scanOptions {
-	opts := scanOptions{}
+// ParseFlags processes command-line flags and returns the parsed options.
+// It also sets up the usage message with examples and flag descriptions.
+func ParseFlags() ScanOptions {
+	opts := ScanOptions{}
 
-	flag.StringVar(&opts.targets, "targets", "", "Comma-separated list of targets (IPs, hostnames, CIDR ranges)")
-	flag.StringVar(&opts.ports, "ports", "1-1000", "Port specification (e.g., '80,443' or '1-1000')")
-	flag.StringVar(&opts.scanType, "type", "syn", "Scan type: syn, connect, version")
-	flag.StringVar(&opts.output, "output", "", "Output file path (XML format)")
+	flag.StringVar(&opts.Targets, "targets", "", "Comma-separated list of targets (IPs, hostnames, CIDR ranges)")
+	flag.StringVar(&opts.Ports, "ports", "1-1000", "Port specification (e.g., '80,443' or '1-1000')")
+	flag.StringVar(&opts.ScanType, "type", "syn", "Scan type: syn, connect, version")
+	flag.StringVar(&opts.Output, "output", "", "Output file path (XML format)")
+	flag.IntVar(&opts.timeout, "timeout", 300, "Scan timeout in seconds")
+	flag.BoolVar(&opts.showVersion, "version", false, "Show version information")
 
 	// Custom usage message
 	flag.Usage = func() {
@@ -63,7 +103,7 @@ func parseFlags() scanOptions {
 		fmt.Fprintf(os.Stderr, "\nScanorama - Network Scanner\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  %s -targets 192.168.1.0/24 -ports 80,443\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s -targets localhost -type version -aggressive\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s -targets localhost -type version\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Flags:\n")
 		flag.PrintDefaults()
 	}

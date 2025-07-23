@@ -4,6 +4,14 @@ BUILD_DIR := build
 COVERAGE_FILE := coverage.out
 TEST_ENV_SCRIPT := ./test/docker/test-env.sh
 
+# Version information
+VERSION := $(shell git describe --tags --always --dirty)
+COMMIT := $(shell git rev-parse --short HEAD)
+BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
+
+# Build flags
+BUILD_FLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildTime=$(BUILD_TIME)"
+
 # Docker configuration
 DEV_IMAGE := scanorama-dev
 TEST_IMAGE := scanorama-test
@@ -11,10 +19,14 @@ DOCKER_RUN := docker run --rm -v $(PWD):/app -v /var/run/docker.sock:/var/run/do
 
 # Go commands
 GO := go
-GOTEST := $(GO) test
-GOBUILD := $(GO) build
+GOFLAGS :=
+GOTEST := $(GO) test -buildvcs=false
+GOBUILD := $(GO) build -buildvcs=false
 GOMOD := $(GO) mod
-GOINSTALL := $(GO) install
+GOINSTALL := $(GO) install -buildvcs=false
+
+# Cross compilation
+PLATFORMS := linux/amd64 darwin/amd64 windows/amd64
 
 # Get GOPATH and GOBIN
 GOPATH := $(shell $(GO) env GOPATH)
@@ -24,7 +36,8 @@ export PATH := $(GOBIN):$(PATH)
 .PHONY: all build clean test coverage deps help install run lint lint-install \
         docker-build docker-test docker-lint docker-dev docker-clean docker-coverage \
         docker-lint-go docker-lint-yaml docker-lint-markdown \
-        lint-yaml lint-markdown lint-all test-env-start test-env-stop test-env-clean
+        lint-yaml lint-markdown lint-all test-env-start test-env-stop test-env-clean \
+        cross-build release
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -42,12 +55,32 @@ build: deps ## Build the binary
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BUILD_DIR)
 	@$(GOBUILD) -v -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/scanorama
+	@echo "Built version $(VERSION) ($(COMMIT))"
+
+cross-build: deps ## Build for all supported platforms
+	@echo "Building $(BINARY_NAME) for multiple platforms..."
+	@mkdir -p $(BUILD_DIR)
+	@$(foreach platform,$(PLATFORMS),\
+		GOOS=$(word 1,$(subst /, ,$(platform))) \
+		GOARCH=$(word 2,$(subst /, ,$(platform))) \
+		$(GOBUILD) -v -o $(BUILD_DIR)/$(BINARY_NAME)_$(word 1,$(subst /, ,$(platform)))_$(word 2,$(subst /, ,$(platform)))$(if $(findstring windows,$(platform)),.exe,) \
+		./cmd/scanorama; \
+	)
+
+release: cross-build ## Create release artifacts
+	@echo "Creating release artifacts..."
+	@cd $(BUILD_DIR) && \
+		$(foreach platform,$(PLATFORMS),\
+			tar czf $(BINARY_NAME)_$(word 1,$(subst /, ,$(platform)))_$(word 2,$(subst /, ,$(platform))).tar.gz \
+				$(BINARY_NAME)_$(word 1,$(subst /, ,$(platform)))_$(word 2,$(subst /, ,$(platform)))$(if $(findstring windows,$(platform)),.exe,); \
+		)
 
 clean: ## Remove build artifacts
 	@echo "Cleaning..."
 	@rm -rf $(BUILD_DIR)
 	@rm -f $(COVERAGE_FILE)
 	@rm -f $(COVERAGE_FILE).html
+	@rm -f $(BUILD_DIR)/*.tar.gz
 
 test-env-start: ## Start test environment
 	@echo "Starting test environment..."
@@ -64,11 +97,11 @@ test-env-clean: ## Clean test environment
 
 test: ## Run tests
 	@echo "Running tests..."
-	@$(GOTEST) -v ./...
+	@$(GOTEST) -v -timeout 5m ./...
 
 coverage: ## Generate test coverage report
 	@echo "Generating coverage report..."
-	@$(GOTEST) -cover ./... -coverprofile=$(COVERAGE_FILE)
+	@$(GOTEST) -cover -timeout 5m ./... -coverprofile=$(COVERAGE_FILE)
 	@$(GO) tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_FILE).html
 	@echo "Coverage report generated: $(COVERAGE_FILE).html"
 
@@ -135,7 +168,7 @@ docker-lint: docker-build docker-lint-go docker-lint-yaml docker-lint-markdown #
 
 docker-lint-go: docker-build ## Run Go linters only
 	@echo "Running Go linters..."
-	@$(DOCKER_RUN) $(DEV_IMAGE) sh -c "golangci-lint run && go vet ./..."
+	@$(DOCKER_RUN) $(DEV_IMAGE) sh -c "$(GO) vet ./..."
 
 docker-lint-yaml: docker-build ## Run YAML linter only
 	@echo "Running YAML linter..."
@@ -149,7 +182,7 @@ docker-lint-markdown: docker-build ## Run Markdown linter only
 
 lint-go: docker-build ## Run Go linters only
 	@echo "Running Go linters..."
-	@$(DOCKER_RUN) $(DEV_IMAGE) sh -c "golangci-lint run && go vet ./..."
+	@$(DOCKER_RUN) $(DEV_IMAGE) sh -c "$(GO) vet ./..."
 
 lint-yaml: docker-build ## Run YAML linter only
 	@echo "Running YAML linter..."

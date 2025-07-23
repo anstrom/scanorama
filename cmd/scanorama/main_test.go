@@ -18,16 +18,16 @@ func TestParseFlags(t *testing.T) {
 	tests := []struct {
 		name     string
 		args     []string
-		expected scanOptions
+		expected ScanOptions
 	}{
 		{
 			name: "default values",
 			args: []string{"cmd"},
-			expected: scanOptions{
-				targets:  "",
-				ports:    "1-1000",
-				scanType: "syn",
-				output:   "",
+			expected: ScanOptions{
+				Targets:  "",
+				Ports:    "1-1000",
+				ScanType: "syn",
+				Output:   "",
 			},
 		},
 		{
@@ -40,11 +40,11 @@ func TestParseFlags(t *testing.T) {
 
 				"-output", "results.xml",
 			},
-			expected: scanOptions{
-				targets:  "192.168.1.1",
-				ports:    "80,443",
-				scanType: "version",
-				output:   "results.xml",
+			expected: ScanOptions{
+				Targets:  "192.168.1.1",
+				Ports:    "80,443",
+				ScanType: "version",
+				Output:   "results.xml",
 			},
 		},
 		{
@@ -54,11 +54,11 @@ func TestParseFlags(t *testing.T) {
 				"-targets", "192.168.1.1,192.168.1.2",
 				"-ports", "22-80",
 			},
-			expected: scanOptions{
-				targets:  "192.168.1.1,192.168.1.2",
-				ports:    "22-80",
-				scanType: "syn",
-				output:   "",
+			expected: ScanOptions{
+				Targets:  "192.168.1.1,192.168.1.2",
+				Ports:    "22-80",
+				ScanType: "syn",
+				Output:   "",
 			},
 		},
 	}
@@ -70,27 +70,27 @@ func TestParseFlags(t *testing.T) {
 			// Set args
 			os.Args = tt.args
 
-			got := parseFlags()
+			got := ParseFlags()
 
-			if got.targets != tt.expected.targets {
-				t.Errorf("parseFlags().targets = %v, want %v", got.targets, tt.expected.targets)
+			if got.Targets != tt.expected.Targets {
+				t.Errorf("ParseFlags().Targets = %v, want %v", got.Targets, tt.expected.Targets)
 			}
-			if got.ports != tt.expected.ports {
-				t.Errorf("parseFlags().ports = %v, want %v", got.ports, tt.expected.ports)
+			if got.Ports != tt.expected.Ports {
+				t.Errorf("ParseFlags().Ports = %v, want %v", got.Ports, tt.expected.Ports)
 			}
-			if got.scanType != tt.expected.scanType {
-				t.Errorf("parseFlags().scanType = %v, want %v", got.scanType, tt.expected.scanType)
+			if got.ScanType != tt.expected.ScanType {
+				t.Errorf("ParseFlags().ScanType = %v, want %v", got.ScanType, tt.expected.ScanType)
 			}
 
-			if got.output != tt.expected.output {
-				t.Errorf("parseFlags().output = %v, want %v", got.output, tt.expected.output)
+			if got.Output != tt.expected.Output {
+				t.Errorf("ParseFlags().Output = %v, want %v", got.Output, tt.expected.Output)
 			}
 		})
 	}
 }
 
-func validateFlags(opts scanOptions) error {
-	if opts.targets == "" {
+func validateFlags(opts ScanOptions) error {
+	if opts.Targets == "" {
 		return fmt.Errorf("Target hosts are required")
 	}
 
@@ -99,8 +99,8 @@ func validateFlags(opts scanOptions) error {
 		"connect": true,
 		"version": true,
 	}
-	if !validScanTypes[opts.scanType] {
-		return fmt.Errorf("Invalid scan type: %s", opts.scanType)
+	if !validScanTypes[opts.ScanType] {
+		return fmt.Errorf("Invalid scan type: %s", opts.ScanType)
 	}
 
 	return nil
@@ -156,7 +156,7 @@ func TestFlagValidation(t *testing.T) {
 			flag.CommandLine = flag.NewFlagSet(tt.args[0], flag.ExitOnError)
 
 			// Get and validate options
-			opts := parseFlags()
+			opts := ParseFlags()
 			err := validateFlags(opts)
 
 			if (err != nil) != tt.wantErr {

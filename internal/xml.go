@@ -4,22 +4,28 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"time"
 )
 
-// ScanXML represents the root XML element for scan results
+// ScanXML is the root element for XML serialization of scan results.
 type ScanXML struct {
-	XMLName xml.Name  `xml:"scanresult"`
-	Hosts   []HostXML `xml:"host"`
+	XMLName   xml.Name  `xml:"scanresult"`
+	Hosts     []HostXML `xml:"host"`
+	StartTime string    `xml:"start_time,attr"`
+	EndTime   string    `xml:"end_time,attr"`
+	Duration  string    `xml:"duration,attr"`
 }
 
-// HostXML represents a host in XML format
+// HostXML represents a scanned host for XML serialization.
+// It contains the host's address, status, and discovered ports.
 type HostXML struct {
 	Address string    `xml:"Address"`
 	Status  string    `xml:"Status"`
 	Ports   []PortXML `xml:"Ports,omitempty"`
 }
 
-// PortXML represents a port in XML format
+// PortXML represents a scanned port for XML serialization.
+// It includes the port number, protocol, state, and service information.
 type PortXML struct {
 	Number      uint16 `xml:"Number"`
 	Protocol    string `xml:"Protocol"`
@@ -29,16 +35,26 @@ type PortXML struct {
 	ServiceInfo string `xml:"ServiceInfo,omitempty"`
 }
 
-// SaveResults saves scan results to an XML file
+// SaveResults writes scan results to an XML file at the specified path.
+// The output is formatted with proper indentation for readability.
 func SaveResults(result *ScanResult, filepath string) error {
 	if result == nil {
 		return fmt.Errorf("cannot save nil result")
+	}
+
+	if result == nil {
+		return &ScanError{Op: "save results", Err: fmt.Errorf("nil result")}
 	}
 
 	// Convert scan result to XML structure
 	xmlData := &ScanXML{
 		Hosts: make([]HostXML, len(result.Hosts)),
 	}
+
+	// Add timing information
+	xmlData.StartTime = result.StartTime.Format(time.RFC3339)
+	xmlData.EndTime = result.EndTime.Format(time.RFC3339)
+	xmlData.Duration = result.Duration.String()
 
 	for i, host := range result.Hosts {
 		xmlHost := HostXML{
@@ -57,7 +73,7 @@ func SaveResults(result *ScanResult, filepath string) error {
 	// Create file
 	file, err := os.Create(filepath)
 	if err != nil {
-		return fmt.Errorf("failed to create file: %v", err)
+		return &ScanError{Op: "create file", Err: err}
 	}
 	defer file.Close()
 
@@ -67,23 +83,24 @@ func SaveResults(result *ScanResult, filepath string) error {
 
 	// Write XML header
 	if _, err := file.Write([]byte(xml.Header)); err != nil {
-		return fmt.Errorf("failed to write XML header: %v", err)
+		return &ScanError{Op: "write XML header", Err: err}
 	}
 
 	// Encode and write the data
 	if err := encoder.Encode(xmlData); err != nil {
-		return fmt.Errorf("failed to encode XML: %v", err)
+		return &ScanError{Op: "encode XML", Err: err}
 	}
 
 	return nil
 }
 
-// LoadResults loads scan results from an XML file
+// LoadResults reads and parses scan results from an XML file.
+// It returns the parsed results or an error if the file cannot be read or parsed.
 func LoadResults(filepath string) (*ScanResult, error) {
 	// Open and read file
 	file, err := os.Open(filepath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %v", err)
+		return nil, &ScanError{Op: "open file", Err: err}
 	}
 	defer file.Close()
 
@@ -93,7 +110,7 @@ func LoadResults(filepath string) (*ScanResult, error) {
 	// Decode XML
 	var xmlData ScanXML
 	if err := decoder.Decode(&xmlData); err != nil {
-		return nil, fmt.Errorf("failed to decode XML: %v", err)
+		return nil, &ScanError{Op: "decode XML", Err: err}
 	}
 
 	// Convert to scan result
