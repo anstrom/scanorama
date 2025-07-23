@@ -2,9 +2,13 @@ name: Test and Lint
 
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
+  packages: read
+  statuses: write # Required for codecov
 
 jobs:
   test:
@@ -15,7 +19,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.24.5"
+          go-version: "1.21"
           cache: true
 
       - name: Install dependencies
@@ -30,16 +34,21 @@ jobs:
       - name: Build test environment
         run: test/docker/test-env.sh build
 
-      - name: Run tests
-        run: make docker-test
-
       - name: Run linter
         run: make docker-lint
 
+      - name: Run tests
+        run: |
+          make test-env-clean
+          make docker-test
+
       - name: Run coverage
         run: |
+          make test-env-clean
           make docker-coverage
-          bash <(curl -s https://codecov.io/bash)
+          curl -Os https://uploader.codecov.io/latest/linux/codecov
+          chmod +x codecov
+          ./codecov
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v3
@@ -51,5 +60,6 @@ jobs:
       - name: Clean up
         if: always()
         run: |
+          make test-env-clean
           make docker-clean
-          docker system prune -f
+          docker system prune -af --volumes
