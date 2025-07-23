@@ -19,13 +19,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.21"
+          go-version: "master"
           cache: true
 
       - name: Install dependencies
         run: |
-          go mod download
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          GOFLAGS="" go mod download
+          GOFLAGS="" go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2
           go version
 
       - name: Build development image
@@ -39,13 +39,13 @@ jobs:
 
       - name: Run tests
         run: |
-          make test-env-clean
-          make docker-test
+          GOFLAGS="" make test-env-clean
+          GOFLAGS="" make docker-test
 
       - name: Run coverage
         run: |
-          make test-env-clean
-          make docker-coverage
+          GOFLAGS="" make test-env-clean
+          GOFLAGS="" make docker-coverage
           curl -Os https://uploader.codecov.io/latest/linux/codecov
           chmod +x codecov
           ./codecov
