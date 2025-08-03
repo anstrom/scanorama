@@ -40,7 +40,7 @@ FLASK_PID=$!
 
 # Wait for Flask to start
 for ((i=1; i<=30; i++)); do
-    if nc -z localhost 8080; then
+    if nc -z localhost 8888; then
         echo "Flask app is ready"
         break
     fi
@@ -63,7 +63,7 @@ ps aux | grep python3
 # Keep container running while monitoring services
 while true; do
     sleep 10
-    if ! nc -z localhost 80 || ! nc -z localhost 22 || ! nc -z localhost 6379 || ! nc -z localhost 8080; then
+    if ! nc -z localhost 80 || ! nc -z localhost 22 || ! nc -z localhost 6379 || ! nc -z localhost 8888; then
         echo "Service check failed"
         exit 1
     fi

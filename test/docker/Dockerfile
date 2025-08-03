@@ -41,7 +41,7 @@ EXPOSE 22
 EXPOSE 80
 EXPOSE 443
 EXPOSE 6379
-EXPOSE 8080
+EXPOSE 8888
 
 # Start services
 COPY start-services.sh /start-services.sh
