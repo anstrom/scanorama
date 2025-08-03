@@ -30,14 +30,15 @@ type Config struct {
 	ConnMaxIdleTime time.Duration `yaml:"conn_max_idle_time" json:"conn_max_idle_time"`
 }
 
-// DefaultConfig returns default database configuration
+// DefaultConfig returns default database configuration with technical defaults
+// Database name, username, and password must be explicitly configured
 func DefaultConfig() Config {
 	return Config{
 		Host:            "localhost",
 		Port:            5432,
-		Database:        "scanorama",
-		Username:        "scanorama",
-		Password:        "",
+		Database:        "", // Must be configured
+		Username:        "", // Must be configured
+		Password:        "", // Must be configured
 		SSLMode:         "prefer",
 		MaxOpenConns:    25,
 		MaxIdleConns:    5,

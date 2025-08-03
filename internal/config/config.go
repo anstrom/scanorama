@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -204,17 +205,18 @@ type RotationConfig struct {
 }
 
 // Default returns a configuration with sensible defaults
+// Database credentials will be loaded from environment variables if available
 func Default() *Config {
 	return &Config{
 		Daemon: DaemonConfig{
-			PIDFile:         "/var/run/scanorama.pid",
-			WorkDir:         "/var/lib/scanorama",
-			User:            "",
-			Group:           "",
+			PIDFile:         getEnvString("SCANORAMA_PID_FILE", "/var/run/scanorama.pid"),
+			WorkDir:         getEnvString("SCANORAMA_WORK_DIR", "/var/lib/scanorama"),
+			User:            getEnvString("SCANORAMA_USER", ""),
+			Group:           getEnvString("SCANORAMA_GROUP", ""),
 			Daemonize:       false,
 			ShutdownTimeout: 30 * time.Second,
 		},
-		Database: db.DefaultConfig(),
+		Database: getDatabaseConfigFromEnv(),
 		Scanning: ScanningConfig{
 			WorkerPoolSize:         10,
 			DefaultInterval:        1 * time.Hour,
@@ -272,14 +274,58 @@ func Default() *Config {
 	}
 }
 
+// getEnvString gets a string value from environment variable with fallback
+func getEnvString(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
+}
+
+// getEnvInt gets an integer value from environment variable with fallback
+func getEnvInt(key string, fallback int) int {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+// getEnvDuration gets a duration value from environment variable with fallback
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+// getDatabaseConfigFromEnv creates database config from environment variables
+func getDatabaseConfigFromEnv() db.Config {
+	return db.Config{
+		Host:            getEnvString("SCANORAMA_DB_HOST", "localhost"),
+		Port:            getEnvInt("SCANORAMA_DB_PORT", 5432),
+		Database:        getEnvString("SCANORAMA_DB_NAME", ""),
+		Username:        getEnvString("SCANORAMA_DB_USER", ""),
+		Password:        getEnvString("SCANORAMA_DB_PASSWORD", ""),
+		SSLMode:         getEnvString("SCANORAMA_DB_SSLMODE", "prefer"),
+		MaxOpenConns:    getEnvInt("SCANORAMA_DB_MAX_OPEN_CONNS", 25),
+		MaxIdleConns:    getEnvInt("SCANORAMA_DB_MAX_IDLE_CONNS", 5),
+		ConnMaxLifetime: getEnvDuration("SCANORAMA_DB_CONN_MAX_LIFETIME", 5*time.Minute),
+		ConnMaxIdleTime: getEnvDuration("SCANORAMA_DB_CONN_MAX_IDLE_TIME", 5*time.Minute),
+	}
+}
+
 // Load loads configuration from a file
 func Load(path string) (*Config, error) {
-	// Start with defaults
+	// Start with defaults (includes environment variables)
 	config := Default()
 
 	// Check if file exists
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return config, nil // Return defaults if no config file
+		return config, nil // Return defaults with env vars if no config file
 	}
 
 	// Read file
@@ -340,13 +386,13 @@ func (c *Config) Save(path string) error {
 func (c *Config) Validate() error {
 	// Validate database configuration
 	if c.Database.Host == "" {
-		return fmt.Errorf("database host is required")
+		return fmt.Errorf("database host is required (set SCANORAMA_DB_HOST or configure in file)")
 	}
 	if c.Database.Database == "" {
-		return fmt.Errorf("database name is required")
+		return fmt.Errorf("database name is required (set SCANORAMA_DB_NAME or configure in file)")
 	}
 	if c.Database.Username == "" {
-		return fmt.Errorf("database username is required")
+		return fmt.Errorf("database username is required (set SCANORAMA_DB_USER or configure in file)")
 	}
 
 	// Validate scanning configuration
