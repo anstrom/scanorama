@@ -1,6 +1,8 @@
 module github.com/anstrom/scanorama
 
-go 1.24
+go 1.23.0
+
+toolchain go1.24.5
 
 require (
 	github.com/Ullaakut/nmap/v3 v3.0.6
