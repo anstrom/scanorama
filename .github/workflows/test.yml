@@ -21,8 +21,7 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: "1.24.5"
-          cache: true
-          cache-dependency-path: go.sum
+          cache: false
 
       - name: Verify Go installation
         run: |
@@ -30,25 +29,42 @@ jobs:
           go env GOROOT
           go env GOPATH
 
-      - name: Clean module cache
-        run: go clean -modcache || true
-
-      - name: Complete module reload
+      - name: Aggressive cache and environment cleanup
         run: |
-          echo "=== Cleaning all caches ==="
-          go clean -cache
-          go clean -modcache
-          go clean -testcache
-          echo "=== Removing vendor and build artifacts ==="
-          rm -rf vendor/ || true
-          rm -rf build/ || true
-          echo "=== Reinitializing modules ==="
-          go mod download
-          go mod tidy
+          echo "=== Cleaning all Go caches and state ==="
+          go clean -cache || true
+          go clean -modcache || true
+          go clean -testcache || true
+          go clean -fuzzcache || true
+          rm -rf ~/.cache/go-build || true
+          rm -rf ~/go/pkg/mod || true
+          echo "=== Setting consistent Go environment ==="
+          export GOTOOLCHAIN=go1.24.5
+          export GO111MODULE=on
+          export GOPROXY=https://proxy.golang.org,direct
+          export GOSUMDB=sum.golang.org
+
+      - name: Force consistent module resolution
+        env:
+          GOTOOLCHAIN: go1.24.5
+          GO111MODULE: on
+          GOPROXY: https://proxy.golang.org,direct
+          GOSUMDB: sum.golang.org
+        run: |
+          echo "=== Go environment ==="
+          go version
+          go env GOTOOLCHAIN
+          echo "=== Removing all artifacts ==="
+          rm -rf vendor/ build/ || true
+          echo "=== Complete module reload ==="
+          go mod download -x
+          go mod tidy -v
           go mod verify
-          echo "=== Verifying package resolution ==="
-          go list -m all
-          go list ./...
+          echo "=== Force package compilation ==="
+          go build -a -v ./internal
+          go build -a -v ./cmd/scanorama
+          echo "=== Verify all packages ==="
+          go list -e -f '{{.ImportPath}}: {{.Error}}' ./...
 
       - name: Debug Go environment
         run: |
@@ -63,16 +79,23 @@ jobs:
           go mod graph | head -10
 
       - name: Run linting
+        env:
+          GOTOOLCHAIN: go1.24.5
         run: make lint
 
-      - name: Build project to catch compilation issues
+      - name: Final compilation verification
+        env:
+          GOTOOLCHAIN: go1.24.5
         run: |
-          echo "=== Building main binary ==="
-          go build -v ./cmd/scanorama
-          echo "=== Building internal package ==="
-          go build -v ./internal
-          echo "=== Running go list on all packages ==="
-          go list -e ./...
+          echo "=== Verify functions exist in internal package ==="
+          go doc github.com/anstrom/scanorama/internal.RunScan || echo "RunScan not found"
+          go doc github.com/anstrom/scanorama/internal.RunScanWithContext || echo "RunScanWithContext not found"
+          go doc github.com/anstrom/scanorama/internal.PrintResults || echo "PrintResults not found"
+          echo "=== Force rebuild everything ==="
+          go build -a -v ./cmd/scanorama
+          echo "=== Test import resolution ==="
+          echo 'package main; import "github.com/anstrom/scanorama/internal"; func main() { _ = internal.RunScan; _ = internal.RunScanWithContext; _ = internal.PrintResults }' > /tmp/test_imports.go
+          go build -o /tmp/test_imports /tmp/test_imports.go
 
       - name: Debug before tests
         run: |
@@ -99,6 +122,8 @@ jobs:
           go doc github.com/anstrom/scanorama/internal.RunScanWithContext || echo "RunScanWithContext not found in docs"
 
       - name: Run tests
+        env:
+          GOTOOLCHAIN: go1.24.5
         run: make test
 
       - name: Generate coverage report
