@@ -21,62 +21,17 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: "1.24.5"
-          cache: false
+          cache: true
 
-      - name: Verify Go installation
-        run: |
-          go version
-          go env GOROOT
-          go env GOPATH
-
-      - name: Clean Go caches
-        run: |
-          go clean -cache || true
-          go clean -modcache || true
-          go clean -testcache || true
-
-      - name: Force consistent module resolution
-        env:
-          GOTOOLCHAIN: go1.24.5
-          GO111MODULE: on
-          GOPROXY: https://proxy.golang.org,direct
-          GOSUMDB: sum.golang.org
-        run: |
-          echo "=== Go environment ==="
-          go version
-          go env GOTOOLCHAIN
-          echo "=== Removing all artifacts ==="
-          rm -rf vendor/ build/ || true
-          echo "=== Complete module reload ==="
-          go mod download -x
-          go mod tidy -v
-          go mod verify
-          echo "=== Force package compilation ==="
-          go build -a -v ./internal
-          go build -a -v ./cmd/scanorama
-          echo "=== Verify all packages ==="
-          go list -e -f '{{.ImportPath}}: {{.Error}}' ./...
-
-      - name: Debug Go environment
-        run: |
-          echo "=== Go Environment ==="
-          go version
-          go env
-          echo "=== Module Status ==="
-          go list -m all
-          echo "=== File Structure ==="
-          find . -name "*.go" | head -10
-          echo "=== Module Graph ==="
-          go mod graph | head -10
+      - name: Install dependencies
+        run: go mod download
 
       - name: Run golangci-lint
-        env:
-          GOTOOLCHAIN: go1.24.5
-        run: make lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
 
       - name: Build project
-        env:
-          GOTOOLCHAIN: go1.24.5
         run: make build
 
       - name: Run tests
