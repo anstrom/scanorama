@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -65,55 +64,6 @@ func setupTestEnvironment(t *testing.T) {
 			t.Fatalf("Service %s not available on port %s after %d attempts", name, port, maxRetries)
 		}
 	}
-}
-
-// parsePortRange converts a port string specification into a slice of port numbers.
-// This is a test helper function only.
-func parsePortRange(ports string) ([]int, error) {
-	var result []int
-	parts := strings.Split(ports, ",")
-
-	for _, part := range parts {
-		// Check for range (e.g., "80-100")
-		if strings.Contains(part, "-") {
-			rangeParts := strings.Split(part, "-")
-			if len(rangeParts) != 2 {
-				return nil, fmt.Errorf("invalid port range format: %s", part)
-			}
-
-			start, err := strconv.Atoi(rangeParts[0])
-			if err != nil {
-				return nil, err
-			}
-
-			end, err := strconv.Atoi(rangeParts[1])
-			if err != nil {
-				return nil, err
-			}
-
-			if start < 1 || end > 65535 || start > end {
-				return nil, fmt.Errorf("invalid port range: %s", part)
-			}
-
-			for i := start; i <= end; i++ {
-				result = append(result, i)
-			}
-		} else {
-			// Single port
-			port, err := strconv.Atoi(part)
-			if err != nil {
-				return nil, err
-			}
-
-			if port < 1 || port > 65535 {
-				return nil, fmt.Errorf("port %d out of valid range (1-65535)", port)
-			}
-
-			result = append(result, port)
-		}
-	}
-
-	return result, nil
 }
 
 // TestAggressiveScan removed - aggressive mode deprecated

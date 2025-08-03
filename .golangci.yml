@@ -1,74 +1,55 @@
-# Analysis configuration
+# golangci-lint configuration for scanorama
 run:
-  # Default timeout for analysis
   timeout: 5m
-
-  # Include test files
   tests: true
 
-  # Exit code when at least one issue was found
-  issues-exit-code: 1
-
-  # Directories to exclude from analysis
-  issues:
-    exclude-dirs:
-      - vendor
-      - testdata
-
-# Output configuration options
 output:
-  # Sort results by severity
-  sort-results: true
-
-  # Show source code line where issue was found
+  formats:
+    - format: colored-line-number
   print-issued-lines: true
-
-  # Print linter name at the end of issue text
   print-linter-name: true
 
-  # Use colors in output
-  colored: true
+linters-settings:
+  govet:
+    disable:
+      - fieldalignment
+      - shadow
 
-  # Print paths relative to current directory
-  path-prefix: ""
+  gocyclo:
+    min-complexity: 20
 
-# All available linters
+  gofmt:
+    simplify: true
+
+  misspell:
+    locale: US
+
 linters:
-  enable:
-    - gofmt
-    - govet
-    - errcheck
-    - staticcheck
-    - gosimple
-    - gosec
-    - unconvert
-    - ineffassign
-    - misspell
   disable-all: true
+  enable:
+    - errcheck
+    - gofmt
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    - misspell
 
 issues:
-  # Maximum issues count per one linter (0 = no limit)
-  max-issues-per-linter: 0
-
-  # Maximum count of issues with the same text (0 = no limit)
-  max-same-issues: 0
-
-  # Directories to exclude from analysis
-  exclude-dirs:
-    - vendor
-    - testdata
-
-  # Show only new issues
-  new: false
-
-  # Fix issues if possible
-  fix: false
-
-  # Exclude go mod errors
   exclude-rules:
+    # Exclude some linters from running on test files
     - path: _test\.go
       linters:
+        - errcheck
         - gosec
-    - text: "G108: Profiling endpoint is automatically exposed on /debug/pprof"
+
+    # Exclude known issues
+    - text: "SA9003:"
       linters:
-        - gosec
+        - staticcheck
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  fix: false

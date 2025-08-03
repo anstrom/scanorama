@@ -29,20 +29,11 @@ jobs:
           go env GOROOT
           go env GOPATH
 
-      - name: Aggressive cache and environment cleanup
+      - name: Clean Go caches
         run: |
-          echo "=== Cleaning all Go caches and state ==="
           go clean -cache || true
           go clean -modcache || true
           go clean -testcache || true
-          go clean -fuzzcache || true
-          rm -rf ~/.cache/go-build || true
-          rm -rf ~/go/pkg/mod || true
-          echo "=== Setting consistent Go environment ==="
-          export GOTOOLCHAIN=go1.24.5
-          export GO111MODULE=on
-          export GOPROXY=https://proxy.golang.org,direct
-          export GOSUMDB=sum.golang.org
 
       - name: Force consistent module resolution
         env:
@@ -78,48 +69,15 @@ jobs:
           echo "=== Module Graph ==="
           go mod graph | head -10
 
-      - name: Run linting
+      - name: Run golangci-lint
         env:
           GOTOOLCHAIN: go1.24.5
         run: make lint
 
-      - name: Final compilation verification
+      - name: Build project
         env:
           GOTOOLCHAIN: go1.24.5
-        run: |
-          echo "=== Verify functions exist in internal package ==="
-          go doc github.com/anstrom/scanorama/internal.RunScan || echo "RunScan not found"
-          go doc github.com/anstrom/scanorama/internal.RunScanWithContext || echo "RunScanWithContext not found"
-          go doc github.com/anstrom/scanorama/internal.PrintResults || echo "PrintResults not found"
-          echo "=== Force rebuild everything ==="
-          go build -a -v ./cmd/scanorama
-          echo "=== Test import resolution ==="
-          echo 'package main; import "github.com/anstrom/scanorama/internal"; func main() { _ = internal.RunScan; _ = internal.RunScanWithContext; _ = internal.PrintResults }' > /tmp/test_imports.go
-          go build -o /tmp/test_imports /tmp/test_imports.go
-
-      - name: Debug before tests
-        run: |
-          echo "=== Checking functions in scan.go ==="
-          grep -n "func.*Run" internal/scan.go || echo "No Run functions found"
-          echo "=== Checking imports in main.go ==="
-          grep -n "internal\." cmd/scanorama/main.go || echo "No internal imports found"
-
-      - name: Verify package imports and exports
-        run: |
-          echo "=== Verifying internal package compilation ==="
-          go build -v ./internal
-          echo "=== Checking internal package imports ==="
-          go list -f '{{.ImportPath}} -> {{.Dir}}' ./internal
-          echo "=== Checking what's exported from internal ==="
-          go list -f '{{.Name}}: {{.GoFiles}}' ./internal
-          echo "=== Checking cmd/scanorama imports ==="
-          go list -f '{{.Imports}}' ./cmd/scanorama
-          echo "=== Testing internal package access ==="
-          echo 'package main; import "github.com/anstrom/scanorama/internal"; func main() { _ = internal.RunScan }' > /tmp/test_import.go
-          go build -o /tmp/test_import /tmp/test_import.go || echo "FAILED: Cannot access internal.RunScan"
-          echo "=== Testing specific function access ==="
-          go doc github.com/anstrom/scanorama/internal.RunScan || echo "RunScan not found in docs"
-          go doc github.com/anstrom/scanorama/internal.RunScanWithContext || echo "RunScanWithContext not found in docs"
+        run: make build
 
       - name: Run tests
         env:

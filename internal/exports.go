@@ -35,15 +35,13 @@ func ExplicitPrintResults(result *ScanResult) {
 func ForceExports() {
 	// This function references all exported functions to ensure they're compiled
 	// and available for external packages
-	var config ScanConfig
 	var result *ScanResult
-	var ctx context.Context
 
 	// Reference RunScan
-	_, _ = RunScan(config)
+	_ = RunScan
 
 	// Reference RunScanWithContext
-	_, _ = RunScanWithContext(ctx, config)
+	_ = RunScanWithContext
 
 	// Reference PrintResults
 	PrintResults(result)

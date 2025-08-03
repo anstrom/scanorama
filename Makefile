@@ -10,7 +10,12 @@ GOTEST := $(GO) test
 GOBUILD := $(GO) build
 GOMOD := $(GO) mod
 
-.PHONY: help build clean test coverage lint deps install run
+# Get GOPATH and GOBIN
+GOPATH := $(shell $(GO) env GOPATH)
+GOBIN := $(GOPATH)/bin
+export PATH := $(GOBIN):$(PATH)
+
+.PHONY: help build clean test coverage lint lint-install lint-fix deps install run
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -64,10 +69,17 @@ coverage: ## Generate test coverage report
 		echo "Coverage report: $(COVERAGE_FILE).html" ; \
 	fi
 
-lint: ## Run basic linting
-	@echo "Running linters..."
-	@$(GO) vet ./...
-	@$(GO) fmt ./...
+lint-install: ## Install golangci-lint
+	@echo "Installing golangci-lint..."
+	@$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+lint: lint-install ## Run golangci-lint
+	@echo "Running golangci-lint..."
+	@$(GOBIN)/golangci-lint run
+
+lint-fix: lint-install ## Run golangci-lint with auto-fix
+	@echo "Running golangci-lint with fixes..."
+	@$(GOBIN)/golangci-lint run --fix
 
 deps: ## Download and tidy dependencies
 	@echo "Installing dependencies..."

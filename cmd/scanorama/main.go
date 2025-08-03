@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -67,7 +68,7 @@ func main() {
 	// Run the scan with context
 	results, err := internal.RunScanWithContext(ctx, config)
 	if err != nil {
-		if err == context.Canceled {
+		if errors.Is(err, context.Canceled) {
 			log.Fatal("Scan was interrupted")
 		}
 		log.Fatalf("Scan failed: %v", err)
