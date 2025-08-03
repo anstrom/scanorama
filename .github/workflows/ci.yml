@@ -53,6 +53,12 @@ jobs:
           echo "Checking specific functions:"
           grep -n "func.*RunScanWithContext\|func.*PrintResults\|func.*RunScan" internal/scan.go || echo "Functions not found"
 
+      - name: Install nmap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nmap
+          nmap --version
+
       - name: Build project
         run: make build
 

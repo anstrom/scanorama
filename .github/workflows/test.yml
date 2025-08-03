@@ -55,6 +55,12 @@ jobs:
           echo "Checking specific functions:"
           grep -n "func.*RunScanWithContext\|func.*PrintResults\|func.*RunScan" internal/scan.go || echo "Functions not found"
 
+      - name: Install nmap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nmap
+          nmap --version
+
       - name: Install golangci-lint
         run: |
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
