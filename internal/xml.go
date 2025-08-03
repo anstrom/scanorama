@@ -42,10 +42,6 @@ func SaveResults(result *ScanResult, filepath string) error {
 		return fmt.Errorf("cannot save nil result")
 	}
 
-	if result == nil {
-		return &ScanError{Op: "save results", Err: fmt.Errorf("nil result")}
-	}
-
 	// Convert scan result to XML structure
 	xmlData := &ScanXML{
 		Hosts: make([]HostXML, len(result.Hosts)),

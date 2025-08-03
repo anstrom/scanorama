@@ -20,11 +20,21 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.23"
+          go-version: "1.23.0"
           cache: true
 
       - name: Install dependencies
-        run: go mod download
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Verify Go environment
+        run: |
+          echo "Go version: $(go version)"
+          echo "Go env GOOS: $(go env GOOS)"
+          echo "Go env GOARCH: $(go env GOARCH)"
+          echo "Go env GOMODCACHE: $(go env GOMODCACHE)"
+          echo "GOPRIVATE: ${GOPRIVATE}"
 
       - name: Build project
         run: make build

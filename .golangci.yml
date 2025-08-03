@@ -2,6 +2,7 @@
 run:
   timeout: 5m
   tests: true
+  go: "1.23"
 
 output:
   formats:
@@ -42,7 +43,6 @@ issues:
     - path: _test\.go
       linters:
         - errcheck
-        - gosec
 
     # Exclude known staticcheck issues
     - text: "SA9003:"
