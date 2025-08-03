@@ -44,7 +44,7 @@ issues:
         - errcheck
         - gosec
 
-    # Exclude known issues
+    # Exclude known staticcheck issues
     - text: "SA9003:"
       linters:
         - staticcheck
