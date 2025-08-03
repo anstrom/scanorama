@@ -166,8 +166,18 @@ func (d *Daemon) dropPrivileges() error {
 
 	// Change group first
 	if d.config.Daemon.Group != "" {
-		// Implementation would require syscall.Setgid()
-		d.logger.Printf("Group change to %s not implemented", d.config.Daemon.Group)
+		grp, err := user.LookupGroup(d.config.Daemon.Group)
+		if err != nil {
+			return fmt.Errorf("failed to lookup group %s: %w", d.config.Daemon.Group, err)
+		}
+		gid, err := strconv.Atoi(grp.Gid)
+		if err != nil {
+			return fmt.Errorf("invalid group ID: %w", err)
+		}
+		if err := syscall.Setgid(gid); err != nil {
+			return fmt.Errorf("failed to set GID to %d: %w", gid, err)
+		}
+		d.logger.Printf("Changed group to %s (GID: %d)", d.config.Daemon.Group, gid)
 	}
 
 	// Change user
@@ -182,8 +192,10 @@ func (d *Daemon) dropPrivileges() error {
 			return fmt.Errorf("invalid user ID: %w", err)
 		}
 
-		// Implementation would require syscall.Setuid()
-		d.logger.Printf("User change to %s (UID: %d) not implemented", d.config.Daemon.User, uid)
+		if err := syscall.Setuid(uid); err != nil {
+			return fmt.Errorf("failed to setuid to %d: %w", uid, err)
+		}
+		d.logger.Printf("Changed user to %s (UID: %d)", d.config.Daemon.User, uid)
 	}
 
 	return nil

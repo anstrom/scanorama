@@ -101,14 +101,10 @@ func (m *Migrator) getMigrationFiles() ([]string, error) {
 	return files, nil
 }
 
-// calculateChecksum calculates a simple checksum for migration content
+// calculateChecksum calculates a SHA-256 checksum for migration content
 func (m *Migrator) calculateChecksum(content string) string {
-	// Simple hash - in production, you might want to use a proper hash function
-	hash := 0
-	for _, char := range content {
-		hash = hash*31 + int(char)
-	}
-	return fmt.Sprintf("%x", hash)
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:])
 }
 
 // executeMigration executes a single migration file
