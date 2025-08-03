@@ -21,43 +21,17 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: "1.23.0"
-          cache: false
-
-      - name: Clean module cache
-        run: |
-          go clean -modcache
-          rm -rf $(go env GOMODCACHE)
+          cache: true
 
       - name: Install dependencies
         run: |
-          go mod download -x
+          go mod download
           go mod verify
-          go mod tidy
-
-      - name: Verify Go environment
-        run: |
-          echo "Go version: $(go version)"
-          echo "Go env GOOS: $(go env GOOS)"
-          echo "Go env GOARCH: $(go env GOARCH)"
-          echo "Go env GOMODCACHE: $(go env GOMODCACHE)"
-          echo "GOPRIVATE: ${GOPRIVATE}"
-          echo "Module info:"
-          go list -m all
-          echo "Package structure:"
-          go list ./...
-
-      - name: Verify internal package
-        run: |
-          echo "Checking internal package exports:"
-          go doc ./internal
-          echo "Checking specific functions:"
-          grep -n "func.*RunScanWithContext\|func.*PrintResults\|func.*RunScan" internal/scan.go || echo "Functions not found"
 
       - name: Install nmap
         run: |
-          sudo apt-get update
+          sudo apt-get update -qq
           sudo apt-get install -y nmap
-          nmap --version
 
       - name: Build project
         run: make build
