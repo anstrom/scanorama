@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Run tests
+        run: make test
+
+      - name: Get tag name
+        id: tag
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build release binaries
+        run: |
+          mkdir -p dist
+
+          # Linux amd64
+          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=${{ steps.tag.outputs.tag }}" \
+            -o dist/scanorama-${{ steps.tag.outputs.tag }}-linux-amd64 ./cmd/scanorama
+
+          # Linux arm64
+          GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=${{ steps.tag.outputs.tag }}" \
+            -o dist/scanorama-${{ steps.tag.outputs.tag }}-linux-arm64 ./cmd/scanorama
+
+          # macOS amd64
+          GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.version=${{ steps.tag.outputs.tag }}" \
+            -o dist/scanorama-${{ steps.tag.outputs.tag }}-darwin-amd64 ./cmd/scanorama
+
+          # macOS arm64
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.version=${{ steps.tag.outputs.tag }}" \
+            -o dist/scanorama-${{ steps.tag.outputs.tag }}-darwin-arm64 ./cmd/scanorama
+
+          # Windows amd64
+          GOOS=windows GOARCH=amd64 go build -ldflags "-X main.version=${{ steps.tag.outputs.tag }}" \
+            -o dist/scanorama-${{ steps.tag.outputs.tag }}-windows-amd64.exe ./cmd/scanorama
+
+      - name: Create checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            echo "Using CHANGELOG.md"
+            awk '/^## \['"${{ steps.tag.outputs.tag }}"'\]/{flag=1;next} /^## \[/{flag=0} flag' CHANGELOG.md > release_notes.txt
+          else
+            echo "Release ${{ steps.tag.outputs.tag }}" > release_notes.txt
+            echo "" >> release_notes.txt
+            echo "## Changes" >> release_notes.txt
+            git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD^)..HEAD >> release_notes.txt || echo "- Initial release" >> release_notes.txt
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Release ${{ steps.tag.outputs.tag }}
+          body_path: release_notes.txt
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.tag, '-') }}
+          files: |
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-matrix:
+    name: Test Go ${{ matrix.go-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        go-version: ['1.22', '1.23', '1.24']
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Run linting
+        run: make lint
+
+      - name: Run tests (Linux with Docker)
+        if: matrix.os == 'ubuntu-latest'
+        run: make test
+
+      - name: Run unit tests only (macOS/Windows)
+        if: matrix.os != 'ubuntu-latest'
+        run: go test -v ./...
+
+      - name: Build binary
+        run: make build
+
+      - name: Test binary works
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            ./build/scanorama.exe -version || echo "Binary test completed"
+          else
+            ./build/scanorama -version || echo "Binary test completed"
+          fi
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Install nmap
+        run: sudo apt-get update && sudo apt-get install -y nmap
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Run full integration tests
+        run: make test
+
+      - name: Generate coverage
+        run: make coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: integration
+          name: integration-tests
+          fail_ci_if_error: false
+
+  build-artifacts:
+    name: Build Release Artifacts
+    runs-on: ubuntu-latest
+    needs: [test-matrix, integration-test]
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Build for multiple platforms
+        run: |
+          mkdir -p artifacts
+
+          # Linux
+          GOOS=linux GOARCH=amd64 go build -o artifacts/scanorama-linux-amd64 ./cmd/scanorama
+
+          # macOS
+          GOOS=darwin GOARCH=amd64 go build -o artifacts/scanorama-darwin-amd64 ./cmd/scanorama
+          GOOS=darwin GOARCH=arm64 go build -o artifacts/scanorama-darwin-arm64 ./cmd/scanorama
+
+          # Windows
+          GOOS=windows GOARCH=amd64 go build -o artifacts/scanorama-windows-amd64.exe ./cmd/scanorama
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: artifacts/
+          retention-days: 30

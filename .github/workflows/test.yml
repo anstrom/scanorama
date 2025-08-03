@@ -1,65 +1,83 @@
-name: Test and Lint
+name: Test and Build
 
 on:
   push:
+    branches: [main]
   pull_request:
     branches: [main]
 
 permissions:
   contents: read
-  packages: read
-  statuses: write # Required for codecov
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: "1.24.5"
-          cache: true
 
       - name: Install dependencies
-        run: |
-          GOFLAGS="" go mod download
-          GOFLAGS="" go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2
-          go version
+        run: make deps
 
-      - name: Build development image
-        run: docker build -t scanorama-dev -f Dockerfile.dev .
-
-      - name: Build test environment
-        run: test/docker/test-env.sh build
-
-      - name: Run linter
-        run: make docker-lint
+      - name: Run linting
+        run: make lint
 
       - name: Run tests
-        run: |
-          GOFLAGS="" make test-env-clean
-          GOFLAGS="" make docker-test
+        run: make test
 
-      - name: Run coverage
-        run: |
-          GOFLAGS="" make test-env-clean
-          GOFLAGS="" make docker-coverage
-          curl -Os https://uploader.codecov.io/latest/linux/codecov
-          chmod +x codecov
-          ./codecov
+      - name: Generate coverage report
+        run: make coverage
 
-      - name: Upload coverage report
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+      - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage.*
+          path: |
+            coverage.out
+            coverage.out.html
           if-no-files-found: warn
 
-      - name: Clean up
-        if: always()
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.24.5"
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Build binary
+        run: make build
+
+      - name: Test binary
         run: |
-          make test-env-clean
-          make docker-clean
-          docker system prune -af --volumes
+          ./build/scanorama -version
+          ./build/scanorama -targets 127.0.0.1 -ports 80 -type connect || echo "Expected failure - no target service"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scanorama-binary
+          path: build/scanorama
+          if-no-files-found: error
