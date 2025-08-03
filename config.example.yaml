@@ -1,0 +1,190 @@
+# Scanorama Daemon Configuration
+# This is a sample configuration file showing all available options
+# Copy this file and customize it for your environment
+
+# Daemon Process Configuration
+daemon:
+  # PID file location (can also be set via SCANORAMA_PID_FILE)
+  pid_file: "/var/run/scanorama.pid"
+
+  # Working directory (can also be set via SCANORAMA_WORK_DIR)
+  work_dir: "/var/lib/scanorama"
+
+  # User to run as (leave empty to run as current user)
+  # Can also be set via SCANORAMA_USER
+  user: ""
+
+  # Group to run as (leave empty to run as current group)
+  # Can also be set via SCANORAMA_GROUP
+  group: ""
+
+  # Fork to background (daemon mode)
+  daemonize: false
+
+  # Graceful shutdown timeout
+  shutdown_timeout: "30s"
+
+# Database Configuration
+# PostgreSQL is required for storing scan results
+database:
+  # Database host (can also be set via SCANORAMA_DB_HOST)
+  host: "localhost"
+
+  # Database port (can also be set via SCANORAMA_DB_PORT)
+  port: 5432
+
+  # Database name (REQUIRED - can also be set via SCANORAMA_DB_NAME)
+  database: "scanorama"
+
+  # Database username (REQUIRED - can also be set via SCANORAMA_DB_USER)
+  username: "scanorama"
+
+  # Database password (REQUIRED - can also be set via SCANORAMA_DB_PASSWORD)
+  # For security, consider using environment variables instead
+  password: "your_secure_password_here"
+
+  # SSL mode (disable, require, verify-ca, verify-full, prefer)
+  # Can also be set via SCANORAMA_DB_SSLMODE
+  ssl_mode: "prefer"
+
+  # Connection pool settings
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: "5m"
+  conn_max_idle_time: "5m"
+
+# Scanning Configuration
+scanning:
+  # Number of concurrent scanning workers
+  worker_pool_size: 10
+
+  # Default scan interval for new targets
+  default_interval: "1h"
+
+  # Maximum time allowed for a single scan
+  max_scan_timeout: "10m"
+
+  # Default ports to scan for new targets
+  default_ports: "22,80,443,8080,8443"
+
+  # Default scan type (connect, syn, version)
+  default_scan_type: "connect"
+
+  # Maximum number of concurrent targets per scan job
+  max_concurrent_targets: 100
+
+  # Enable service detection (requires nmap with service scripts)
+  enable_service_detection: true
+
+  # Enable OS detection (requires root privileges)
+  enable_os_detection: false
+
+  # Retry configuration for failed scans
+  retry:
+    max_retries: 3
+    retry_delay: "30s"
+    backoff_multiplier: 2.0
+
+  # Rate limiting to avoid overwhelming networks
+  rate_limit:
+    enabled: true
+    requests_per_second: 100
+    burst_size: 200
+
+# API Server Configuration
+api:
+  # Enable REST API server
+  enabled: true
+
+  # Listen address
+  listen_addr: "127.0.0.1"
+
+  # Listen port
+  port: 8080
+
+  # TLS configuration
+  tls:
+    enabled: false
+    cert_file: "/etc/scanorama/tls/cert.pem"
+    key_file: "/etc/scanorama/tls/key.pem"
+    ca_file: "/etc/scanorama/tls/ca.pem"
+
+  # API key for authentication (leave empty to disable auth)
+  api_key: ""
+
+  # CORS configuration
+  cors:
+    enabled: true
+    allowed_origins: ["*"]
+    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allowed_headers: ["Content-Type", "Authorization"]
+
+  # Request timeout
+  request_timeout: "30s"
+
+  # Maximum request size (in bytes)
+  max_request_size: 1048576  # 1MB
+
+# Logging Configuration
+logging:
+  # Log level (debug, info, warn, error)
+  level: "info"
+
+  # Log format (text, json)
+  format: "text"
+
+  # Log output (stdout, stderr, or file path)
+  output: "stdout"
+
+  # Log rotation (only used when output is a file)
+  rotation:
+    enabled: false
+    max_size_mb: 100
+    max_backups: 5
+    max_age_days: 30
+    compress: true
+
+  # Enable structured logging (JSON format)
+  structured: false
+
+  # Enable API request logging
+  request_logging: true
+
+# Example configurations for different environments:
+
+# Development Configuration:
+# - Use local PostgreSQL
+# - Enable debug logging
+# - Disable daemon mode
+# - API on localhost only
+
+# Production Configuration:
+# - Use external PostgreSQL with SSL
+# - Log to files with rotation
+# - Enable daemon mode
+# - Configure TLS for API
+# - Set proper user/group
+
+# Environment Variables:
+# You can override any configuration value using environment variables:
+#
+# Database:
+#   SCANORAMA_DB_HOST=db.example.com
+#   SCANORAMA_DB_PORT=5432
+#   SCANORAMA_DB_NAME=scanorama
+#   SCANORAMA_DB_USER=scanorama
+#   SCANORAMA_DB_PASSWORD=secret
+#   SCANORAMA_DB_SSLMODE=require
+#
+# Daemon:
+#   SCANORAMA_PID_FILE=/var/run/scanorama.pid
+#   SCANORAMA_WORK_DIR=/var/lib/scanorama
+#   SCANORAMA_USER=scanorama
+#   SCANORAMA_GROUP=scanorama
+#
+# Example Docker deployment:
+# docker run -e SCANORAMA_DB_HOST=postgres \
+#            -e SCANORAMA_DB_NAME=scanorama \
+#            -e SCANORAMA_DB_USER=scanorama \
+#            -e SCANORAMA_DB_PASSWORD=secret \
+#            scanorama:latest
