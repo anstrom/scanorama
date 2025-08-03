@@ -11,6 +11,21 @@ result.*
 scan_output.*
 scan_results.*
 
+# Configuration files with secrets
+.env
+.env.local
+.env.production
+config.yaml
+config.yml
+*.local.yaml
+*.local.yml
+
+# Secrets and sensitive data
+secrets/
+*.key
+*.pem
+*.crt
+
 # IDE and OS
 .idea/
 .vscode/
