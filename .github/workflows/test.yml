@@ -33,11 +33,22 @@ jobs:
       - name: Clean module cache
         run: go clean -modcache || true
 
-      - name: Install dependencies
+      - name: Complete module reload
         run: |
+          echo "=== Cleaning all caches ==="
+          go clean -cache
+          go clean -modcache
+          go clean -testcache
+          echo "=== Removing vendor and build artifacts ==="
+          rm -rf vendor/ || true
+          rm -rf build/ || true
+          echo "=== Reinitializing modules ==="
           go mod download
           go mod tidy
           go mod verify
+          echo "=== Verifying package resolution ==="
+          go list -m all
+          go list ./...
 
       - name: Debug Go environment
         run: |
@@ -53,6 +64,15 @@ jobs:
 
       - name: Run linting
         run: make lint
+
+      - name: Build project to catch compilation issues
+        run: |
+          echo "=== Building main binary ==="
+          go build -v ./cmd/scanorama
+          echo "=== Building internal package ==="
+          go build -v ./internal
+          echo "=== Running go list on all packages ==="
+          go list -e ./...
 
       - name: Debug before tests
         run: |
