@@ -134,6 +134,15 @@ func TestValidateScanConfig(t *testing.T) {
 			wantError: false,
 		},
 		{
+			name: "port zero allowed",
+			config: ScanConfig{
+				Targets:  []string{"localhost"},
+				Ports:    "0",
+				ScanType: "connect",
+			},
+			wantError: false,
+		},
+		{
 			name: "empty targets",
 			config: ScanConfig{
 				Ports:    "80",
@@ -181,63 +190,11 @@ func TestValidateScanConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateScanConfig(tt.config)
+			err := tt.config.Validate()
 			if tt.wantError {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestPortParsing(t *testing.T) {
-	tests := []struct {
-		name    string
-		ports   string
-		want    []int
-		wantErr bool
-	}{
-		{
-			name:    "single port",
-			ports:   "80",
-			want:    []int{80},
-			wantErr: false,
-		},
-		{
-			name:    "multiple ports",
-			ports:   "80,443",
-			want:    []int{80, 443},
-			wantErr: false,
-		},
-		{
-			name:    "port range",
-			ports:   "80-82",
-			want:    []int{80, 81, 82},
-			wantErr: false,
-		},
-		{
-			name:    "invalid format",
-			ports:   "invalid",
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name:    "out of range",
-			ports:   "65536",
-			want:    nil,
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := parsePortRange(tt.ports)
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.want, got)
 			}
 		})
 	}

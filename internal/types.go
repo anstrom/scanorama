@@ -2,6 +2,8 @@ package internal
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -56,6 +58,43 @@ func (c *ScanConfig) Validate() error {
 	if c.ScanType != "connect" && c.ScanType != "syn" && c.ScanType != "version" {
 		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid scan type: %s", c.ScanType)}
 	}
+
+	// Validate ports
+	parts := strings.Split(c.Ports, ",")
+	for _, part := range parts {
+		// Handle port ranges (e.g., "80-100")
+		if strings.Contains(part, "-") {
+			rangeParts := strings.Split(part, "-")
+			if len(rangeParts) != 2 {
+				return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port range format: %s", part)}
+			}
+
+			start, err := strconv.Atoi(rangeParts[0])
+			if err != nil {
+				return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port number: %s", rangeParts[0])}
+			}
+
+			end, err := strconv.Atoi(rangeParts[1])
+			if err != nil {
+				return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port number: %s", rangeParts[1])}
+			}
+
+			if start < 0 || end > 65535 || start > end {
+				return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port range: %s (must be 0-65535)", part)}
+			}
+		} else {
+			// Handle single ports
+			port, err := strconv.Atoi(part)
+			if err != nil {
+				return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port number: %s", part)}
+			}
+
+			if port < 0 || port > 65535 {
+				return &ScanError{Op: "validate config", Err: fmt.Errorf("port %d out of valid range (0-65535)", port)}
+			}
+		}
+	}
+
 	return nil
 }
 
