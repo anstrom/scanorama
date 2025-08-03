@@ -81,6 +81,23 @@ jobs:
           echo "=== Checking imports in main.go ==="
           grep -n "internal\." cmd/scanorama/main.go || echo "No internal imports found"
 
+      - name: Verify package imports and exports
+        run: |
+          echo "=== Verifying internal package compilation ==="
+          go build -v ./internal
+          echo "=== Checking internal package imports ==="
+          go list -f '{{.ImportPath}} -> {{.Dir}}' ./internal
+          echo "=== Checking what's exported from internal ==="
+          go list -f '{{.Name}}: {{.GoFiles}}' ./internal
+          echo "=== Checking cmd/scanorama imports ==="
+          go list -f '{{.Imports}}' ./cmd/scanorama
+          echo "=== Testing internal package access ==="
+          echo 'package main; import "github.com/anstrom/scanorama/internal"; func main() { _ = internal.RunScan }' > /tmp/test_import.go
+          go build -o /tmp/test_import /tmp/test_import.go || echo "FAILED: Cannot access internal.RunScan"
+          echo "=== Testing specific function access ==="
+          go doc github.com/anstrom/scanorama/internal.RunScan || echo "RunScan not found in docs"
+          go doc github.com/anstrom/scanorama/internal.RunScanWithContext || echo "RunScanWithContext not found in docs"
+
       - name: Run tests
         run: make test
 
