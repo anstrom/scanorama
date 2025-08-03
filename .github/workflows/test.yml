@@ -21,12 +21,45 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: "1.24.5"
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Verify Go installation
+        run: |
+          go version
+          go env GOROOT
+          go env GOPATH
+
+      - name: Clean module cache
+        run: go clean -modcache || true
 
       - name: Install dependencies
-        run: make deps
+        run: |
+          go mod download
+          go mod tidy
+          go mod verify
+
+      - name: Debug Go environment
+        run: |
+          echo "=== Go Environment ==="
+          go version
+          go env
+          echo "=== Module Status ==="
+          go list -m all
+          echo "=== File Structure ==="
+          find . -name "*.go" | head -10
+          echo "=== Module Graph ==="
+          go mod graph | head -10
 
       - name: Run linting
         run: make lint
+
+      - name: Debug before tests
+        run: |
+          echo "=== Checking functions in scan.go ==="
+          grep -n "func.*Run" internal/scan.go || echo "No Run functions found"
+          echo "=== Checking imports in main.go ==="
+          grep -n "internal\." cmd/scanorama/main.go || echo "No internal imports found"
 
       - name: Run tests
         run: make test
@@ -63,9 +96,13 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: "1.24.5"
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Install dependencies
-        run: make deps
+        run: |
+          go mod download
+          go mod tidy
 
       - name: Build binary
         run: make build

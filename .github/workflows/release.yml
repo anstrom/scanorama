@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -22,10 +22,15 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.24'
+          go-version: "1.24"
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Install dependencies
-        run: make deps
+        run: |
+          go mod download
+          go mod tidy
+          go mod verify
 
       - name: Run tests
         run: make test
