@@ -14,6 +14,21 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GOPRIVATE: github.com/anstrom/*
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: scanorama_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --mount type=bind,source=${{ github.workspace }}/test/fixtures,target=/docker-entrypoint-initdb.d
 
     steps:
       - name: Checkout code
@@ -30,10 +45,13 @@ jobs:
           go mod download
           go mod verify
 
-      - name: Install nmap
+      - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y nmap
+          sudo apt-get install -y nmap redis-server ssh openssh-server
+
+          # Make test scripts executable
+          chmod +x ./test/docker/test-env.sh
 
       - name: Install golangci-lint
         run: |
@@ -54,10 +72,23 @@ jobs:
         run: make build
 
       - name: Run tests
-        run: make test
+        run: |
+          # Start test environment using Docker Compose
+          ./test/docker/test-env.sh up
+          # Run tests
+          go test -v ./...
+          # Stop test environment
+          ./test/docker/test-env.sh down
 
       - name: Generate coverage
-        run: make coverage
+        run: |
+          # Start test environment using Docker Compose
+          ./test/docker/test-env.sh up
+          # Generate coverage
+          go test -cover ./... -coverprofile=coverage.out
+          go tool cover -html=coverage.out -o coverage.out.html
+          # Stop test environment
+          ./test/docker/test-env.sh down
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
