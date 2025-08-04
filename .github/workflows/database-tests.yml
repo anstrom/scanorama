@@ -1,0 +1,131 @@
+name: Database Tests
+
+on:
+  push:
+    paths:
+      - "internal/db/**"
+      - "test/docker/**"
+      - "migrations/**"
+  pull_request:
+    paths:
+      - "internal/db/**"
+      - "test/docker/**"
+      - "migrations/**"
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.23.0"
+
+jobs:
+  database-unit:
+    name: Database Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
+        with:
+          install-system-deps: "false"
+
+      - name: Run database unit tests
+        run: |
+          cd internal/db
+          go test -v -short -race -coverprofile=coverage.out .
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-unit-coverage
+          path: internal/db/coverage.out
+
+  database-integration:
+    name: Database Integration Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        postgres-version: ["15", "16"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
+
+      - name: Setup test database
+        run: |
+          chmod +x ./test/docker/test-db.sh
+          # Use specific postgres version
+          sed -i 's/postgres:15-alpine/postgres:${{ matrix.postgres-version }}-alpine/g' ./test/docker/test-db.sh
+          ./test/docker/test-db.sh start
+
+      - name: Wait for database
+        run: |
+          timeout 60 bash -c 'until ./test/docker/test-db.sh status | grep -q "PostgreSQL: Running"; do sleep 2; done'
+
+      - name: Run integration tests
+        run: make test-db-integration
+
+      - name: Test migrations
+        run: make test-db-migration
+
+      - name: Cleanup
+        if: always()
+        run: ./test/docker/test-db.sh cleanup
+
+  database-performance:
+    name: Database Performance
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
+
+      - name: Setup test database
+        run: |
+          chmod +x ./test/docker/test-db.sh
+          ./test/docker/test-db.sh start
+
+      - name: Run performance benchmarks
+        run: |
+          cd internal/db
+          go test -bench=. -benchmem -timeout=10m . | tee benchmark-results.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-benchmarks
+          path: internal/db/benchmark-results.txt
+
+      - name: Cleanup
+        if: always()
+        run: ./test/docker/test-db.sh cleanup
+
+  docker-infrastructure:
+    name: Docker Infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test Docker image build
+        run: |
+          docker build -t scanorama-test -f test/docker/Dockerfile.testing .
+
+      - name: Test Docker image functionality
+        run: |
+          docker run --rm scanorama-test go version
+          docker run --rm scanorama-test nmap --version
+          docker run --rm scanorama-test psql --version
+
+      - name: Test database lifecycle
+        run: |
+          chmod +x ./test/docker/test-db.sh
+          ./test/docker/test-db.sh start
+          sleep 5
+          ./test/docker/test-db.sh status
+          ./test/docker/test-db.sh cleanup
