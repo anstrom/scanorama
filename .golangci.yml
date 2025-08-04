@@ -1,54 +1,46 @@
-# golangci-lint configuration for scanorama
+# golangci-lint configuration for Scanorama
 run:
   timeout: 5m
   tests: true
-  go: "1.23"
+  # Skip packages that are known to cause issues with analysis
+  skip-dirs:
+    - vendor
+    - "test/docker"
 
+# Output configuration
 output:
-  formats:
-    - format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
+  format: colored-line-number
+  sort-results: true
 
+# Basic linter settings
 linters-settings:
   govet:
-    disable:
-      - fieldalignment
-      - shadow
-
-  gocyclo:
-    min-complexity: 20
-
+    check-shadowing: false
   gofmt:
     simplify: true
-
   misspell:
     locale: US
 
+# Enable only fast, reliable linters
 linters:
   disable-all: true
   enable:
-    - errcheck
-    - gofmt
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - misspell
+    - errcheck # Check for unchecked errors
+    - gofmt # Check code formatting
+    - gosimple # Simplify code
+    - govet # Check for suspicious constructs
+    - ineffassign # Detect ineffectual assignments
+    - misspell # Detect commonly misspelled words
+    - staticcheck # Go static analysis
+    - unused # Find unused code
 
+# Configure issue handling
 issues:
   exclude-rules:
-    # Exclude some linters from running on test files
+    # Exclude some linters from running on tests files
     - path: _test\.go
       linters:
         - errcheck
-
-    # Exclude known staticcheck issues
-    - text: "SA9003:"
-      linters:
-        - staticcheck
-
   max-issues-per-linter: 0
   max-same-issues: 0
   fix: false

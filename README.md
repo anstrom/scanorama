@@ -109,19 +109,27 @@ sudo ./scanorama -targets example.com -type script -aggressive
 ## Project Structure
 
 
-```/dev/null/structure.txt#L1-14
+```/dev/null/structure.txt#L1-20
 scanorama/
 ├── cmd/
 │   └── scanorama/
-│       └── main.go       # Entry point
+│       └── main.go        # Entry point
 ├── internal/
-│   ├── scan.go          # Core scanning logic
-│   ├── scan_test.go     # Scan tests
-│   ├── xml.go           # XML handling
-│   └── xml_test.go      # XML tests
-├── go.mod               # Go module file
-├── Makefile            # Build automation
-└── README.md           # This file
+│   ├── config/            # Configuration handling
+│   ├── daemon/            # Background service logic
+│   ├── db/                # Database interactions
+│   ├── scan.go            # Core scanning logic
+│   ├── scan_test.go       # Scan tests
+│   ├── xml.go             # XML handling
+│   └── xml_test.go        # XML tests
+├── test/
+│   ├── docker/            # Docker test environment
+│   ├── fixtures/          # Test fixtures
+│   └── helpers/           # Test helper utilities
+├── scripts/               # Utility scripts
+├── go.mod                 # Go module file
+├── Makefile               # Build automation
+└── README.md              # This file
 ```
 
 
@@ -137,6 +145,7 @@ make clean           # Remove build artifacts
 make test            # Run tests
 make coverage        # Generate test coverage report
 make lint            # Run linters
+make lint-fix        # Fix formatting and common issues
 make deps            # Download dependencies
 make install         # Install binary to GOPATH
 ```
@@ -149,19 +158,86 @@ The binary will be built in the `build/` directory by default.
 The project includes test suites for scanning and XML handling. Tests are organized alongside their implementation
 files in the `internal/` directory.
 
-Test files:
-- `scan_test.go`: Tests for core scanning functionality
-- `xml_test.go`: Tests for XML output handling
+#### Test Organization
+
+- **Unit Tests**: Located in `*_test.go` files alongside their implementation files
+- **Test Fixtures**: Located in `test/fixtures/` directory 
+- **Docker Test Environment**: Located in `test/docker/` for integration testing
+- **Test Helpers**: Reusable test utilities in `test/helpers/`
+
+#### Docker Test Environment
+
+The project uses Docker to provide a consistent test environment with the following services:
+- PostgreSQL database
+- Nginx web server
+- SSH server
+- Redis instance
+- Flask application
+
+> **Note:** If you already have PostgreSQL running locally on port 5432, you might experience port conflicts when running tests. You can either stop your local PostgreSQL instance before running tests or configure a different port as shown in the configuration section below.
+
+To manage the test environment:
+
+```/dev/null/test-env.sh#L1-10
+# Start the test environment
+make test-up
+
+# Stop the test environment
+make test-down
+
+# View test environment logs
+make test-logs
+
+# Check test environment status
+./test/docker/test-env.sh status
+```
+
+The test environment automatically starts before tests run and stops after tests complete when using `make test`.
+
+#### Running Tests
 
 To run specific test suites:
 
-```/dev/null/test.sh#L1-5
+```/dev/null/test.sh#L1-18
+# Run all tests
+make test
+
+# Run tests with debug output
+make test-debug
+
 # Run scan tests only
 go test ./internal -run "Scan"
 
 # Run XML tests only
 go test ./internal -run "XML"
+
+# Run database tests only
+go test ./internal/db -v
+
+# Generate test coverage report
+make coverage
 ```
+
+#### Test Environment Configuration
+
+The test environment uses Docker containers to provide services for testing:
+
+- PostgreSQL database runs on port 5432 (default PostgreSQL port)
+- The test database name is `scanorama_test` with user `test_user` and password `test_password`
+- Other test services run on non-standard ports to avoid conflicts:
+  - Nginx: port 8080
+  - SSH: port 8022
+  - Redis: port 8379
+  - Flask test app: port 8888
+
+If you have conflicts with the default PostgreSQL port (e.g., you already have PostgreSQL running locally), you can change it:
+
+```/dev/null/custom-port.sh#L1-2
+# Run tests with a custom PostgreSQL port
+POSTGRES_PORT=5433 make test
+```
+
+> **Important:** When working with CI environments like GitHub Actions, be aware that the CI may already have services running on standard ports. The test environment is configured to handle both local development and CI contexts automatically.
 
 
 ## Security Considerations
