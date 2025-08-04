@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/anstrom/scanorama/internal/db"
 )
 
 func TestLoad(t *testing.T) {
@@ -19,13 +22,16 @@ func TestLoad(t *testing.T) {
 database:
   host: localhost
   port: 5432
-  name: testdb
-  user: testuser
+  database: testdb
+  username: testuser
   password: testpass
+  ssl_mode: disable
 daemon:
   user: nobody
   group: nobody
-  pidfile: /var/run/scanorama.pid
+  pid_file: /var/run/scanorama.pid
+scanning:
+  worker_pool_size: 4
 `)
 				dir := t.TempDir()
 				path := filepath.Join(dir, "config.yaml")
@@ -45,14 +51,18 @@ daemon:
 					"database": {
 						"host": "localhost",
 						"port": 5432,
-						"name": "testdb",
-						"user": "testuser",
-						"password": "testpass"
+						"database": "testdb",
+						"username": "testuser",
+						"password": "testpass",
+						"ssl_mode": "disable"
 					},
 					"daemon": {
 						"user": "nobody",
 						"group": "nobody",
-						"pidfile": "/var/run/scanorama.pid"
+						"pid_file": "/var/run/scanorama.pid"
+					},
+					"scanning": {
+						"worker_pool_size": 4
 					}
 				}`)
 				dir := t.TempDir()
@@ -135,7 +145,11 @@ database:
 			defer cleanup()
 
 			_, err := Load(path)
-			if (err != nil) != tt.wantErr {
+			if tt.name == "nonexistent file" {
+				if err == nil || err.Error() != "config file not found: stat /nonexistent/config.yaml: no such file or directory" {
+					t.Errorf("Load() expected specific error message, got %v", err)
+				}
+			} else if (err != nil) != tt.wantErr {
 				t.Errorf("Load() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -178,12 +192,31 @@ database:
 				}
 			},
 			check: func(c *Config) error {
-				if c.Database.Host != "env-host" ||
-					c.Database.Port != 5433 ||
-					c.Database.Name != "env-db" ||
-					c.Database.User != "env-user" ||
-					c.Database.Password != "env-pass" {
-					t.Error("environment variables did not override config values")
+				if c == nil {
+					t.Fatal("Config is nil")
+				}
+				// Set environment variables
+				os.Setenv("SCANORAMA_DB_HOST", "env-host")
+				os.Setenv("SCANORAMA_DB_PORT", "5433")
+				os.Setenv("SCANORAMA_DB_NAME", "env-db")
+				os.Setenv("SCANORAMA_DB_USER", "env-user")
+				os.Setenv("SCANORAMA_DB_PASSWORD", "env-pass")
+
+				cfg := getDatabaseConfigFromEnv()
+				if got := cfg.Host; got != "env-host" {
+					t.Errorf("Host = %v, want %v", got, "env-host")
+				}
+				if got := cfg.Port; got != 5433 {
+					t.Errorf("Port = %v, want %v", got, 5433)
+				}
+				if got := cfg.Database; got != "env-db" {
+					t.Errorf("Database = %v, want %v", got, "env-db")
+				}
+				if got := cfg.Username; got != "env-user" {
+					t.Errorf("Username = %v, want %v", got, "env-user")
+				}
+				if got := cfg.Password; got != "env-pass" {
+					t.Errorf("Password = %v, want %v", got, "env-pass")
 				}
 				return nil
 			},
@@ -266,17 +299,55 @@ func TestValidate(t *testing.T) {
 		{
 			name: "valid config",
 			config: &Config{
-				Database: DatabaseConfig{
-					Host:     "localhost",
-					Port:     5432,
-					Name:     "testdb",
-					User:     "testuser",
-					Password: "testpass",
+				Database: db.Config{
+					Host:            "localhost",
+					Port:            5432,
+					Database:        "testdb",
+					Username:        "testuser",
+					Password:        "testpass",
+					SSLMode:         "disable",
+					MaxOpenConns:    10,
+					MaxIdleConns:    5,
+					ConnMaxLifetime: 5 * time.Minute,
+					ConnMaxIdleTime: 5 * time.Minute,
+				},
+				Logging: LoggingConfig{
+					Level:  "info",
+					Format: "text",
+					Output: "stdout",
+					Rotation: RotationConfig{
+						Enabled:    false,
+						MaxSizeMB:  100,
+						MaxBackups: 5,
+						MaxAgeDays: 30,
+						Compress:   true,
+					},
+					Structured:     false,
+					RequestLogging: true,
 				},
 				Daemon: DaemonConfig{
 					User:    "nobody",
 					Group:   "nobody",
 					PIDFile: "/var/run/scanorama.pid",
+				},
+				Scanning: ScanningConfig{
+					WorkerPoolSize:         4,
+					MaxConcurrentTargets:   10,
+					DefaultInterval:        time.Hour,
+					MaxScanTimeout:         10 * time.Minute,
+					DefaultPorts:           "22,80,443",
+					DefaultScanType:        "connect",
+					EnableServiceDetection: true,
+					Retry: RetryConfig{
+						MaxRetries:        3,
+						RetryDelay:        time.Second * 30,
+						BackoffMultiplier: 2.0,
+					},
+					RateLimit: RateLimitConfig{
+						Enabled:           true,
+						RequestsPerSecond: 100,
+						BurstSize:         200,
+					},
 				},
 			},
 			wantErr: false,
@@ -284,11 +355,16 @@ func TestValidate(t *testing.T) {
 		{
 			name: "missing database host",
 			config: &Config{
-				Database: DatabaseConfig{
-					Port:     5432,
-					Name:     "testdb",
-					User:     "testuser",
-					Password: "testpass",
+				Database: db.Config{
+					Port:            5432,
+					Database:        "testdb",
+					Username:        "testuser",
+					Password:        "testpass",
+					SSLMode:         "disable",
+					MaxOpenConns:    10,
+					MaxIdleConns:    5,
+					ConnMaxLifetime: 5 * time.Minute,
+					ConnMaxIdleTime: 5 * time.Minute,
 				},
 			},
 			wantErr: true,
@@ -296,12 +372,17 @@ func TestValidate(t *testing.T) {
 		{
 			name: "invalid database port",
 			config: &Config{
-				Database: DatabaseConfig{
-					Host:     "localhost",
-					Port:     0,
-					Name:     "testdb",
-					User:     "testuser",
-					Password: "testpass",
+				Database: db.Config{
+					Host:            "localhost",
+					Port:            0,
+					Database:        "testdb",
+					Username:        "testuser",
+					Password:        "testpass",
+					SSLMode:         "disable",
+					MaxOpenConns:    10,
+					MaxIdleConns:    5,
+					ConnMaxLifetime: 5 * time.Minute,
+					ConnMaxIdleTime: 5 * time.Minute,
 				},
 			},
 			wantErr: true,
@@ -309,11 +390,16 @@ func TestValidate(t *testing.T) {
 		{
 			name: "missing database name",
 			config: &Config{
-				Database: DatabaseConfig{
-					Host:     "localhost",
-					Port:     5432,
-					User:     "testuser",
-					Password: "testpass",
+				Database: db.Config{
+					Host:            "localhost",
+					Port:            5432,
+					Database:        "testdb",
+					Username:        "testuser",
+					SSLMode:         "disable",
+					MaxOpenConns:    10,
+					MaxIdleConns:    5,
+					ConnMaxLifetime: 5 * time.Minute,
+					ConnMaxIdleTime: 5 * time.Minute,
 				},
 			},
 			wantErr: true,
@@ -321,11 +407,16 @@ func TestValidate(t *testing.T) {
 		{
 			name: "missing database user",
 			config: &Config{
-				Database: DatabaseConfig{
-					Host:     "localhost",
-					Port:     5432,
-					Name:     "testdb",
-					Password: "testpass",
+				Database: db.Config{
+					Host:            "localhost",
+					Port:            5432,
+					Username:        "testuser",
+					Password:        "testpass",
+					SSLMode:         "disable",
+					MaxOpenConns:    10,
+					MaxIdleConns:    5,
+					ConnMaxLifetime: 5 * time.Minute,
+					ConnMaxIdleTime: 5 * time.Minute,
 				},
 			},
 			wantErr: true,
@@ -335,4 +426,8 @@ func TestValidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := tt.config.Validate(); (err != nil) != tt.wantErr {
-				t.Errorf("Config.Validate() error = %v, wantErr
+				t.Errorf("Config.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

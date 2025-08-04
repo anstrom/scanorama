@@ -326,7 +326,7 @@ func Load(path string) (*Config, error) {
 
 	// Check if file exists
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return config, nil // Return defaults with env vars if no config file
+		return nil, fmt.Errorf("config file not found: %w", err)
 	}
 
 	// Read file

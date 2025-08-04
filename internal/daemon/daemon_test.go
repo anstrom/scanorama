@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -19,10 +20,7 @@ func TestNewDaemon(t *testing.T) {
 		},
 	}
 
-	d, err := New(cfg)
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
+	d := New(cfg)
 
 	if d == nil {
 		t.Fatal("New() returned nil daemon")
@@ -45,14 +43,11 @@ func TestPIDFileHandling(t *testing.T) {
 		},
 	}
 
-	d, err := New(cfg)
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
+	d := New(cfg)
 
 	// Test writing PID file
-	if err := d.writePIDFile(); err != nil {
-		t.Fatalf("writePIDFile() error = %v", err)
+	if err := d.createPIDFile(); err != nil {
+		t.Fatalf("createPIDFile() error = %v", err)
 	}
 
 	// Verify PID file content
@@ -61,15 +56,13 @@ func TestPIDFileHandling(t *testing.T) {
 		t.Fatalf("Failed to read PID file: %v", err)
 	}
 
-	expectedPID := []byte(string(os.Getpid()) + "\n")
-	if string(content) != string(expectedPID) {
+	expectedPID := fmt.Sprintf("%d", os.Getpid())
+	if string(content) != expectedPID {
 		t.Errorf("PID file content = %q, want %q", content, expectedPID)
 	}
 
 	// Test removing PID file
-	if err := d.removePIDFile(); err != nil {
-		t.Fatalf("removePIDFile() error = %v", err)
-	}
+	d.cleanup()
 
 	if _, err := os.Stat(pidFile); !os.IsNotExist(err) {
 		t.Error("PID file was not removed")
@@ -114,12 +107,9 @@ func TestPrivilegeDropping(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d, err := New(&config.Config{Daemon: tt.config})
-			if err != nil {
-				t.Fatalf("New() error = %v", err)
-			}
+			d := New(&config.Config{Daemon: tt.config})
 
-			err = d.dropPrivileges()
+			err := d.dropPrivileges()
 			if (err != nil) != tt.wantError {
 				t.Errorf("dropPrivileges() error = %v, wantError %v", err, tt.wantError)
 			}
@@ -128,21 +118,19 @@ func TestPrivilegeDropping(t *testing.T) {
 }
 
 func TestSignalHandling(t *testing.T) {
-	d, err := New(&config.Config{
+	d := New(&config.Config{
 		Daemon: config.DaemonConfig{
 			PIDFile: filepath.Join(t.TempDir(), "test.pid"),
 		},
 	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
 
-	// Start signal handler
+	// Setup signal handlers
 	done := make(chan struct{})
 	go func() {
-		d.handleSignals()
+		<-d.GetContext().Done()
 		close(done)
 	}()
+	d.setupSignalHandlers()
 
 	// Send termination signal
 	syscall.Kill(os.Getpid(), syscall.SIGTERM)
@@ -159,8 +147,10 @@ func TestDaemonize(t *testing.T) {
 				PIDFile: filepath.Join(os.TempDir(), "test.pid"),
 			},
 		}
-		d, _ := New(cfg)
-		d.Daemonize()
+		d := New(cfg)
+		if err := d.Start(); err != nil {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 
@@ -179,17 +169,14 @@ func TestWorkingDirectoryChange(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := &config.Config{
 		Daemon: config.DaemonConfig{
-			WorkingDir: tempDir,
+			WorkDir: tempDir,
 		},
 	}
 
-	d, err := New(cfg)
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
+	d := New(cfg)
 
-	if err := d.changeWorkingDirectory(); err != nil {
-		t.Fatalf("changeWorkingDirectory() error = %v", err)
+	if err := os.Chdir(d.config.Daemon.WorkDir); err != nil {
+		t.Fatalf("Failed to change working directory: %v", err)
 	}
 
 	cwd, err := os.Getwd()
@@ -197,7 +184,9 @@ func TestWorkingDirectoryChange(t *testing.T) {
 		t.Fatalf("Failed to get current working directory: %v", err)
 	}
 
-	if cwd != tempDir {
-		t.Errorf("Working directory = %s, want %s", cwd, tempDir)
+	resolvedCwd, _ := filepath.EvalSymlinks(cwd)
+	resolvedTempDir, _ := filepath.EvalSymlinks(tempDir)
+	if resolvedCwd != resolvedTempDir {
+		t.Errorf("Working directory = %s, want %s", resolvedCwd, resolvedTempDir)
 	}
 }

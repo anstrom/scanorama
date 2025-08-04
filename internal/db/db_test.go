@@ -2,70 +2,245 @@ package db
 
 import (
 	"context"
-	"database/sql"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/anstrom/scanorama/internal/config"
+	"github.com/google/uuid"
+	_ "github.com/lib/pq"
+	"gopkg.in/yaml.v3"
 )
 
-func setupTestDB(t *testing.T) (*Database, func()) {
-	cfg := &config.DatabaseConfig{
-		Host:     "localhost",
-		Port:     5432,
-		Name:     "test_scanorama",
-		User:     "postgres",
-		Password: "postgres",
+// test tables in order of dependency (children first, parents last)
+var testTables = []string{
+	"port_scans",
+	"scan_jobs",
+	"hosts",
+	"scan_targets",
+}
+
+// getTestConfig returns database configuration for tests
+// It tries to read from the test configuration file first,
+// then environment variables, then falls back to defaults
+func getTestConfig() Config {
+	// Try to load from config file
+	config, err := loadDBConfigFromFile("test")
+	if err == nil {
+		return config
 	}
 
-	db, err := New(cfg)
+	// Fall back to environment variables and defaults
+	return Config{
+		Host:            getEnvOrDefault("TEST_DB_HOST", "localhost"),
+		Port:            getEnvIntOrDefault("TEST_DB_PORT", 5432),
+		Database:        getEnvOrDefault("TEST_DB_NAME", "scanorama_test"),
+		Username:        getEnvOrDefault("TEST_DB_USER", "test_user"),
+		Password:        getEnvOrDefault("TEST_DB_PASSWORD", "test_password"),
+		SSLMode:         "disable",
+		MaxOpenConns:    2,
+		MaxIdleConns:    2,
+		ConnMaxLifetime: time.Minute,
+		ConnMaxIdleTime: time.Minute,
+	}
+}
+
+// loadDBConfigFromFile loads database configuration from the test fixtures
+func loadDBConfigFromFile(env string) (Config, error) {
+	// Find project root by looking for test directory
+	wd, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("Failed to create test database: %v", err)
+		return Config{}, err
+	}
+
+	// Look for database.yml in several possible locations
+	possiblePaths := []string{
+		filepath.Join(wd, "..", "..", "test", "fixtures", "database.yml"),
+		filepath.Join(wd, "..", "test", "fixtures", "database.yml"),
+		filepath.Join(wd, "test", "fixtures", "database.yml"),
+	}
+
+	var configFile string
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			configFile = path
+			break
+		}
+	}
+
+	if configFile == "" {
+		return Config{}, fmt.Errorf("database.yml not found")
+	}
+
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		return Config{}, err
+	}
+
+	var configs map[string]Config
+	if err := yaml.Unmarshal(data, &configs); err != nil {
+		return Config{}, err
+	}
+
+	config, ok := configs[env]
+	if !ok {
+		return Config{}, fmt.Errorf("environment %s not found in database.yml", env)
+	}
+
+	return config, nil
+}
+
+// getEnvOrDefault gets a string from environment or returns the default
+func getEnvOrDefault(key, defaultValue string) string {
+	if val, ok := os.LookupEnv(key); ok && val != "" {
+		return val
+	}
+	return defaultValue
+}
+
+// getEnvIntOrDefault gets an int from environment or returns the default
+func getEnvIntOrDefault(key string, defaultValue int) int {
+	if val, ok := os.LookupEnv(key); ok && val != "" {
+		var i int
+		if _, err := fmt.Sscanf(val, "%d", &i); err == nil {
+			return i
+		}
+	}
+	return defaultValue
+}
+
+// waitForDB waits for the database to become available with timeout
+func waitForDB(ctx context.Context, config Config) error {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	for {
+		select {
+		case <-timeoutCtx.Done():
+			return fmt.Errorf("timeout waiting for database: %w", timeoutCtx.Err())
+		case <-ticker.C:
+			db, err := Connect(timeoutCtx, config)
+			if err == nil {
+				db.Close()
+				return nil
+			} else {
+				// Log the error for debugging
+				fmt.Printf("Database connection attempt failed: %v\n", err)
+			}
+		}
+	}
+}
+
+// cleanupDB truncates all test tables in the correct order
+func cleanupDB(db *DB) error {
+	ctx := context.Background()
+	for _, table := range testTables {
+		_, err := db.ExecContext(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table))
+		if err != nil {
+			return fmt.Errorf("failed to truncate table %s: %w", table, err)
+		}
+	}
+	return nil
+}
+
+// setupTestDB creates a connection to the test database
+// It returns a cleanup function that should be deferred
+func setupTestDB(t *testing.T) (*DB, func()) {
+	if testing.Short() {
+		t.Skip("Skipping database tests in short mode")
+	}
+
+	config := getTestConfig()
+	ctx := context.Background()
+
+	// Try to connect to the database
+	// Try to connect quickly to avoid long test times when database is not available
+	if err := waitForDB(ctx, config); err != nil {
+		t.Skipf("Skipping test - database not available: %v", err)
+		return nil, func() {}
+	}
+
+	db, err := Connect(ctx, config)
+	if err != nil {
+		t.Skipf("Skipping test - failed to connect to database: %v", err)
+		return nil, func() {}
+	}
+
+	// Clean up database before test
+	if err := cleanupDB(db); err != nil {
+		db.Close()
+		t.Fatalf("Failed to clean up database: %v", err)
 	}
 
 	return db, func() {
+		// Clean up database after test
+		if err := cleanupDB(db); err != nil {
+			t.Errorf("Failed to clean up database after test: %v", err)
+		}
 		if err := db.Close(); err != nil {
 			t.Errorf("Failed to close database: %v", err)
 		}
 	}
 }
 
-func TestNew(t *testing.T) {
+// Connect test cases
+func TestConnect(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  *config.DatabaseConfig
+		config  Config
 		wantErr bool
 	}{
 		{
 			name: "valid config",
-			config: &config.DatabaseConfig{
-				Host:     "localhost",
-				Port:     5432,
-				Name:     "test_db",
-				User:     "postgres",
-				Password: "postgres",
+			config: Config{
+				Host:            "localhost",
+				Port:            5432,
+				Database:        "scanorama_test",
+				Username:        "test_user",
+				Password:        "test_password",
+				SSLMode:         "disable",
+				MaxOpenConns:    1,
+				MaxIdleConns:    1,
+				ConnMaxLifetime: time.Minute,
+				ConnMaxIdleTime: time.Minute,
 			},
 			wantErr: false,
 		},
 		{
 			name: "invalid port",
-			config: &config.DatabaseConfig{
-				Host:     "localhost",
-				Port:     0,
-				Name:     "test_db",
-				User:     "postgres",
-				Password: "postgres",
+			config: Config{
+				Host:            "localhost",
+				Port:            0,
+				Database:        "test_db",
+				Username:        "test_user",
+				Password:        "test_password",
+				SSLMode:         "disable",
+				MaxOpenConns:    1,
+				MaxIdleConns:    1,
+				ConnMaxLifetime: time.Minute,
+				ConnMaxIdleTime: time.Minute,
 			},
 			wantErr: true,
 		},
 		{
 			name: "empty host",
-			config: &config.DatabaseConfig{
-				Host:     "",
-				Port:     5432,
-				Name:     "test_db",
-				User:     "postgres",
-				Password: "postgres",
+			config: Config{
+				Host:            "",
+				Port:            5432,
+				Database:        "test_db",
+				Username:        "test_user",
+				Password:        "test_password",
+				SSLMode:         "disable",
+				MaxOpenConns:    1,
+				MaxIdleConns:    1,
+				ConnMaxLifetime: time.Minute,
+				ConnMaxIdleTime: time.Minute,
 			},
 			wantErr: true,
 		},
@@ -73,12 +248,33 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db, err := New(tt.config)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
+			if testing.Short() && !tt.wantErr {
+				t.Skip("Skipping database connection test in short mode")
+			}
+
+			ctx := context.Background()
+			db, err := Connect(ctx, tt.config)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("Connect() expected error but got nil")
+				}
 				return
 			}
-			if err == nil {
+
+			// If we expect success but couldn't connect, skip rather than fail
+			// (but only for connection refused errors)
+			if err != nil {
+				if strings.Contains(err.Error(), "connection refused") ||
+					strings.Contains(err.Error(), "connect: network is unreachable") {
+					t.Skipf("Skipping test - database not available: %v", err)
+				} else {
+					t.Errorf("Connect() unexpected error: %v", err)
+				}
+				return
+			}
+
+			if db != nil {
 				if err := db.Close(); err != nil {
 					t.Errorf("Failed to close database: %v", err)
 				}
@@ -87,98 +283,126 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestConnect(t *testing.T) {
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := db.Connect(ctx); err != nil {
-		t.Errorf("Connect() error = %v", err)
-	}
-}
-
 func TestPing(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
+	if db == nil {
+		return // Test was skipped
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	if err := db.Connect(ctx); err != nil {
-		t.Fatalf("Failed to connect to database: %v", err)
-	}
 
 	if err := db.Ping(ctx); err != nil {
 		t.Errorf("Ping() error = %v", err)
 	}
 }
 
-func TestTransaction(t *testing.T) {
+func TestRepositories(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := db.Connect(ctx); err != nil {
-		t.Fatalf("Failed to connect to database: %v", err)
+	if db == nil {
+		return // Test was skipped
 	}
 
-	tests := []struct {
-		name    string
-		txFunc  func(*sql.Tx) error
-		wantErr bool
-	}{
-		{
-			name: "successful transaction",
-			txFunc: func(tx *sql.Tx) error {
-				_, err := tx.Exec("CREATE TEMPORARY TABLE test (id SERIAL PRIMARY KEY)")
-				return err
-			},
-			wantErr: false,
-		},
-		{
-			name: "failed transaction",
-			txFunc: func(tx *sql.Tx) error {
-				_, err := tx.Exec("INVALID SQL")
-				return err
-			},
-			wantErr: true,
-		},
-		{
-			name: "panic in transaction",
-			txFunc: func(tx *sql.Tx) error {
-				panic("test panic")
-			},
-			wantErr: true,
-		},
-	}
+	t.Run("ScanTargetRepository", func(t *testing.T) {
+		repo := NewScanTargetRepository(db)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := db.Transaction(ctx, tt.txFunc)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Transaction() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
+		// Create a new scan target
+		description := "Test description"
+		network := NetworkAddr{}
+		_, ipnet, _ := net.ParseCIDR("192.168.1.0/24")
+		network.IPNet = *ipnet
+
+		target := &ScanTarget{
+			ID:                  uuid.New(),
+			Name:                "Test Target",
+			Network:             network,
+			Description:         &description,
+			ScanIntervalSeconds: 3600,
+			ScanPorts:           "22,80,443",
+			ScanType:            "connect",
+			Enabled:             true,
+		}
+
+		ctx := context.Background()
+		err := repo.Create(ctx, target)
+		if err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+
+		// Get by ID
+		retrieved, err := repo.GetByID(ctx, target.ID)
+		if err != nil {
+			t.Fatalf("GetByID() error = %v", err)
+		}
+
+		if retrieved.ID != target.ID {
+			t.Errorf("GetByID() got ID = %v, want %v", retrieved.ID, target.ID)
+		}
+
+		if retrieved.Name != target.Name {
+			t.Errorf("GetByID() got Name = %v, want %v", retrieved.Name, target.Name)
+		}
+
+		// Update the target
+		target.Name = "Updated Target"
+		err = repo.Update(ctx, target)
+		if err != nil {
+			t.Fatalf("Update() error = %v", err)
+		}
+
+		// Verify the update
+		updated, err := repo.GetByID(ctx, target.ID)
+		if err != nil {
+			t.Fatalf("GetByID() after update error = %v", err)
+		}
+
+		if updated.Name != "Updated Target" {
+			t.Errorf("Update() failed, got Name = %v, want %v", updated.Name, "Updated Target")
+		}
+
+		// Get all targets
+		allTargets, err := repo.GetAll(ctx)
+		if err != nil {
+			t.Fatalf("GetAll() error = %v", err)
+		}
+
+		if len(allTargets) != 1 {
+			t.Errorf("GetAll() got %v targets, want 1", len(allTargets))
+		}
+
+		// Delete the target
+		err = repo.Delete(ctx, target.ID)
+		if err != nil {
+			t.Fatalf("Delete() error = %v", err)
+		}
+
+		// Verify it was deleted
+		allTargets, err = repo.GetAll(ctx)
+		if err != nil {
+			t.Fatalf("GetAll() after delete error = %v", err)
+		}
+
+		if len(allTargets) != 0 {
+			t.Errorf("Delete() failed, got %v targets, want 0", len(allTargets))
+		}
+	})
 }
 
 func TestQueryRow(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := db.Connect(ctx); err != nil {
-		t.Fatalf("Failed to connect to database: %v", err)
+	if db == nil {
+		return // Test was skipped
 	}
 
+	ctx := context.Background()
 	var result int
-	err := db.QueryRow(ctx, "SELECT 1").Scan(&result)
+	err := db.QueryRowContext(ctx, "SELECT 1").Scan(&result)
 	if err != nil {
 		t.Errorf("QueryRow() error = %v", err)
 	}
@@ -192,14 +416,11 @@ func TestQuery(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := db.Connect(ctx); err != nil {
-		t.Fatalf("Failed to connect to database: %v", err)
+	if db == nil {
+		return // Test was skipped
 	}
 
-	rows, err := db.Query(ctx, "SELECT generate_series(1, 3)")
+	rows, err := db.QueryContext(context.Background(), "SELECT generate_series(1, 3)")
 	if err != nil {
 		t.Errorf("Query() error = %v", err)
 		return
@@ -231,16 +452,13 @@ func TestExec(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := db.Connect(ctx); err != nil {
-		t.Fatalf("Failed to connect to database: %v", err)
+	if db == nil {
+		return // Test was skipped
 	}
 
-	result, err := db.Exec(ctx, "CREATE TEMPORARY TABLE test (id SERIAL PRIMARY KEY)")
+	result, err := db.ExecContext(context.Background(), "CREATE TEMPORARY TABLE test (id SERIAL PRIMARY KEY)")
 	if err != nil {
-		t.Errorf("Exec() error = %v", err)
+		t.Errorf("ExecContext() error = %v", err)
 		return
 	}
 
@@ -252,4 +470,81 @@ func TestExec(t *testing.T) {
 	if affected != 0 {
 		t.Errorf("RowsAffected() = %v, want %v", affected, 0)
 	}
+}
+
+func TestTransaction(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	if db == nil {
+		return // Test was skipped
+	}
+
+	ctx := context.Background()
+
+	// Create a temporary table
+	_, err := db.ExecContext(ctx, "CREATE TEMPORARY TABLE test_tx (id SERIAL PRIMARY KEY, value TEXT)")
+	if err != nil {
+		t.Fatalf("Failed to create temp table: %v", err)
+	}
+
+	t.Run("Commit", func(t *testing.T) {
+		tx, err := db.BeginTx(ctx)
+		if err != nil {
+			t.Fatalf("BeginTx() error = %v", err)
+		}
+
+		// Insert in transaction
+		_, err = tx.ExecContext(ctx, "INSERT INTO test_tx (value) VALUES ($1)", "test-commit")
+		if err != nil {
+			tx.Rollback()
+			t.Fatalf("Exec in tx error = %v", err)
+		}
+
+		// Commit the transaction
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("Commit() error = %v", err)
+		}
+
+		// Verify the insert was committed
+		var count int
+		err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM test_tx WHERE value = $1", "test-commit").Scan(&count)
+		if err != nil {
+			t.Fatalf("QueryRow after commit error = %v", err)
+		}
+
+		if count != 1 {
+			t.Errorf("After commit count = %v, want 1", count)
+		}
+	})
+
+	t.Run("Rollback", func(t *testing.T) {
+		tx, err := db.BeginTx(ctx)
+		if err != nil {
+			t.Fatalf("BeginTx() error = %v", err)
+		}
+
+		// Insert in transaction
+		_, err = tx.ExecContext(ctx, "INSERT INTO test_tx (value) VALUES ($1)", "test-rollback")
+		if err != nil {
+			tx.Rollback()
+			t.Fatalf("Exec in tx error = %v", err)
+		}
+
+		// Rollback the transaction
+		if err := tx.Rollback(); err != nil {
+			t.Fatalf("Rollback() error = %v", err)
+		}
+
+		// Verify the insert was rolled back
+		var count int
+		err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM test_tx WHERE value = $1", "test-rollback").Scan(&count)
+		if err != nil {
+			t.Fatalf("QueryRow after rollback error = %v", err)
+		}
+
+		if count != 0 {
+			t.Errorf("After rollback count = %v, want 0", count)
+		}
+	})
 }
