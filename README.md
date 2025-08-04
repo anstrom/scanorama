@@ -109,19 +109,27 @@ sudo ./scanorama -targets example.com -type script -aggressive
 ## Project Structure
 
 
-```/dev/null/structure.txt#L1-14
+```/dev/null/structure.txt#L1-20
 scanorama/
 ├── cmd/
 │   └── scanorama/
-│       └── main.go       # Entry point
+│       └── main.go        # Entry point
 ├── internal/
-│   ├── scan.go          # Core scanning logic
-│   ├── scan_test.go     # Scan tests
-│   ├── xml.go           # XML handling
-│   └── xml_test.go      # XML tests
-├── go.mod               # Go module file
-├── Makefile            # Build automation
-└── README.md           # This file
+│   ├── config/            # Configuration handling
+│   ├── daemon/            # Background service logic
+│   ├── db/                # Database interactions
+│   ├── scan.go            # Core scanning logic
+│   ├── scan_test.go       # Scan tests
+│   ├── xml.go             # XML handling
+│   └── xml_test.go        # XML tests
+├── test/
+│   ├── docker/            # Docker test environment
+│   ├── fixtures/          # Test fixtures
+│   └── helpers/           # Test helper utilities
+├── scripts/               # Utility scripts
+├── go.mod                 # Go module file
+├── Makefile               # Build automation
+└── README.md              # This file
 ```
 
 
@@ -137,6 +145,7 @@ make clean           # Remove build artifacts
 make test            # Run tests
 make coverage        # Generate test coverage report
 make lint            # Run linters
+make lint-fix        # Fix formatting and common issues
 make deps            # Download dependencies
 make install         # Install binary to GOPATH
 ```
@@ -149,18 +158,48 @@ The binary will be built in the `build/` directory by default.
 The project includes test suites for scanning and XML handling. Tests are organized alongside their implementation
 files in the `internal/` directory.
 
-Test files:
-- `scan_test.go`: Tests for core scanning functionality
-- `xml_test.go`: Tests for XML output handling
+#### Test Organization
+
+- **Unit Tests**: Located in `*_test.go` files alongside their implementation files
+- **Test Fixtures**: Located in `test/fixtures/` directory 
+- **Docker Test Environment**: Located in `test/docker/` for integration testing
+- **Test Helpers**: Reusable test utilities in `test/helpers/`
+
+#### Docker Test Environment
+
+The project uses Docker to provide a consistent test environment with the following services:
+- PostgreSQL database
+- Nginx web server
+- SSH server
+- Redis instance
+- Flask application
+
+To manage the test environment:
+
+```/dev/null/test-env.sh#L1-5
+# Start the test environment
+make test-up
+
+# Stop the test environment
+make test-down
+```
+
+#### Running Tests
 
 To run specific test suites:
 
-```/dev/null/test.sh#L1-5
+```/dev/null/test.sh#L1-12
+# Run all tests
+make test
+
 # Run scan tests only
 go test ./internal -run "Scan"
 
 # Run XML tests only
 go test ./internal -run "XML"
+
+# Generate test coverage report
+make coverage
 ```
 
 
