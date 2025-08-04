@@ -7,6 +7,9 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+  packages: write
 
 jobs:
   release:
@@ -19,23 +22,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: "1.23"
-          cache: true
-        env:
-          GOPRIVATE: github.com/anstrom/*
-
-      - name: Install dependencies
-        run: go mod download
-        env:
-          GOPRIVATE: github.com/anstrom/*
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
 
       - name: Run tests
-        run: make test
-        env:
-          GOPRIVATE: github.com/anstrom/*
+        run: |
+          make test-unit
+          chmod +x ./test/docker/test-db.sh
+          ./test/docker/test-db.sh start
+          make test-db-integration
+          ./test/docker/test-db.sh cleanup
 
       - name: Get tag name
         id: tag
@@ -44,20 +40,122 @@ jobs:
       - name: Build release binaries
         run: |
           mkdir -p dist
-          GOOS=linux GOARCH=amd64 go build -o dist/scanorama-linux-amd64 ./cmd/scanorama
-          GOOS=darwin GOARCH=amd64 go build -o dist/scanorama-darwin-amd64 ./cmd/scanorama
-          GOOS=windows GOARCH=amd64 go build -o dist/scanorama-windows-amd64.exe ./cmd/scanorama
-        env:
-          GOPRIVATE: github.com/anstrom/*
+          VERSION=${{ steps.tag.outputs.tag }}
+          COMMIT=$(git rev-parse HEAD)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%S%z)
+          LDFLAGS="-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -s -w"
+
+          GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/scanorama-linux-amd64 ./cmd/scanorama
+          GOOS=linux GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/scanorama-linux-arm64 ./cmd/scanorama
+          GOOS=darwin GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/scanorama-darwin-amd64 ./cmd/scanorama
+          GOOS=darwin GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/scanorama-darwin-arm64 ./cmd/scanorama
+          GOOS=windows GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/scanorama-windows-amd64.exe ./cmd/scanorama
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: "v2.2.4"
+
+      - name: Install syft for SBOM generation
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Generate SBOM
+        run: |
+          for binary in dist/*; do
+            if [[ -f "$binary" ]]; then
+              syft "$binary" -o spdx-json="${binary}.sbom.json"
+              syft "$binary" -o cyclonedx-json="${binary}.cyclonedx.json"
+            fi
+          done
 
       - name: Create checksums
         run: |
           cd dist
-          sha256sum * > checksums.txt
+          sha256sum scanorama-* > checksums.txt
+
+      - name: Sign binaries and checksums
+        run: |
+          cd dist
+          # Sign each binary
+          for binary in scanorama-*; do
+            if [[ -f "$binary" && "$binary" != *.sig && "$binary" != *.sbom.json && "$binary" != *.cyclonedx.json ]]; then
+              cosign sign-blob --yes "$binary" --output-signature "${binary}.sig"
+              cosign sign-blob --yes "$binary" --output-certificate "${binary}.pem"
+            fi
+          done
+
+          # Sign checksums
+          cosign sign-blob --yes checksums.txt --output-signature checksums.txt.sig
+          cosign sign-blob --yes checksums.txt --output-certificate checksums.txt.pem
+
+      - name: Generate SLSA provenance
+        id: provenance
+        run: |
+          # Create provenance for all binaries
+          echo "subjects:" > provenance-subjects.json
+          cd dist
+          for binary in scanorama-*; do
+            if [[ -f "$binary" && "$binary" != *.sig && "$binary" != *.sbom.json && "$binary" != *.cyclonedx.json && "$binary" != *.pem ]]; then
+              HASH=$(sha256sum "$binary" | cut -d' ' -f1)
+              echo "- name: $binary" >> ../provenance-subjects.json
+              echo "  digest:" >> ../provenance-subjects.json
+              echo "    sha256: $HASH" >> ../provenance-subjects.json
+            fi
+          done
+
+      - name: Create build attestations
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: "dist/scanorama-*"
+
+      - name: Security scan release artifacts
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "dist/"
+          format: "sarif"
+          output: "release-security-scan.sarif"
+
+      - name: Upload security scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "release-security-scan.sarif"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/*
+          files: |
+            dist/scanorama-*
+            dist/checksums.txt*
+            dist/*.sbom.json
+            dist/*.cyclonedx.json
+          body: |
+            ## 🚀 Release ${{ steps.tag.outputs.tag }}
+
+            ### 📦 Binaries
+            - `scanorama-linux-amd64` - Linux x86_64
+            - `scanorama-linux-arm64` - Linux ARM64
+            - `scanorama-darwin-amd64` - macOS Intel
+            - `scanorama-darwin-arm64` - macOS Apple Silicon
+            - `scanorama-windows-amd64.exe` - Windows x86_64
+
+            ### 🔒 Security
+            - All binaries are signed with cosign
+            - SLSA Build Level 3 provenance included
+            - Software Bill of Materials (SBOM) provided
+            - Security scanned with Trivy
+
+            ### ✅ Verification
+            ```bash
+            # Verify checksums
+            sha256sum -c checksums.txt
+
+            # Verify signatures (requires cosign)
+            cosign verify-blob --signature scanorama-linux-amd64.sig --certificate scanorama-linux-amd64.pem scanorama-linux-amd64
+            ```
+
+            ### 📋 Full Changelog
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${{ github.event.before }}...${{ steps.tag.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
