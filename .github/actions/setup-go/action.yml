@@ -1,0 +1,62 @@
+name: 'Setup Go Environment'
+description: 'Set up Go environment with dependencies and tools for Scanorama'
+
+inputs:
+  go-version:
+    description: 'Go version to install'
+    required: false
+    default: '1.23.0'
+  install-system-deps:
+    description: 'Install system dependencies (nmap, postgresql-client)'
+    required: false
+    default: 'true'
+  install-golangci-lint:
+    description: 'Install golangci-lint'
+    required: false
+    default: 'true'
+
+outputs:
+  go-cache-hit:
+    description: 'Whether Go modules cache was hit'
+    value: ${{ steps.go-cache.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: true
+
+    - name: Install system dependencies
+      if: inputs.install-system-deps == 'true'
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y nmap postgresql-client
+
+    - name: Cache Go modules
+      id: go-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ inputs.go-version }}-
+          ${{ runner.os }}-go-
+
+    - name: Download Go dependencies
+      shell: bash
+      run: |
+        go mod download
+        go mod verify
+
+    - name: Install golangci-lint
+      if: inputs.install-golangci-lint == 'true'
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: latest
+        install-mode: binary
