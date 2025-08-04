@@ -94,4 +94,74 @@ run: build ## Build and run the application
 	@echo "Running $(BINARY_NAME)..."
 	@./$(BUILD_DIR)/$(BINARY_NAME)
 
+# Database testing targets
+test-db-start: ## Start test database in Docker
+	@echo "Starting test database..."
+	@./test/docker/test-db.sh start
+
+test-db-stop: ## Stop test database
+	@echo "Stopping test database..."
+	@./test/docker/test-db.sh stop
+
+test-db-status: ## Show test database status
+	@./test/docker/test-db.sh status
+
+test-db-cleanup: ## Clean up all test containers and networks
+	@echo "Cleaning up test environment..."
+	@./test/docker/test-db.sh cleanup
+
+test-unit: ## Run unit tests (no database required)
+	@echo "Running unit tests..."
+	@$(GOTEST) ./... -short -v
+
+test-db-unit: ## Run database unit tests in Docker
+	@echo "Running database unit tests..."
+	@./test/docker/test-db.sh test unit
+
+test-db-integration: ## Run database integration tests in Docker
+	@echo "Running database integration tests..."
+	@./test/docker/test-db.sh test integration
+
+test-db-migration: ## Run database migration tests in Docker
+	@echo "Running database migration tests..."
+	@./test/docker/test-db.sh test migration
+
+test-db-all: ## Run all database tests in Docker
+	@echo "Running all database tests..."
+	@./test/docker/test-db.sh test all
+
+test-db-shell: ## Start interactive shell in test environment
+	@echo "Starting test shell..."
+	@./test/docker/test-db.sh shell
+
+test-db-connect: ## Connect to test database directly
+	@echo "Connecting to test database..."
+	@./test/docker/test-db.sh db
+
+test-full: test-unit test-db-integration ## Run all tests (unit + integration)
+
+# Local development helpers
+validate: ## Validate code formatting and basic checks
+	@echo "Validating code formatting..."
+	@test -z "$$(gofmt -s -l . | tee /dev/stderr)" || (echo "Files not formatted properly" && exit 1)
+	@echo "Running golangci-lint..."
+	@$(MAKE) lint
+
+security: ## Run security checks
+	@echo "Running security checks..."
+	@$(GO) install golang.org/x/vuln/cmd/govulncheck@latest 2>/dev/null || echo "govulncheck install failed"
+	@$(GOBIN)/govulncheck ./... 2>/dev/null || echo "govulncheck not available, skipping vulnerability check"
+
+docker-test: ## Test Docker infrastructure locally
+	@echo "Testing Docker infrastructure..."
+	@docker build -t scanorama-test-local -f test/docker/Dockerfile.testing .
+	@docker run --rm scanorama-test-local go version
+	@docker run --rm scanorama-test-local nmap --version
+	@./test/docker/test-db.sh start
+	@sleep 5
+	@./test/docker/test-db.sh status
+	@./test/docker/test-db.sh cleanup
+
+check: validate lint security test-unit test-db-integration ## Run all checks locally
+
 .DEFAULT_GOAL := help
