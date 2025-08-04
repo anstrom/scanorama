@@ -1,0 +1,400 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [main, develop, feat/*]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run security scans daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.23.0"
+
+jobs:
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['go']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: +security-and-quality
+
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
+        with:
+          install-system-deps: "false"
+
+      - name: Build for CodeQL analysis
+        run: make build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: always
+
+  snyk-security:
+    name: Snyk Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
+        with:
+          install-system-deps: "false"
+
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/golang@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --sarif-file-output=snyk-code.sarif
+
+      - name: Upload Snyk results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: snyk-code.sarif
+
+      - name: Run Snyk to check dependencies
+        uses: snyk/actions/golang@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: --severity-threshold=high --json-file-output=snyk-deps.json
+
+      - name: Upload Snyk dependency results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snyk-dependency-results
+          path: snyk-deps.json
+
+  semgrep:
+    name: Semgrep Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    container:
+      image: returntocorp/semgrep
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: |
+          semgrep \
+            --config=auto \
+            --sarif \
+            --output=semgrep-results.sarif \
+            --error \
+            --strict \
+            .
+
+      - name: Upload Semgrep results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep-results.sarif
+
+  trivy-fs:
+    name: Trivy Filesystem Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner in fs mode
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
+
+  trivy-config:
+    name: Trivy Config Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy config scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-config-results.sarif'
+
+      - name: Upload Trivy config scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-config-results.sarif'
+
+  docker-security:
+    name: Docker Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t scanorama-security-test -f test/docker/Dockerfile.testing .
+
+      - name: Run Trivy vulnerability scanner on Docker image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'scanorama-security-test'
+          format: 'sarif'
+          output: 'docker-trivy-results.sarif'
+
+      - name: Upload Docker scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'docker-trivy-results.sarif'
+
+      - name: Run Docker Scout
+        uses: docker/scout-action@v1
+        if: github.event_name == 'pull_request'
+        with:
+          command: cves
+          image: scanorama-security-test
+          only-severities: critical,high
+          write-comment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  govulncheck:
+    name: Go Vulnerability Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
+        with:
+          install-system-deps: "false"
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: |
+          govulncheck -json ./... > govulncheck-results.json
+
+      - name: Upload govulncheck results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: govulncheck-results
+          path: govulncheck-results.json
+
+  nancy:
+    name: Nancy Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
+        with:
+          install-system-deps: "false"
+
+      - name: Install Nancy
+        run: |
+          curl -L -o nancy https://github.com/sonatypecommunity/nancy/releases/download/v1.0.46/nancy-v1.0.46-linux-amd64
+          chmod +x nancy
+          sudo mv nancy /usr/local/bin/
+
+      - name: Run Nancy
+        run: |
+          go list -json -deps ./... | nancy sleuth --output json > nancy-results.json
+        continue-on-error: true
+
+      - name: Upload Nancy results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nancy-results
+          path: nancy-results.json
+
+  osv-scanner:
+    name: OSV Scanner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run OSV-Scanner
+        uses: google/osv-scanner-action@v1
+        with:
+          scan-args: |-
+            --output=sarif
+            --format=sarif
+            ./
+        continue-on-error: true
+
+  license-compliance:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
+        with:
+          install-system-deps: "false"
+
+      - name: Install go-licenses
+        run: go install github.com/google/go-licenses@latest
+
+      - name: Check licenses
+        run: |
+          go-licenses check ./...
+          go-licenses report ./... > license-report.txt
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: license-report.txt
+
+  secret-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TruffleHog OSS
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: main
+          head: HEAD
+          extra_args: --debug --only-verified
+
+  security-summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs: [codeql, snyk-security, semgrep, trivy-fs, govulncheck, nancy, license-compliance]
+    if: always()
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Download all security artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: security-results
+
+      - name: Generate security summary
+        run: |
+          echo "# 🔒 Security Scan Summary" > security-summary.md
+          echo "## Scan Results" >> security-summary.md
+          echo "- **CodeQL**: ${{ needs.codeql.result }}" >> security-summary.md
+          echo "- **Snyk**: ${{ needs.snyk-security.result }}" >> security-summary.md
+          echo "- **Semgrep**: ${{ needs.semgrep.result }}" >> security-summary.md
+          echo "- **Trivy**: ${{ needs.trivy-fs.result }}" >> security-summary.md
+          echo "- **govulncheck**: ${{ needs.govulncheck.result }}" >> security-summary.md
+          echo "- **Nancy**: ${{ needs.nancy.result }}" >> security-summary.md
+          echo "- **License Check**: ${{ needs.license-compliance.result }}" >> security-summary.md
+          echo "" >> security-summary.md
+          echo "## Artifacts Generated" >> security-summary.md
+          find security-results -name "*.json" -o -name "*.sarif" -o -name "*.txt" | while read file; do
+            echo "- \`$file\`" >> security-summary.md
+          done
+
+          echo "" >> security-summary.md
+          echo "View detailed results in the [Security tab](https://github.com/${{ github.repository }}/security/code-scanning)" >> security-summary.md
+
+      - name: Comment security summary on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('security-summary.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+      - name: Upload security summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-summary
+          path: |
+            security-summary.md
+            security-results/
