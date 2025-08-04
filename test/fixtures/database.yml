@@ -1,0 +1,38 @@
+# Test database configuration
+test:
+  host: localhost
+  port: ${POSTGRES_PORT:-5432}
+  database: scanorama_test
+  username: test_user
+  password: test_password
+  ssl_mode: disable
+  max_open_conns: 5
+  max_idle_conns: 2
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 5m
+
+# CI environment configuration
+ci:
+  host: postgres
+  port: ${POSTGRES_PORT:-5432}
+  database: scanorama_test
+  username: test_user
+  password: test_password
+  ssl_mode: disable
+  max_open_conns: 5
+  max_idle_conns: 2
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 5m
+
+# Development configuration
+development:
+  host: localhost
+  port: ${POSTGRES_PORT:-5432}
+  database: scanorama_dev
+  username: postgres
+  password: postgres
+  ssl_mode: disable
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime: 10m
+  conn_max_idle_time: 5m

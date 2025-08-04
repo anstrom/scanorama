@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Test and Build
+    name: CI Basic Checks
     runs-on: ubuntu-latest
     env:
       GOPRIVATE: github.com/anstrom/*
