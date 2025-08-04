@@ -11,6 +11,19 @@ result.*
 scan_output.*
 scan_results.*
 
+# Test artifacts
+coverage.out
+coverage.out.html
+coverage.html
+tmp/
+test_*.xml
+test_*.json
+test_*.html
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
 # Configuration files with secrets
 .env
 .env.local
@@ -25,6 +38,11 @@ secrets/
 *.key
 *.pem
 *.crt
+
+# Docker test environment
+.docker-compose-test-*
+.env.test
+test/docker/flask/__pycache__/
 
 # IDE and OS
 .idea/
