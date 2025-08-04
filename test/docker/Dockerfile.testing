@@ -1,0 +1,63 @@
+# Test environment Dockerfile for Scanorama
+# Provides Go environment with nmap, postgresql tools, and test dependencies
+
+FROM golang:1.23-bullseye
+
+# Install system dependencies for testing
+RUN apt-get update && apt-get install -y \
+    # Network scanning tools
+    nmap \
+    # Database tools
+    postgresql-client \
+    # Build and development tools
+    build-essential \
+    gcc \
+    git \
+    bash \
+    curl \
+    # Additional network tools for testing
+    netcat-openbsd \
+    iputils-ping \
+    # Text processing tools
+    jq \
+    # SSL/TLS tools
+    openssl \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up Go environment
+ENV GO111MODULE=on
+ENV CGO_ENABLED=1
+ENV CC=gcc
+ENV CXX=g++
+
+# Create app directory
+WORKDIR /app
+
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download && go mod verify
+
+# Test dependencies will be installed via go.mod when running tests
+
+# Copy source code
+COPY . .
+
+# Build the application for testing
+RUN go build -o bin/scanorama ./cmd/scanorama
+
+# Create test data directory
+RUN mkdir -p /tmp/test-data
+
+# Set permissions for test execution
+RUN chmod +x bin/scanorama
+
+# Default command runs all tests
+CMD ["go", "test", "./...", "-v"]
+
+# Health check to verify the environment
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD go version && nmap --version | head -1 && psql --version
