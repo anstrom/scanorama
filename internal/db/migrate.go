@@ -19,7 +19,7 @@ import (
 //go:embed *.sql
 var migrationFiles embed.FS
 
-// Migration represents a database migration
+// Migration represents a database migration.
 type Migration struct {
 	ID        int       `db:"id"`
 	Name      string    `db:"name"`
@@ -27,17 +27,17 @@ type Migration struct {
 	Checksum  string    `db:"checksum"`
 }
 
-// Migrator handles database migrations
+// Migrator handles database migrations.
 type Migrator struct {
 	db *sqlx.DB
 }
 
-// NewMigrator creates a new migrator instance
+// NewMigrator creates a new migrator instance.
 func NewMigrator(db *sqlx.DB) *Migrator {
 	return &Migrator{db: db}
 }
 
-// ensureMigrationsTable creates the migrations tracking table if it doesn't exist
+// ensureMigrationsTable creates the migrations tracking table if it doesn't exist.
 func (m *Migrator) ensureMigrationsTable(ctx context.Context) error {
 	query := `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -55,7 +55,7 @@ func (m *Migrator) ensureMigrationsTable(ctx context.Context) error {
 	return nil
 }
 
-// getAppliedMigrations returns a list of already applied migrations
+// getAppliedMigrations returns a list of already applied migrations.
 func (m *Migrator) getAppliedMigrations(ctx context.Context) (map[string]Migration, error) {
 	var migrations []Migration
 	query := `SELECT id, name, applied_at, checksum FROM schema_migrations ORDER BY id`
@@ -73,7 +73,7 @@ func (m *Migrator) getAppliedMigrations(ctx context.Context) (map[string]Migrati
 	return applied, nil
 }
 
-// getMigrationFiles returns a sorted list of migration files
+// getMigrationFiles returns a sorted list of migration files.
 func (m *Migrator) getMigrationFiles() ([]string, error) {
 	var files []string
 
@@ -92,7 +92,6 @@ func (m *Migrator) getMigrationFiles() ([]string, error) {
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to read migration files: %w", err)
 	}
@@ -101,13 +100,13 @@ func (m *Migrator) getMigrationFiles() ([]string, error) {
 	return files, nil
 }
 
-// calculateChecksum calculates a SHA-256 checksum for migration content
+// calculateChecksum calculates a SHA-256 checksum for migration content.
 func (m *Migrator) calculateChecksum(content string) string {
 	sum := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(sum[:])
 }
 
-// executeMigration executes a single migration file
+// executeMigration executes a single migration file.
 func (m *Migrator) executeMigration(ctx context.Context, filename string) error {
 	content, err := migrationFiles.ReadFile(filename)
 	if err != nil {
@@ -149,7 +148,7 @@ func (m *Migrator) executeMigration(ctx context.Context, filename string) error 
 	return nil
 }
 
-// Up runs all pending migrations
+// Up runs all pending migrations.
 func (m *Migrator) Up(ctx context.Context) error {
 	// Ensure migrations table exists
 	if err := m.ensureMigrationsTable(ctx); err != nil {
@@ -187,7 +186,7 @@ func (m *Migrator) Up(ctx context.Context) error {
 	return nil
 }
 
-// Status shows the current migration status
+// Status shows the current migration status.
 func (m *Migrator) Status(ctx context.Context) error {
 	// Ensure migrations table exists
 	if err := m.ensureMigrationsTable(ctx); err != nil {
@@ -222,7 +221,7 @@ func (m *Migrator) Status(ctx context.Context) error {
 	return nil
 }
 
-// Reset drops all tables and re-runs migrations (USE WITH CAUTION)
+// Reset drops all tables and re-runs migrations (USE WITH CAUTION).
 func (m *Migrator) Reset(ctx context.Context) error {
 	fmt.Println("WARNING: This will drop all tables and data!")
 	fmt.Println("This operation cannot be undone.")
@@ -265,8 +264,8 @@ func (m *Migrator) Reset(ctx context.Context) error {
 	return m.Up(ctx)
 }
 
-// ConnectAndMigrate is a convenience function to connect to database and run migrations
-func ConnectAndMigrate(ctx context.Context, config Config) (*DB, error) {
+// ConnectAndMigrate is a convenience function to connect to database and run migrations.
+func ConnectAndMigrate(ctx context.Context, config *Config) (*DB, error) {
 	// Connect to database
 	db, err := Connect(ctx, config)
 	if err != nil {
@@ -276,7 +275,7 @@ func ConnectAndMigrate(ctx context.Context, config Config) (*DB, error) {
 	// Run migrations
 	migrator := NewMigrator(db.DB)
 	if err := migrator.Up(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("migration failed: %w", err)
 	}
 

@@ -1,22 +1,35 @@
+// Package db provides database connectivity and data models for scanorama.
+// It handles database migrations, host management, scan results storage,
+// and provides the core data access layer for the application.
 package db
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq" // PostgreSQL driver
+	_ "github.com/lib/pq" // postgres driver
 )
 
-// DB wraps sqlx.DB with additional functionality
+const (
+	// Default database configuration values.
+	defaultPostgresPort    = 5432
+	defaultMaxOpenConns    = 25
+	defaultMaxIdleConns    = 5
+	defaultConnMaxLifetime = 5
+	defaultConnMaxIdleTime = 5
+)
+
+// DB wraps sqlx.DB with additional functionality.
 type DB struct {
 	*sqlx.DB
 }
 
-// Config holds database configuration
+// Config holds database configuration.
 type Config struct {
 	Host            string        `yaml:"host" json:"host"`
 	Port            int           `yaml:"port" json:"port"`
@@ -30,25 +43,25 @@ type Config struct {
 	ConnMaxIdleTime time.Duration `yaml:"conn_max_idle_time" json:"conn_max_idle_time"`
 }
 
-// DefaultConfig returns default database configuration with technical defaults
-// Database name, username, and password must be explicitly configured
+// DefaultConfig returns the default database configuration.
+// Database name, username, and password must be explicitly configured.
 func DefaultConfig() Config {
 	return Config{
 		Host:            "localhost",
-		Port:            5432,
+		Port:            defaultPostgresPort,
 		Database:        "", // Must be configured
 		Username:        "", // Must be configured
 		Password:        "", // Must be configured
 		SSLMode:         "prefer",
-		MaxOpenConns:    25,
-		MaxIdleConns:    5,
-		ConnMaxLifetime: 5 * time.Minute,
-		ConnMaxIdleTime: 5 * time.Minute,
+		MaxOpenConns:    defaultMaxOpenConns,
+		MaxIdleConns:    defaultMaxIdleConns,
+		ConnMaxLifetime: defaultConnMaxLifetime * time.Minute,
+		ConnMaxIdleTime: defaultConnMaxIdleTime * time.Minute,
 	}
 }
 
-// Connect establishes a connection to PostgreSQL
-func Connect(ctx context.Context, config Config) (*DB, error) {
+// Connect establishes a connection to PostgreSQL.
+func Connect(ctx context.Context, config *Config) (*DB, error) {
 	dsn := fmt.Sprintf(
 		"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
 		config.Host, config.Port, config.Database,
@@ -74,27 +87,27 @@ func Connect(ctx context.Context, config Config) (*DB, error) {
 	return &DB{DB: db}, nil
 }
 
-// Repository provides database operations
+// Repository provides database operations.
 type Repository struct {
 	db *DB
 }
 
-// NewRepository creates a new repository instance
+// NewRepository creates a new repository instance.
 func NewRepository(db *DB) *Repository {
 	return &Repository{db: db}
 }
 
-// ScanTargetRepository handles scan target operations
+// ScanTargetRepository handles scan target operations.
 type ScanTargetRepository struct {
 	db *DB
 }
 
-// NewScanTargetRepository creates a new scan target repository
+// NewScanTargetRepository creates a new scan target repository.
 func NewScanTargetRepository(db *DB) *ScanTargetRepository {
 	return &ScanTargetRepository{db: db}
 }
 
-// Create creates a new scan target
+// Create creates a new scan target.
 func (r *ScanTargetRepository) Create(ctx context.Context, target *ScanTarget) error {
 	query := `
 		INSERT INTO scan_targets (id, name, network, description, scan_interval_seconds, scan_ports, scan_type, enabled)
@@ -109,7 +122,11 @@ func (r *ScanTargetRepository) Create(ctx context.Context, target *ScanTarget) e
 	if err != nil {
 		return fmt.Errorf("failed to create scan target: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Failed to close rows: %v", err)
+		}
+	}()
 
 	if rows.Next() {
 		if err := rows.Scan(&target.CreatedAt, &target.UpdatedAt); err != nil {
@@ -120,7 +137,7 @@ func (r *ScanTargetRepository) Create(ctx context.Context, target *ScanTarget) e
 	return nil
 }
 
-// GetByID retrieves a scan target by ID
+// GetByID retrieves a scan target by ID.
 func (r *ScanTargetRepository) GetByID(ctx context.Context, id uuid.UUID) (*ScanTarget, error) {
 	var target ScanTarget
 	query := `SELECT * FROM scan_targets WHERE id = $1`
@@ -135,7 +152,7 @@ func (r *ScanTargetRepository) GetByID(ctx context.Context, id uuid.UUID) (*Scan
 	return &target, nil
 }
 
-// GetAll retrieves all scan targets
+// GetAll retrieves all scan targets.
 func (r *ScanTargetRepository) GetAll(ctx context.Context) ([]*ScanTarget, error) {
 	var targets []*ScanTarget
 	query := `SELECT * FROM scan_targets ORDER BY name`
@@ -147,7 +164,7 @@ func (r *ScanTargetRepository) GetAll(ctx context.Context) ([]*ScanTarget, error
 	return targets, nil
 }
 
-// GetEnabled retrieves all enabled scan targets
+// GetEnabled retrieves all enabled scan targets.
 func (r *ScanTargetRepository) GetEnabled(ctx context.Context) ([]*ScanTarget, error) {
 	var targets []*ScanTarget
 	query := `SELECT * FROM scan_targets WHERE enabled = true ORDER BY name`
@@ -159,7 +176,7 @@ func (r *ScanTargetRepository) GetEnabled(ctx context.Context) ([]*ScanTarget, e
 	return targets, nil
 }
 
-// Update updates a scan target
+// Update updates a scan target.
 func (r *ScanTargetRepository) Update(ctx context.Context, target *ScanTarget) error {
 	query := `
 		UPDATE scan_targets
@@ -173,7 +190,11 @@ func (r *ScanTargetRepository) Update(ctx context.Context, target *ScanTarget) e
 	if err != nil {
 		return fmt.Errorf("failed to update scan target: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Failed to close rows: %v", err)
+		}
+	}()
 
 	if rows.Next() {
 		if err := rows.Scan(&target.UpdatedAt); err != nil {
@@ -184,7 +205,7 @@ func (r *ScanTargetRepository) Update(ctx context.Context, target *ScanTarget) e
 	return nil
 }
 
-// Delete deletes a scan target
+// Delete deletes a scan target.
 func (r *ScanTargetRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	query := `DELETE FROM scan_targets WHERE id = $1`
 
@@ -205,17 +226,17 @@ func (r *ScanTargetRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// ScanJobRepository handles scan job operations
+// ScanJobRepository handles scan job operations.
 type ScanJobRepository struct {
 	db *DB
 }
 
-// NewScanJobRepository creates a new scan job repository
+// NewScanJobRepository creates a new scan job repository.
 func NewScanJobRepository(db *DB) *ScanJobRepository {
 	return &ScanJobRepository{db: db}
 }
 
-// Create creates a new scan job
+// Create creates a new scan job.
 func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 	query := `
 		INSERT INTO scan_jobs (id, target_id, status)
@@ -230,7 +251,11 @@ func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 	if err != nil {
 		return fmt.Errorf("failed to create scan job: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Failed to close rows: %v", err)
+		}
+	}()
 
 	if rows.Next() {
 		if err := rows.Scan(&job.CreatedAt); err != nil {
@@ -241,7 +266,7 @@ func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 	return nil
 }
 
-// UpdateStatus updates a scan job status
+// UpdateStatus updates a scan job status.
 func (r *ScanJobRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status string, errorMsg *string) error {
 	var query string
 	var args []interface{}
@@ -273,7 +298,7 @@ func (r *ScanJobRepository) UpdateStatus(ctx context.Context, id uuid.UUID, stat
 	return nil
 }
 
-// GetByID retrieves a scan job by ID
+// GetByID retrieves a scan job by ID.
 func (r *ScanJobRepository) GetByID(ctx context.Context, id uuid.UUID) (*ScanJob, error) {
 	var job ScanJob
 	query := `SELECT * FROM scan_jobs WHERE id = $1`
@@ -288,17 +313,17 @@ func (r *ScanJobRepository) GetByID(ctx context.Context, id uuid.UUID) (*ScanJob
 	return &job, nil
 }
 
-// HostRepository handles host operations
+// HostRepository handles host operations.
 type HostRepository struct {
 	db *DB
 }
 
-// NewHostRepository creates a new host repository
+// NewHostRepository creates a new host repository.
 func NewHostRepository(db *DB) *HostRepository {
 	return &HostRepository{db: db}
 }
 
-// CreateOrUpdate creates a new host or updates existing one
+// CreateOrUpdate creates a new host or updates existing one.
 func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 	query := `
 		INSERT INTO hosts (id, ip_address, hostname, mac_address, vendor, os_family, os_version, status)
@@ -322,7 +347,11 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 	if err != nil {
 		return fmt.Errorf("failed to create or update host: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Failed to close rows: %v", err)
+		}
+	}()
 
 	if rows.Next() {
 		if err := rows.Scan(&host.ID, &host.FirstSeen, &host.LastSeen); err != nil {
@@ -333,7 +362,7 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 	return nil
 }
 
-// GetByIP retrieves a host by IP address
+// GetByIP retrieves a host by IP address.
 func (r *HostRepository) GetByIP(ctx context.Context, ip IPAddr) (*Host, error) {
 	var host Host
 	query := `SELECT * FROM hosts WHERE ip_address = $1`
@@ -348,7 +377,7 @@ func (r *HostRepository) GetByIP(ctx context.Context, ip IPAddr) (*Host, error) 
 	return &host, nil
 }
 
-// GetActiveHosts retrieves all active hosts
+// GetActiveHosts retrieves all active hosts.
 func (r *HostRepository) GetActiveHosts(ctx context.Context) ([]*ActiveHost, error) {
 	var hosts []*ActiveHost
 	query := `SELECT * FROM active_hosts ORDER BY ip_address`
@@ -360,17 +389,17 @@ func (r *HostRepository) GetActiveHosts(ctx context.Context) ([]*ActiveHost, err
 	return hosts, nil
 }
 
-// PortScanRepository handles port scan operations
+// PortScanRepository handles port scan operations.
 type PortScanRepository struct {
 	db *DB
 }
 
-// NewPortScanRepository creates a new port scan repository
+// NewPortScanRepository creates a new port scan repository.
 func NewPortScanRepository(db *DB) *PortScanRepository {
 	return &PortScanRepository{db: db}
 }
 
-// CreateBatch creates multiple port scan results in a transaction
+// CreateBatch creates multiple port scan results in a transaction.
 func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan) error {
 	if len(scans) == 0 {
 		return nil
@@ -383,8 +412,14 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 	defer func() { _ = tx.Rollback() }()
 
 	query := `
-		INSERT INTO port_scans (id, job_id, host_id, port, protocol, state, service_name, service_version, service_product, banner)
-		VALUES (:id, :job_id, :host_id, :port, :protocol, :state, :service_name, :service_version, :service_product, :banner)
+		INSERT INTO port_scans (
+			id, job_id, host_id, port, protocol, state,
+			service_name, service_version, service_product, banner
+		)
+		VALUES (
+			:id, :job_id, :host_id, :port, :protocol, :state,
+			:service_name, :service_version, :service_product, :banner
+		)
 		ON CONFLICT (job_id, host_id, port, protocol)
 		DO UPDATE SET
 			state = EXCLUDED.state,
@@ -412,7 +447,7 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 	return nil
 }
 
-// GetByHost retrieves all port scans for a host
+// GetByHost retrieves all port scans for a host.
 func (r *PortScanRepository) GetByHost(ctx context.Context, hostID uuid.UUID) ([]*PortScan, error) {
 	var scans []*PortScan
 	query := `SELECT * FROM port_scans WHERE host_id = $1 ORDER BY port`
@@ -424,17 +459,17 @@ func (r *PortScanRepository) GetByHost(ctx context.Context, hostID uuid.UUID) ([
 	return scans, nil
 }
 
-// NetworkSummaryRepository handles network summary operations
+// NetworkSummaryRepository handles network summary operations.
 type NetworkSummaryRepository struct {
 	db *DB
 }
 
-// NewNetworkSummaryRepository creates a new network summary repository
+// NewNetworkSummaryRepository creates a new network summary repository.
 func NewNetworkSummaryRepository(db *DB) *NetworkSummaryRepository {
 	return &NetworkSummaryRepository{db: db}
 }
 
-// GetAll retrieves network summary for all targets
+// GetAll retrieves network summary for all targets.
 func (r *NetworkSummaryRepository) GetAll(ctx context.Context) ([]*NetworkSummary, error) {
 	var summaries []*NetworkSummary
 	query := `SELECT * FROM network_summary ORDER BY target_name`
@@ -446,17 +481,17 @@ func (r *NetworkSummaryRepository) GetAll(ctx context.Context) ([]*NetworkSummar
 	return summaries, nil
 }
 
-// Close closes the database connection
+// Close closes the database connection.
 func (db *DB) Close() error {
 	return db.DB.Close()
 }
 
-// Ping tests the database connection
+// Ping tests the database connection.
 func (db *DB) Ping(ctx context.Context) error {
 	return db.PingContext(ctx)
 }
 
-// BeginTx starts a new transaction
+// BeginTx starts a new transaction.
 func (db *DB) BeginTx(ctx context.Context) (*sqlx.Tx, error) {
 	return db.BeginTxx(ctx, nil)
 }
