@@ -1,0 +1,70 @@
+name: "Setup Test Database"
+description: "Sets up PostgreSQL database for testing"
+inputs:
+  postgres-version:
+    description: "PostgreSQL version to use"
+    required: false
+    default: "16-alpine"
+  database-name:
+    description: "Database name"
+    required: false
+    default: "scanorama_test"
+  database-user:
+    description: "Database user"
+    required: false
+    default: "test_user"
+  database-password:
+    description: "Database password"
+    required: false
+    default: "test_password"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install PostgreSQL client
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y postgresql-client
+
+    - name: Wait for PostgreSQL
+      shell: bash
+      run: |
+        echo "Waiting for PostgreSQL to be ready..."
+        for i in {1..60}; do
+          if pg_isready -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }}; then
+            echo "PostgreSQL is ready!"
+            break
+          fi
+          echo "Waiting for PostgreSQL ($i/60)..."
+          sleep 2
+        done
+
+    - name: Setup test user and extensions
+      shell: bash
+      run: |
+        echo "Creating test user and setting up database..."
+        psql -h localhost -p 5432 -U postgres -d postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${{ inputs.database-user }}') THEN CREATE USER ${{ inputs.database-user }} WITH PASSWORD '${{ inputs.database-password }}' CREATEDB SUPERUSER; END IF; END \$\$;"
+        psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "GRANT ALL PRIVILEGES ON DATABASE ${{ inputs.database-name }} TO ${{ inputs.database-user }};"
+
+        echo "Setting up database extensions..."
+        psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
+        psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "CREATE EXTENSION IF NOT EXISTS \"btree_gist\";"
+
+        echo "Verifying database setup..."
+        psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "SELECT version();"
+        psql -h localhost -p 5432 -U ${{ inputs.database-user }} -d ${{ inputs.database-name }} -c "SELECT current_database(), current_user;"
+
+    - name: Create database config
+      shell: bash
+      run: |
+        mkdir -p test/fixtures
+        cat > test/fixtures/database.yml << EOF
+        test:
+          host: localhost
+          port: 5432
+          database: ${{ inputs.database-name }}
+          username: ${{ inputs.database-user }}
+          password: ${{ inputs.database-password }}
+          ssl_mode: disable
+        EOF
