@@ -1,3 +1,6 @@
+// Package config provides configuration management for scanorama.
+// It handles loading configuration from files, environment variables,
+// and provides default values for various components.
 package config
 
 import (
@@ -13,7 +16,44 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 )
 
-// Config represents the complete daemon configuration
+const (
+	// Default timeout and retry values.
+	defaultShutdownTimeoutSec = 30
+	defaultRetryDelaySec      = 30
+	defaultRequestTimeoutSec  = 30
+	defaultMaxRetries         = 3
+	defaultBackoffMultiplier  = 2.0
+
+	// Default scanning configuration values.
+	defaultWorkerPoolSize       = 10
+	defaultScanTimeoutMin       = 10
+	defaultMaxConcurrentTargets = 100
+	defaultRequestsPerSecond    = 100
+	defaultBurstSize            = 200
+
+	// Default API configuration.
+	defaultAPIPort          = 8080
+	defaultMaxRequestSizeMB = 1024
+	bytesPerMB              = 1024
+
+	// Default logging configuration.
+	defaultMaxSizeMB  = 100
+	defaultMaxBackups = 5
+	defaultMaxAgeDays = 30
+)
+
+// Default configuration values.
+const (
+	DefaultPostgresPort    = 5432
+	DefaultMaxOpenConns    = 25
+	DefaultMaxIdleConns    = 5
+	DefaultConnMaxLifetime = 5 * time.Minute
+	DefaultConnMaxIdleTime = 5 * time.Minute
+	DefaultDirPermissions  = 0o750
+	DefaultFilePermissions = 0o600
+)
+
+// Config represents the application configuration.
 type Config struct {
 	// Daemon configuration
 	Daemon DaemonConfig `yaml:"daemon" json:"daemon"`
@@ -31,7 +71,7 @@ type Config struct {
 	Logging LoggingConfig `yaml:"logging" json:"logging"`
 }
 
-// DaemonConfig holds daemon-specific settings
+// DaemonConfig holds daemon-specific settings.
 type DaemonConfig struct {
 	// PID file location
 	PIDFile string `yaml:"pid_file" json:"pid_file"`
@@ -52,7 +92,7 @@ type DaemonConfig struct {
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" json:"shutdown_timeout"`
 }
 
-// ScanningConfig holds scanning-related settings
+// ScanningConfig holds scanning-related settings.
 type ScanningConfig struct {
 	// Number of concurrent scanning workers
 	WorkerPoolSize int `yaml:"worker_pool_size" json:"worker_pool_size"`
@@ -85,7 +125,7 @@ type ScanningConfig struct {
 	RateLimit RateLimitConfig `yaml:"rate_limit" json:"rate_limit"`
 }
 
-// RetryConfig holds retry settings for failed scans
+// RetryConfig holds retry settings for failed scans.
 type RetryConfig struct {
 	// Maximum number of retries
 	MaxRetries int `yaml:"max_retries" json:"max_retries"`
@@ -97,7 +137,7 @@ type RetryConfig struct {
 	BackoffMultiplier float64 `yaml:"backoff_multiplier" json:"backoff_multiplier"`
 }
 
-// RateLimitConfig holds rate limiting settings
+// RateLimitConfig holds rate limiting settings.
 type RateLimitConfig struct {
 	// Enable rate limiting
 	Enabled bool `yaml:"enabled" json:"enabled"`
@@ -109,7 +149,7 @@ type RateLimitConfig struct {
 	BurstSize int `yaml:"burst_size" json:"burst_size"`
 }
 
-// APIConfig holds API server settings
+// APIConfig holds API server settings.
 type APIConfig struct {
 	// Enable API server
 	Enabled bool `yaml:"enabled" json:"enabled"`
@@ -136,7 +176,7 @@ type APIConfig struct {
 	MaxRequestSize int64 `yaml:"max_request_size" json:"max_request_size"`
 }
 
-// TLSConfig holds TLS settings
+// TLSConfig holds TLS settings.
 type TLSConfig struct {
 	// Enable TLS
 	Enabled bool `yaml:"enabled" json:"enabled"`
@@ -151,7 +191,7 @@ type TLSConfig struct {
 	CAFile string `yaml:"ca_file" json:"ca_file"`
 }
 
-// CORSConfig holds CORS settings
+// CORSConfig holds CORS settings.
 type CORSConfig struct {
 	// Enable CORS
 	Enabled bool `yaml:"enabled" json:"enabled"`
@@ -166,7 +206,7 @@ type CORSConfig struct {
 	AllowedHeaders []string `yaml:"allowed_headers" json:"allowed_headers"`
 }
 
-// LoggingConfig holds logging settings
+// LoggingConfig holds logging settings.
 type LoggingConfig struct {
 	// Log level (debug, info, warn, error)
 	Level string `yaml:"level" json:"level"`
@@ -187,7 +227,7 @@ type LoggingConfig struct {
 	RequestLogging bool `yaml:"request_logging" json:"request_logging"`
 }
 
-// RotationConfig holds log rotation settings
+// RotationConfig holds log rotation settings.
 type RotationConfig struct {
 	// Enable log rotation
 	Enabled bool `yaml:"enabled" json:"enabled"`
@@ -205,77 +245,97 @@ type RotationConfig struct {
 	Compress bool `yaml:"compress" json:"compress"`
 }
 
-// Default returns a configuration with sensible defaults
-// Database credentials will be loaded from environment variables if available
+// Default returns the default configuration with database credentials
+// loaded from environment variables if available.
 func Default() *Config {
 	return &Config{
-		Daemon: DaemonConfig{
-			PIDFile:         getEnvString("SCANORAMA_PID_FILE", "/var/run/scanorama.pid"),
-			WorkDir:         getEnvString("SCANORAMA_WORK_DIR", "/var/lib/scanorama"),
-			User:            getEnvString("SCANORAMA_USER", ""),
-			Group:           getEnvString("SCANORAMA_GROUP", ""),
-			Daemonize:       false,
-			ShutdownTimeout: 30 * time.Second,
-		},
+		Daemon:   defaultDaemonConfig(),
 		Database: getDatabaseConfigFromEnv(),
-		Scanning: ScanningConfig{
-			WorkerPoolSize:         10,
-			DefaultInterval:        1 * time.Hour,
-			MaxScanTimeout:         10 * time.Minute,
-			DefaultPorts:           "22,80,443,8080,8443",
-			DefaultScanType:        "connect",
-			MaxConcurrentTargets:   100,
-			EnableServiceDetection: true,
-			EnableOSDetection:      false,
-			Retry: RetryConfig{
-				MaxRetries:        3,
-				RetryDelay:        30 * time.Second,
-				BackoffMultiplier: 2.0,
-			},
-			RateLimit: RateLimitConfig{
-				Enabled:           true,
-				RequestsPerSecond: 100,
-				BurstSize:         200,
-			},
+		Scanning: defaultScanningConfig(),
+		API:      defaultAPIConfig(),
+		Logging:  defaultLoggingConfig(),
+	}
+}
+
+// defaultDaemonConfig returns the default daemon configuration.
+func defaultDaemonConfig() DaemonConfig {
+	return DaemonConfig{
+		PIDFile:         getEnvString("SCANORAMA_PID_FILE", "/var/run/scanorama.pid"),
+		WorkDir:         getEnvString("SCANORAMA_WORK_DIR", "/var/lib/scanorama"),
+		User:            getEnvString("SCANORAMA_USER", ""),
+		Group:           getEnvString("SCANORAMA_GROUP", ""),
+		Daemonize:       false,
+		ShutdownTimeout: defaultShutdownTimeoutSec * time.Second,
+	}
+}
+
+// defaultScanningConfig returns the default scanning configuration.
+func defaultScanningConfig() ScanningConfig {
+	return ScanningConfig{
+		WorkerPoolSize:         defaultWorkerPoolSize,
+		DefaultInterval:        1 * time.Hour,
+		MaxScanTimeout:         defaultScanTimeoutMin * time.Minute,
+		DefaultPorts:           "22,80,443,8080,8443",
+		DefaultScanType:        "connect",
+		MaxConcurrentTargets:   defaultMaxConcurrentTargets,
+		EnableServiceDetection: true,
+		EnableOSDetection:      false,
+		Retry: RetryConfig{
+			MaxRetries:        defaultMaxRetries,
+			RetryDelay:        defaultRetryDelaySec * time.Second,
+			BackoffMultiplier: defaultBackoffMultiplier,
 		},
-		API: APIConfig{
-			Enabled:    true,
-			ListenAddr: "127.0.0.1",
-			Port:       8080,
-			TLS: TLSConfig{
-				Enabled:  false,
-				CertFile: "",
-				KeyFile:  "",
-				CAFile:   "",
-			},
-			APIKey: "",
-			CORS: CORSConfig{
-				Enabled:        true,
-				AllowedOrigins: []string{"*"},
-				AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-				AllowedHeaders: []string{"Content-Type", "Authorization"},
-			},
-			RequestTimeout: 30 * time.Second,
-			MaxRequestSize: 1024 * 1024, // 1MB
-		},
-		Logging: LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-			Rotation: RotationConfig{
-				Enabled:    false,
-				MaxSizeMB:  100,
-				MaxBackups: 5,
-				MaxAgeDays: 30,
-				Compress:   true,
-			},
-			Structured:     false,
-			RequestLogging: true,
+		RateLimit: RateLimitConfig{
+			Enabled:           true,
+			RequestsPerSecond: defaultRequestsPerSecond,
+			BurstSize:         defaultBurstSize,
 		},
 	}
 }
 
-// getEnvString gets a string value from environment variable with fallback
+// defaultAPIConfig returns the default API configuration.
+func defaultAPIConfig() APIConfig {
+	return APIConfig{
+		Enabled:    true,
+		ListenAddr: "127.0.0.1",
+		Port:       defaultAPIPort,
+		TLS: TLSConfig{
+			Enabled:  false,
+			CertFile: "",
+			KeyFile:  "",
+			CAFile:   "",
+		},
+		APIKey: "",
+		CORS: CORSConfig{
+			Enabled:        true,
+			AllowedOrigins: []string{"*"},
+			AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+			AllowedHeaders: []string{"Content-Type", "Authorization"},
+		},
+		RequestTimeout: defaultRequestTimeoutSec * time.Second,
+		MaxRequestSize: defaultMaxRequestSizeMB * bytesPerMB, // 1MB
+	}
+}
+
+// defaultLoggingConfig returns the default logging configuration.
+func defaultLoggingConfig() LoggingConfig {
+	return LoggingConfig{
+		Level:  "info",
+		Format: "text",
+		Output: "stdout",
+		Rotation: RotationConfig{
+			Enabled:    false,
+			MaxSizeMB:  defaultMaxSizeMB,
+			MaxBackups: defaultMaxBackups,
+			MaxAgeDays: defaultMaxAgeDays,
+			Compress:   true,
+		},
+		Structured:     false,
+		RequestLogging: true,
+	}
+}
+
+// getEnvString gets a string value from environment variable with fallback.
 func getEnvString(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -283,7 +343,7 @@ func getEnvString(key, fallback string) string {
 	return fallback
 }
 
-// getEnvInt gets an integer value from environment variable with fallback
+// getEnvInt gets an integer value from environment variable with fallback.
 func getEnvInt(key string, fallback int) int {
 	if value := os.Getenv(key); value != "" {
 		if parsed, err := strconv.Atoi(value); err == nil {
@@ -293,7 +353,7 @@ func getEnvInt(key string, fallback int) int {
 	return fallback
 }
 
-// getEnvDuration gets a duration value from environment variable with fallback
+// getEnvDuration gets a duration value from environment variable with fallback.
 func getEnvDuration(key string, fallback time.Duration) time.Duration {
 	if value := os.Getenv(key); value != "" {
 		if parsed, err := time.ParseDuration(value); err == nil {
@@ -303,24 +363,29 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 	return fallback
 }
 
-// getDatabaseConfigFromEnv creates database config from environment variables
+// getDatabaseConfigFromEnv creates database config from environment variables.
 func getDatabaseConfigFromEnv() db.Config {
 	return db.Config{
 		Host:            getEnvString("SCANORAMA_DB_HOST", "localhost"),
-		Port:            getEnvInt("SCANORAMA_DB_PORT", 5432),
+		Port:            getEnvInt("SCANORAMA_DB_PORT", DefaultPostgresPort),
 		Database:        getEnvString("SCANORAMA_DB_NAME", ""),
 		Username:        getEnvString("SCANORAMA_DB_USER", ""),
 		Password:        getEnvString("SCANORAMA_DB_PASSWORD", ""),
 		SSLMode:         getEnvString("SCANORAMA_DB_SSLMODE", "prefer"),
-		MaxOpenConns:    getEnvInt("SCANORAMA_DB_MAX_OPEN_CONNS", 25),
-		MaxIdleConns:    getEnvInt("SCANORAMA_DB_MAX_IDLE_CONNS", 5),
-		ConnMaxLifetime: getEnvDuration("SCANORAMA_DB_CONN_MAX_LIFETIME", 5*time.Minute),
-		ConnMaxIdleTime: getEnvDuration("SCANORAMA_DB_CONN_MAX_IDLE_TIME", 5*time.Minute),
+		MaxOpenConns:    getEnvInt("SCANORAMA_DB_MAX_OPEN_CONNS", DefaultMaxOpenConns),
+		MaxIdleConns:    getEnvInt("SCANORAMA_DB_MAX_IDLE_CONNS", DefaultMaxIdleConns),
+		ConnMaxLifetime: getEnvDuration("SCANORAMA_DB_CONN_MAX_LIFETIME", DefaultConnMaxLifetime),
+		ConnMaxIdleTime: getEnvDuration("SCANORAMA_DB_CONN_MAX_IDLE_TIME", DefaultConnMaxIdleTime),
 	}
 }
 
-// Load loads configuration from a file
+// Load loads configuration from a file.
 func Load(path string) (*Config, error) {
+	// Validate path for security
+	if err := validateConfigPath(path); err != nil {
+		return nil, fmt.Errorf("invalid config path: %w", err)
+	}
+
 	// Start with defaults (includes environment variables)
 	config := Default()
 
@@ -330,7 +395,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	// Read file
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is validated by validateConfigPath
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
@@ -361,11 +426,11 @@ func Load(path string) (*Config, error) {
 	return config, nil
 }
 
-// Save saves configuration to a file
+// Save saves configuration to a file.
 func (c *Config) Save(path string) error {
 	// Ensure directory exists
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, DefaultDirPermissions); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -376,16 +441,56 @@ func (c *Config) Save(path string) error {
 	}
 
 	// Write file
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, DefaultFilePermissions); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	return nil
 }
 
-// Validate validates the configuration
+// validateConfigPath validates that the config path is safe to use.
+func validateConfigPath(path string) error {
+	// Clean the path
+	cleanPath := filepath.Clean(path)
+
+	// Check for directory traversal patterns
+	if filepath.IsAbs(cleanPath) {
+		// For absolute paths, ensure they don't contain .. components
+		if filepath.Dir(cleanPath) != filepath.Dir(path) {
+			return fmt.Errorf("path contains directory traversal")
+		}
+	} else {
+		// For relative paths, ensure they don't escape the current directory
+		if cleanPath != "" && cleanPath[0] == '.' && len(cleanPath) > 1 && cleanPath[1] == '.' {
+			return fmt.Errorf("path contains directory traversal")
+		}
+	}
+
+	return nil
+}
+
+// Validate validates the configuration.
 func (c *Config) Validate() error {
-	// Validate database configuration
+	if err := c.validateDatabase(); err != nil {
+		return err
+	}
+	if err := c.validateScanning(); err != nil {
+		return err
+	}
+	if err := c.validateAPI(); err != nil {
+		return err
+	}
+	if err := c.validateTLS(); err != nil {
+		return err
+	}
+	if err := c.validateLogging(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateDatabase validates the database configuration.
+func (c *Config) validateDatabase() error {
 	if c.Database.Host == "" {
 		return fmt.Errorf("database host is required (set SCANORAMA_DB_HOST or configure in file)")
 	}
@@ -395,8 +500,11 @@ func (c *Config) Validate() error {
 	if c.Database.Username == "" {
 		return fmt.Errorf("database username is required (set SCANORAMA_DB_USER or configure in file)")
 	}
+	return nil
+}
 
-	// Validate scanning configuration
+// validateScanning validates the scanning configuration.
+func (c *Config) validateScanning() error {
 	if c.Scanning.WorkerPoolSize <= 0 {
 		return fmt.Errorf("worker pool size must be positive")
 	}
@@ -416,8 +524,11 @@ func (c *Config) Validate() error {
 	if !validScanTypes[c.Scanning.DefaultScanType] {
 		return fmt.Errorf("invalid default scan type: %s", c.Scanning.DefaultScanType)
 	}
+	return nil
+}
 
-	// Validate API configuration
+// validateAPI validates the API configuration.
+func (c *Config) validateAPI() error {
 	if c.API.Enabled {
 		if c.API.Port <= 0 || c.API.Port > 65535 {
 			return fmt.Errorf("API port must be between 1 and 65535")
@@ -426,8 +537,11 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("API listen address is required when API is enabled")
 		}
 	}
+	return nil
+}
 
-	// Validate TLS configuration
+// validateTLS validates the TLS configuration.
+func (c *Config) validateTLS() error {
 	if c.API.TLS.Enabled {
 		if c.API.TLS.CertFile == "" {
 			return fmt.Errorf("TLS certificate file is required when TLS is enabled")
@@ -436,8 +550,11 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("TLS key file is required when TLS is enabled")
 		}
 	}
+	return nil
+}
 
-	// Validate logging configuration
+// validateLogging validates the logging configuration.
+func (c *Config) validateLogging() error {
 	validLogLevels := map[string]bool{
 		"debug": true,
 		"info":  true,
@@ -455,31 +572,30 @@ func (c *Config) Validate() error {
 	if !validLogFormats[c.Logging.Format] {
 		return fmt.Errorf("invalid log format: %s", c.Logging.Format)
 	}
-
 	return nil
 }
 
-// GetDatabaseConfig returns the database configuration
+// GetDatabaseConfig returns the database configuration.
 func (c *Config) GetDatabaseConfig() db.Config {
 	return c.Database
 }
 
-// IsDaemonMode returns true if running in daemon mode
+// IsDaemonMode returns true if running in daemon mode.
 func (c *Config) IsDaemonMode() bool {
 	return c.Daemon.Daemonize
 }
 
-// GetAPIAddress returns the full API address
+// GetAPIAddress returns the full API address.
 func (c *Config) GetAPIAddress() string {
 	return fmt.Sprintf("%s:%d", c.API.ListenAddr, c.API.Port)
 }
 
-// IsAPIEnabled returns true if API server is enabled
+// IsAPIEnabled returns true if API server is enabled.
 func (c *Config) IsAPIEnabled() bool {
 	return c.API.Enabled
 }
 
-// GetLogOutput returns the log output destination
+// GetLogOutput returns the log output destination.
 func (c *Config) GetLogOutput() string {
 	return c.Logging.Output
 }

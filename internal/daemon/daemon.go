@@ -1,3 +1,6 @@
+// Package daemon provides the background service functionality for scanorama.
+// It manages scheduled discovery and scanning jobs, handles API endpoints,
+// and coordinates the overall operation of the scanning system.
 package daemon
 
 import (
@@ -16,7 +19,18 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 )
 
-// Daemon represents the main daemon process
+const (
+	// Health check interval in seconds.
+	healthCheckIntervalSeconds = 10
+)
+
+// File permission constants.
+const (
+	DefaultDirPermissions  = 0o750
+	DefaultFilePermissions = 0o600
+)
+
+// Daemon represents the main daemon process.
 type Daemon struct {
 	config   *config.Config
 	database *db.DB
@@ -27,7 +41,7 @@ type Daemon struct {
 	done     chan struct{}
 }
 
-// New creates a new daemon instance
+// New creates a new daemon instance.
 func New(cfg *config.Config) *Daemon {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -41,7 +55,7 @@ func New(cfg *config.Config) *Daemon {
 	}
 }
 
-// Start starts the daemon
+// Start starts the daemon.
 func (d *Daemon) Start() error {
 	d.logger.Println("Starting scanorama daemon...")
 
@@ -52,7 +66,7 @@ func (d *Daemon) Start() error {
 
 	// Create working directory if needed
 	if d.config.Daemon.WorkDir != "" {
-		if err := os.MkdirAll(d.config.Daemon.WorkDir, 0755); err != nil {
+		if err := os.MkdirAll(d.config.Daemon.WorkDir, DefaultDirPermissions); err != nil {
 			return fmt.Errorf("failed to create working directory: %w", err)
 		}
 		if err := os.Chdir(d.config.Daemon.WorkDir); err != nil {
@@ -91,7 +105,7 @@ func (d *Daemon) Start() error {
 	return d.run()
 }
 
-// Stop stops the daemon gracefully
+// Stop stops the daemon gracefully.
 func (d *Daemon) Stop() error {
 	d.logger.Println("Stopping daemon...")
 
@@ -110,7 +124,7 @@ func (d *Daemon) Stop() error {
 	return nil
 }
 
-// fork creates a background process
+// fork creates a background process.
 func (d *Daemon) fork() error {
 	// Check if already running as daemon
 	if os.Getppid() == 1 {
@@ -151,7 +165,7 @@ func (d *Daemon) fork() error {
 	return nil
 }
 
-// dropPrivileges drops root privileges if configured
+// dropPrivileges drops root privileges if configured.
 func (d *Daemon) dropPrivileges() error {
 	if d.config.Daemon.User == "" && d.config.Daemon.Group == "" {
 		return nil // No privilege dropping configured
@@ -201,7 +215,7 @@ func (d *Daemon) dropPrivileges() error {
 	return nil
 }
 
-// createPIDFile creates the PID file
+// createPIDFile creates the PID file.
 func (d *Daemon) createPIDFile() error {
 	if d.pidFile == "" {
 		return nil // No PID file configured
@@ -209,35 +223,18 @@ func (d *Daemon) createPIDFile() error {
 
 	// Ensure directory exists
 	dir := filepath.Dir(d.pidFile)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, DefaultDirPermissions); err != nil {
 		return fmt.Errorf("failed to create PID file directory: %w", err)
 	}
 
 	// Check if PID file already exists
-	if _, err := os.Stat(d.pidFile); err == nil {
-		// Read existing PID
-		data, err := os.ReadFile(d.pidFile)
-		if err != nil {
-			return fmt.Errorf("failed to read existing PID file: %w", err)
-		}
-
-		pid, err := strconv.Atoi(string(data))
-		if err == nil {
-			// Check if process is still running
-			if process, err := os.FindProcess(pid); err == nil {
-				if err := process.Signal(syscall.Signal(0)); err == nil {
-					return fmt.Errorf("daemon already running with PID %d", pid)
-				}
-			}
-		}
-
-		// Remove stale PID file
-		os.Remove(d.pidFile)
+	if err := d.checkExistingPID(); err != nil {
+		return err
 	}
 
 	// Write current PID
 	pid := os.Getpid()
-	if err := os.WriteFile(d.pidFile, []byte(strconv.Itoa(pid)), 0644); err != nil {
+	if err := os.WriteFile(d.pidFile, []byte(strconv.Itoa(pid)), DefaultFilePermissions); err != nil {
 		return fmt.Errorf("failed to write PID file: %w", err)
 	}
 
@@ -245,7 +242,7 @@ func (d *Daemon) createPIDFile() error {
 	return nil
 }
 
-// setupSignalHandlers sets up signal handling for graceful shutdown
+// setupSignalHandlers sets up signal handling for graceful shutdown.
 func (d *Daemon) setupSignalHandlers() {
 	sigChan := make(chan os.Signal, 1)
 
@@ -281,12 +278,13 @@ func (d *Daemon) setupSignalHandlers() {
 	}()
 }
 
-// initDatabase initializes the database connection
+// initDatabase initializes the database connection.
 func (d *Daemon) initDatabase() error {
 	d.logger.Println("Connecting to database...")
 
 	// Connect to database with migration
-	database, err := db.ConnectAndMigrate(d.ctx, d.config.GetDatabaseConfig())
+	dbConfig := d.config.GetDatabaseConfig()
+	database, err := db.ConnectAndMigrate(d.ctx, &dbConfig)
 	if err != nil {
 		return fmt.Errorf("database connection failed: %w", err)
 	}
@@ -296,7 +294,47 @@ func (d *Daemon) initDatabase() error {
 	return nil
 }
 
-// run executes the main daemon loop
+// checkExistingPID checks if a PID file exists and if the process is still running.
+func (d *Daemon) checkExistingPID() error {
+	if _, err := os.Stat(d.pidFile); os.IsNotExist(err) {
+		return nil // No PID file exists
+	}
+
+	// Read existing PID
+	data, err := os.ReadFile(d.pidFile)
+	if err != nil {
+		return fmt.Errorf("failed to read existing PID file: %w", err)
+	}
+
+	pid, err := strconv.Atoi(string(data))
+	if err != nil {
+		// Invalid PID file, remove it
+		_ = os.Remove(d.pidFile)
+		return nil
+	}
+
+	// Check if process is still running
+	if d.isProcessRunning(pid) {
+		return fmt.Errorf("daemon already running with PID %d", pid)
+	}
+
+	// Remove stale PID file
+	_ = os.Remove(d.pidFile)
+	return nil
+}
+
+// isProcessRunning checks if a process with the given PID is running.
+func (d *Daemon) isProcessRunning(pid int) bool {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+
+	err = process.Signal(syscall.Signal(0))
+	return err == nil
+}
+
+// run executes the main daemon loop.
 func (d *Daemon) run() error {
 	d.logger.Println("Entering main daemon loop...")
 
@@ -308,14 +346,14 @@ func (d *Daemon) run() error {
 			close(d.done)
 			return nil
 
-		case <-time.After(10 * time.Second):
+		case <-time.After(healthCheckIntervalSeconds * time.Second):
 			// Periodic health check or maintenance task
 			d.performHealthCheck()
 		}
 	}
 }
 
-// performHealthCheck performs periodic health checks
+// performHealthCheck performs periodic health checks.
 func (d *Daemon) performHealthCheck() {
 	// Check database connection
 	if d.database != nil {
@@ -331,7 +369,7 @@ func (d *Daemon) performHealthCheck() {
 	// - Monitor resource usage
 }
 
-// cleanup performs cleanup tasks
+// cleanup performs cleanup tasks.
 func (d *Daemon) cleanup() {
 	d.logger.Println("Performing cleanup...")
 
@@ -354,12 +392,12 @@ func (d *Daemon) cleanup() {
 	d.logger.Println("Cleanup completed")
 }
 
-// GetPID returns the daemon's PID
+// GetPID returns the daemon's PID.
 func (d *Daemon) GetPID() int {
 	return os.Getpid()
 }
 
-// IsRunning checks if the daemon is running
+// IsRunning checks if the daemon is running.
 func (d *Daemon) IsRunning() bool {
 	select {
 	case <-d.ctx.Done():
@@ -369,17 +407,17 @@ func (d *Daemon) IsRunning() bool {
 	}
 }
 
-// GetContext returns the daemon's context
+// GetContext returns the daemon's context.
 func (d *Daemon) GetContext() context.Context {
 	return d.ctx
 }
 
-// GetDatabase returns the database connection
+// GetDatabase returns the database connection.
 func (d *Daemon) GetDatabase() *db.DB {
 	return d.database
 }
 
-// GetConfig returns the daemon configuration
+// GetConfig returns the daemon configuration.
 func (d *Daemon) GetConfig() *config.Config {
 	return d.config
 }
