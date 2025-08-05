@@ -1,11 +1,18 @@
 # Build configuration
-BINARY_NAME := scanorama
+BINARY_NAME ?= scanorama
 BUILD_DIR := build
 COVERAGE_FILE := coverage.out
 TEST_ENV_SCRIPT := ./test/docker/test-env.sh
 DB_DEBUG ?= false
 # Use default PostgreSQL port for simplicity
 POSTGRES_PORT ?= 5432
+
+# Version information - use git tag if available, otherwise default to v0.1.0-dev
+GIT_TAG := $(shell git describe --tags --exact-match 2>/dev/null)
+VERSION ?= $(if $(GIT_TAG),$(GIT_TAG),v0.1.0-dev)
+COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT)' -X 'main.buildTime=$(BUILD_TIME)'
 
 # Go commands
 GO := go
@@ -22,12 +29,17 @@ export PATH := $(GOBIN):$(PATH)
 DOCKER_COMPOSE := docker compose
 COMPOSE_FILE := ./test/docker/docker-compose.yml
 
-.PHONY: help build clean clean-test test test-up test-down test-logs test-debug test-local coverage lint lint-install lint-fix deps install run fmt vet check all
+.PHONY: help build clean clean-test test test-up test-down test-logs test-debug test-local coverage lint lint-install lint-fix deps install run fmt vet check all version ci-local
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
 	@echo ''
-	@echo 'Targets:'
+	@echo 'Quick Start:'
+	@echo '  make ci-local    # Run all CI checks locally before pushing'
+	@echo '  make test        # Run tests with database'
+	@echo '  make build       # Build binary'
+	@echo ''
+	@echo 'All Targets:'
 	@awk '/^[a-zA-Z_-]+:.*?## / { \
 		printf "  \033[36m%-15s\033[0m %s\n", \
 		substr($$1, 1, length($$1)-1), \
@@ -35,9 +47,14 @@ help: ## Show this help message
 	}' $(MAKEFILE_LIST)
 
 build: deps ## Build the binary
-	@echo "Building $(BINARY_NAME)..."
+	@echo "Building $(BINARY_NAME) $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
-	@$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/scanorama
+	@$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/scanorama
+
+version: ## Show version information
+	@echo "Version: $(VERSION)"
+	@echo "Commit: $(COMMIT)"
+	@echo "Build Time: $(BUILD_TIME)"
 
 clean: test-down ## Remove build artifacts and stop test containers
 	@echo "Cleaning..."
@@ -92,26 +109,29 @@ coverage: test-up ## Generate test coverage report
 	make test-down ; \
 	exit $$ret
 
-lint-install: ## Install simple linting tools
-	@echo "Installing basic linting tools..."
-	@go install github.com/client9/misspell/cmd/misspell@latest
+lint-install: ## Install golangci-lint
+	@echo "Installing latest golangci-lint..."
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) latest
 
-lint: lint-install ## Run linters
-	@echo "Running linters..."
-	@./scripts/simple-lint.sh
+lint: lint-install ## Run golangci-lint
+	@echo "Running golangci-lint..."
+	@$(GOBIN)/golangci-lint run --config .golangci.yml
 
-lint-fix: lint-install ## Fix formatting and common issues
-	@echo "Running formatters with fixes..."
-	@find . -type f -name "*.go" -not -path "./vendor/*" | xargs gofmt -s -w
-	@misspell -w .
+lint-verbose: lint-install ## Run golangci-lint with verbose output
+	@echo "Running golangci-lint with verbose output..."
+	@$(GOBIN)/golangci-lint run --config .golangci.yml --verbose
 
-fmt: ## Run gofmt on all Go files
-	@echo "Running gofmt..."
-	@find . -type f -name "*.go" -not -path "./vendor/*" | xargs gofmt -s -w
+lint-fix: lint-install ## Fix formatting and linting issues automatically
+	@echo "Running golangci-lint with auto-fix..."
+	@$(GOBIN)/golangci-lint run --config .golangci.yml --fix
 
-vet: ## Run go vet on all packages
-	@echo "Running go vet..."
-	@$(GO) vet ./...
+fmt: ## Format Go files (alias for lint-fix)
+	@echo "Formatting Go files..."
+	@$(MAKE) lint-fix
+
+vet: ## Run go vet (included in golangci-lint)
+	@echo "Running go vet via golangci-lint..."
+	@$(MAKE) lint
 
 deps: ## Download and tidy dependencies
 	@echo "Installing dependencies..."
@@ -120,18 +140,41 @@ deps: ## Download and tidy dependencies
 
 install: build ## Install binary to GOPATH
 	@echo "Installing $(BINARY_NAME)..."
-	@$(GO) install ./cmd/scanorama
+	@$(GO) install -ldflags "$(LDFLAGS)" ./cmd/scanorama
 
 run: build ## Build and run the application
 	@echo "Running $(BINARY_NAME)..."
 	@./$(BUILD_DIR)/$(BINARY_NAME)
 
-check: fmt vet lint test ## Run format, vet, lint and tests
+check: lint test ## Run lint and tests
 	@echo "All checks passed!"
 
 test-logs: ## View logs from test containers
 	@echo "Viewing test container logs..."
 	@$(TEST_ENV_SCRIPT) logs
+
+ci-local: ## Run full CI checks locally (lint, test, build, security)
+	@echo "Running local CI checks..."
+	@echo "=== Running linters ==="
+	@$(MAKE) lint
+	@echo "=== Running tests ==="
+	@$(MAKE) test
+	@echo "=== Running security checks ==="
+	@$(MAKE) security-local
+	@echo "=== Building ==="
+	@$(MAKE) build
+	@echo "=== Testing binary ==="
+	@./$(BUILD_DIR)/$(BINARY_NAME) version
+	@echo "✅ All local CI checks passed!"
+
+security-local: ## Run security checks locally
+	@echo "Running security scans..."
+	@echo "Installing security tools..."
+	@go install golang.org/x/vuln/cmd/govulncheck@latest
+	@echo "Running security linters via golangci-lint (includes gosec)..."
+	@$(MAKE) lint
+	@echo "Running govulncheck..."
+	@$(GOBIN)/govulncheck ./... || echo "⚠️ Vulnerabilities found (informational only)"
 
 all: clean deps check build ## Clean, install dependencies, run checks and build
 

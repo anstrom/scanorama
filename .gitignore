@@ -1,5 +1,6 @@
 # Binary
 /scanorama
+build/
 
 # Go specific
 *.test
@@ -48,3 +49,6 @@ test/docker/flask/__pycache__/
 .idea/
 .vscode/
 .DS_Store
+
+# Claude development files (never commit)
+.claude-*

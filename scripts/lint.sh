@@ -8,7 +8,7 @@ set -e
 set -o pipefail
 
 # Variables
-GOLANGCI_LINT_VERSION="v1.54.2" # Known to work with Go 1.21-1.24
+GOLANGCI_LINT_VERSION="v2.1.5" # Known to work with Go 1.21-1.24.5
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 GOPATH=$(go env GOPATH)

@@ -40,7 +40,7 @@ make clean    # Clean build artifacts
 
 ## 📦 Requirements
 
-- Go 1.23.0+
-- golangci-lint (for linting)
+- Go 1.24.5+
+- golangci-lint (comprehensive linting - includes all formatters and security checks)
 - Docker (for integration tests)
 - nmap (for scan functionality tests)
