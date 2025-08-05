@@ -22,41 +22,26 @@ var testTables = []string{
 	"services",
 	"port_scans",
 	"hosts",
+	"discovery_jobs",
+	"scheduled_jobs",
 	"scan_jobs",
+	"scan_profiles",
 	"scan_targets",
 }
 
 // getTestConfig returns database configuration for tests
-// It tries to read from the test configuration file first,
-// then environment variables, then falls back to defaults
+// It prioritizes environment variables, then tries config files, then defaults
 func getTestConfig() Config {
 	// Check if running in CI environment or debug mode
 	isCI := os.Getenv("GITHUB_ACTIONS") == "true"
 	isDebug := os.Getenv("DB_DEBUG") == "true"
 
-	// Try to load from config file
-	var err error
-	var config Config
-
-	if isCI {
-		config, err = loadDBConfigFromFile("ci")
-	} else {
-		config, err = loadDBConfigFromFile("test")
-	}
-
-	if err == nil {
-		if isDebug {
-			fmt.Printf("Using database config from file: host=%s port=%d\n",
-				config.Host, config.Port)
-		}
-		return config
-	}
-
 	// Use 5432 as the default port (PostgreSQL standard)
 	defaultPort := 5432
 
-	// Fall back to environment variables and defaults
-	return Config{
+	// In CI, always use localhost (GitHub Actions PostgreSQL service)
+	// Override any config file settings with environment variables
+	config := Config{
 		Host:            getEnvOrDefault("TEST_DB_HOST", "localhost"),
 		Port:            getEnvIntOrDefault("TEST_DB_PORT", defaultPort),
 		Database:        getEnvOrDefault("TEST_DB_NAME", "scanorama_test"),
@@ -68,6 +53,41 @@ func getTestConfig() Config {
 		ConnMaxLifetime: time.Minute,
 		ConnMaxIdleTime: time.Minute,
 	}
+
+	// Try to load from config file only if no environment overrides are set
+	if !hasEnvOverrides() {
+		var fileConfig Config
+		var err error
+
+		if isCI {
+			fileConfig, err = loadDBConfigFromFile("ci")
+		} else {
+			fileConfig, err = loadDBConfigFromFile("test")
+		}
+
+		if err == nil {
+			// Use file config if no environment variables are set
+			config = fileConfig
+		}
+	}
+
+	if isDebug {
+		fmt.Printf("Using database config: host=%s port=%d user=%s db=%s\n",
+			config.Host, config.Port, config.Username, config.Database)
+	}
+
+	return config
+}
+
+// hasEnvOverrides checks if any database environment variables are set
+func hasEnvOverrides() bool {
+	envVars := []string{"TEST_DB_HOST", "TEST_DB_PORT", "TEST_DB_NAME", "TEST_DB_USER", "TEST_DB_PASSWORD"}
+	for _, envVar := range envVars {
+		if _, exists := os.LookupEnv(envVar); exists {
+			return true
+		}
+	}
+	return false
 }
 
 // loadDBConfigFromFile loads database configuration from the test fixtures
@@ -151,8 +171,13 @@ func waitForDB(ctx context.Context, config Config) error {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+	// Use the context timeout if already set, otherwise default to 10 seconds
+	timeoutCtx := ctx
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		timeoutCtx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
 
 	isDebug := os.Getenv("DB_DEBUG") == "true"
 	if isDebug {
@@ -162,16 +187,20 @@ func waitForDB(ctx context.Context, config Config) error {
 	for {
 		select {
 		case <-timeoutCtx.Done():
-			return fmt.Errorf("timeout waiting for database: %w", timeoutCtx.Err())
+			return fmt.Errorf("timeout waiting for database at %s:%d: %w", config.Host, config.Port, timeoutCtx.Err())
 		case <-ticker.C:
 			db, err := Connect(timeoutCtx, config)
 			if err == nil {
-				fmt.Printf("Successfully connected to database at %s:%d\n", config.Host, config.Port)
+				if isDebug {
+					fmt.Printf("Successfully connected to database at %s:%d\n", config.Host, config.Port)
+				}
 				db.Close()
 				return nil
 			} else {
 				// Log the error for debugging
-				fmt.Printf("Database connection attempt failed: %v\n", err)
+				if isDebug {
+					fmt.Printf("Database connection attempt failed: %v\n", err)
+				}
 				// Add a small delay between connection attempts
 				time.Sleep(500 * time.Millisecond)
 			}
@@ -252,9 +281,16 @@ func setupTestDB(t *testing.T) (*DB, func()) {
 			config.Host, config.Port, config.Username, config.Database)
 	}
 
+	// Wait for database with longer timeout in CI
+	waitCtx := ctx
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		var cancel context.CancelFunc
+		waitCtx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
+
 	// Try to connect to the database
-	// Try to connect quickly to avoid long test times when database is not available
-	if err := waitForDB(ctx, config); err != nil {
+	if err := waitForDB(waitCtx, config); err != nil {
 		t.Skipf("Skipping test - database not available: %v", err)
 		return nil, func() {}
 	}

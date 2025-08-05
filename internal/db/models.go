@@ -211,10 +211,55 @@ type ScanTarget struct {
 	UpdatedAt           time.Time   `db:"updated_at" json:"updated_at"`
 }
 
+// DiscoveryJob represents a network discovery job
+type DiscoveryJob struct {
+	ID              uuid.UUID   `db:"id" json:"id"`
+	Network         NetworkAddr `db:"network" json:"network"`
+	Method          string      `db:"method" json:"method"`
+	StartedAt       *time.Time  `db:"started_at" json:"started_at,omitempty"`
+	CompletedAt     *time.Time  `db:"completed_at" json:"completed_at,omitempty"`
+	HostsDiscovered int         `db:"hosts_discovered" json:"hosts_discovered"`
+	HostsResponsive int         `db:"hosts_responsive" json:"hosts_responsive"`
+	Status          string      `db:"status" json:"status"`
+	CreatedAt       time.Time   `db:"created_at" json:"created_at"`
+}
+
+// ScanProfile represents a scanning profile configuration
+type ScanProfile struct {
+	ID          string    `db:"id" json:"id"`
+	Name        string    `db:"name" json:"name"`
+	Description string    `db:"description" json:"description"`
+	OSFamily    []string  `db:"os_family" json:"os_family"`
+	OSPattern   []string  `db:"os_pattern" json:"os_pattern"`
+	Ports       string    `db:"ports" json:"ports"`
+	ScanType    string    `db:"scan_type" json:"scan_type"`
+	Timing      string    `db:"timing" json:"timing"`
+	Scripts     []string  `db:"scripts" json:"scripts"`
+	Options     JSONB     `db:"options" json:"options"`
+	Priority    int       `db:"priority" json:"priority"`
+	BuiltIn     bool      `db:"built_in" json:"built_in"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// ScheduledJob represents a scheduled scanning or discovery job
+type ScheduledJob struct {
+	ID             uuid.UUID  `db:"id" json:"id"`
+	Name           string     `db:"name" json:"name"`
+	Type           string     `db:"type" json:"type"` // 'discovery' or 'scan'
+	CronExpression string     `db:"cron_expression" json:"cron_expression"`
+	Config         JSONB      `db:"config" json:"config"`
+	Enabled        bool       `db:"enabled" json:"enabled"`
+	LastRun        *time.Time `db:"last_run" json:"last_run,omitempty"`
+	NextRun        *time.Time `db:"next_run" json:"next_run,omitempty"`
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+}
+
 // ScanJob represents a scan job execution
 type ScanJob struct {
 	ID           uuid.UUID  `db:"id" json:"id"`
 	TargetID     uuid.UUID  `db:"target_id" json:"target_id"`
+	ProfileID    *string    `db:"profile_id" json:"profile_id,omitempty"`
 	Status       string     `db:"status" json:"status"`
 	StartedAt    *time.Time `db:"started_at" json:"started_at,omitempty"`
 	CompletedAt  *time.Time `db:"completed_at" json:"completed_at,omitempty"`
@@ -223,18 +268,98 @@ type ScanJob struct {
 	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
 }
 
+// OSFingerprint represents OS detection information
+type OSFingerprint struct {
+	Family     string                 `json:"family"`     // "windows", "linux", "macos", "freebsd", etc.
+	Name       string                 `json:"name"`       // "Windows Server 2019", "Ubuntu 22.04", etc.
+	Version    string                 `json:"version"`    // "10.0.17763", "22.04.1", etc.
+	Confidence int                    `json:"confidence"` // 0-100 confidence score
+	Method     string                 `json:"method"`     // "tcp_fingerprint", "banner", "ttl_analysis"
+	Details    map[string]interface{} `json:"details"`    // Additional OS-specific data
+}
+
 // Host represents a discovered host
 type Host struct {
-	ID         uuid.UUID `db:"id" json:"id"`
-	IPAddress  IPAddr    `db:"ip_address" json:"ip_address"`
-	Hostname   *string   `db:"hostname" json:"hostname,omitempty"`
-	MACAddress *MACAddr  `db:"mac_address" json:"mac_address,omitempty"`
-	Vendor     *string   `db:"vendor" json:"vendor,omitempty"`
-	OSFamily   *string   `db:"os_family" json:"os_family,omitempty"`
-	OSVersion  *string   `db:"os_version" json:"os_version,omitempty"`
-	FirstSeen  time.Time `db:"first_seen" json:"first_seen"`
-	LastSeen   time.Time `db:"last_seen" json:"last_seen"`
-	Status     string    `db:"status" json:"status"`
+	ID              uuid.UUID  `db:"id" json:"id"`
+	IPAddress       IPAddr     `db:"ip_address" json:"ip_address"`
+	Hostname        *string    `db:"hostname" json:"hostname,omitempty"`
+	MACAddress      *MACAddr   `db:"mac_address" json:"mac_address,omitempty"`
+	Vendor          *string    `db:"vendor" json:"vendor,omitempty"`
+	OSFamily        *string    `db:"os_family" json:"os_family,omitempty"`
+	OSName          *string    `db:"os_name" json:"os_name,omitempty"`
+	OSVersion       *string    `db:"os_version" json:"os_version,omitempty"`
+	OSConfidence    *int       `db:"os_confidence" json:"os_confidence,omitempty"`
+	OSDetectedAt    *time.Time `db:"os_detected_at" json:"os_detected_at,omitempty"`
+	OSMethod        *string    `db:"os_method" json:"os_method,omitempty"`
+	OSDetails       JSONB      `db:"os_details" json:"os_details,omitempty"`
+	DiscoveryMethod *string    `db:"discovery_method" json:"discovery_method,omitempty"`
+	ResponseTimeMS  *int       `db:"response_time_ms" json:"response_time_ms,omitempty"`
+	DiscoveryCount  int        `db:"discovery_count" json:"discovery_count"`
+	IgnoreScanning  bool       `db:"ignore_scanning" json:"ignore_scanning"`
+	FirstSeen       time.Time  `db:"first_seen" json:"first_seen"`
+	LastSeen        time.Time  `db:"last_seen" json:"last_seen"`
+	Status          string     `db:"status" json:"status"`
+}
+
+// GetOSFingerprint returns the OS fingerprint information
+func (h *Host) GetOSFingerprint() *OSFingerprint {
+	if h.OSFamily == nil {
+		return nil
+	}
+
+	fp := &OSFingerprint{
+		Family:     *h.OSFamily,
+		Confidence: 0,
+		Method:     "unknown",
+	}
+
+	if h.OSName != nil {
+		fp.Name = *h.OSName
+	}
+	if h.OSVersion != nil {
+		fp.Version = *h.OSVersion
+	}
+	if h.OSConfidence != nil {
+		fp.Confidence = *h.OSConfidence
+	}
+	if h.OSMethod != nil {
+		fp.Method = *h.OSMethod
+	}
+
+	// Parse details from JSONB
+	if len(h.OSDetails) > 0 {
+		var details map[string]interface{}
+		if err := json.Unmarshal([]byte(h.OSDetails), &details); err == nil {
+			fp.Details = details
+		}
+	}
+
+	return fp
+}
+
+// SetOSFingerprint updates the host with OS fingerprint information
+func (h *Host) SetOSFingerprint(fp *OSFingerprint) error {
+	if fp == nil {
+		return nil
+	}
+
+	h.OSFamily = &fp.Family
+	h.OSName = &fp.Name
+	h.OSVersion = &fp.Version
+	h.OSConfidence = &fp.Confidence
+	h.OSMethod = &fp.Method
+	now := time.Now()
+	h.OSDetectedAt = &now
+
+	if fp.Details != nil {
+		detailsJSON, err := json.Marshal(fp.Details)
+		if err != nil {
+			return fmt.Errorf("failed to marshal OS details: %w", err)
+		}
+		h.OSDetails = JSONB(detailsJSON)
+	}
+
+	return nil
 }
 
 // PortScan represents a port scan result
@@ -303,6 +428,46 @@ const (
 	ScanJobStatusRunning   = "running"
 	ScanJobStatusCompleted = "completed"
 	ScanJobStatusFailed    = "failed"
+)
+
+// DiscoveryJobStatus constants
+const (
+	DiscoveryJobStatusPending   = "pending"
+	DiscoveryJobStatusRunning   = "running"
+	DiscoveryJobStatusCompleted = "completed"
+	DiscoveryJobStatusFailed    = "failed"
+)
+
+// ScheduledJobType constants
+const (
+	ScheduledJobTypeDiscovery = "discovery"
+	ScheduledJobTypeScan      = "scan"
+)
+
+// DiscoveryMethod constants
+const (
+	DiscoveryMethodPing = "ping"
+	DiscoveryMethodARP  = "arp"
+	DiscoveryMethodTCP  = "tcp"
+)
+
+// OSFamily constants
+const (
+	OSFamilyWindows = "windows"
+	OSFamilyLinux   = "linux"
+	OSFamilyMacOS   = "macos"
+	OSFamilyFreeBSD = "freebsd"
+	OSFamilyUnix    = "unix"
+	OSFamilyUnknown = "unknown"
+)
+
+// ScanTiming constants
+const (
+	ScanTimingParanoid   = "paranoid"
+	ScanTimingPolite     = "polite"
+	ScanTimingNormal     = "normal"
+	ScanTimingAggressive = "aggressive"
+	ScanTimingInsane     = "insane"
 )
 
 // HostStatus constants
