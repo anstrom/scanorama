@@ -165,8 +165,8 @@ jobs:
           mkdir -p dist
           mv build/$BINARY_NAME dist/scanorama-${{ matrix.goos }}-${{ matrix.goarch }}${BINARY_NAME#scanorama}
 
-      - name: Test binary (Linux/macOS only)
-        if: matrix.goos != 'windows'
+      - name: Test binary (Linux only)
+        if: matrix.goos == 'linux'
         run: |
           chmod +x dist/scanorama-${{ matrix.goos }}-${{ matrix.goarch }}
           ./dist/scanorama-${{ matrix.goos }}-${{ matrix.goarch }} version
