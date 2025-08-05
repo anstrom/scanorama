@@ -1,9 +1,13 @@
+// Package discovery provides network discovery functionality for scanorama.
+// It handles host discovery through various methods like ping scanning,
+// and manages the discovery engine and worker processes.
 package discovery
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os/exec"
 	"regexp"
@@ -12,18 +16,31 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anstrom/scanorama/internal/db"
 	"github.com/google/uuid"
+
+	"github.com/anstrom/scanorama/internal/db"
 )
 
-// Engine handles network discovery operations
+const (
+	// Default discovery configuration values.
+	defaultConcurrency    = 50
+	defaultTimeoutSeconds = 3
+	maxNetworkSizeBits    = 16 // Limit to /16 or smaller networks
+)
+
+// Constants for discovery operations.
+const (
+	MillisecondsPerSecond = 1000
+)
+
+// Engine handles network discovery operations.
 type Engine struct {
 	db          *db.DB
 	concurrency int
 	timeout     time.Duration
 }
 
-// Config represents discovery configuration
+// Config represents discovery configuration.
 type Config struct {
 	Network     string        `json:"network"`
 	Method      string        `json:"method"`
@@ -32,7 +49,7 @@ type Config struct {
 	Concurrency int           `json:"concurrency"`
 }
 
-// Result represents a discovery result for a single host
+// Result represents a discovery result for a single host.
 type Result struct {
 	IPAddress    net.IP
 	Status       string
@@ -42,26 +59,26 @@ type Result struct {
 	Error        error
 }
 
-// NewEngine creates a new discovery engine
+// NewEngine creates a new discovery engine.
 func NewEngine(database *db.DB) *Engine {
 	return &Engine{
 		db:          database,
-		concurrency: 50,
-		timeout:     3 * time.Second,
+		concurrency: defaultConcurrency,
+		timeout:     defaultTimeoutSeconds * time.Second,
 	}
 }
 
-// SetConcurrency sets the number of concurrent discovery operations
+// SetConcurrency sets the number of concurrent discovery operations.
 func (e *Engine) SetConcurrency(concurrency int) {
 	e.concurrency = concurrency
 }
 
-// SetTimeout sets the timeout for individual host discovery
+// SetTimeout sets the timeout for individual host discovery.
 func (e *Engine) SetTimeout(timeout time.Duration) {
 	e.timeout = timeout
 }
 
-// Discover performs network discovery on the specified network
+// Discover performs network discovery on the specified network.
 func (e *Engine) Discover(ctx context.Context, config Config) (*db.DiscoveryJob, error) {
 	// Parse network
 	_, ipnet, err := net.ParseCIDR(config.Network)
@@ -92,18 +109,9 @@ func (e *Engine) Discover(ctx context.Context, config Config) (*db.DiscoveryJob,
 	return job, nil
 }
 
-// runDiscovery executes the actual discovery process
+// runDiscovery executes the actual discovery process.
 func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config Config) {
-	defer func() {
-		now := time.Now()
-		job.CompletedAt = &now
-		if job.Status == db.DiscoveryJobStatusRunning {
-			job.Status = db.DiscoveryJobStatusCompleted
-		}
-		if err := e.saveDiscoveryJob(ctx, job); err != nil {
-			fmt.Printf("Error saving discovery job completion: %v\n", err)
-		}
-	}()
+	defer e.finalizeDiscoveryJob(ctx, job)
 
 	// Generate host list
 	hosts := e.generateHostList(job.Network.IPNet)
@@ -112,7 +120,31 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 		return
 	}
 
-	// Set up concurrency control
+	// Set up discovery parameters
+	concurrency, timeout := e.setupDiscoveryParameters(config)
+
+	// Run discovery workers and collect results
+	discoveredHosts := e.runDiscoveryWorkers(ctx, hosts, config, concurrency, timeout)
+
+	// Update job with results
+	job.HostsDiscovered = len(discoveredHosts)
+	fmt.Printf("Discovery completed. Found %d hosts.\n", job.HostsDiscovered)
+}
+
+// finalizeDiscoveryJob handles the completion and saving of a discovery job.
+func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob) {
+	now := time.Now()
+	job.CompletedAt = &now
+	if job.Status == db.DiscoveryJobStatusRunning {
+		job.Status = db.DiscoveryJobStatusCompleted
+	}
+	if err := e.saveDiscoveryJob(ctx, job); err != nil {
+		fmt.Printf("Error saving discovery job completion: %v\n", err)
+	}
+}
+
+// setupDiscoveryParameters configures concurrency and timeout values.
+func (e *Engine) setupDiscoveryParameters(config Config) (int, time.Duration) {
 	concurrency := config.Concurrency
 	if concurrency <= 0 {
 		concurrency = e.concurrency
@@ -123,6 +155,13 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 		timeout = e.timeout
 	}
 
+	return concurrency, timeout
+}
+
+// runDiscoveryWorkers executes the discovery process using a worker pool.
+func (e *Engine) runDiscoveryWorkers(
+	ctx context.Context, hosts []net.IP, config Config, concurrency int, timeout time.Duration,
+) []*db.Host {
 	// Channel for results
 	results := make(chan Result, len(hosts))
 
@@ -143,39 +182,48 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 		}(host)
 	}
 
-	// Wait for all workers to complete
+	// Wait for all workers and close results channel
 	go func() {
 		wg.Wait()
 		close(results)
 	}()
 
-	// Process results
-	hostsFound := 0
-	hostsResponsive := 0
-
+	// Collect and process results
+	var discoveredHosts []*db.Host
 	for result := range results {
-		if result.Error != nil {
-			continue
-		}
-
-		hostsFound++
 		if result.Status == db.HostStatusUp {
-			hostsResponsive++
-
-			// Save or update host in database
-			if err := e.saveDiscoveredHost(ctx, result, job.ID); err != nil {
-				// Log error but continue processing
-				fmt.Printf("Error saving host %s: %v\n", result.IPAddress, err)
+			host, err := e.createHostFromResult(ctx, &result)
+			if err != nil {
+				fmt.Printf("Error creating host from result: %v\n", err)
+				continue
 			}
+			discoveredHosts = append(discoveredHosts, host)
 		}
 	}
 
-	job.HostsDiscovered = hostsFound
-	job.HostsResponsive = hostsResponsive
+	return discoveredHosts
 }
 
-// discoverHost discovers a single host
-func (e *Engine) discoverHost(ctx context.Context, ip net.IP, method string, detectOS bool, timeout time.Duration) Result {
+// createHostFromResult creates a database host entry from a discovery result.
+func (e *Engine) createHostFromResult(ctx context.Context, result *Result) (*db.Host, error) {
+	// Save or update host in database
+	if err := e.saveDiscoveredHost(ctx, result, uuid.Nil); err != nil {
+		return nil, fmt.Errorf("failed to save discovered host: %w", err)
+	}
+
+	// Create host object for return
+	host := &db.Host{
+		IPAddress: db.IPAddr{IP: result.IPAddress},
+		Status:    result.Status,
+	}
+
+	return host, nil
+}
+
+// discoverHost discovers a single host.
+func (e *Engine) discoverHost(
+	ctx context.Context, ip net.IP, method string, detectOS bool, timeout time.Duration,
+) Result {
 	result := Result{
 		IPAddress: ip,
 		Method:    method,
@@ -195,7 +243,7 @@ func (e *Engine) discoverHost(ctx context.Context, ip net.IP, method string, det
 	}
 }
 
-// pingHost discovers a host using ICMP ping
+// pingHost discovers a host using ICMP ping.
 func (e *Engine) pingHost(ctx context.Context, ip net.IP, detectOS bool, timeout time.Duration) Result {
 	result := Result{
 		IPAddress: ip,
@@ -206,7 +254,9 @@ func (e *Engine) pingHost(ctx context.Context, ip net.IP, detectOS bool, timeout
 	start := time.Now()
 
 	// Use system ping command
-	cmd := exec.CommandContext(ctx, "ping", "-c", "1", "-W", fmt.Sprintf("%.0f", timeout.Seconds()*1000), ip.String())
+	//nolint:gosec // legitimate use of ping with validated IP
+	cmd := exec.CommandContext(ctx, "ping", "-c", "1", "-W",
+		fmt.Sprintf("%.0f", timeout.Seconds()*MillisecondsPerSecond), ip.String())
 	output, err := cmd.Output()
 
 	result.ResponseTime = time.Since(start)
@@ -234,8 +284,8 @@ func (e *Engine) pingHost(ctx context.Context, ip net.IP, detectOS bool, timeout
 	return result
 }
 
-// arpHost discovers a host using ARP
-func (e *Engine) arpHost(ctx context.Context, ip net.IP, timeout time.Duration) Result {
+// arpHost discovers a host using ARP.
+func (e *Engine) arpHost(ctx context.Context, ip net.IP, _ time.Duration) Result {
 	result := Result{
 		IPAddress: ip,
 		Method:    db.DiscoveryMethodARP,
@@ -245,7 +295,7 @@ func (e *Engine) arpHost(ctx context.Context, ip net.IP, timeout time.Duration) 
 	start := time.Now()
 
 	// Use system arp command
-	cmd := exec.CommandContext(ctx, "arp", "-n", ip.String())
+	cmd := exec.CommandContext(ctx, "arp", "-n", ip.String()) //nolint:gosec // legitimate use of arp with validated IP
 	output, err := cmd.Output()
 
 	result.ResponseTime = time.Since(start)
@@ -263,8 +313,8 @@ func (e *Engine) arpHost(ctx context.Context, ip net.IP, timeout time.Duration) 
 	return result
 }
 
-// tcpHost discovers a host using TCP connect
-func (e *Engine) tcpHost(ctx context.Context, ip net.IP, timeout time.Duration) Result {
+// tcpHost discovers a host using TCP connect.
+func (e *Engine) tcpHost(_ context.Context, ip net.IP, timeout time.Duration) Result {
 	result := Result{
 		IPAddress: ip,
 		Method:    db.DiscoveryMethodTCP,
@@ -279,7 +329,7 @@ func (e *Engine) tcpHost(ctx context.Context, ip net.IP, timeout time.Duration) 
 
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", ip.String(), port), timeout)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			result.Status = db.HostStatusUp
 			result.ResponseTime = time.Since(start)
 			break
@@ -289,9 +339,10 @@ func (e *Engine) tcpHost(ctx context.Context, ip net.IP, timeout time.Duration) 
 	return result
 }
 
-// detectOS performs OS detection on a discovered host
+// detectOS performs OS detection on a discovered host.
 func (e *Engine) detectOS(ctx context.Context, ip net.IP, timeout time.Duration) *db.OSFingerprint {
 	// Use nmap for OS detection
+	//nolint:gosec // legitimate use of nmap with validated IP
 	cmd := exec.CommandContext(ctx, "nmap", "-O", "--osscan-guess",
 		fmt.Sprintf("--host-timeout=%ds", int(timeout.Seconds())),
 		"-n", ip.String())
@@ -304,81 +355,97 @@ func (e *Engine) detectOS(ctx context.Context, ip net.IP, timeout time.Duration)
 	return e.parseNmapOS(string(output))
 }
 
-// parseNmapOS parses nmap OS detection output
+// parseNmapOS parses nmap OS detection output.
 func (e *Engine) parseNmapOS(output string) *db.OSFingerprint {
 	lines := strings.Split(output, "\n")
-
 	var osInfo *db.OSFingerprint
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
-		// Look for OS details
 		if strings.HasPrefix(line, "Running:") {
-			osInfo = &db.OSFingerprint{
-				Method:  "nmap_os_detection",
-				Details: make(map[string]interface{}),
-			}
-
-			// Parse running OS line
-			running := strings.TrimPrefix(line, "Running:")
-			running = strings.TrimSpace(running)
-
-			// Extract OS family and details
-			if strings.Contains(strings.ToLower(running), "windows") {
-				osInfo.Family = db.OSFamilyWindows
-				osInfo.Name = e.extractWindowsVersion(running)
-			} else if strings.Contains(strings.ToLower(running), "linux") {
-				osInfo.Family = db.OSFamilyLinux
-				osInfo.Name = e.extractLinuxVersion(running)
-			} else if strings.Contains(strings.ToLower(running), "mac") || strings.Contains(strings.ToLower(running), "darwin") {
-				osInfo.Family = db.OSFamilyMacOS
-				osInfo.Name = running
-			} else if strings.Contains(strings.ToLower(running), "freebsd") {
-				osInfo.Family = db.OSFamilyFreeBSD
-				osInfo.Name = running
-			} else {
-				osInfo.Family = db.OSFamilyUnknown
-				osInfo.Name = running
-			}
-
-			osInfo.Details["running"] = running
+			osInfo = e.parseRunningLine(line)
+			continue
 		}
 
-		// Look for OS CPE information
-		if strings.Contains(line, "OS CPE:") {
-			if osInfo != nil {
-				cpe := strings.TrimSpace(strings.Split(line, "OS CPE:")[1])
-				osInfo.Details["cpe"] = cpe
-			}
-		}
-
-		// Look for aggressive OS guesses with confidence
-		if strings.Contains(line, "%") && (strings.Contains(line, "Windows") || strings.Contains(line, "Linux") || strings.Contains(line, "Mac")) {
+		if e.isConfidenceLine(line) {
 			if osInfo == nil {
-				osInfo = &db.OSFingerprint{
-					Method:  "nmap_os_detection",
-					Details: make(map[string]interface{}),
-				}
+				osInfo = e.createBasicOSFingerprint()
 			}
-
-			// Extract confidence percentage
-			re := regexp.MustCompile(`(\d+)%`)
-			if matches := re.FindStringSubmatch(line); len(matches) > 1 {
-				if confidence, err := strconv.Atoi(matches[1]); err == nil {
-					osInfo.Confidence = confidence
-				}
-			}
-
-			// Store the guess
-			osInfo.Details["os_guess"] = line
+			e.parseConfidenceLine(osInfo, line)
 		}
 	}
 
 	return osInfo
 }
 
-// extractWindowsVersion extracts Windows version from nmap output
+// parseRunningLine parses a "Running:" line from nmap output.
+func (e *Engine) parseRunningLine(line string) *db.OSFingerprint {
+	osInfo := e.createBasicOSFingerprint()
+
+	running := strings.TrimPrefix(line, "Running:")
+	running = strings.TrimSpace(running)
+
+	// Extract OS family and details
+	runningLower := strings.ToLower(running)
+	switch {
+	case strings.Contains(runningLower, "windows"):
+		osInfo.Family = db.OSFamilyWindows
+		osInfo.Name = e.extractWindowsVersion(running)
+	case strings.Contains(runningLower, "linux"):
+		osInfo.Family = db.OSFamilyLinux
+		osInfo.Name = e.extractLinuxVersion(running)
+	case strings.Contains(runningLower, "mac") || strings.Contains(runningLower, "darwin"):
+		osInfo.Family = db.OSFamilyMacOS
+		osInfo.Name = running
+	case strings.Contains(runningLower, "freebsd"):
+		osInfo.Family = db.OSFamilyFreeBSD
+		osInfo.Name = running
+	case strings.Contains(runningLower, "openbsd"):
+		osInfo.Family = db.OSFamilyUnix
+		osInfo.Name = running
+	case strings.Contains(runningLower, "netbsd"):
+		osInfo.Family = db.OSFamilyUnix
+		osInfo.Name = running
+	default:
+		osInfo.Family = db.OSFamilyUnknown
+		osInfo.Name = running
+	}
+
+	osInfo.Details["running"] = running
+	return osInfo
+}
+
+// createBasicOSFingerprint creates a basic OS fingerprint structure.
+func (e *Engine) createBasicOSFingerprint() *db.OSFingerprint {
+	return &db.OSFingerprint{
+		Method:  "nmap_os_detection",
+		Details: make(map[string]interface{}),
+	}
+}
+
+// isConfidenceLine checks if a line contains confidence information.
+func (e *Engine) isConfidenceLine(line string) bool {
+	return strings.Contains(line, "%") && (strings.Contains(line, "Windows") ||
+		strings.Contains(line, "Linux") || strings.Contains(line, "Mac"))
+}
+
+// parseConfidenceLine extracts confidence information from a line.
+func (e *Engine) parseConfidenceLine(osInfo *db.OSFingerprint, line string) {
+	parts := strings.Fields(line)
+	for _, part := range parts {
+		if strings.Contains(part, "%") {
+			confidenceStr := strings.TrimSuffix(part, "%")
+			if confidence, err := strconv.Atoi(confidenceStr); err == nil {
+				osInfo.Confidence = confidence
+				osInfo.Details["confidence_line"] = line
+				break
+			}
+		}
+	}
+}
+
+// extractWindowsVersion extracts Windows version from nmap output.
 func (e *Engine) extractWindowsVersion(running string) string {
 	// Common patterns for Windows versions
 	patterns := []string{
@@ -404,7 +471,7 @@ func (e *Engine) extractWindowsVersion(running string) string {
 	return "Windows (unknown version)"
 }
 
-// extractLinuxVersion extracts Linux version from nmap output
+// extractLinuxVersion extracts Linux version from nmap output.
 func (e *Engine) extractLinuxVersion(running string) string {
 	// Common patterns for Linux distributions
 	patterns := []string{
@@ -427,7 +494,7 @@ func (e *Engine) extractLinuxVersion(running string) string {
 	return "Linux (unknown distribution)"
 }
 
-// extractPingTime extracts response time from ping output
+// extractPingTime extracts response time from ping output.
 func (e *Engine) extractPingTime(output string) time.Duration {
 	// Look for time=X.Xms pattern
 	re := regexp.MustCompile(`time=([0-9.]+)\s*ms`)
@@ -442,13 +509,13 @@ func (e *Engine) extractPingTime(output string) time.Duration {
 	return 0
 }
 
-// generateHostList generates a list of IP addresses from a network
+// generateHostList generates a list of IP addresses from a network.
 func (e *Engine) generateHostList(network net.IPNet) []net.IP {
 	var hosts []net.IP
 
 	// Calculate network size
 	ones, bits := network.Mask.Size()
-	if bits-ones > 16 { // Limit to /16 or smaller networks
+	if bits-ones > maxNetworkSizeBits { // Limit to /16 or smaller networks
 		return hosts
 	}
 
@@ -473,7 +540,7 @@ func (e *Engine) generateHostList(network net.IPNet) []net.IP {
 	return hosts
 }
 
-// incrementIP increments an IP address by 1
+// incrementIP increments an IP address by 1.
 func incrementIP(ip net.IP) bool {
 	for i := len(ip) - 1; i >= 0; i-- {
 		ip[i]++
@@ -484,7 +551,7 @@ func incrementIP(ip net.IP) bool {
 	return false
 }
 
-// isBroadcast checks if an IP is the broadcast address for the network
+// isBroadcast checks if an IP is the broadcast address for the network.
 func isBroadcast(ip net.IP, network net.IPNet) bool {
 	broadcast := make(net.IP, len(network.IP))
 	copy(broadcast, network.IP)
@@ -496,10 +563,13 @@ func isBroadcast(ip net.IP, network net.IPNet) bool {
 	return ip.Equal(broadcast)
 }
 
-// saveDiscoveryJob saves or updates a discovery job in the database
+// saveDiscoveryJob saves or updates a discovery job in the database.
 func (e *Engine) saveDiscoveryJob(ctx context.Context, job *db.DiscoveryJob) error {
 	query := `
-		INSERT INTO discovery_jobs (id, network, method, started_at, completed_at, hosts_discovered, hosts_responsive, status, created_at)
+		INSERT INTO discovery_jobs (
+			id, network, method, started_at, completed_at,
+			hosts_discovered, hosts_responsive, status, created_at
+		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (id) DO UPDATE SET
 			started_at = EXCLUDED.started_at,
@@ -516,68 +586,24 @@ func (e *Engine) saveDiscoveryJob(ctx context.Context, job *db.DiscoveryJob) err
 	return err
 }
 
-// saveDiscoveredHost saves or updates a discovered host in the database
-func (e *Engine) saveDiscoveredHost(ctx context.Context, result Result, jobID uuid.UUID) error {
+// saveDiscoveredHost saves or updates a discovered host in the database.
+func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.UUID) error {
 	// Check if host already exists
 	var existingHost db.Host
 	query := `SELECT id, discovery_count FROM hosts WHERE ip_address = $1`
-	err := e.db.QueryRowContext(ctx, query, db.IPAddr{IP: result.IPAddress}).Scan(&existingHost.ID, &existingHost.DiscoveryCount)
+	err := e.db.QueryRowContext(ctx, query, db.IPAddr{IP: result.IPAddress}).Scan(
+		&existingHost.ID, &existingHost.DiscoveryCount)
 
 	now := time.Now()
 	responseTimeMS := int(result.ResponseTime.Milliseconds())
 
 	if err != nil {
-		// Host doesn't exist, create new one
-		host := db.Host{
-			ID:              uuid.New(),
-			IPAddress:       db.IPAddr{IP: result.IPAddress},
-			Status:          result.Status,
-			DiscoveryMethod: &result.Method,
-			ResponseTimeMS:  &responseTimeMS,
-			DiscoveryCount:  1,
-			FirstSeen:       now,
-			LastSeen:        now,
-		}
-
-		// Set OS information if detected
-		if result.OSInfo != nil {
-			host.SetOSFingerprint(result.OSInfo)
-		}
-
-		return e.insertHost(ctx, &host)
-	} else {
-		// Host exists, update it
-		updateQuery := `
-			UPDATE hosts SET
-				status = $2,
-				last_seen = $3,
-				discovery_method = $4,
-				response_time_ms = $5,
-				discovery_count = discovery_count + 1
-		`
-		args := []interface{}{existingHost.ID, result.Status, now, result.Method, responseTimeMS}
-
-		// Add OS information if detected
-		if result.OSInfo != nil {
-			updateQuery += `, os_family = $6, os_name = $7, os_version = $8, os_confidence = $9, os_detected_at = $10, os_method = $11, os_details = $12`
-
-			var detailsJSON []byte
-			if result.OSInfo.Details != nil {
-				detailsJSON, _ = json.Marshal(result.OSInfo.Details)
-			}
-
-			args = append(args, result.OSInfo.Family, result.OSInfo.Name, result.OSInfo.Version,
-				result.OSInfo.Confidence, now, result.OSInfo.Method, detailsJSON)
-		}
-
-		updateQuery += " WHERE id = $1"
-
-		_, err = e.db.ExecContext(ctx, updateQuery, args...)
-		return err
+		return e.createNewHost(ctx, result, now, responseTimeMS)
 	}
+	return e.updateExistingHost(ctx, &existingHost, result, now, responseTimeMS)
 }
 
-// insertHost inserts a new host into the database
+// insertHost inserts a new host into the database.
 func (e *Engine) insertHost(ctx context.Context, host *db.Host) error {
 	query := `
 		INSERT INTO hosts (id, ip_address, hostname, mac_address, vendor, os_family, os_name, os_version,
@@ -592,5 +618,61 @@ func (e *Engine) insertHost(ctx context.Context, host *db.Host) error {
 		host.OSMethod, host.OSDetails, host.DiscoveryMethod, host.ResponseTimeMS,
 		host.DiscoveryCount, host.IgnoreScanning, host.FirstSeen, host.LastSeen, host.Status)
 
+	return err
+}
+
+// createNewHost creates a new host entry in the database.
+func (e *Engine) createNewHost(ctx context.Context, result *Result, now time.Time, responseTimeMS int) error {
+	host := db.Host{
+		ID:              uuid.New(),
+		IPAddress:       db.IPAddr{IP: result.IPAddress},
+		Status:          result.Status,
+		DiscoveryMethod: &result.Method,
+		ResponseTimeMS:  &responseTimeMS,
+		DiscoveryCount:  1,
+		FirstSeen:       now,
+		LastSeen:        now,
+	}
+
+	// Set OS information if detected
+	if result.OSInfo != nil {
+		if err := host.SetOSFingerprint(result.OSInfo); err != nil {
+			log.Printf("Failed to set OS fingerprint: %v", err)
+		}
+	}
+
+	return e.insertHost(ctx, &host)
+}
+
+// updateExistingHost updates an existing host entry in the database.
+func (e *Engine) updateExistingHost(
+	ctx context.Context, existingHost *db.Host, result *Result, now time.Time, responseTimeMS int,
+) error {
+	updateQuery := `
+		UPDATE hosts SET
+			status = $2,
+			last_seen = $3,
+			discovery_method = $4,
+			response_time_ms = $5,
+			discovery_count = discovery_count + 1
+	`
+	args := []interface{}{existingHost.ID, result.Status, now, result.Method, responseTimeMS}
+
+	// Add OS information if detected
+	if result.OSInfo != nil {
+		updateQuery += `, os_family = $6, os_name = $7, os_version = $8, os_confidence = $9, ` +
+			`os_detected_at = $10, os_method = $11, os_details = $12`
+
+		var detailsJSON []byte
+		if result.OSInfo.Details != nil {
+			detailsJSON, _ = json.Marshal(result.OSInfo.Details)
+		}
+
+		args = append(args, result.OSInfo.Family, result.OSInfo.Name, result.OSInfo.Version,
+			result.OSInfo.Confidence, now, result.OSInfo.Method, detailsJSON)
+	}
+
+	updateQuery += ` WHERE id = $1`
+	_, err := e.db.ExecContext(ctx, updateQuery, args...)
 	return err
 }

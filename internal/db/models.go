@@ -10,12 +10,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// NetworkAddr wraps net.IPNet to implement PostgreSQL CIDR type
+// NetworkAddr wraps net.IPNet to implement PostgreSQL CIDR type.
 type NetworkAddr struct {
 	net.IPNet
 }
 
-// Scan implements sql.Scanner for PostgreSQL CIDR type
+// Scan implements sql.Scanner for PostgreSQL CIDR type.
 func (n *NetworkAddr) Scan(value interface{}) error {
 	if value == nil {
 		return nil
@@ -41,7 +41,7 @@ func (n *NetworkAddr) Scan(value interface{}) error {
 	}
 }
 
-// Value implements driver.Valuer for PostgreSQL CIDR type
+// Value implements driver.Valuer for PostgreSQL CIDR type.
 func (n NetworkAddr) Value() (driver.Value, error) {
 	if len(n.IP) == 0 {
 		return nil, nil
@@ -49,17 +49,17 @@ func (n NetworkAddr) Value() (driver.Value, error) {
 	return n.IPNet.String(), nil
 }
 
-// String returns the CIDR notation string
+// String returns the CIDR notation string.
 func (n NetworkAddr) String() string {
 	return n.IPNet.String()
 }
 
-// IPAddr wraps net.IP to implement PostgreSQL INET type
+// IPAddr wraps net.IP to implement PostgreSQL INET type.
 type IPAddr struct {
 	net.IP
 }
 
-// Scan implements sql.Scanner for PostgreSQL INET type
+// Scan implements sql.Scanner for PostgreSQL INET type.
 func (ip *IPAddr) Scan(value interface{}) error {
 	if value == nil {
 		return nil
@@ -85,7 +85,7 @@ func (ip *IPAddr) Scan(value interface{}) error {
 	}
 }
 
-// Value implements driver.Valuer for PostgreSQL INET type
+// Value implements driver.Valuer for PostgreSQL INET type.
 func (ip IPAddr) Value() (driver.Value, error) {
 	if ip.IP == nil {
 		return nil, nil
@@ -93,7 +93,7 @@ func (ip IPAddr) Value() (driver.Value, error) {
 	return ip.IP.String(), nil
 }
 
-// String returns the IP address string
+// String returns the IP address string.
 func (ip IPAddr) String() string {
 	if ip.IP == nil {
 		return ""
@@ -101,12 +101,12 @@ func (ip IPAddr) String() string {
 	return ip.IP.String()
 }
 
-// MACAddr wraps net.HardwareAddr to implement PostgreSQL MACADDR type
+// MACAddr wraps net.HardwareAddr to implement PostgreSQL MACADDR type.
 type MACAddr struct {
 	net.HardwareAddr
 }
 
-// Scan implements sql.Scanner for PostgreSQL MACADDR type
+// Scan implements sql.Scanner for PostgreSQL MACADDR type.
 func (mac *MACAddr) Scan(value interface{}) error {
 	if value == nil {
 		return nil
@@ -132,7 +132,7 @@ func (mac *MACAddr) Scan(value interface{}) error {
 	}
 }
 
-// Value implements driver.Valuer for PostgreSQL MACADDR type
+// Value implements driver.Valuer for PostgreSQL MACADDR type.
 func (mac MACAddr) Value() (driver.Value, error) {
 	if mac.HardwareAddr == nil {
 		return nil, nil
@@ -140,7 +140,7 @@ func (mac MACAddr) Value() (driver.Value, error) {
 	return mac.HardwareAddr.String(), nil
 }
 
-// String returns the MAC address string
+// String returns the MAC address string.
 func (mac MACAddr) String() string {
 	if mac.HardwareAddr == nil {
 		return ""
@@ -148,10 +148,10 @@ func (mac MACAddr) String() string {
 	return mac.HardwareAddr.String()
 }
 
-// JSONB wraps json.RawMessage for PostgreSQL JSONB type
+// JSONB wraps json.RawMessage for PostgreSQL JSONB type.
 type JSONB json.RawMessage
 
-// Scan implements sql.Scanner for PostgreSQL JSONB type
+// Scan implements sql.Scanner for PostgreSQL JSONB type.
 func (j *JSONB) Scan(value interface{}) error {
 	if value == nil {
 		*j = nil
@@ -170,7 +170,7 @@ func (j *JSONB) Scan(value interface{}) error {
 	}
 }
 
-// Value implements driver.Valuer for PostgreSQL JSONB type
+// Value implements driver.Valuer for PostgreSQL JSONB type.
 func (j JSONB) Value() (driver.Value, error) {
 	if j == nil {
 		return nil, nil
@@ -178,12 +178,12 @@ func (j JSONB) Value() (driver.Value, error) {
 	return []byte(j), nil
 }
 
-// String returns the JSON string
+// String returns the JSON string.
 func (j JSONB) String() string {
 	return string(j)
 }
 
-// MarshalJSON implements json.Marshaler
+// MarshalJSON implements json.Marshaler.
 func (j JSONB) MarshalJSON() ([]byte, error) {
 	if j == nil {
 		return []byte("null"), nil
@@ -191,13 +191,13 @@ func (j JSONB) MarshalJSON() ([]byte, error) {
 	return []byte(j), nil
 }
 
-// UnmarshalJSON implements json.Unmarshaler
+// UnmarshalJSON implements json.Unmarshaler.
 func (j *JSONB) UnmarshalJSON(data []byte) error {
 	*j = JSONB(data)
 	return nil
 }
 
-// ScanTarget represents a network target to scan
+// ScanTarget represents a network target to scan.
 type ScanTarget struct {
 	ID                  uuid.UUID   `db:"id" json:"id"`
 	Name                string      `db:"name" json:"name"`
@@ -211,7 +211,7 @@ type ScanTarget struct {
 	UpdatedAt           time.Time   `db:"updated_at" json:"updated_at"`
 }
 
-// DiscoveryJob represents a network discovery job
+// DiscoveryJob represents a network discovery job.
 type DiscoveryJob struct {
 	ID              uuid.UUID   `db:"id" json:"id"`
 	Network         NetworkAddr `db:"network" json:"network"`
@@ -224,7 +224,7 @@ type DiscoveryJob struct {
 	CreatedAt       time.Time   `db:"created_at" json:"created_at"`
 }
 
-// ScanProfile represents a scanning profile configuration
+// ScanProfile represents a scanning profile configuration.
 type ScanProfile struct {
 	ID          string    `db:"id" json:"id"`
 	Name        string    `db:"name" json:"name"`
@@ -242,7 +242,7 @@ type ScanProfile struct {
 	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
 }
 
-// ScheduledJob represents a scheduled scanning or discovery job
+// ScheduledJob represents a scheduled scanning or discovery job.
 type ScheduledJob struct {
 	ID             uuid.UUID  `db:"id" json:"id"`
 	Name           string     `db:"name" json:"name"`
@@ -255,7 +255,7 @@ type ScheduledJob struct {
 	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
 }
 
-// ScanJob represents a scan job execution
+// ScanJob represents a scan job execution.
 type ScanJob struct {
 	ID           uuid.UUID  `db:"id" json:"id"`
 	TargetID     uuid.UUID  `db:"target_id" json:"target_id"`
@@ -268,7 +268,7 @@ type ScanJob struct {
 	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
 }
 
-// OSFingerprint represents OS detection information
+// OSFingerprint represents OS detection information.
 type OSFingerprint struct {
 	Family     string                 `json:"family"`     // "windows", "linux", "macos", "freebsd", etc.
 	Name       string                 `json:"name"`       // "Windows Server 2019", "Ubuntu 22.04", etc.
@@ -278,7 +278,7 @@ type OSFingerprint struct {
 	Details    map[string]interface{} `json:"details"`    // Additional OS-specific data
 }
 
-// Host represents a discovered host
+// Host represents a discovered host.
 type Host struct {
 	ID              uuid.UUID  `db:"id" json:"id"`
 	IPAddress       IPAddr     `db:"ip_address" json:"ip_address"`
@@ -301,7 +301,7 @@ type Host struct {
 	Status          string     `db:"status" json:"status"`
 }
 
-// GetOSFingerprint returns the OS fingerprint information
+// GetOSFingerprint returns the OS fingerprint information.
 func (h *Host) GetOSFingerprint() *OSFingerprint {
 	if h.OSFamily == nil {
 		return nil
@@ -337,7 +337,7 @@ func (h *Host) GetOSFingerprint() *OSFingerprint {
 	return fp
 }
 
-// SetOSFingerprint updates the host with OS fingerprint information
+// SetOSFingerprint updates the host with OS fingerprint information.
 func (h *Host) SetOSFingerprint(fp *OSFingerprint) error {
 	if fp == nil {
 		return nil
@@ -362,7 +362,7 @@ func (h *Host) SetOSFingerprint(fp *OSFingerprint) error {
 	return nil
 }
 
-// PortScan represents a port scan result
+// PortScan represents a port scan result.
 type PortScan struct {
 	ID             uuid.UUID `db:"id" json:"id"`
 	JobID          uuid.UUID `db:"job_id" json:"job_id"`
@@ -377,7 +377,7 @@ type PortScan struct {
 	ScannedAt      time.Time `db:"scanned_at" json:"scanned_at"`
 }
 
-// Service represents detailed service detection
+// Service represents detailed service detection.
 type Service struct {
 	ID          uuid.UUID `db:"id" json:"id"`
 	PortScanID  uuid.UUID `db:"port_scan_id" json:"port_scan_id"`
@@ -389,7 +389,7 @@ type Service struct {
 	DetectedAt  time.Time `db:"detected_at" json:"detected_at"`
 }
 
-// HostHistory represents changes to hosts over time
+// HostHistory represents changes to hosts over time.
 type HostHistory struct {
 	ID        uuid.UUID `db:"id" json:"id"`
 	HostID    uuid.UUID `db:"host_id" json:"host_id"`
@@ -400,7 +400,7 @@ type HostHistory struct {
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 
-// ActiveHost represents the active_hosts view
+// ActiveHost represents the active_hosts view.
 type ActiveHost struct {
 	IPAddress         IPAddr    `db:"ip_address" json:"ip_address"`
 	Hostname          *string   `db:"hostname" json:"hostname,omitempty"`
@@ -412,7 +412,7 @@ type ActiveHost struct {
 	TotalPortsScanned int       `db:"total_ports_scanned" json:"total_ports_scanned"`
 }
 
-// NetworkSummary represents the network_summary view
+// NetworkSummary represents the network_summary view.
 type NetworkSummary struct {
 	TargetName  string      `db:"target_name" json:"target_name"`
 	Network     NetworkAddr `db:"network" json:"network"`
@@ -422,7 +422,7 @@ type NetworkSummary struct {
 	LastScan    *time.Time  `db:"last_scan" json:"last_scan,omitempty"`
 }
 
-// ScanJobStatus constants
+// ScanJobStatus constants.
 const (
 	ScanJobStatusPending   = "pending"
 	ScanJobStatusRunning   = "running"
@@ -430,7 +430,7 @@ const (
 	ScanJobStatusFailed    = "failed"
 )
 
-// DiscoveryJobStatus constants
+// DiscoveryJobStatus constants.
 const (
 	DiscoveryJobStatusPending   = "pending"
 	DiscoveryJobStatusRunning   = "running"
@@ -438,20 +438,20 @@ const (
 	DiscoveryJobStatusFailed    = "failed"
 )
 
-// ScheduledJobType constants
+// ScheduledJobType constants.
 const (
 	ScheduledJobTypeDiscovery = "discovery"
 	ScheduledJobTypeScan      = "scan"
 )
 
-// DiscoveryMethod constants
+// DiscoveryMethod constants.
 const (
 	DiscoveryMethodPing = "ping"
 	DiscoveryMethodARP  = "arp"
 	DiscoveryMethodTCP  = "tcp"
 )
 
-// OSFamily constants
+// OSFamily constants.
 const (
 	OSFamilyWindows = "windows"
 	OSFamilyLinux   = "linux"
@@ -461,7 +461,7 @@ const (
 	OSFamilyUnknown = "unknown"
 )
 
-// ScanTiming constants
+// ScanTiming constants.
 const (
 	ScanTimingParanoid   = "paranoid"
 	ScanTimingPolite     = "polite"
@@ -470,14 +470,14 @@ const (
 	ScanTimingInsane     = "insane"
 )
 
-// HostStatus constants
+// HostStatus constants.
 const (
 	HostStatusUp      = "up"
 	HostStatusDown    = "down"
 	HostStatusUnknown = "unknown"
 )
 
-// PortState constants
+// PortState constants.
 const (
 	PortStateOpen     = "open"
 	PortStateClosed   = "closed"
@@ -485,20 +485,20 @@ const (
 	PortStateUnknown  = "unknown"
 )
 
-// ScanType constants
+// ScanType constants.
 const (
 	ScanTypeConnect = "connect"
 	ScanTypeSYN     = "syn"
 	ScanTypeVersion = "version"
 )
 
-// Protocol constants
+// Protocol constants.
 const (
 	ProtocolTCP = "tcp"
 	ProtocolUDP = "udp"
 )
 
-// HostHistoryEvent constants
+// HostHistoryEvent constants.
 const (
 	HostEventDiscovered   = "discovered"
 	HostEventStatusChange = "status_change"

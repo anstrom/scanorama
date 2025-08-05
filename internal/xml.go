@@ -3,7 +3,10 @@ package internal
 import (
 	"encoding/xml"
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -37,7 +40,7 @@ type PortXML struct {
 
 // SaveResults writes scan results to an XML file at the specified path.
 // The output is formatted with proper indentation for readability.
-func SaveResults(result *ScanResult, filepath string) error {
+func SaveResults(result *ScanResult, filePath string) error {
 	if result == nil {
 		return fmt.Errorf("cannot save nil result")
 	}
@@ -66,19 +69,27 @@ func SaveResults(result *ScanResult, filepath string) error {
 		xmlData.Hosts[i] = xmlHost
 	}
 
-	// Create file
-	file, err := os.Create(filepath)
+	// Validate and create file
+	if err := validateFilePath(filePath); err != nil {
+		return &ScanError{Op: "validate path", Err: err}
+	}
+
+	file, err := os.Create(filePath) //nolint:gosec // path is validated by validateFilePath
 	if err != nil {
 		return &ScanError{Op: "create file", Err: err}
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("Failed to close file: %v", err)
+		}
+	}()
 
 	// Create encoder with indentation for readable output
 	encoder := xml.NewEncoder(file)
 	encoder.Indent("", "  ")
 
 	// Write XML header
-	if _, err := file.Write([]byte(xml.Header)); err != nil {
+	if _, err := file.WriteString(xml.Header); err != nil {
 		return &ScanError{Op: "write XML header", Err: err}
 	}
 
@@ -92,13 +103,22 @@ func SaveResults(result *ScanResult, filepath string) error {
 
 // LoadResults reads and parses scan results from an XML file.
 // It returns the parsed results or an error if the file cannot be read or parsed.
-func LoadResults(filepath string) (*ScanResult, error) {
+func LoadResults(filePath string) (*ScanResult, error) {
 	// Open and read file
-	file, err := os.Open(filepath)
+	// Validate and open file
+	if err := validateFilePath(filePath); err != nil {
+		return nil, &ScanError{Op: "validate path", Err: err}
+	}
+
+	file, err := os.Open(filePath) //nolint:gosec // path is validated by validateFilePath
 	if err != nil {
 		return nil, &ScanError{Op: "open file", Err: err}
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("Failed to close file: %v", err)
+		}
+	}()
 
 	// Create decoder
 	decoder := xml.NewDecoder(file)
@@ -129,4 +149,20 @@ func LoadResults(filepath string) (*ScanResult, error) {
 	}
 
 	return result, nil
+}
+
+// validateFilePath validates that the file path is safe to use.
+func validateFilePath(path string) error {
+	// Clean the path
+	cleanPath := filepath.Clean(path)
+
+	// Check for directory traversal patterns
+	if strings.Contains(cleanPath, "..") {
+		return fmt.Errorf("path contains directory traversal")
+	}
+
+	// Ensure path doesn't start with / (absolute path restrictions can be added here)
+	// For now, we allow both absolute and relative paths but check for traversal
+
+	return nil
 }

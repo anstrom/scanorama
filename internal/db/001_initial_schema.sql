@@ -277,8 +277,8 @@ INSERT INTO scan_profiles (id, name, description, os_family, ports, scan_type, t
  'connect', 'polite', ARRAY['ssh-hostkey', 'vnc-info'], 85, true),
 
 ('generic-default', 'Generic Default', 'Default scan for unknown OS',
- ARRAY[], '21,22,23,25,53,80,110,143,443,993,995,3389',
- 'connect', 'normal', ARRAY[], 10, true);
+ ARRAY[]::TEXT[], '21,22,23,25,53,80,110,143,443,993,995,3389',
+ 'connect', 'normal', ARRAY[]::TEXT[], 10, true);
 
 -- Comments for documentation
 COMMENT ON TABLE scan_targets IS 'Networks and IP ranges to scan continuously';

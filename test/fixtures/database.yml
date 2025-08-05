@@ -1,7 +1,7 @@
 # Test database configuration
 test:
   host: localhost
-  port: ${POSTGRES_PORT:-5432}
+  port: 5432
   database: scanorama_test
   username: test_user
   password: test_password
@@ -13,8 +13,8 @@ test:
 
 # CI environment configuration
 ci:
-  host: postgres
-  port: ${POSTGRES_PORT:-5432}
+  host: localhost
+  port: 5432
   database: scanorama_test
   username: test_user
   password: test_password
@@ -27,7 +27,7 @@ ci:
 # Development configuration
 development:
   host: localhost
-  port: ${POSTGRES_PORT:-5432}
+  port: 5432
   database: scanorama_dev
   username: postgres
   password: postgres

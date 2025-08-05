@@ -16,7 +16,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// test tables in order of dependency (children first, parents last)
+const (
+	trueString = "true"
+)
+
+// test tables in order of dependency (children first, parents last).
 var testTables = []string{
 	"host_history",
 	"services",
@@ -29,12 +33,11 @@ var testTables = []string{
 	"scan_targets",
 }
 
-// getTestConfig returns database configuration for tests
-// It prioritizes environment variables, then tries config files, then defaults
+// It prioritizes environment variables, then tries config files, then defaults.
 func getTestConfig() Config {
 	// Check if running in CI environment or debug mode
-	isCI := os.Getenv("GITHUB_ACTIONS") == "true"
-	isDebug := os.Getenv("DB_DEBUG") == "true"
+	isCI := os.Getenv("GITHUB_ACTIONS") == trueString
+	isDebug := os.Getenv("DB_DEBUG") == trueString
 
 	// Use 5432 as the default port (PostgreSQL standard)
 	defaultPort := 5432
@@ -79,7 +82,7 @@ func getTestConfig() Config {
 	return config
 }
 
-// hasEnvOverrides checks if any database environment variables are set
+// hasEnvOverrides checks if any database environment variables are set.
 func hasEnvOverrides() bool {
 	envVars := []string{"TEST_DB_HOST", "TEST_DB_PORT", "TEST_DB_NAME", "TEST_DB_USER", "TEST_DB_PASSWORD"}
 	for _, envVar := range envVars {
@@ -90,7 +93,7 @@ func hasEnvOverrides() bool {
 	return false
 }
 
-// loadDBConfigFromFile loads database configuration from the test fixtures
+// loadDBConfigFromFile loads database configuration from the test fixtures.
 func loadDBConfigFromFile(env string) (Config, error) {
 	// Find project root by looking for test directory
 	wd, err := os.Getwd()
@@ -117,7 +120,7 @@ func loadDBConfigFromFile(env string) (Config, error) {
 		return Config{}, fmt.Errorf("database.yml not found")
 	}
 
-	data, err := os.ReadFile(configFile)
+	data, err := os.ReadFile(configFile) //nolint:gosec // test file with controlled paths
 	if err != nil {
 		return Config{}, err
 	}
@@ -135,11 +138,11 @@ func loadDBConfigFromFile(env string) (Config, error) {
 	return config, nil
 }
 
-// getEnvOrDefault gets a string from environment or returns the default
+// getEnvOrDefault gets a string from environment or returns the default.
 func getEnvOrDefault(key, defaultValue string) string {
 	if val, ok := os.LookupEnv(key); ok && val != "" {
 		// Log for debugging
-		if os.Getenv("DB_DEBUG") == "true" {
+		if os.Getenv("DB_DEBUG") == trueString {
 			fmt.Printf("Using environment variable %s=%s\n", key, val)
 		}
 		return val
@@ -147,9 +150,9 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-// getEnvIntOrDefault gets an int from environment or returns the default
+// getEnvIntOrDefault gets an int from environment or returns the default.
 func getEnvIntOrDefault(key string, defaultValue int) int {
-	isDebug := os.Getenv("DB_DEBUG") == "true"
+	isDebug := os.Getenv("DB_DEBUG") == trueString
 	if val, ok := os.LookupEnv(key); ok && val != "" {
 		var i int
 		if _, err := fmt.Sscanf(val, "%d", &i); err == nil {
@@ -166,8 +169,8 @@ func getEnvIntOrDefault(key string, defaultValue int) int {
 	return defaultValue
 }
 
-// waitForDB waits for the database to become available with timeout
-func waitForDB(ctx context.Context, config Config) error {
+// waitForDB waits for the database to become available with timeout.
+func waitForDB(ctx context.Context, config *Config) error {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -179,7 +182,7 @@ func waitForDB(ctx context.Context, config Config) error {
 		defer cancel()
 	}
 
-	isDebug := os.Getenv("DB_DEBUG") == "true"
+	isDebug := os.Getenv("DB_DEBUG") == trueString
 	if isDebug {
 		fmt.Printf("Attempting to connect to database at %s:%d...\n", config.Host, config.Port)
 	}
@@ -194,7 +197,7 @@ func waitForDB(ctx context.Context, config Config) error {
 				if isDebug {
 					fmt.Printf("Successfully connected to database at %s:%d\n", config.Host, config.Port)
 				}
-				db.Close()
+				_ = db.Close()
 				return nil
 			} else {
 				// Log the error for debugging
@@ -208,7 +211,7 @@ func waitForDB(ctx context.Context, config Config) error {
 	}
 }
 
-// initializeSchema applies the database schema if tables don't exist
+// initializeSchema applies the database schema if tables don't exist.
 func initializeSchema(db *DB) error {
 	ctx := context.Background()
 
@@ -227,7 +230,7 @@ func initializeSchema(db *DB) error {
 		currentDir := filepath.Dir(currentFile)
 		schemaPath := filepath.Join(currentDir, "001_initial_schema.sql")
 
-		schemaBytes, err := os.ReadFile(schemaPath)
+		schemaBytes, err := os.ReadFile(schemaPath) //nolint:gosec // test file with controlled paths
 		if err != nil {
 			return fmt.Errorf("failed to read schema file: %w", err)
 		}
@@ -241,7 +244,7 @@ func initializeSchema(db *DB) error {
 	return nil
 }
 
-// cleanupDB truncates all test tables in the correct order
+// cleanupDB truncates all test tables in the correct order.
 func cleanupDB(db *DB) error {
 	ctx := context.Background()
 	for _, table := range testTables {
@@ -264,14 +267,13 @@ func cleanupDB(db *DB) error {
 	return nil
 }
 
-// setupTestDB creates a connection to the test database
-// It returns a cleanup function that should be deferred
-func setupTestDB(t *testing.T) (*DB, func()) {
+// It returns a cleanup function that should be deferred.
+func setupTestDB(t *testing.T) (testDB *DB, cleanup func()) {
 	if testing.Short() {
 		t.Skip("Skipping database tests in short mode")
 	}
 
-	isDebug := os.Getenv("DB_DEBUG") == "true"
+	isDebug := os.Getenv("DB_DEBUG") == trueString
 
 	config := getTestConfig()
 	ctx := context.Background()
@@ -283,19 +285,19 @@ func setupTestDB(t *testing.T) (*DB, func()) {
 
 	// Wait for database with longer timeout in CI
 	waitCtx := ctx
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
+	if os.Getenv("GITHUB_ACTIONS") == trueString {
 		var cancel context.CancelFunc
 		waitCtx, cancel = context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 	}
 
 	// Try to connect to the database
-	if err := waitForDB(waitCtx, config); err != nil {
+	if err := waitForDB(waitCtx, &config); err != nil {
 		t.Skipf("Skipping test - database not available: %v", err)
 		return nil, func() {}
 	}
 
-	db, err := Connect(ctx, config)
+	db, err := Connect(ctx, &config)
 	if err != nil {
 		t.Skipf("Skipping test - failed to connect to database: %v", err)
 		return nil, func() {}
@@ -303,13 +305,13 @@ func setupTestDB(t *testing.T) (*DB, func()) {
 
 	// Initialize database schema if needed
 	if err := initializeSchema(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatalf("Failed to initialize database schema: %v", err)
 	}
 
 	// Clean up database before test
 	if err := cleanupDB(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatalf("Failed to clean up database: %v", err)
 	}
 
@@ -324,7 +326,7 @@ func setupTestDB(t *testing.T) (*DB, func()) {
 	}
 }
 
-// Connect test cases
+// Connect test cases.
 func TestConnect(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -388,7 +390,7 @@ func TestConnect(t *testing.T) {
 			}
 
 			ctx := context.Background()
-			db, err := Connect(ctx, tt.config)
+			db, err := Connect(ctx, &tt.config)
 
 			if tt.wantErr {
 				if err == nil {
@@ -560,7 +562,11 @@ func TestQuery(t *testing.T) {
 		t.Errorf("Query() error = %v", err)
 		return
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			t.Logf("Failed to close rows: %v", err)
+		}
+	}()
 
 	var count int
 	for rows.Next() {
@@ -632,7 +638,7 @@ func TestTransaction(t *testing.T) {
 		// Insert in transaction
 		_, err = tx.ExecContext(ctx, "INSERT INTO test_tx (value) VALUES ($1)", "test-commit")
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("Exec in tx error = %v", err)
 		}
 
@@ -662,7 +668,7 @@ func TestTransaction(t *testing.T) {
 		// Insert in transaction
 		_, err = tx.ExecContext(ctx, "INSERT INTO test_tx (value) VALUES ($1)", "test-rollback")
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("Exec in tx error = %v", err)
 		}
 

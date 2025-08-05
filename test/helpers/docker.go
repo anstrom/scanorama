@@ -8,13 +8,19 @@ import (
 	"time"
 )
 
-// TestService defines a service available in the Docker test environment
+const (
+	// Test timeout constants.
+	defaultTestTimeoutSeconds = 5
+	connectionTimeoutSeconds  = 2
+)
+
+// TestService defines a service available in the Docker test environment.
 type TestService struct {
 	Name string
 	Port string
 }
 
-// TestEnvironment defines the test environment configuration
+// TestEnvironment defines the test environment configuration.
 type TestEnvironment struct {
 	Services      map[string]TestService
 	ContainerName string
@@ -22,7 +28,7 @@ type TestEnvironment struct {
 	RequireAll    bool
 }
 
-// DefaultTestEnvironment returns the default test environment configuration
+// DefaultTestEnvironment returns the default test environment configuration.
 func DefaultTestEnvironment() *TestEnvironment {
 	return &TestEnvironment{
 		Services: map[string]TestService{
@@ -33,12 +39,12 @@ func DefaultTestEnvironment() *TestEnvironment {
 			"Flask": {Name: "Flask", Port: "8888"},
 		},
 		ContainerName: "scanorama-test",
-		Timeout:       5,
+		Timeout:       defaultTestTimeoutSeconds,
 		RequireAll:    false,
 	}
 }
 
-// CheckService attempts to connect to a service with retries
+// CheckService attempts to connect to a service with retries.
 func (env *TestEnvironment) CheckService(t *testing.T, serviceName string, maxRetries int) bool {
 	service, ok := env.Services[serviceName]
 	if !ok {
@@ -50,9 +56,9 @@ func (env *TestEnvironment) CheckService(t *testing.T, serviceName string, maxRe
 	var connected bool
 
 	for i := 0; i < maxRetries; i++ {
-		conn, err := net.DialTimeout("tcp", "localhost:"+service.Port, 2*time.Second)
+		conn, err := net.DialTimeout("tcp", "localhost:"+service.Port, connectionTimeoutSeconds*time.Second)
 		if err == nil && conn != nil {
-			conn.Close()
+			_ = conn.Close()
 			connected = true
 			break
 		}
@@ -71,8 +77,7 @@ func (env *TestEnvironment) CheckService(t *testing.T, serviceName string, maxRe
 	return true
 }
 
-// SetupTestEnvironment ensures the Docker test environment is running
-// Returns true if all required services are available, false otherwise
+// SetupTestEnvironment returns true if all required services are available, false otherwise.
 func (env *TestEnvironment) SetupTestEnvironment(t *testing.T) bool {
 	if testing.Short() {
 		t.Skip("Skipping test that requires Docker services in short mode")
@@ -111,14 +116,14 @@ func (env *TestEnvironment) SetupTestEnvironment(t *testing.T) bool {
 	return true
 }
 
-// GetAvailableServices returns a list of available service ports
+// GetAvailableServices returns a list of available service ports.
 func (env *TestEnvironment) GetAvailableServices(t *testing.T) []string {
 	availablePorts := []string{}
 
 	for _, service := range env.Services {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%s", service.Port), 1*time.Second)
 		if err == nil && conn != nil {
-			conn.Close()
+			_ = conn.Close()
 			availablePorts = append(availablePorts, service.Port)
 			t.Logf("Service on port %s is available", service.Port)
 		}
