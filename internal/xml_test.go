@@ -10,6 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// escapeXML escapes special XML characters in a string.
+func escapeXML(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	return s
+}
+
 func TestSaveAndLoadXML(t *testing.T) {
 	// Create test data
 	testResult := &ScanResult{
@@ -47,7 +55,7 @@ func TestSaveAndLoadXML(t *testing.T) {
 		}
 
 		// Read file content
-		content, err := os.ReadFile(tmpFile)
+		content, err := os.ReadFile(tmpFile) //nolint:gosec // test file with controlled paths
 		if err != nil {
 			t.Fatalf("Failed to read XML file: %v", err)
 		}
@@ -122,7 +130,7 @@ func TestXMLErrorHandling(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				tmpDir := t.TempDir()
 				tmpFile := filepath.Join(tmpDir, "invalid.xml")
-				err := os.WriteFile(tmpFile, []byte(tc.content), 0644)
+				err := os.WriteFile(tmpFile, []byte(tc.content), 0o600)
 				require.NoError(t, err, "Failed to create test file")
 
 				_, err = LoadResults(tmpFile)
@@ -231,27 +239,10 @@ func TestXMLRoundTrip(t *testing.T) {
 			require.NoError(t, err, "Failed to load XML")
 
 			// Compare results
-			require.Equal(t, len(tt.original.Hosts), len(loaded.Hosts), "Host count mismatch")
-
-			for i, origHost := range tt.original.Hosts {
-				loadedHost := loaded.Hosts[i]
-				assert.Equal(t, origHost.Address, loadedHost.Address, "Host address mismatch")
-				assert.Equal(t, origHost.Status, loadedHost.Status, "Host status mismatch")
-				assert.Equal(t, len(origHost.Ports), len(loadedHost.Ports), "Port count mismatch")
-
-				for j, origPort := range origHost.Ports {
-					loadedPort := loadedHost.Ports[j]
-					assert.Equal(t, origPort.Number, loadedPort.Number, "Port number mismatch")
-					assert.Equal(t, origPort.Protocol, loadedPort.Protocol, "Protocol mismatch")
-					assert.Equal(t, origPort.State, loadedPort.State, "Port state mismatch")
-					assert.Equal(t, origPort.Service, loadedPort.Service, "Service mismatch")
-					assert.Equal(t, origPort.Version, loadedPort.Version, "Version mismatch")
-					assert.Equal(t, origPort.ServiceInfo, loadedPort.ServiceInfo, "ServiceInfo mismatch")
-				}
-			}
+			compareResults(t, tt.original, loaded)
 
 			// Verify file contents
-			content, err := os.ReadFile(tmpFile)
+			content, err := os.ReadFile(tmpFile) //nolint:gosec // G304: safe to read test temp file
 			require.NoError(t, err, "Failed to read XML file")
 			xmlContent := string(content)
 			assert.Contains(t, xmlContent, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
@@ -266,39 +257,47 @@ func TestXMLRoundTrip(t *testing.T) {
 
 				for _, port := range host.Ports {
 					if port.Version != "" {
-						// Handle XML escaping for Version field
-						if port.Version != "" {
-							expectedVersion := port.Version
-							if strings.Contains(expectedVersion, "&") {
-								expectedVersion = strings.ReplaceAll(expectedVersion, "&", "&amp;")
-							}
-							if strings.Contains(expectedVersion, "<") {
-								expectedVersion = strings.ReplaceAll(expectedVersion, "<", "&lt;")
-							}
-							if strings.Contains(expectedVersion, ">") {
-								expectedVersion = strings.ReplaceAll(expectedVersion, ">", "&gt;")
-							}
-							assert.Contains(t, xmlContent, "<Version>"+expectedVersion+"</Version>")
-						}
+						expectedVersion := escapeXML(port.Version)
+						assert.Contains(t, xmlContent, "<Version>"+expectedVersion+"</Version>")
 					}
 					if port.ServiceInfo != "" {
-						// Handle XML escaping for ServiceInfo field
-						if port.ServiceInfo != "" {
-							expectedServiceInfo := port.ServiceInfo
-							if strings.Contains(expectedServiceInfo, "&") {
-								expectedServiceInfo = strings.ReplaceAll(expectedServiceInfo, "&", "&amp;")
-							}
-							if strings.Contains(expectedServiceInfo, "<") {
-								expectedServiceInfo = strings.ReplaceAll(expectedServiceInfo, "<", "&lt;")
-							}
-							if strings.Contains(expectedServiceInfo, ">") {
-								expectedServiceInfo = strings.ReplaceAll(expectedServiceInfo, ">", "&gt;")
-							}
-							assert.Contains(t, xmlContent, "<ServiceInfo>"+expectedServiceInfo+"</ServiceInfo>")
-						}
+						expectedServiceInfo := escapeXML(port.ServiceInfo)
+						assert.Contains(t, xmlContent, "<ServiceInfo>"+expectedServiceInfo+"</ServiceInfo>")
 					}
 				}
 			}
 		})
 	}
+}
+
+// compareResults compares two ScanResult objects for equality.
+func compareResults(t *testing.T, original, loaded *ScanResult) {
+	require.Equal(t, len(original.Hosts), len(loaded.Hosts), "Host count mismatch")
+
+	for i, origHost := range original.Hosts {
+		loadedHost := loaded.Hosts[i]
+		compareHosts(t, origHost, loadedHost)
+	}
+}
+
+// compareHosts compares two Host objects for equality.
+func compareHosts(t *testing.T, original, loaded Host) {
+	assert.Equal(t, original.Address, loaded.Address, "Host address mismatch")
+	assert.Equal(t, original.Status, loaded.Status, "Host status mismatch")
+	assert.Equal(t, len(original.Ports), len(loaded.Ports), "Port count mismatch")
+
+	for j, origPort := range original.Ports {
+		loadedPort := loaded.Ports[j]
+		comparePorts(t, &origPort, &loadedPort)
+	}
+}
+
+// comparePorts compares two Port objects for equality.
+func comparePorts(t *testing.T, original, loaded *Port) {
+	assert.Equal(t, original.Number, loaded.Number, "Port number mismatch")
+	assert.Equal(t, original.Protocol, loaded.Protocol, "Protocol mismatch")
+	assert.Equal(t, original.State, loaded.State, "Port state mismatch")
+	assert.Equal(t, original.Service, loaded.Service, "Service mismatch")
+	assert.Equal(t, original.Version, loaded.Version, "Version mismatch")
+	assert.Equal(t, original.ServiceInfo, loaded.ServiceInfo, "ServiceInfo mismatch")
 }

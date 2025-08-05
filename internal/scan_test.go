@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testServices defines the ports and services available in our Docker test environment
+// testServices defines the ports and services available in our Docker test environment.
 var testServices = struct {
 	SSH           string
 	HTTP          string
@@ -36,8 +36,7 @@ var testServices = struct {
 	requireAll:    false, // Set to false to skip tests that require missing services
 }
 
-// setupTestEnvironment ensures the Docker test environment is running
-// Returns true if all services are available, false otherwise
+// Returns true if all services are available, false otherwise.
 func setupTestEnvironment(t *testing.T) bool {
 	if testing.Short() {
 		t.Skip("Skipping test that requires Docker services in short mode")
@@ -70,7 +69,7 @@ func setupTestEnvironment(t *testing.T) bool {
 		for i := 0; i < maxRetries; i++ {
 			conn, err := net.DialTimeout("tcp", "localhost:"+port, 2*time.Second)
 			if err == nil && conn != nil {
-				conn.Close()
+				_ = conn.Close()
 				connected = true
 				break
 			}
@@ -94,7 +93,7 @@ func setupTestEnvironment(t *testing.T) bool {
 	for name, port := range optionalServices {
 		conn, err := net.DialTimeout("tcp", "localhost:"+port, 2*time.Second)
 		if err == nil && conn != nil {
-			conn.Close()
+			_ = conn.Close()
 			t.Logf("Optional service %s is available on port %s", name, port)
 		}
 	}
@@ -216,7 +215,7 @@ func TestLocalScan(t *testing.T) {
 					return
 				}
 				if conn != nil {
-					conn.Close()
+					_ = conn.Close()
 				}
 			}
 
@@ -226,7 +225,7 @@ func TestLocalScan(t *testing.T) {
 				ScanType: tt.scanType,
 			}
 
-			result, err := RunScan(config)
+			result, err := RunScan(&config)
 			require.NoError(t, err)
 			require.NotNil(t, result)
 			require.NotEmpty(t, result.Hosts)
@@ -250,7 +249,7 @@ func TestScanTimeout(t *testing.T) {
 		return
 	}
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	tests := []struct {
 		name      string
@@ -292,7 +291,7 @@ func TestScanTimeout(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			start := time.Now()
-			_, err := RunScan(tt.config)
+			_, err := RunScan(&tt.config)
 			duration := time.Since(start)
 
 			if tt.wantError {
@@ -319,7 +318,7 @@ func TestScanResults(t *testing.T) {
 		return
 	}
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 
 	httpPort := testServices.HTTP
@@ -328,7 +327,7 @@ func TestScanResults(t *testing.T) {
 	sshAvailable := false
 	sshConn, err := net.DialTimeout("tcp", "localhost:"+testServices.SSH, 2*time.Second)
 	if err == nil && sshConn != nil {
-		sshConn.Close()
+		_ = sshConn.Close()
 		sshAvailable = true
 	}
 
@@ -346,7 +345,7 @@ func TestScanResults(t *testing.T) {
 		ScanType: "connect",
 	}
 
-	result, err := RunScan(config)
+	result, err := RunScan(&config)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.Hosts)
@@ -454,7 +453,7 @@ func TestPrintResults(t *testing.T) {
 
 			PrintResults(tt.result)
 
-			w.Close()
+			_ = w.Close()
 			os.Stdout = old
 
 			var buf bytes.Buffer
@@ -465,11 +464,12 @@ func TestPrintResults(t *testing.T) {
 			output := buf.String()
 
 			// Basic output validation
-			if tt.result == nil {
+			switch {
+			case tt.result == nil:
 				assert.Contains(t, output, "No results available")
-			} else if len(tt.result.Hosts) == 0 {
+			case len(tt.result.Hosts) == 0:
 				assert.Contains(t, output, "Scan Results:")
-			} else {
+			default:
 				assert.Contains(t, output, "Host: "+tt.result.Hosts[0].Address)
 				if tt.result.Hosts[0].Status == "up" && len(tt.result.Hosts[0].Ports) > 0 {
 					assert.Contains(t, output, "Open Ports:")
@@ -487,7 +487,7 @@ func TestServiceDetection(t *testing.T) {
 		return
 	}
 	if httpConn != nil {
-		httpConn.Close()
+		_ = httpConn.Close()
 	}
 
 	// Find which services are available
@@ -496,14 +496,14 @@ func TestServiceDetection(t *testing.T) {
 	// Check SSH
 	sshConn, err := net.DialTimeout("tcp", "localhost:"+testServices.SSH, 1*time.Second)
 	if err == nil && sshConn != nil {
-		sshConn.Close()
+		_ = sshConn.Close()
 		availablePorts = append(availablePorts, testServices.SSH)
 	}
 
 	// Check Redis
 	redisConn, err := net.DialTimeout("tcp", "localhost:"+testServices.Redis, 1*time.Second)
 	if err == nil && redisConn != nil {
-		redisConn.Close()
+		_ = redisConn.Close()
 		availablePorts = append(availablePorts, testServices.Redis)
 	}
 
@@ -521,7 +521,7 @@ func TestServiceDetection(t *testing.T) {
 		ScanType: "connect",
 	}
 
-	result, err := RunScan(config)
+	result, err := RunScan(&config)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.Hosts)
@@ -570,7 +570,7 @@ func TestXMLFormatting(t *testing.T) {
 	tmpFile := "test_scan.xml"
 	err := SaveResults(result, tmpFile)
 	require.NoError(t, err)
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	// Test loading
 	loaded, err := LoadResults(tmpFile)
