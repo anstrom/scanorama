@@ -50,7 +50,7 @@ func TestPIDFileHandling(t *testing.T) {
 	}
 
 	// Verify PID file content
-	content, err := os.ReadFile(pidFile)
+	content, err := os.ReadFile(pidFile) //nolint:gosec // test file with controlled paths
 	if err != nil {
 		t.Fatalf("Failed to read PID file: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestSignalHandling(t *testing.T) {
 	d.setupSignalHandlers()
 
 	// Send termination signal
-	syscall.Kill(os.Getpid(), syscall.SIGTERM)
+	_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
 
 	// Wait for handler to process signal
 	<-done

@@ -1,46 +1,149 @@
-# golangci-lint configuration for Scanorama
+version: "2"
+
 run:
-  timeout: 5m
   tests: true
-  # Skip packages that are known to cause issues with analysis
-  skip-dirs:
-    - vendor
-    - "test/docker"
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+  go: "1.24"
 
-# Output configuration
-output:
-  format: colored-line-number
-  sort-results: true
-
-# Basic linter settings
-linters-settings:
-  govet:
-    check-shadowing: false
-  gofmt:
-    simplify: true
-  misspell:
-    locale: US
-
-# Enable only fast, reliable linters
 linters:
-  disable-all: true
+  default: none
   enable:
-    - errcheck # Check for unchecked errors
-    - gofmt # Check code formatting
-    - gosimple # Simplify code
-    - govet # Check for suspicious constructs
-    - ineffassign # Detect ineffectual assignments
-    - misspell # Detect commonly misspelled words
-    - staticcheck # Go static analysis
-    - unused # Find unused code
+    # Error detection
+    - errcheck
+    - gosec
+    - govet
 
-# Configure issue handling
+    # Code quality
+    - staticcheck
+    - ineffassign
+    - unconvert
+    - unparam
+    - unused
+
+    # Performance
+    - prealloc
+
+    # Style and formatting
+    - misspell
+    - whitespace
+
+    # Bugs and correctness
+    - gocritic
+    - goconst
+    - dupl
+    - bodyclose
+    - rowserrcheck
+    - sqlclosecheck
+
+    # Complexity
+    - gocyclo
+    - funlen
+    - lll
+
+    # Documentation
+    - godot
+
+    # Best practices
+    - copyloopvar
+    - mnd
+    - nestif
+    - predeclared
+    - nolintlint
+
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - shadow
+        - fieldalignment
+
+    gosec:
+      severity: medium
+      confidence: medium
+      excludes:
+        - G104
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - dupImport
+        - ifElseChain
+        - octalLiteral
+        - whyNoLint
+
+    gocyclo:
+      min-complexity: 15
+
+    funlen:
+      lines: 100
+      statements: 50
+
+    lll:
+      line-length: 120
+      tab-width: 4
+
+    mnd:
+      checks:
+        - argument
+        - case
+        - condition
+        - operation
+        - return
+      ignored-numbers:
+        - "0"
+        - "1"
+        - "2"
+        - "8"
+        - "10"
+        - "16"
+        - "32"
+        - "64"
+        - "80"
+        - "443"
+        - "1024"
+        - "8080"
+
+    nestif:
+      min-complexity: 5
+
+    nolintlint:
+      allow-unused: false
+      require-explanation: false
+      require-specific: false
+
+    misspell:
+      locale: US
+
+    staticcheck:
+      checks: ["all"]
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - mnd
+          - funlen
+          - lll
+          - dupl
+          - goconst
+
+      - path: cmd/.*main\.go
+        linters:
+          - funlen
+          - mnd
+
+      - path: ".*\\.pb\\.go"
+        linters:
+          - lll
+
 issues:
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - errcheck
   max-issues-per-linter: 0
   max-same-issues: 0
+  new: false
   fix: false

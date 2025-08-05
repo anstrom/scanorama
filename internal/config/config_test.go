@@ -35,11 +35,11 @@ scanning:
 `)
 				dir := t.TempDir()
 				path := filepath.Join(dir, "config.yaml")
-				if err := os.WriteFile(path, content, 0644); err != nil {
+				if err := os.WriteFile(path, content, 0o600); err != nil {
 					t.Fatal(err)
 				}
 				return path, func() {
-					os.Remove(path)
+					_ = os.Remove(path)
 				}
 			},
 			wantErr: false,
@@ -67,11 +67,11 @@ scanning:
 				}`)
 				dir := t.TempDir()
 				path := filepath.Join(dir, "config.json")
-				if err := os.WriteFile(path, content, 0644); err != nil {
+				if err := os.WriteFile(path, content, 0o600); err != nil {
 					t.Fatal(err)
 				}
 				return path, func() {
-					os.Remove(path)
+					_ = os.Remove(path)
 				}
 			},
 			wantErr: false,
@@ -86,11 +86,11 @@ database:
 `)
 				dir := t.TempDir()
 				path := filepath.Join(dir, "config.yaml")
-				if err := os.WriteFile(path, content, 0644); err != nil {
+				if err := os.WriteFile(path, content, 0o600); err != nil {
 					t.Fatal(err)
 				}
 				return path, func() {
-					os.Remove(path)
+					_ = os.Remove(path)
 				}
 			},
 			wantErr: true,
@@ -106,11 +106,11 @@ database:
 				}`)
 				dir := t.TempDir()
 				path := filepath.Join(dir, "config.json")
-				if err := os.WriteFile(path, content, 0644); err != nil {
+				if err := os.WriteFile(path, content, 0o600); err != nil {
 					t.Fatal(err)
 				}
 				return path, func() {
-					os.Remove(path)
+					_ = os.Remove(path)
 				}
 			},
 			wantErr: true,
@@ -128,11 +128,11 @@ database:
 				content := []byte(`config data`)
 				dir := t.TempDir()
 				path := filepath.Join(dir, "config.txt")
-				if err := os.WriteFile(path, content, 0644); err != nil {
+				if err := os.WriteFile(path, content, 0o600); err != nil {
 					t.Fatal(err)
 				}
 				return path, func() {
-					os.Remove(path)
+					_ = os.Remove(path)
 				}
 			},
 			wantErr: true,
@@ -156,138 +156,122 @@ database:
 	}
 }
 
+// setUpEnvironment sets up test environment variables and returns a cleanup function.
+func setUpEnvironment(env map[string]string) func() {
+	origEnv := make(map[string]string)
+	for k := range env {
+		if v, ok := os.LookupEnv(k); ok {
+			origEnv[k] = v
+		}
+	}
+
+	for k, v := range env {
+		_ = os.Setenv(k, v)
+	}
+
+	return func() {
+		for k := range env {
+			if orig, ok := origEnv[k]; ok {
+				_ = os.Setenv(k, orig)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		}
+	}
+}
+
+// createTestConfigFile creates a temporary config file with given content.
+func createTestConfigFile(t *testing.T, content string) (path string, cleanup func()) {
+	dir := t.TempDir()
+	path = filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path, func() {
+		_ = os.Remove(path)
+	}
+}
+
+// validateDatabaseConfig validates database configuration from environment.
+func validateDatabaseConfig(t *testing.T) {
+	cfg := getDatabaseConfigFromEnv()
+
+	expected := map[string]interface{}{
+		"env-host": cfg.Host,
+		"env-db":   cfg.Database,
+		"env-user": cfg.Username,
+		"env-pass": cfg.Password,
+	}
+
+	for want, got := range expected {
+		if got != want {
+			t.Errorf("Expected %v, got %v", want, got)
+		}
+	}
+
+	if cfg.Port != 5433 {
+		t.Errorf("Port = %v, want %v", cfg.Port, 5433)
+	}
+}
+
 func TestLoadWithEnv(t *testing.T) {
-	tests := []struct {
-		name    string
-		env     map[string]string
-		setup   func() (string, func())
-		check   func(*Config) error
-		wantErr bool
-	}{
-		{
-			name: "override database config",
-			env: map[string]string{
-				"SCANORAMA_DB_HOST":     "env-host",
-				"SCANORAMA_DB_PORT":     "5433",
-				"SCANORAMA_DB_NAME":     "env-db",
-				"SCANORAMA_DB_USER":     "env-user",
-				"SCANORAMA_DB_PASSWORD": "env-pass",
-			},
-			setup: func() (string, func()) {
-				content := []byte(`
+	t.Run("override database config", func(t *testing.T) {
+		env := map[string]string{
+			"SCANORAMA_DB_HOST":     "env-host",
+			"SCANORAMA_DB_PORT":     "5433",
+			"SCANORAMA_DB_NAME":     "env-db",
+			"SCANORAMA_DB_USER":     "env-user",
+			"SCANORAMA_DB_PASSWORD": "env-pass",
+		}
+
+		cleanup := setUpEnvironment(env)
+		defer cleanup()
+
+		content := `
 database:
   host: localhost
   port: 5432
   name: testdb
   user: testuser
   password: testpass
-`)
-				dir := t.TempDir()
-				path := filepath.Join(dir, "config.yaml")
-				if err := os.WriteFile(path, content, 0644); err != nil {
-					t.Fatal(err)
-				}
-				return path, func() {
-					os.Remove(path)
-				}
-			},
-			check: func(c *Config) error {
-				if c == nil {
-					t.Fatal("Config is nil")
-				}
-				// Set environment variables
-				os.Setenv("SCANORAMA_DB_HOST", "env-host")
-				os.Setenv("SCANORAMA_DB_PORT", "5433")
-				os.Setenv("SCANORAMA_DB_NAME", "env-db")
-				os.Setenv("SCANORAMA_DB_USER", "env-user")
-				os.Setenv("SCANORAMA_DB_PASSWORD", "env-pass")
+`
+		path, fileCleanup := createTestConfigFile(t, content)
+		defer fileCleanup()
 
-				cfg := getDatabaseConfigFromEnv()
-				if got := cfg.Host; got != "env-host" {
-					t.Errorf("Host = %v, want %v", got, "env-host")
-				}
-				if got := cfg.Port; got != 5433 {
-					t.Errorf("Port = %v, want %v", got, 5433)
-				}
-				if got := cfg.Database; got != "env-db" {
-					t.Errorf("Database = %v, want %v", got, "env-db")
-				}
-				if got := cfg.Username; got != "env-user" {
-					t.Errorf("Username = %v, want %v", got, "env-user")
-				}
-				if got := cfg.Password; got != "env-pass" {
-					t.Errorf("Password = %v, want %v", got, "env-pass")
-				}
-				return nil
-			},
-			wantErr: false,
-		},
-		{
-			name: "invalid port in env",
-			env: map[string]string{
-				"SCANORAMA_DB_PORT": "invalid",
-			},
-			setup: func() (string, func()) {
-				content := []byte(`
+		cfg, err := Load(path)
+		if err != nil {
+			t.Errorf("Load() error = %v, wantErr false", err)
+			return
+		}
+
+		if cfg == nil {
+			t.Fatal("Config is nil")
+		}
+
+		validateDatabaseConfig(t)
+	})
+
+	t.Run("invalid port in env", func(t *testing.T) {
+		env := map[string]string{
+			"SCANORAMA_DB_PORT": "invalid",
+		}
+
+		cleanup := setUpEnvironment(env)
+		defer cleanup()
+
+		content := `
 database:
   host: localhost
   port: 5432
-`)
-				dir := t.TempDir()
-				path := filepath.Join(dir, "config.yaml")
-				if err := os.WriteFile(path, content, 0644); err != nil {
-					t.Fatal(err)
-				}
-				return path, func() {
-					os.Remove(path)
-				}
-			},
-			wantErr: true,
-		},
-	}
+`
+		path, fileCleanup := createTestConfigFile(t, content)
+		defer fileCleanup()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Save original env
-			origEnv := make(map[string]string)
-			for k := range tt.env {
-				if v, ok := os.LookupEnv(k); ok {
-					origEnv[k] = v
-				}
-			}
-
-			// Set test env
-			for k, v := range tt.env {
-				os.Setenv(k, v)
-			}
-
-			// Cleanup env after test
-			defer func() {
-				for k := range tt.env {
-					if orig, ok := origEnv[k]; ok {
-						os.Setenv(k, orig)
-					} else {
-						os.Unsetenv(k)
-					}
-				}
-			}()
-
-			path, cleanup := tt.setup()
-			defer cleanup()
-
-			cfg, err := Load(path)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Load() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if err == nil && tt.check != nil {
-				if err := tt.check(cfg); err != nil {
-					t.Errorf("check failed: %v", err)
-				}
-			}
-		})
-	}
+		_, err := Load(path)
+		if err == nil {
+			t.Errorf("Load() error = nil, wantErr true")
+		}
+	})
 }
 
 func TestValidate(t *testing.T) {
