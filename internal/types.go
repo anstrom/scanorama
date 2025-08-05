@@ -7,7 +7,12 @@ import (
 	"time"
 )
 
-// Error types for scan operations
+const (
+	// Port validation constants.
+	expectedPortRangeParts = 2
+)
+
+// ScanError represents error types for scan operations.
 type ScanError struct {
 	Op   string // Operation that failed
 	Err  error  // Original error
@@ -47,7 +52,7 @@ type ScanConfig struct {
 	RetryDelay time.Duration
 }
 
-// Validate checks if the scan configuration is valid
+// Validate checks if the scan configuration is valid.
 func (c *ScanConfig) Validate() error {
 	if len(c.Targets) == 0 {
 		return &ScanError{Op: "validate config", Err: fmt.Errorf("no targets specified")}
@@ -59,42 +64,68 @@ func (c *ScanConfig) Validate() error {
 		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid scan type: %s", c.ScanType)}
 	}
 
-	// Validate ports
+	return c.validatePorts()
+}
+
+// validatePorts validates the port specification.
+func (c *ScanConfig) validatePorts() error {
 	parts := strings.Split(c.Ports, ",")
 	for _, part := range parts {
-		// Handle port ranges (e.g., "80-100")
-		if strings.Contains(part, "-") {
-			rangeParts := strings.Split(part, "-")
-			if len(rangeParts) != 2 {
-				return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port range format: %s", part)}
-			}
-
-			start, err := strconv.Atoi(rangeParts[0])
-			if err != nil {
-				return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port number: %s", rangeParts[0])}
-			}
-
-			end, err := strconv.Atoi(rangeParts[1])
-			if err != nil {
-				return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port number: %s", rangeParts[1])}
-			}
-
-			if start < 0 || end > 65535 || start > end {
-				return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port range: %s (must be 0-65535)", part)}
-			}
-		} else {
-			// Handle single ports
-			port, err := strconv.Atoi(part)
-			if err != nil {
-				return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port number: %s", part)}
-			}
-
-			if port < 0 || port > 65535 {
-				return &ScanError{Op: "validate config", Err: fmt.Errorf("port %d out of valid range (0-65535)", port)}
-			}
+		if err := c.validatePortPart(part); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
+// validatePortPart validates a single port or port range.
+func (c *ScanConfig) validatePortPart(part string) error {
+	if strings.Contains(part, "-") {
+		return c.validatePortRange(part)
+	}
+	return c.validateSinglePort(part)
+}
+
+// validatePortRange validates a port range (e.g., "80-100").
+func (c *ScanConfig) validatePortRange(part string) error {
+	rangeParts := strings.Split(part, "-")
+	if len(rangeParts) != expectedPortRangeParts {
+		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port range format: %s", part)}
+	}
+
+	start, err := strconv.Atoi(strings.TrimSpace(rangeParts[0]))
+	if err != nil {
+		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid start port: %s", rangeParts[0])}
+	}
+	end, err := strconv.Atoi(strings.TrimSpace(rangeParts[1]))
+	if err != nil {
+		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid end port: %s", rangeParts[1])}
+	}
+
+	if start < 0 || start > 65535 || end < 0 || end > 65535 {
+		return &ScanError{
+			Op:  "validate config",
+			Err: fmt.Errorf("invalid port range: %s (must be 0-65535)", part),
+		}
+	}
+	if start > end {
+		return &ScanError{
+			Op:  "validate config",
+			Err: fmt.Errorf("invalid port range: start port must be less than end port"),
+		}
+	}
+	return nil
+}
+
+// validateSinglePort validates a single port.
+func (c *ScanConfig) validateSinglePort(part string) error {
+	port, err := strconv.Atoi(strings.TrimSpace(part))
+	if err != nil {
+		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port: %s", part)}
+	}
+	if port < 0 || port > 65535 {
+		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port: %d (must be 0-65535)", port)}
+	}
 	return nil
 }
 
@@ -114,7 +145,7 @@ type ScanResult struct {
 	Error error
 }
 
-// NewScanResult creates a new scan result with the current time as start time
+// NewScanResult creates a new scan result with the current time as start time.
 func NewScanResult() *ScanResult {
 	return &ScanResult{
 		StartTime: time.Now(),
@@ -122,7 +153,7 @@ func NewScanResult() *ScanResult {
 	}
 }
 
-// Complete marks the scan as complete and calculates duration
+// Complete marks the scan as complete and calculates duration.
 func (r *ScanResult) Complete() {
 	r.EndTime = time.Now()
 	r.Duration = r.EndTime.Sub(r.StartTime)
