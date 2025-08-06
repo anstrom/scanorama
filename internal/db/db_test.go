@@ -485,7 +485,6 @@ func TestPing(t *testing.T) {
 }
 
 func TestRepositories(t *testing.T) {
-	t.Skip("Temporarily skipping complex database tests to focus on basic nmap functionality")
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -663,7 +662,6 @@ func TestExec(t *testing.T) {
 }
 
 func TestTransaction(t *testing.T) {
-	t.Skip("Temporarily skipping complex database tests to focus on basic nmap functionality")
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
