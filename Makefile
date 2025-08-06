@@ -29,15 +29,16 @@ export PATH := $(GOBIN):$(PATH)
 DOCKER_COMPOSE := docker compose
 COMPOSE_FILE := ./test/docker/docker-compose.yml
 
-.PHONY: help build clean clean-test test test-up test-down test-logs test-debug test-local coverage lint lint-install lint-fix deps install run fmt vet check all version ci-local
+.PHONY: help build clean clean-test test test-up test-down test-logs test-debug test-local coverage lint lint-install lint-fix deps install run fmt vet check all version ci-local setup-dev-db db-up db-down db-status
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
 	@echo ''
 	@echo 'Quick Start:'
-	@echo '  make ci-local    # Run all CI checks locally before pushing'
-	@echo '  make test        # Run tests with database'
-	@echo '  make build       # Build binary'
+	@echo '  make setup-dev-db # Set up development database'
+	@echo '  make ci-local     # Run all CI checks locally before pushing'
+	@echo '  make test         # Run tests with database'
+	@echo '  make build        # Build binary'
 	@echo ''
 	@echo 'All Targets:'
 	@awk '/^[a-zA-Z_-]+:.*?## / { \
@@ -98,6 +99,58 @@ test-local: ## Run tests against local PostgreSQL without Docker
 	@echo "  - Username: test_user"
 	@echo "  - Password: test_password"
 	@POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v ./...
+
+test-integration: ## Run integration tests with database
+	@echo "Running integration tests..."
+	@echo "Make sure PostgreSQL is running on port 5432 with development database"
+	@$(GOTEST) -v ./test -run TestIntegration -timeout 30m
+
+test-benchmark: ## Run benchmark tests
+	@echo "Running benchmark tests..."
+	@echo "Make sure PostgreSQL is running on port 5432 with development database"
+	@$(GOTEST) -v ./test -bench=. -benchmem -timeout 30m
+
+test-db: ## Run database-specific integration tests
+	@echo "Running database integration tests..."
+	@echo "Make sure PostgreSQL is running on port 5432 with development database"
+	@$(GOTEST) -v ./test -run "TestScanWithDatabaseStorage|TestDiscoveryWithDatabaseStorage|TestQueryScanResults" -timeout 15m
+
+test-all: db-up ## Run all tests including integration and benchmarks
+	@echo "Running all tests..."
+	@sleep 3
+	@$(GOTEST) -v ./... ; ret1=$$? ; \
+	$(GOTEST) -v ./test -timeout 30m ; ret2=$$? ; \
+	if [ $$ret1 -ne 0 ] || [ $$ret2 -ne 0 ]; then \
+		echo "Some tests failed" ; \
+		exit 1 ; \
+	fi
+	@echo "All tests passed!"
+
+setup-dev-db: ## Set up development PostgreSQL database
+	@echo "Setting up development database..."
+	@./scripts/setup-dev-db.sh
+
+db-up: ## Start PostgreSQL container for development
+	@echo "Starting PostgreSQL container for development..."
+	@docker run --name scanorama-dev-postgres \
+		-e POSTGRES_DB=scanorama_dev \
+		-e POSTGRES_USER=scanorama_dev \
+		-e POSTGRES_PASSWORD=dev_password \
+		-p 5432:5432 \
+		-d postgres:16-alpine || echo "Container may already exist"
+	@echo "Waiting for PostgreSQL to be ready..."
+	@sleep 5
+	@echo "PostgreSQL is ready on localhost:5432"
+	@echo "Database: scanorama_dev, User: scanorama_dev, Password: dev_password"
+
+db-down: ## Stop and remove PostgreSQL development container
+	@echo "Stopping PostgreSQL development container..."
+	@docker stop scanorama-dev-postgres || true
+	@docker rm scanorama-dev-postgres || true
+
+db-status: ## Check PostgreSQL development container status
+	@echo "PostgreSQL development container status:"
+	@docker ps -a --filter name=scanorama-dev-postgres --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || echo "Container not found"
 
 coverage: test-up ## Generate test coverage report
 	@echo "Generating coverage report..."
