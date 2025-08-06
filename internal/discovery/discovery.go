@@ -245,7 +245,10 @@ func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob)
 func buildNmapOptions(network string, timeout time.Duration) []nmap.Option {
 	options := []nmap.Option{
 		nmap.WithTargets(network),
-		nmap.WithPingScan(), // Host discovery only, no port scan
+		// Use TCP connect discovery instead of ICMP ping (no root privileges required)
+		nmap.WithPorts("22,80,443,8080,8443,3389,5432,6379"),
+		nmap.WithConnectScan(),
+		// TCP connect scan works without root privileges and provides host discovery
 	}
 
 	// Add timing based on timeout

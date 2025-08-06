@@ -9,6 +9,10 @@ import (
 	"github.com/Ullaakut/nmap/v3"
 )
 
+const (
+	portStateOpen = "open"
+)
+
 // TestNmapScannerCreation tests that we can create an nmap scanner.
 func TestNmapScannerCreation(t *testing.T) {
 	ctx := context.Background()
@@ -270,4 +274,138 @@ func TestNmapRedisService(t *testing.T) {
 // TestNmapSSHService tests scanning the openssh service container.
 func TestNmapSSHService(t *testing.T) {
 	scanServiceHelper(t, "ssh", "8022", 8022)
+}
+
+// TestNmapDiscoveryPingPrivileges tests if ICMP ping scanning works (requires root privileges).
+func TestNmapDiscoveryPingPrivileges(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Test ICMP ping scan - this will fail in CI without root privileges
+	scanner, err := nmap.NewScanner(ctx,
+		nmap.WithTargets("127.0.0.1"),
+		nmap.WithPingScan(), // Requires root privileges for ICMP
+	)
+	if err != nil {
+		t.Fatalf("Failed to create ICMP ping scanner: %v", err)
+	}
+
+	result, warnings, err := scanner.Run()
+	if err != nil {
+		t.Logf("❌ ICMP ping scan failed (expected in CI without root): %v", err)
+		t.Log("This explains why discovery fails in CI - ping requires root privileges")
+		return // Expected failure in CI
+	}
+
+	if warnings != nil && len(*warnings) > 0 {
+		t.Logf("ICMP ping scan warnings: %v", *warnings)
+	}
+
+	if result != nil && len(result.Hosts) > 0 {
+		t.Logf("✅ ICMP ping scan worked (running with privileges)")
+		for i := range result.Hosts {
+			host := &result.Hosts[i]
+			if len(host.Addresses) > 0 {
+				t.Logf("Host: %s, status: %s", host.Addresses[0].Addr, host.Status.State)
+			}
+		}
+	}
+}
+
+// TestNmapTCPDiscovery tests TCP-based host discovery (no root privileges required).
+func TestNmapTCPDiscovery(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Use TCP SYN discovery instead of ICMP ping - works without root
+	scanner, err := nmap.NewScanner(ctx,
+		nmap.WithTargets("127.0.0.1"),
+		nmap.WithPorts("80,22,443,8080"), // Common ports for discovery
+		nmap.WithConnectScan(),           // TCP connect scan works without root
+	)
+	if err != nil {
+		t.Fatalf("Failed to create TCP discovery scanner: %v", err)
+	}
+
+	result, warnings, err := scanner.Run()
+	if err != nil {
+		t.Fatalf("TCP discovery scan failed: %v", err)
+	}
+
+	if warnings != nil && len(*warnings) > 0 {
+		t.Logf("TCP discovery scan warnings: %v", *warnings)
+	}
+
+	if result == nil {
+		t.Fatal("TCP discovery scan result is nil")
+	}
+
+	t.Logf("TCP discovery scan completed. Found %d hosts", len(result.Hosts))
+
+	// Check if we found the host as up
+	if len(result.Hosts) == 0 {
+		t.Log("❌ TCP discovery found no hosts")
+		return
+	}
+
+	for i := range result.Hosts {
+		host := &result.Hosts[i]
+		if len(host.Addresses) == 0 {
+			continue
+		}
+
+		t.Logf("Host: %s, status: %s", host.Addresses[0].Addr, host.Status.State)
+		if host.Status.State == "up" {
+			t.Logf("✅ TCP-based discovery found host %s as up", host.Addresses[0].Addr)
+		}
+
+		// Log open ports found
+		for _, port := range host.Ports {
+			if port.State.State == portStateOpen {
+				t.Logf("  Open port: %d/%s", port.ID, port.Protocol)
+			}
+		}
+	}
+}
+
+// TestNmapPrivilegeFreeScan tests scanning methods that work without root privileges.
+func TestNmapPrivilegeFreeScan(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Test connect scan to known open port (from our service containers)
+	scanner, err := nmap.NewScanner(ctx,
+		nmap.WithTargets("127.0.0.1"),
+		nmap.WithPorts("8080"), // nginx service container
+		nmap.WithConnectScan(), // No privileges required
+	)
+	if err != nil {
+		t.Fatalf("Failed to create privilege-free scanner: %v", err)
+	}
+
+	result, warnings, err := scanner.Run()
+	if err != nil {
+		t.Fatalf("Privilege-free scan failed: %v", err)
+	}
+
+	if warnings != nil && len(*warnings) > 0 {
+		t.Logf("Privilege-free scan warnings: %v", *warnings)
+	}
+
+	if result == nil {
+		t.Fatal("Privilege-free scan result is nil")
+	}
+
+	t.Logf("Privilege-free scan completed. Found %d hosts", len(result.Hosts))
+
+	// This should work reliably in CI since it doesn't need special privileges
+	if len(result.Hosts) > 0 {
+		host := &result.Hosts[0]
+		t.Logf("✅ Host found without privileges: %s, status: %s", host.Addresses[0].Addr, host.Status.State)
+		for _, port := range host.Ports {
+			t.Logf("  Port %d/%s: %s", port.ID, port.Protocol, port.State.State)
+		}
+	} else {
+		t.Log("❌ No hosts found with privilege-free scan")
+	}
 }
