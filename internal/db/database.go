@@ -422,6 +422,24 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Verify all host_ids exist to prevent foreign key constraint violations
+	hostIDs := make(map[uuid.UUID]bool)
+	for _, scan := range scans {
+		hostIDs[scan.HostID] = true
+	}
+
+	for hostID := range hostIDs {
+		var exists bool
+		verifyQuery := `SELECT EXISTS(SELECT 1 FROM hosts WHERE id = $1)`
+		err := tx.QueryRowContext(ctx, verifyQuery, hostID).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("failed to verify host existence for %s: %w", hostID, err)
+		}
+		if !exists {
+			return fmt.Errorf("host %s does not exist, cannot create port scans", hostID)
+		}
+	}
+
 	query := `
 		INSERT INTO port_scans (
 			id, job_id, host_id, port, protocol, state,
