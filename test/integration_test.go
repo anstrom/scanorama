@@ -44,48 +44,31 @@ func setupIntegrationTestSuite(t *testing.T) *IntegrationTestSuite {
 
 // setupTestDatabase creates a test database connection.
 func setupTestDatabase(t *testing.T) *db.DB {
-	// Use test database configuration
-	cfg := db.Config{
-		Host:            getEnvOrDefault("TEST_DB_HOST", "localhost"),
-		Port:            getEnvIntOrDefault("TEST_DB_PORT", 5432),
-		Database:        getEnvOrDefault("TEST_DB_NAME", "scanorama_dev"), // Use dev db for now
-		Username:        getEnvOrDefault("TEST_DB_USER", "scanorama_dev"),
-		Password:        getEnvOrDefault("TEST_DB_PASSWORD", "dev_password"),
-		SSLMode:         "disable",
-		MaxOpenConns:    5,
-		MaxIdleConns:    2,
-		ConnMaxLifetime: time.Minute,
-		ConnMaxIdleTime: time.Minute,
-	}
+	ctx := context.Background()
 
-	database, err := db.Connect(context.Background(), &cfg)
-	require.NoError(t, err, "Failed to connect to test database")
+	// Use the helper to connect to an available database
+	database, config, err := helpers.ConnectToTestDatabase(ctx)
+	require.NoError(t, err, "Failed to connect to any test database")
+
+	t.Logf("Successfully connected to database: %s@%s:%d/%s",
+		config.Username, config.Host, config.Port, config.Database)
+
+	// Ensure schema is available
+	err = helpers.EnsureTestSchema(ctx, database)
+	require.NoError(t, err, "Database schema is not available")
 
 	// Clean up test data before each test
-	cleanupTestData(t, database)
+	err = helpers.CleanupTestTables(ctx, database)
+	require.NoError(t, err, "Failed to cleanup test data")
 
 	return database
 }
 
 // cleanupTestData removes any existing test data.
 func cleanupTestData(t *testing.T, database *db.DB) {
-	// List of tables to clean in dependency order
-	tables := []string{
-		"host_history",
-		"services",
-		"port_scans",
-		"scan_jobs",
-		"discovery_jobs",
-		"hosts",
-		"scan_targets",
-	}
-
-	for _, table := range tables {
-		query := fmt.Sprintf("DELETE FROM %s WHERE 1=1", table)
-		_, err := database.ExecContext(context.Background(), query)
-		if err != nil {
-			t.Logf("Warning: Failed to clean table %s: %v", table, err)
-		}
+	err := helpers.CleanupTestTables(context.Background(), database)
+	if err != nil {
+		t.Logf("Warning: Failed to cleanup test data: %v", err)
 	}
 }
 

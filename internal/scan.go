@@ -16,6 +16,15 @@ import (
 	"github.com/google/uuid"
 )
 
+// Constants for scan configuration validation.
+const (
+	minTimeoutSeconds     = 5
+	mediumTimeoutSeconds  = 15
+	maxConcurrency        = 20
+	ipv6CIDRBits          = 128
+	defaultTargetCapacity = 10
+)
+
 const (
 	// Output formatting constants.
 	outputSeparatorLength = 80
@@ -134,9 +143,9 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 
 	// Add timing template based on configuration
 	if config.TimeoutSec > 0 {
-		if config.TimeoutSec <= 5 {
+		if config.TimeoutSec <= minTimeoutSeconds {
 			options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
-		} else if config.TimeoutSec <= 15 {
+		} else if config.TimeoutSec <= mediumTimeoutSeconds {
 			options = append(options, nmap.WithTimingTemplate(nmap.TimingNormal))
 		} else {
 			options = append(options, nmap.WithTimingTemplate(nmap.TimingPolite))
@@ -151,7 +160,7 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 	// Add performance optimizations
 	if config.Concurrency > 0 {
 		// nmap library doesn't directly expose parallelism, but we can use timing
-		if config.Concurrency > 20 {
+		if config.Concurrency > maxConcurrency {
 			options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
 		}
 	}
@@ -324,30 +333,45 @@ func createOrGetScanTarget(ctx context.Context, database *db.DB, config *ScanCon
 	return createAdhocScanTarget(ctx, targetRepo, network, config)
 }
 
-// createAdhocScanTarget creates a temporary scan target for ad-hoc scans.
-func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetRepository, target string, config *ScanConfig) (*db.ScanTarget, error) {
-	// Parse as CIDR or create /32
+// parseTargetAddress parses a target string as CIDR, IP address, or hostname.
+func parseTargetAddress(target string) (db.NetworkAddr, error) {
 	var networkAddr db.NetworkAddr
+
 	if strings.Contains(target, "/") {
 		_, ipnet, err := net.ParseCIDR(target)
 		if err != nil {
-			return nil, fmt.Errorf("invalid CIDR notation: %w", err)
+			return networkAddr, fmt.Errorf("invalid CIDR notation: %w", err)
 		}
 		networkAddr.IPNet = *ipnet
-	} else {
-		ip := net.ParseIP(target)
-		if ip == nil {
-			// For hostnames, create a placeholder network
-			ip = net.ParseIP("0.0.0.0")
-		}
+		return networkAddr, nil
+	}
 
-		var mask net.IPMask
-		if ip.To4() != nil {
-			mask = net.CIDRMask(32, 32)
-		} else {
-			mask = net.CIDRMask(128, 128)
-		}
-		networkAddr.IPNet = net.IPNet{IP: ip, Mask: mask}
+	// Try to parse as IP address first
+	ip := net.ParseIP(target)
+	if ip == nil {
+		// For hostnames, create a placeholder network
+		// This will be resolved during scanning
+		ip = net.ParseIP("0.0.0.0")
+	}
+
+	// Create /32 or /128 mask for single IP
+	var mask net.IPMask
+	if ip.To4() != nil {
+		mask = net.CIDRMask(32, 32)
+	} else {
+		mask = net.CIDRMask(ipv6CIDRBits, ipv6CIDRBits)
+	}
+	networkAddr.IPNet = net.IPNet{IP: ip, Mask: mask}
+	return networkAddr, nil
+}
+
+// createAdhocScanTarget creates a temporary scan target for ad-hoc scans.
+func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetRepository,
+	target string, config *ScanConfig) (*db.ScanTarget, error) {
+	// Parse target address
+	networkAddr, err := parseTargetAddress(target)
+	if err != nil {
+		return nil, err
 	}
 
 	// Map scan types to database-compatible values

@@ -252,8 +252,10 @@ func runScan(args []string) {
 		fmt.Fprintf(os.Stderr, "  scanorama scan --targets 192.168.1.10-20      # Scan specific targets\n")
 		fmt.Fprintf(os.Stderr, "  scanorama scan --targets localhost --ports 80,443  # Scan specific ports\n")
 		fmt.Fprintf(os.Stderr, "  scanorama scan --targets example.com --type version   # Version detection scan\n")
-		fmt.Fprintf(os.Stderr, "  scanorama scan --targets 10.0.0.1 --type intense     # Comprehensive scan with OS detection\n")
-		fmt.Fprintf(os.Stderr, "  scanorama scan --targets target --type stealth       # Stealthy scan with slow timing\n")
+		fmt.Fprintf(os.Stderr, "  scanorama scan --targets 10.0.0.1 --type intense\n")
+		fmt.Fprintf(os.Stderr, "    # Comprehensive scan with OS detection\n")
+		fmt.Fprintf(os.Stderr, "  scanorama scan --targets target --type stealth\n")
+		fmt.Fprintf(os.Stderr, "    # Stealthy scan with slow timing\n")
 		fmt.Fprintf(os.Stderr, "  scanorama scan --targets host --timeout 30           # Scan with 30 second timeout\n")
 		os.Exit(1)
 	}
@@ -261,10 +263,10 @@ func runScan(args []string) {
 	// Parse scan options
 	var targets string
 	var liveHosts bool
-	var ports string = "22,80,443,8080,8443"
-	var scanType string = "connect"
+	ports := "22,80,443,8080,8443"
+	scanType := "connect"
 	var profileID string
-	var timeoutSec int = defaultTimeoutSeconds
+	timeoutSec := defaultTimeoutSeconds
 
 	// Parse arguments
 	for i := 0; i < len(args); i++ {
@@ -338,7 +340,7 @@ func runScan(args []string) {
 	fmt.Println("Scan completed successfully")
 }
 
-func scanLiveHosts(ctx context.Context, database *db.DB, ports, scanType, profileID string, timeoutSec int) error {
+func scanLiveHosts(ctx context.Context, database *db.DB, ports, scanType, _ string, timeoutSec int) error {
 	// Get live hosts from database
 	query := `
 		SELECT ip_address, hostname, os_family
@@ -380,12 +382,13 @@ func scanLiveHosts(ctx context.Context, database *db.DB, ports, scanType, profil
 	return performScan(ctx, database, hosts, ports, scanType, timeoutSec)
 }
 
-func scanTargets(ctx context.Context, database *db.DB, targets, ports, scanType, profileID string, timeoutSec int) error {
+func scanTargets(ctx context.Context, database *db.DB, targets, ports, scanType,
+	_ string, timeoutSec int) error {
 	// For now, split comma-separated targets
 	// TODO: Add support for ranges and CIDR notation
 	hostList := strings.Split(targets, ",")
 
-	var hosts []string
+	hosts := make([]string, 0, 10) // Pre-allocate with reasonable capacity
 	for _, host := range hostList {
 		hosts = append(hosts, strings.TrimSpace(host))
 	}
@@ -431,7 +434,7 @@ func runHosts(args []string) {
 	// Parse hosts options
 	var status string
 	var osFamily string
-	var lastSeenHours int = 24
+	lastSeenHours := 24
 	var showIgnored bool
 
 	// Parse arguments
@@ -449,11 +452,12 @@ func runHosts(args []string) {
 			}
 		case "--last-seen":
 			if i+1 < len(args) {
-				if args[i+1] == "24h" {
+				switch args[i+1] {
+				case "24h":
 					lastSeenHours = 24
-				} else if args[i+1] == "7d" {
+				case "7d":
 					lastSeenHours = 168
-				} else if args[i+1] == "30d" {
+				case "30d":
 					lastSeenHours = 720
 				}
 				i++
@@ -489,7 +493,8 @@ func runHosts(args []string) {
 	}
 }
 
-func showHosts(ctx context.Context, database *db.DB, status, osFamily string, lastSeenHours int, showIgnored bool) error {
+func showHosts(ctx context.Context, database *db.DB, status, osFamily string,
+	lastSeenHours int, showIgnored bool) error {
 	// Build query with filters
 	query := `
 		SELECT ip_address, hostname, mac_address, vendor, os_family, os_name,
@@ -509,7 +514,7 @@ func showHosts(ctx context.Context, database *db.DB, status, osFamily string, la
 	if osFamily != "" {
 		query += fmt.Sprintf(" AND os_family ILIKE $%d", argIndex)
 		args = append(args, "%"+osFamily+"%")
-		argIndex++
+		_ = argIndex // argIndex will be used when more filters are added
 	}
 
 	if lastSeenHours > 0 {
