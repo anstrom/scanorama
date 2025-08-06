@@ -197,7 +197,7 @@ func debugDatabaseState(t *testing.T, suite *IntegrationTestSuite) {
 
 	t.Logf("CI DEBUG: Found %d hosts:", len(hosts))
 	for i, host := range hosts {
-		method := "NULL"
+		method := nullValue
 		if host.DiscoveryMethod != nil {
 			method = *host.DiscoveryMethod
 		}
@@ -830,4 +830,130 @@ func TestCIServiceContainerConnectivity(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCIDiscoveryVerificationFailure specifically reproduces the CI issue where
+// discovery completes successfully but verification queries fail to find the host.
+// This test attempts to reproduce the exact CI conditions.
+func TestCIDiscoveryVerificationFailure(t *testing.T) {
+	suite := setupIntegrationTestSuite(t)
+	defer suite.teardown(t)
+
+	t.Log("=== CI DEBUG: Testing discovery verification failure reproduction ===")
+
+	// Check if we're starting with a localhost host already existing
+	var preExistingHosts []struct {
+		ID              string    `db:"id"`
+		IPAddress       string    `db:"ip_address"`
+		DiscoveryMethod *string   `db:"discovery_method"`
+		LastSeen        time.Time `db:"last_seen"`
+	}
+	err := suite.database.SelectContext(suite.ctx, &preExistingHosts,
+		`SELECT id, ip_address, discovery_method, last_seen FROM hosts WHERE ip_address = '127.0.0.1'`)
+	require.NoError(t, err)
+
+	t.Logf("CI DEBUG: Pre-existing localhost hosts: %d", len(preExistingHosts))
+	for i, host := range preExistingHosts {
+		methodStr := nullValue
+		if host.DiscoveryMethod != nil {
+			methodStr = *host.DiscoveryMethod
+		}
+		t.Logf("  Pre-existing host %d: %s (method=%s, last_seen=%v)",
+			i+1, host.IPAddress, methodStr, host.LastSeen.Format("15:04:05"))
+	}
+
+	// Test discovery with detailed step-by-step verification
+	t.Run("StepByStepDiscoveryVerification", func(t *testing.T) {
+		t.Log("CI DEBUG: Starting step-by-step discovery verification...")
+
+		// Step 1: Run discovery
+		discoveryEngine := discovery.NewEngine(suite.database)
+		discoveryConfig := discovery.Config{
+			Network:     "127.0.0.1/32",
+			Method:      "tcp",
+			DetectOS:    false,
+			Timeout:     10 * time.Second,
+			Concurrency: 1,
+		}
+
+		t.Log("CI DEBUG: Step 1 - Starting discovery...")
+		job, err := discoveryEngine.Discover(suite.ctx, discoveryConfig)
+		require.NoError(t, err)
+		t.Logf("CI DEBUG: Discovery job created: %s", job.ID)
+
+		// Step 2: Wait for completion with detailed monitoring
+		t.Log("CI DEBUG: Step 2 - Waiting for discovery completion...")
+		err = discoveryEngine.WaitForCompletion(suite.ctx, job.ID, 30*time.Second)
+		require.NoError(t, err)
+		t.Log("CI DEBUG: Discovery reported as completed")
+
+		// Step 3: Immediate verification with multiple approaches
+		t.Log("CI DEBUG: Step 3 - Immediate post-discovery verification...")
+
+		// 3a: Check using the same query as the failing test
+		var count1 int
+		query1 := `SELECT COUNT(*) FROM hosts WHERE discovery_method = 'tcp' AND ip_address = '127.0.0.1'`
+		err = suite.database.QueryRowContext(suite.ctx, query1).Scan(&count1)
+		require.NoError(t, err)
+		t.Logf("CI DEBUG: Query 1 result (combined): %d hosts", count1)
+
+		// 3b: Check with separate conditions
+		var count2 int
+		query2 := `SELECT COUNT(*) FROM hosts WHERE ip_address = '127.0.0.1'`
+		err = suite.database.QueryRowContext(suite.ctx, query2).Scan(&count2)
+		require.NoError(t, err)
+		t.Logf("CI DEBUG: Query 2 result (IP only): %d hosts", count2)
+
+		var count3 int
+		query3 := `SELECT COUNT(*) FROM hosts WHERE discovery_method = 'tcp'`
+		err = suite.database.QueryRowContext(suite.ctx, query3).Scan(&count3)
+		require.NoError(t, err)
+		t.Logf("CI DEBUG: Query 3 result (method only): %d hosts", count3)
+
+		// 3c: Get the actual host record
+		var actualHost struct {
+			ID              string    `db:"id"`
+			IPAddress       string    `db:"ip_address"`
+			DiscoveryMethod *string   `db:"discovery_method"`
+			LastSeen        time.Time `db:"last_seen"`
+		}
+		err = suite.database.GetContext(suite.ctx, &actualHost,
+			`SELECT id, ip_address, discovery_method, last_seen FROM hosts `+
+				`WHERE ip_address = '127.0.0.1' ORDER BY last_seen DESC LIMIT 1`)
+		if err != nil {
+			t.Logf("CI DEBUG: ERROR - Failed to get localhost host: %v", err)
+		} else {
+			methodStr := nullValue
+			if actualHost.DiscoveryMethod != nil {
+				methodStr = *actualHost.DiscoveryMethod
+			}
+			t.Logf("CI DEBUG: Actual localhost host: ID=%s, method=%s, last_seen=%v",
+				actualHost.ID, methodStr, actualHost.LastSeen.Format("15:04:05.000"))
+		}
+
+		// Step 4: Force database sync and retry
+		t.Log("CI DEBUG: Step 4 - Forcing database sync and retrying...")
+
+		// Force VACUUM to ensure database consistency
+		_, err = suite.database.ExecContext(suite.ctx, "VACUUM")
+		if err != nil {
+			t.Logf("CI DEBUG: VACUUM failed: %v", err)
+		} else {
+			t.Log("CI DEBUG: VACUUM completed")
+		}
+
+		// Retry the verification query
+		time.Sleep(500 * time.Millisecond)
+		var finalCount int
+		err = suite.database.QueryRowContext(suite.ctx, query1).Scan(&finalCount)
+		require.NoError(t, err)
+		t.Logf("CI DEBUG: Final verification result: %d hosts", finalCount)
+
+		if finalCount != 1 {
+			t.Errorf("CI FAILURE REPRODUCED: Expected 1 host, found %d", finalCount)
+			t.Log("CI DEBUG: This reproduces the CI failure - discovery succeeds but verification fails")
+		} else {
+			t.Log("CI DEBUG: Verification successful - unable to reproduce CI failure locally")
+		}
+	})
 }
