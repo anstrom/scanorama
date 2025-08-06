@@ -326,16 +326,19 @@ func NewHostRepository(db *DB) *HostRepository {
 // CreateOrUpdate creates a new host or updates existing one.
 func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 	query := `
-		INSERT INTO hosts (id, ip_address, hostname, mac_address, vendor, os_family, os_version, status)
-		VALUES (:id, :ip_address, :hostname, :mac_address, :vendor, :os_family, :os_version, :status)
+		INSERT INTO hosts (id, ip_address, hostname, mac_address, vendor, os_family, os_version, status, discovery_method, response_time_ms, discovery_count)
+		VALUES (:id, :ip_address, :hostname, :mac_address, :vendor, :os_family, :os_version, :status, :discovery_method, :response_time_ms, :discovery_count)
 		ON CONFLICT (ip_address)
 		DO UPDATE SET
-			hostname = EXCLUDED.hostname,
-			mac_address = EXCLUDED.mac_address,
-			vendor = EXCLUDED.vendor,
-			os_family = EXCLUDED.os_family,
-			os_version = EXCLUDED.os_version,
+			hostname = COALESCE(EXCLUDED.hostname, hosts.hostname),
+			mac_address = COALESCE(EXCLUDED.mac_address, hosts.mac_address),
+			vendor = COALESCE(EXCLUDED.vendor, hosts.vendor),
+			os_family = COALESCE(EXCLUDED.os_family, hosts.os_family),
+			os_version = COALESCE(EXCLUDED.os_version, hosts.os_version),
 			status = EXCLUDED.status,
+			discovery_method = COALESCE(EXCLUDED.discovery_method, hosts.discovery_method),
+			response_time_ms = COALESCE(EXCLUDED.response_time_ms, hosts.response_time_ms),
+			discovery_count = COALESCE(EXCLUDED.discovery_count, hosts.discovery_count),
 			last_seen = NOW()
 		RETURNING id, first_seen, last_seen`
 
