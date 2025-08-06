@@ -183,7 +183,6 @@ func TestValidateScanConfig(t *testing.T) {
 }
 
 func TestLocalScan(t *testing.T) {
-	t.Skip("Temporarily skipping complex tests to focus on basic nmap functionality")
 	if !setupTestEnvironment(t) {
 		return // Test was skipped
 	}
@@ -239,7 +238,6 @@ func TestLocalScan(t *testing.T) {
 }
 
 func TestScanTimeout(t *testing.T) {
-	t.Skip("Temporarily skipping complex tests to focus on basic nmap functionality")
 	tests := []struct {
 		name      string
 		config    ScanConfig
@@ -300,8 +298,6 @@ func TestScanTimeout(t *testing.T) {
 }
 
 func TestScanResults(t *testing.T) {
-	t.Skip("Temporarily skipping complex tests to focus on basic nmap functionality")
-
 	httpPort := testServices.HTTP
 
 	// Try to use the SSH port if available
@@ -461,8 +457,6 @@ func TestPrintResults(t *testing.T) {
 }
 
 func TestServiceDetection(t *testing.T) {
-	t.Skip("Temporarily skipping complex tests to focus on basic nmap functionality")
-
 	// Find which services are available
 	availablePorts := []string{testServices.HTTP} // HTTP is confirmed available
 

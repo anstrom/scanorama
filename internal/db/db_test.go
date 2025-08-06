@@ -469,7 +469,6 @@ func TestConnect(t *testing.T) {
 }
 
 func TestPing(t *testing.T) {
-	t.Skip("Temporarily skipping complex database tests to focus on basic nmap functionality")
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -580,7 +579,6 @@ func TestRepositories(t *testing.T) {
 }
 
 func TestQueryRow(t *testing.T) {
-	t.Skip("Temporarily skipping complex database tests to focus on basic nmap functionality")
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -601,7 +599,6 @@ func TestQueryRow(t *testing.T) {
 }
 
 func TestQuery(t *testing.T) {
-	t.Skip("Temporarily skipping complex database tests to focus on basic nmap functionality")
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -642,7 +639,6 @@ func TestQuery(t *testing.T) {
 }
 
 func TestExec(t *testing.T) {
-	t.Skip("Temporarily skipping complex database tests to focus on basic nmap functionality")
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
