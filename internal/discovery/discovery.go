@@ -146,19 +146,24 @@ func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout
 
 // runDiscovery executes the actual discovery process using nmap.
 func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config Config) {
+	log.Printf("DEBUG: runDiscovery starting for job %s", job.ID.String())
 	defer e.finalizeDiscoveryJob(ctx, job)
 
 	// Check if context is already canceled
 	select {
 	case <-ctx.Done():
+		log.Printf("DEBUG: runDiscovery context canceled for job %s", job.ID.String())
 		job.Status = db.DiscoveryJobStatusFailed
 		return
 	default:
 	}
 
+	log.Printf("DEBUG: Starting nmap discovery for job %s, network %s", job.ID.String(), job.Network.IPNet.String())
+
 	// Use nmap for host discovery
 	discoveredHosts, err := e.nmapDiscovery(ctx, job.Network.IPNet.String(), config)
 	if err != nil {
+		log.Printf("DEBUG: Discovery failed for job %s: %v", job.ID.String(), err)
 		job.Status = db.DiscoveryJobStatusFailed
 		fmt.Printf("Discovery failed: %v\n", err)
 		return
@@ -167,25 +172,38 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 	// Update job with results
 	job.HostsResponsive = len(discoveredHosts)
 	job.HostsDiscovered = len(discoveredHosts)
+	log.Printf("DEBUG: Discovery logic completed for job %s. Found %d hosts, setting status to running before finalization", job.ID.String(), job.HostsDiscovered)
 	fmt.Printf("Discovery completed. Found %d hosts.\n", job.HostsDiscovered)
 }
 
 // finalizeDiscoveryJob handles the completion and saving of a discovery job.
 func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob) {
+	log.Printf("DEBUG: finalizeDiscoveryJob starting for job %s, current status: %s", job.ID.String(), job.Status)
+
 	// Check if context is canceled before finalizing
 	select {
 	case <-ctx.Done():
+		log.Printf("DEBUG: finalizeDiscoveryJob context canceled for job %s", job.ID.String())
 		return // Don't attempt database operations if context is canceled
 	default:
 	}
 
 	now := time.Now()
 	job.CompletedAt = &now
+	oldStatus := job.Status
 	if job.Status == db.DiscoveryJobStatusRunning {
 		job.Status = db.DiscoveryJobStatusCompleted
+		log.Printf("DEBUG: Changed job %s status from %s to %s", job.ID.String(), oldStatus, job.Status)
+	} else {
+		log.Printf("DEBUG: Job %s status remains %s (not running)", job.ID.String(), job.Status)
 	}
+
+	log.Printf("DEBUG: Attempting to save discovery job %s to database with status %s", job.ID.String(), job.Status)
 	if err := e.saveDiscoveryJob(ctx, job); err != nil {
+		log.Printf("ERROR: Failed to save discovery job %s completion: %v", job.ID.String(), err)
 		fmt.Printf("Error saving discovery job completion: %v\n", err)
+	} else {
+		log.Printf("DEBUG: Successfully saved discovery job %s with status %s", job.ID.String(), job.Status)
 	}
 }
 
