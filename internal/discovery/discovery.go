@@ -271,11 +271,15 @@ func (e *Engine) nmapDiscovery(ctx context.Context, network string, config Confi
 		}
 
 		// Store the host in database
-		if err := e.saveDiscoveredHost(ctx, &Result{
+		result := &Result{
 			IPAddress: dbHost.IPAddress.IP,
 			Status:    dbHost.Status,
 			Method:    config.Method,
-		}, uuid.Nil); err != nil {
+		}
+		log.Printf("DEBUG: Attempting to save discovered host %s with method=%s, status=%s",
+			result.IPAddress.String(), result.Method, result.Status)
+
+		if err := e.saveDiscoveredHost(ctx, result, uuid.Nil); err != nil {
 			// Check if context was canceled
 			if ctx.Err() != nil {
 				return discoveredHosts, ctx.Err()
@@ -283,6 +287,8 @@ func (e *Engine) nmapDiscovery(ctx context.Context, network string, config Confi
 			log.Printf("Failed to save discovered host %s: %v", dbHost.IPAddress.String(), err)
 			continue
 		}
+
+		log.Printf("DEBUG: Successfully saved discovered host %s", result.IPAddress.String())
 
 		discoveredHosts = append(discoveredHosts, dbHost)
 	}
@@ -332,8 +338,12 @@ func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.
 	responseTimeMS := int(result.ResponseTime.Milliseconds())
 
 	if err != nil {
+		log.Printf("DEBUG: Creating new host for %s with discovery_method=%s",
+			result.IPAddress.String(), result.Method)
 		return e.createNewHost(ctx, result, now, responseTimeMS)
 	}
+	log.Printf("DEBUG: Updating existing host %s (id=%s) with discovery_method=%s",
+		result.IPAddress.String(), existingHost.ID.String(), result.Method)
 	return e.updateExistingHost(ctx, &existingHost, result, now, responseTimeMS)
 }
 
@@ -368,6 +378,16 @@ func (e *Engine) createNewHost(ctx context.Context, result *Result, now time.Tim
 		LastSeen:        now,
 	}
 
+	log.Printf("DEBUG: Creating new host with ID=%s, IP=%s, DiscoveryMethod=%v",
+		host.ID.String(), host.IPAddress.String(),
+		func() string {
+			if host.DiscoveryMethod != nil {
+				return *host.DiscoveryMethod
+			} else {
+				return "NULL"
+			}
+		}())
+
 	// Set OS information if detected
 	if result.OSInfo != nil {
 		if err := host.SetOSFingerprint(result.OSInfo); err != nil {
@@ -382,6 +402,9 @@ func (e *Engine) createNewHost(ctx context.Context, result *Result, now time.Tim
 func (e *Engine) updateExistingHost(
 	ctx context.Context, existingHost *db.Host, result *Result, now time.Time, responseTimeMS int,
 ) error {
+	log.Printf("DEBUG: Updating existing host ID=%s with discovery_method=%s",
+		existingHost.ID.String(), result.Method)
+
 	updateQuery := `
 		UPDATE hosts SET
 			status = $2,
