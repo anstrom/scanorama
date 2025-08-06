@@ -299,9 +299,23 @@ func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, 
 		result.Stats.Up, result.Stats.Down, result.Stats.Total, int(result.Duration.Seconds()))
 	scanJob.ScanStats = db.JSONB(statsJSON)
 
+	log.Printf("DEBUG: Creating scan job with ID=%s, TargetID=%s, Status=%s",
+		scanJob.ID.String(), scanJob.TargetID.String(), scanJob.Status)
+
 	jobRepo := db.NewScanJobRepository(database)
 	if err := jobRepo.Create(ctx, scanJob); err != nil {
 		return fmt.Errorf("failed to create scan job: %w", err)
+	}
+
+	log.Printf("DEBUG: Successfully created scan job with ID=%s", scanJob.ID.String())
+
+	// Verify scan job exists in database before proceeding
+	var jobCount int
+	query := "SELECT COUNT(*) FROM scan_jobs WHERE id = $1"
+	if err := database.GetContext(ctx, &jobCount, query, scanJob.ID); err != nil {
+		log.Printf("WARNING: Failed to verify scan job creation: %v", err)
+	} else {
+		log.Printf("DEBUG: Verified scan job exists in database (count=%d)", jobCount)
 	}
 
 	// Store host and port scan results
@@ -488,9 +502,21 @@ func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hos
 
 	// Batch insert all port scans
 	if len(allPortScans) > 0 {
+		log.Printf("DEBUG: Creating %d port scans for job ID=%s", len(allPortScans), jobID.String())
+
+		// Verify job still exists before creating port scans
+		var jobExists bool
+		query := "SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE id = $1)"
+		if err := database.GetContext(ctx, &jobExists, query, jobID); err != nil {
+			log.Printf("WARNING: Failed to verify job exists before port scan creation: %v", err)
+		} else {
+			log.Printf("DEBUG: Job exists check before port scan creation: %t", jobExists)
+		}
+
 		if err := portRepo.CreateBatch(ctx, allPortScans); err != nil {
 			return fmt.Errorf("failed to store port scan results: %w", err)
 		}
+		log.Printf("DEBUG: Successfully created %d port scans", len(allPortScans))
 	}
 
 	return nil
