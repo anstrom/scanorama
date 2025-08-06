@@ -15,6 +15,11 @@ import (
 	_ "github.com/lib/pq" // postgres driver
 )
 
+// Common errors for database operations.
+var (
+	ErrNotFound = fmt.Errorf("record not found")
+)
+
 const (
 	// Default database configuration values.
 	defaultPostgresPort    = 5432
@@ -226,9 +231,30 @@ func (r *ScanTargetRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// ScanJobRepository handles scan job operations.
+// ScanJobRepository handles scan job database operations.
 type ScanJobRepository struct {
 	db *DB
+}
+
+// CreateInTransaction creates a scan job within an existing transaction.
+func (r *ScanJobRepository) CreateInTransaction(ctx context.Context, tx *sqlx.Tx, job *ScanJob) error {
+	query := `
+		INSERT INTO scan_jobs (id, target_id, profile_id, status, started_at, completed_at, error_message, scan_stats)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING created_at`
+
+	if job.ID == uuid.Nil {
+		job.ID = uuid.New()
+	}
+
+	err := tx.QueryRowContext(ctx, query,
+		job.ID, job.TargetID, job.ProfileID, job.Status,
+		job.StartedAt, job.CompletedAt, job.ErrorMessage, job.ScanStats).Scan(&job.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to create scan job: %w", err)
+	}
+
+	return nil
 }
 
 // NewScanJobRepository creates a new scan job repository.
@@ -313,8 +339,109 @@ func (r *ScanJobRepository) GetByID(ctx context.Context, id uuid.UUID) (*ScanJob
 	return &job, nil
 }
 
-// HostRepository handles host operations.
+// HostRepository handles host database operations.
 type HostRepository struct {
+	db *DB
+}
+
+// CreateInTransaction creates a host within an existing transaction.
+func (r *HostRepository) CreateInTransaction(ctx context.Context, tx *sqlx.Tx, host *Host) error {
+	query := `
+		INSERT INTO hosts (id, ip_address, hostname, mac_address, vendor, os_family, os_name, os_version,
+			os_confidence, os_detected_at, os_method, os_details, discovery_method, response_time_ms,
+			discovery_count, ignore_scanning, first_seen, last_seen, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		RETURNING first_seen, last_seen`
+
+	if host.ID == uuid.Nil {
+		host.ID = uuid.New()
+	}
+
+	err := tx.QueryRowContext(ctx, query,
+		host.ID, host.IPAddress, host.Hostname, host.MACAddress, host.Vendor,
+		host.OSFamily, host.OSName, host.OSVersion, host.OSConfidence, host.OSDetectedAt,
+		host.OSMethod, host.OSDetails, host.DiscoveryMethod, host.ResponseTimeMS,
+		host.DiscoveryCount, host.IgnoreScanning, host.FirstSeen, host.LastSeen, host.Status).Scan(
+		&host.FirstSeen, &host.LastSeen)
+	if err != nil {
+		return fmt.Errorf("failed to create host: %w", err)
+	}
+
+	return nil
+}
+
+// GetByIPInTransaction retrieves a host by IP address within an existing transaction.
+func (r *HostRepository) GetByIPInTransaction(ctx context.Context, tx *sqlx.Tx, ipAddress IPAddr) (*Host, error) {
+	query := `
+		SELECT id, ip_address, hostname, mac_address, vendor, os_family, os_name, os_version,
+			os_confidence, os_detected_at, os_method, os_details, discovery_method, response_time_ms,
+			discovery_count, ignore_scanning, first_seen, last_seen, status
+		FROM hosts
+		WHERE ip_address = $1`
+
+	host := &Host{}
+	err := tx.QueryRowContext(ctx, query, ipAddress).Scan(
+		&host.ID, &host.IPAddress, &host.Hostname, &host.MACAddress, &host.Vendor,
+		&host.OSFamily, &host.OSName, &host.OSVersion, &host.OSConfidence, &host.OSDetectedAt,
+		&host.OSMethod, &host.OSDetails, &host.DiscoveryMethod, &host.ResponseTimeMS,
+		&host.DiscoveryCount, &host.IgnoreScanning, &host.FirstSeen, &host.LastSeen, &host.Status)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get host by IP: %w", err)
+	}
+
+	return host, nil
+}
+
+// UpsertInTransaction creates or updates a host within an existing transaction.
+func (r *HostRepository) UpsertInTransaction(ctx context.Context, tx *sqlx.Tx, host *Host) error {
+	if host.ID == uuid.Nil {
+		host.ID = uuid.New()
+	}
+
+	query := `
+		INSERT INTO hosts (id, ip_address, hostname, mac_address, vendor, os_family, os_name, os_version,
+			os_confidence, os_detected_at, os_method, os_details, discovery_method, response_time_ms,
+			discovery_count, ignore_scanning, first_seen, last_seen, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		ON CONFLICT (ip_address)
+		DO UPDATE SET
+			hostname = COALESCE(EXCLUDED.hostname, hosts.hostname),
+			mac_address = COALESCE(EXCLUDED.mac_address, hosts.mac_address),
+			vendor = COALESCE(EXCLUDED.vendor, hosts.vendor),
+			os_family = COALESCE(EXCLUDED.os_family, hosts.os_family),
+			os_name = COALESCE(EXCLUDED.os_name, hosts.os_name),
+			os_version = COALESCE(EXCLUDED.os_version, hosts.os_version),
+			os_confidence = COALESCE(EXCLUDED.os_confidence, hosts.os_confidence),
+			os_detected_at = COALESCE(EXCLUDED.os_detected_at, hosts.os_detected_at),
+			os_method = COALESCE(EXCLUDED.os_method, hosts.os_method),
+			os_details = COALESCE(EXCLUDED.os_details, hosts.os_details),
+			discovery_method = COALESCE(EXCLUDED.discovery_method, hosts.discovery_method),
+			response_time_ms = COALESCE(EXCLUDED.response_time_ms, hosts.response_time_ms),
+			discovery_count = hosts.discovery_count + 1,
+			ignore_scanning = COALESCE(EXCLUDED.ignore_scanning, hosts.ignore_scanning),
+			last_seen = EXCLUDED.last_seen,
+			status = EXCLUDED.status
+		RETURNING first_seen, last_seen`
+
+	err := tx.QueryRowContext(ctx, query,
+		host.ID, host.IPAddress, host.Hostname, host.MACAddress, host.Vendor,
+		host.OSFamily, host.OSName, host.OSVersion, host.OSConfidence, host.OSDetectedAt,
+		host.OSMethod, host.OSDetails, host.DiscoveryMethod, host.ResponseTimeMS,
+		host.DiscoveryCount, host.IgnoreScanning, host.FirstSeen, host.LastSeen, host.Status).Scan(
+		&host.FirstSeen, &host.LastSeen)
+	if err != nil {
+		return fmt.Errorf("failed to upsert host: %w", err)
+	}
+
+	return nil
+}
+
+// PortScanRepository handles port scan operations.
+type PortScanRepository struct {
 	db *DB
 }
 
@@ -400,11 +527,6 @@ func (r *HostRepository) GetActiveHosts(ctx context.Context) ([]*ActiveHost, err
 	return hosts, nil
 }
 
-// PortScanRepository handles port scan operations.
-type PortScanRepository struct {
-	db *DB
-}
-
 // NewPortScanRepository creates a new port scan repository.
 func NewPortScanRepository(db *DB) *PortScanRepository {
 	return &PortScanRepository{db: db}
@@ -437,6 +559,24 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 		}
 		if !exists {
 			return fmt.Errorf("host %s does not exist, cannot create port scans", hostID)
+		}
+	}
+
+	// Verify all job_ids exist to prevent foreign key constraint violations
+	jobIDs := make(map[uuid.UUID]bool)
+	for _, scan := range scans {
+		jobIDs[scan.JobID] = true
+	}
+
+	for jobID := range jobIDs {
+		var exists bool
+		verifyQuery := `SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE id = $1)`
+		err := tx.QueryRowContext(ctx, verifyQuery, jobID).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("failed to verify job existence for %s: %w", jobID, err)
+		}
+		if !exists {
+			return fmt.Errorf("job %s does not exist, cannot create port scans", jobID)
 		}
 	}
 

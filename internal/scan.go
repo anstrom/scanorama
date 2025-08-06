@@ -27,9 +27,6 @@ const (
 )
 
 const (
-	// Database null value representation.
-	nullValue = "NULL"
-
 	// Output formatting constants.
 	outputSeparatorLength = 80
 )
@@ -288,6 +285,13 @@ func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, 
 	}
 	log.Printf("DEBUG: Scan created/retrieved scan target ID=%s, name=%s", scanTarget.ID, scanTarget.Name)
 
+	// Start a transaction to ensure scan job and port scans are created atomically
+	tx, err := database.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	// Create scan job
 	scanJob := &db.ScanJob{
 		ID:       uuid.New(),
@@ -305,20 +309,34 @@ func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, 
 		result.Stats.Up, result.Stats.Down, result.Stats.Total, int(result.Duration.Seconds()))
 	scanJob.ScanStats = db.JSONB(statsJSON)
 
-	jobRepo := db.NewScanJobRepository(database)
-	if err := jobRepo.Create(ctx, scanJob); err != nil {
+	// Create scan job within the transaction
+	jobQuery := `
+		INSERT INTO scan_jobs (id, target_id, status, started_at, completed_at, scan_stats)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING created_at`
+
+	err = tx.QueryRowContext(ctx, jobQuery,
+		scanJob.ID, scanJob.TargetID, scanJob.Status,
+		scanJob.StartedAt, scanJob.CompletedAt, scanJob.ScanStats).Scan(&scanJob.CreatedAt)
+	if err != nil {
 		log.Printf("DEBUG: Scan failed to create scan job: %v", err)
 		return fmt.Errorf("failed to create scan job: %w", err)
 	}
 	log.Printf("DEBUG: Scan successfully created scan job ID=%s", scanJob.ID)
 
-	// Store host and port scan results
+	// Store host and port scan results within the same transaction
 	log.Printf("DEBUG: Scan storing results for %d hosts", len(result.Hosts))
-	err = storeHostResults(ctx, database, scanJob.ID, result.Hosts)
+	err = storeHostResultsInTransaction(ctx, tx, scanJob.ID, result.Hosts)
 	if err != nil {
 		log.Printf("DEBUG: Scan failed to store host results: %v", err)
 		return err
 	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit scan results transaction: %w", err)
+	}
+
 	log.Printf("DEBUG: Scan successfully stored all results")
 	return nil
 }
@@ -424,65 +442,56 @@ func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetReposit
 	return scanTarget, nil
 }
 
-// debugHostLookup performs detailed debugging of host lookup process.
-func debugHostLookup(ctx context.Context, database *db.DB, hostAddress string, ipAddr db.IPAddr) {
-	log.Printf("DEBUG: Scan looking up host %s with parsed IP %v (type: %T)",
-		hostAddress, ipAddr.IP, ipAddr.IP)
-
-	// Debug: Check what hosts actually exist in database
-	var hostCount int
-	countQuery := `SELECT COUNT(*) FROM hosts WHERE ip_address::text LIKE '%' || $1 || '%'`
-	if err := database.QueryRowContext(ctx, countQuery, hostAddress).Scan(&hostCount); err == nil {
-		log.Printf("DEBUG: Scan found %d hosts containing IP %s", hostCount, hostAddress)
-	}
-}
-
-// debugListExistingHosts lists current hosts in database for debugging.
-func debugListExistingHosts(ctx context.Context, database *db.DB) {
-	var debugHosts []struct {
-		IP     string  `db:"ip_address"`
-		Method *string `db:"discovery_method"`
-		ID     string  `db:"id"`
-	}
-	debugQuery := `SELECT ip_address::text, discovery_method, id::text FROM hosts LIMIT 5`
-	if err := database.SelectContext(ctx, &debugHosts, debugQuery); err == nil {
-		log.Printf("DEBUG: Scan - Current hosts in database:")
-		for _, h := range debugHosts {
-			method := "NULL"
-			if h.Method != nil {
-				method = *h.Method
-			}
-			log.Printf("DEBUG: Scan -   Host IP=%s, Method=%s, ID=%s", h.IP, method, h.ID)
-		}
-	}
-}
-
-// processHostForScan processes a single host for scanning, preserving discovery data.
-// Uses transaction-safe approach to handle race conditions between discovery and scan.
-func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostRepository,
+// processHostForScanInTransaction processes a single host for scanning within an existing transaction.
+func processHostForScanInTransaction(ctx context.Context, tx *sqlx.Tx,
 	host Host, jobID uuid.UUID) ([]*db.PortScan, error) {
 	ipAddr := db.IPAddr{IP: net.ParseIP(host.Address)}
-	debugHostLookup(ctx, database, host.Address, ipAddr)
 
-	// Use transaction-safe host lookup with retries for CI consistency
-	dbHost, err := getOrCreateHostSafely(ctx, database, hostRepo, ipAddr, host)
+	// Get or create host within the transaction
+	var dbHost *db.Host
+	var exists bool
+	checkQuery := `SELECT EXISTS(SELECT 1 FROM hosts WHERE ip_address = $1)`
+	err := tx.QueryRowContext(ctx, checkQuery, ipAddr).Scan(&exists)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get or create host %s: %w", host.Address, err)
+		return nil, fmt.Errorf("failed to check host existence: %w", err)
 	}
 
-	log.Printf("DEBUG: Scan using host %s (ID=%s) with discovery_method=%v",
-		host.Address, dbHost.ID.String(),
-		func() string {
-			if dbHost.DiscoveryMethod != nil {
-				return *dbHost.DiscoveryMethod
-			}
-			return nullValue
-		}())
+	if exists {
+		// Get existing host
+		getQuery := `SELECT id, ip_address, hostname, mac_address, vendor, os_family, os_name,
+			os_version, os_confidence, os_detected_at, os_method, os_details, discovery_method,
+			response_time_ms, discovery_count, ignore_scanning, first_seen, last_seen, status
+			FROM hosts WHERE ip_address = $1`
+		dbHost = &db.Host{}
+		err = tx.QueryRowContext(ctx, getQuery, ipAddr).Scan(
+			&dbHost.ID, &dbHost.IPAddress, &dbHost.Hostname, &dbHost.MACAddress,
+			&dbHost.Vendor, &dbHost.OSFamily, &dbHost.OSName, &dbHost.OSVersion,
+			&dbHost.OSConfidence, &dbHost.OSDetectedAt, &dbHost.OSMethod, &dbHost.OSDetails,
+			&dbHost.DiscoveryMethod, &dbHost.ResponseTimeMS, &dbHost.DiscoveryCount,
+			&dbHost.IgnoreScanning, &dbHost.FirstSeen, &dbHost.LastSeen, &dbHost.Status)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get existing host: %w", err)
+		}
+	} else {
+		// Create new host within transaction
+		dbHost = &db.Host{
+			ID:        uuid.New(),
+			IPAddress: ipAddr,
+			Status:    host.Status,
+			FirstSeen: time.Now(),
+			LastSeen:  time.Now(),
+		}
 
-	// Final verification that host exists before creating port scans
-	if err := verifyHostExists(ctx, database, dbHost.ID); err != nil {
-		return nil, fmt.Errorf("host verification failed for %s: %w", host.Address, err)
+		insertQuery := `INSERT INTO hosts (id, ip_address, status, first_seen, last_seen)
+			VALUES ($1, $2, $3, $4, $5) RETURNING created_at`
+		err = tx.QueryRowContext(ctx, insertQuery,
+			dbHost.ID, dbHost.IPAddress, dbHost.Status, dbHost.FirstSeen, dbHost.LastSeen).Scan(&dbHost.FirstSeen)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create host: %w", err)
+		}
 	}
+
+	log.Printf("DEBUG: Scan using host %s (ID=%s)", host.Address, dbHost.ID.String())
 
 	// Create port scan records
 	portScans := make([]*db.PortScan, 0, len(host.Ports))
@@ -512,138 +521,52 @@ func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostR
 	return portScans, nil
 }
 
-// getOrCreateHostSafely performs transaction-safe host lookup with retries
-// to handle race conditions between discovery and scan operations.
-func getOrCreateHostSafely(ctx context.Context, database *db.DB, hostRepo *db.HostRepository,
-	ipAddr db.IPAddr, host Host) (*db.Host, error) {
-	const maxRetries = 3
-	const retryDelay = 100 * time.Millisecond
+// createPortScansInTransaction creates port scans within an existing transaction.
+func createPortScansInTransaction(ctx context.Context, tx *sqlx.Tx, scans []*db.PortScan) error {
+	if len(scans) == 0 {
+		return nil
+	}
 
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		log.Printf("DEBUG: Scan attempting host lookup %s (attempt %d/%d)", ipAddr.String(), attempt, maxRetries)
+	query := `
+		INSERT INTO port_scans (
+			id, job_id, host_id, port, protocol, state,
+			service_name, service_version, service_product, banner
+		)
+		VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+		)
+		ON CONFLICT (job_id, host_id, port, protocol)
+		DO UPDATE SET
+			state = EXCLUDED.state,
+			service_name = EXCLUDED.service_name,
+			service_version = EXCLUDED.service_version,
+			service_product = EXCLUDED.service_product,
+			banner = EXCLUDED.banner,
+			scanned_at = NOW()`
 
-		// Use explicit transaction for consistent reads
-		tx, err := database.BeginTx(ctx)
+	for _, scan := range scans {
+		if scan.ID == uuid.Nil {
+			scan.ID = uuid.New()
+		}
+
+		_, err := tx.ExecContext(ctx, query,
+			scan.ID, scan.JobID, scan.HostID, scan.Port, scan.Protocol, scan.State,
+			scan.ServiceName, scan.ServiceVersion, scan.ServiceProduct, scan.Banner)
 		if err != nil {
-			log.Printf("DEBUG: Scan failed to begin transaction for %s: %v", ipAddr.String(), err)
-			if attempt == maxRetries {
-				return nil, fmt.Errorf("failed to begin transaction after %d attempts: %w", maxRetries, err)
-			}
-			time.Sleep(retryDelay)
-			continue
+			return fmt.Errorf("failed to create port scan for host %s port %d: %w",
+				scan.HostID, scan.Port, err)
 		}
-
-		// Try to find existing host within transaction
-		var existingHost db.Host
-		query := `SELECT * FROM hosts WHERE ip_address = $1`
-		err = tx.QueryRowContext(ctx, query, ipAddr).Scan(
-			&existingHost.ID, &existingHost.IPAddress, &existingHost.Hostname,
-			&existingHost.MACAddress, &existingHost.Vendor, &existingHost.OSFamily,
-			&existingHost.OSName, &existingHost.OSVersion, &existingHost.OSConfidence,
-			&existingHost.OSDetectedAt, &existingHost.OSMethod, &existingHost.OSDetails,
-			&existingHost.DiscoveryMethod, &existingHost.ResponseTimeMS,
-			&existingHost.DiscoveryCount, &existingHost.IgnoreScanning,
-			&existingHost.FirstSeen, &existingHost.LastSeen, &existingHost.Status)
-
-		if err == nil {
-			// Found existing host - handle commit and return
-			result, commitErr := handleHostCommit(tx, &existingHost, host, ipAddr)
-			if commitErr != nil {
-				if attempt == maxRetries {
-					return nil, commitErr
-				}
-				time.Sleep(retryDelay)
-				continue
-			}
-			return result, nil
-		}
-
-		// Host not found - rollback read transaction
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			log.Printf("DEBUG: Scan failed to rollback read transaction for %s: %v", ipAddr.String(), rollbackErr)
-		}
-
-		if attempt == maxRetries {
-			// Create new host if all retries exhausted
-			log.Printf("DEBUG: Scan creating new host for %s after %d lookup attempts", ipAddr.String(), maxRetries)
-			debugListExistingHosts(ctx, database)
-
-			newHost := &db.Host{
-				ID:        uuid.New(),
-				IPAddress: ipAddr,
-				Status:    host.Status,
-				// Note: discovery_method will be NULL for hosts created during scan
-			}
-
-			// Create the new host with CreateOrUpdate to handle potential race condition
-			if createErr := hostRepo.CreateOrUpdate(ctx, newHost); createErr != nil {
-				return nil, fmt.Errorf("failed to create new host: %w", createErr)
-			}
-
-			log.Printf("DEBUG: Scan successfully created new host %s", ipAddr.String())
-			return newHost, nil
-		}
-
-		log.Printf("DEBUG: Scan host lookup attempt %d failed for %s, retrying...", attempt, ipAddr.String())
-		time.Sleep(retryDelay)
 	}
 
-	return nil, fmt.Errorf("failed to get or create host after %d attempts", maxRetries)
-}
-
-// verifyHostExists ensures the host record exists before creating port scans
-// to prevent foreign key constraint violations.
-func verifyHostExists(ctx context.Context, database *db.DB, hostID uuid.UUID) error {
-	var exists bool
-	query := `SELECT EXISTS(SELECT 1 FROM hosts WHERE id = $1)`
-
-	err := database.QueryRowContext(ctx, query, hostID).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("failed to verify host existence: %w", err)
-	}
-
-	if !exists {
-		return fmt.Errorf("host with ID %s does not exist", hostID.String())
-	}
-
-	log.Printf("DEBUG: Scan verified host %s exists in database", hostID.String())
 	return nil
 }
 
-// handleHostCommit handles the transaction commit for found hosts.
-func handleHostCommit(tx *sqlx.Tx, existingHost *db.Host, host Host, ipAddr db.IPAddr) (*db.Host, error) {
-	if commitErr := tx.Commit(); commitErr != nil {
-		log.Printf("DEBUG: Scan failed to commit read transaction for %s: %v", ipAddr.String(), commitErr)
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			log.Printf("DEBUG: Scan failed to rollback after commit error for %s: %v",
-				ipAddr.String(), rollbackErr)
-		}
-		return nil, fmt.Errorf("failed to commit read transaction: %w", commitErr)
-	}
-
-	log.Printf("DEBUG: Scan found existing host %s (ID=%s) with discovery_method=%v",
-		ipAddr.String(), existingHost.ID.String(),
-		func() string {
-			if existingHost.DiscoveryMethod != nil {
-				return *existingHost.DiscoveryMethod
-			}
-			return nullValue
-		}())
-
-	// Update status but preserve discovery data
-	existingHost.Status = host.Status
-	return existingHost, nil
-}
-
-// storeHostResults stores host and port scan results in the database.
-func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hosts []Host) error {
-	hostRepo := db.NewHostRepository(database)
-	portRepo := db.NewPortScanRepository(database)
-
+// storeHostResultsInTransaction stores host and port scan results within an existing transaction.
+func storeHostResultsInTransaction(ctx context.Context, tx *sqlx.Tx, jobID uuid.UUID, hosts []Host) error {
 	var allPortScans []*db.PortScan
 
 	for _, host := range hosts {
-		portScans, err := processHostForScan(ctx, database, hostRepo, host, jobID)
+		portScans, err := processHostForScanInTransaction(ctx, tx, host, jobID)
 		if err != nil {
 			log.Printf("Failed to process host %s: %v", host.Address, err)
 			continue
@@ -651,9 +574,9 @@ func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hos
 		allPortScans = append(allPortScans, portScans...)
 	}
 
-	// Batch insert all port scans
+	// Batch insert all port scans within the transaction
 	if len(allPortScans) > 0 {
-		if err := portRepo.CreateBatch(ctx, allPortScans); err != nil {
+		if err := createPortScansInTransaction(ctx, tx, allPortScans); err != nil {
 			return fmt.Errorf("failed to store port scan results: %w", err)
 		}
 	}
