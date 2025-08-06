@@ -415,6 +415,7 @@ func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hos
 		var dbHost *db.Host
 		if err != nil {
 			// Host doesn't exist, create new one
+			log.Printf("DEBUG: Scan creating new host for %s (not found: %v)", host.Address, err)
 			dbHost = &db.Host{
 				ID:        uuid.New(),
 				IPAddress: ipAddr,
@@ -422,14 +423,40 @@ func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hos
 			}
 		} else {
 			// Host exists, preserve discovery data and only update scan-related fields
+			log.Printf("DEBUG: Scan found existing host %s (ID=%s) with discovery_method=%v",
+				host.Address, existingHost.ID.String(),
+				func() string {
+					if existingHost.DiscoveryMethod != nil {
+						return *existingHost.DiscoveryMethod
+					}
+					return "NULL"
+				}())
 			dbHost = existingHost
 			dbHost.Status = host.Status
+			log.Printf("DEBUG: Scan preserving discovery_method=%v for host %s",
+				func() string {
+					if dbHost.DiscoveryMethod != nil {
+						return *dbHost.DiscoveryMethod
+					}
+					return "NULL"
+				}(), host.Address)
 		}
+
+		log.Printf("DEBUG: Scan calling CreateOrUpdate for host %s with discovery_method=%v",
+			host.Address,
+			func() string {
+				if dbHost.DiscoveryMethod != nil {
+					return *dbHost.DiscoveryMethod
+				}
+				return "NULL"
+			}())
 
 		if createErr := hostRepo.CreateOrUpdate(ctx, dbHost); createErr != nil {
 			log.Printf("Failed to store host %s: %v", host.Address, createErr)
 			continue
 		}
+
+		log.Printf("DEBUG: Scan successfully updated host %s", host.Address)
 
 		// Create port scan records
 		for _, port := range host.Ports {
