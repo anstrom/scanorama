@@ -146,7 +146,8 @@ database:
 
 			_, err := Load(path)
 			if tt.name == "nonexistent file" {
-				if err == nil || err.Error() != "config file not found: stat /nonexistent/config.yaml: no such file or directory" {
+				expectedErr := "config file not found: stat /nonexistent/config.yaml: no such file or directory"
+				if err == nil || err.Error() != expectedErr {
 					t.Errorf("Load() expected specific error message, got %v", err)
 				}
 			} else if (err != nil) != tt.wantErr {

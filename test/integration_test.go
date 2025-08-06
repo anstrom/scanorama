@@ -16,11 +16,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	statusCompleted         = "completed"
+	discoveryJobStatusQuery = "SELECT status, hosts_discovered FROM discovery_jobs WHERE id = $1"
+	hostsWithDiscoveryQuery = "SELECT COUNT(*) FROM hosts WHERE discovery_method IS NOT NULL"
+	hostsWithIPQuery        = "SELECT COUNT(*) FROM hosts WHERE ip_address = '127.0.0.1'"
+)
+
 // IntegrationTestSuite holds test environment and database connection.
+// IntegrationTestSuite holds the test database and configuration.
 type IntegrationTestSuite struct {
 	database *db.DB
-	testEnv  *helpers.TestEnvironment
 	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 // setupIntegrationTestSuite sets up the test database and environment.
@@ -29,69 +37,60 @@ func setupIntegrationTestSuite(t *testing.T) *IntegrationTestSuite {
 		t.Skip("Skipping integration tests in short mode")
 	}
 
-	// Set up test environment (no Docker services needed)
-	testEnv := helpers.DefaultTestEnvironment()
-
 	// Set up test database
 	database := setupTestDatabase(t)
 
+	// Create cancellable context for proper cleanup
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &IntegrationTestSuite{
 		database: database,
-		testEnv:  testEnv,
-		ctx:      context.Background(),
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 }
 
 // setupTestDatabase creates a test database connection.
 func setupTestDatabase(t *testing.T) *db.DB {
-	// Use test database configuration
-	cfg := db.Config{
-		Host:            getEnvOrDefault("TEST_DB_HOST", "localhost"),
-		Port:            getEnvIntOrDefault("TEST_DB_PORT", 5432),
-		Database:        getEnvOrDefault("TEST_DB_NAME", "scanorama_dev"), // Use dev db for now
-		Username:        getEnvOrDefault("TEST_DB_USER", "scanorama_dev"),
-		Password:        getEnvOrDefault("TEST_DB_PASSWORD", "dev_password"),
-		SSLMode:         "disable",
-		MaxOpenConns:    5,
-		MaxIdleConns:    2,
-		ConnMaxLifetime: time.Minute,
-		ConnMaxIdleTime: time.Minute,
-	}
+	ctx := context.Background()
 
-	database, err := db.Connect(context.Background(), &cfg)
-	require.NoError(t, err, "Failed to connect to test database")
+	// Use the helper to connect to an available database
+	database, config, err := helpers.ConnectToTestDatabase(ctx)
+	require.NoError(t, err, "Failed to connect to any test database")
 
-	// Clean up test data before each test
-	cleanupTestData(t, database)
+	t.Logf("Successfully connected to database: %s@%s:%d/%s",
+		config.Username, config.Host, config.Port, config.Database)
+
+	// Ensure schema is available
+	err = helpers.EnsureTestSchema(ctx, database)
+	require.NoError(t, err, "Database schema is not available")
 
 	return database
 }
 
 // cleanupTestData removes any existing test data.
-func cleanupTestData(t *testing.T, database *db.DB) {
-	// List of tables to clean in dependency order
-	tables := []string{
-		"host_history",
-		"services",
-		"port_scans",
-		"scan_jobs",
-		"discovery_jobs",
-		"hosts",
-		"scan_targets",
-	}
-
-	for _, table := range tables {
-		query := fmt.Sprintf("DELETE FROM %s WHERE 1=1", table)
-		_, err := database.ExecContext(context.Background(), query)
-		if err != nil {
-			t.Logf("Warning: Failed to clean table %s: %v", table, err)
-		}
-	}
-}
+// NOTE: Currently disabled for CI debugging
+// func cleanupTestData(t *testing.T, database *db.DB) {
+//	err := helpers.CleanupTestTables(context.Background(), database)
+//	if err != nil {
+//		t.Logf("Warning: Failed to cleanup test data: %v", err)
+//	}
+// }
 
 // teardown cleans up test resources.
 func (suite *IntegrationTestSuite) teardown(t *testing.T) {
-	cleanupTestData(t, suite.database)
+	// Cancel context to stop background processes
+	if suite.cancel != nil {
+		suite.cancel()
+	}
+
+	// Give background processes time to finish
+	time.Sleep(100 * time.Millisecond)
+
+	// DISABLED FOR CI DEBUGGING - cleanup disabled to isolate CI issues
+	// cleanupTestData(t, suite.database)
+	t.Logf("DEBUG: Test cleanup DISABLED for CI debugging")
+
 	if err := suite.database.Close(); err != nil {
 		t.Logf("Warning: Failed to close database: %v", err)
 	}
@@ -106,9 +105,9 @@ func TestScanWithDatabaseStorage(t *testing.T) {
 	testPort := "22" // SSH port is commonly available
 	t.Logf("Testing scan with port %s", testPort)
 
-	// Create scan configuration
+	// Create scan configuration with unique target
 	scanConfig := &internal.ScanConfig{
-		Targets:     []string{"localhost"},
+		Targets:     []string{"127.0.0.1"},
 		Ports:       testPort,
 		ScanType:    "connect",
 		TimeoutSec:  10,
@@ -180,7 +179,7 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 	// Create discovery engine
 	discoveryEngine := discovery.NewEngine(suite.database)
 
-	// Run discovery on localhost (single host for reliable testing)
+	// Run discovery on localhost for reliable testing
 	discoveryConfig := discovery.Config{
 		Network:     "127.0.0.1/32",
 		Method:      "ping",
@@ -191,16 +190,28 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 
 	job, err := discoveryEngine.Discover(suite.ctx, discoveryConfig)
 	require.NoError(t, err)
-	require.NotNil(t, job)
 
-	// Wait for discovery to complete
+	// Wait for discovery to complete properly
+	err = discoveryEngine.WaitForCompletion(suite.ctx, job.ID, 15*time.Second)
+	require.NoError(t, err)
 	maxWait := 30 * time.Second
-	checkInterval := 2 * time.Second
+	checkInterval := 1 * time.Second
 	startTime := time.Now()
 
 	for {
 		if time.Since(startTime) > maxWait {
-			t.Fatal("Discovery timed out")
+			// Get final status for debugging
+			var finalStatus string
+			var finalHosts int
+			query := discoveryJobStatusQuery
+			err := suite.database.QueryRowContext(suite.ctx, query, job.ID).Scan(&finalStatus, &finalHosts)
+			if err == nil {
+				t.Fatalf("Discovery timed out after %v - final status: %s, hosts: %d",
+					maxWait, finalStatus, finalHosts)
+			} else {
+				t.Fatalf("Discovery timed out after %v - could not get final status: %v",
+					maxWait, err)
+			}
 		}
 
 		// Check job status
@@ -210,9 +221,18 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 		err := suite.database.QueryRowContext(suite.ctx, query, job.ID).Scan(&status, &hostsDiscovered)
 		require.NoError(t, err)
 
-		if status == "completed" || status == "failed" {
+		if status == statusCompleted || status == "failed" {
 			t.Logf("Discovery %s. Found %d hosts.", status, hostsDiscovered)
-			assert.Equal(t, "completed", status)
+			assert.Equal(t, statusCompleted, status)
+
+			// Additional verification that hosts were actually stored
+			if status == statusCompleted && hostsDiscovered > 0 {
+				var actualHostCount int
+				hostQuery := `SELECT COUNT(*) FROM hosts WHERE discovery_method = 'ping'`
+				if err := suite.database.QueryRowContext(suite.ctx, hostQuery).Scan(&actualHostCount); err == nil {
+					t.Logf("Verified %d hosts with discovery_method=ping in database", actualHostCount)
+				}
+			}
 			break
 		}
 
@@ -222,7 +242,10 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 	// Verify discovery results in database
 	t.Run("VerifyDiscoveryJobStored", func(t *testing.T) {
 		var discoveryJobs []*db.DiscoveryJob
-		query := `SELECT * FROM discovery_jobs WHERE status = 'completed' ORDER BY created_at DESC LIMIT 5`
+		query := `
+			SELECT * FROM discovery_jobs
+			WHERE status = 'completed' AND network >>= '127.0.0.1/32'
+			ORDER BY created_at DESC LIMIT 5`
 		err := suite.database.SelectContext(suite.ctx, &discoveryJobs, query)
 		require.NoError(t, err)
 		require.NotEmpty(t, discoveryJobs, "No completed discovery jobs found")
@@ -236,7 +259,10 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 
 	t.Run("VerifyDiscoveredHostsStored", func(t *testing.T) {
 		var hosts []*db.Host
-		query := `SELECT * FROM hosts WHERE discovery_method = 'ping' ORDER BY last_seen DESC LIMIT 5`
+		query := `
+			SELECT * FROM hosts
+			WHERE discovery_method = 'ping' AND ip_address = '127.0.0.1'
+			ORDER BY last_seen DESC LIMIT 5`
 		err := suite.database.SelectContext(suite.ctx, &hosts, query)
 		require.NoError(t, err)
 		require.NotEmpty(t, hosts, "No discovered hosts found")
@@ -254,7 +280,7 @@ func TestScanDiscoveredHosts(t *testing.T) {
 	suite := setupIntegrationTestSuite(t)
 	defer suite.teardown(t)
 
-	// First, run discovery
+	// First, run discovery on localhost
 	discoveryEngine := discovery.NewEngine(suite.database)
 	discoveryConfig := discovery.Config{
 		Network:     "127.0.0.1/32",
@@ -264,11 +290,98 @@ func TestScanDiscoveredHosts(t *testing.T) {
 		Concurrency: 1,
 	}
 
-	_, err := discoveryEngine.Discover(suite.ctx, discoveryConfig)
+	job, err := discoveryEngine.Discover(suite.ctx, discoveryConfig)
 	require.NoError(t, err)
 
-	// Wait for discovery to complete
-	time.Sleep(5 * time.Second)
+	// Wait for discovery to complete with extended timeout for CI
+	t.Log("DEBUG: Waiting for discovery completion with extended timeout...")
+	err = discoveryEngine.WaitForCompletion(suite.ctx, job.ID, 30*time.Second)
+	require.NoError(t, err)
+	t.Log("DEBUG: Discovery completion confirmed")
+
+	// Verify that discovery actually saved the host with correct discovery_method
+	var discoveredHostCount int
+	query := `SELECT COUNT(*) FROM hosts WHERE discovery_method = 'ping' AND ip_address = '127.0.0.1'`
+	err = suite.database.QueryRowContext(suite.ctx, query).Scan(&discoveredHostCount)
+	require.NoError(t, err)
+
+	// Add some debugging for CI
+	if discoveredHostCount != 1 {
+		var totalHosts int
+		err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM hosts").Scan(&totalHosts)
+		require.NoError(t, err)
+		t.Logf("DEBUG: Expected 1 host with discovery_method=ping, found %d (total hosts: %d)",
+			discoveredHostCount, totalHosts)
+	}
+
+	require.Equal(t, 1, discoveredHostCount,
+		"Discovery should have created exactly one host with discovery_method=ping")
+	t.Logf("Discovery verification successful: found %d host with discovery_method=ping", discoveredHostCount)
+
+	// Enhanced database consistency checks for CI reliability
+	t.Log("DEBUG: Starting enhanced database consistency checks for CI...")
+
+	// 1. Force transaction consistency with multiple operations
+	for i := 0; i < 3; i++ {
+		var commitCheck int
+		err = suite.database.QueryRowContext(suite.ctx, "SELECT 1").Scan(&commitCheck)
+		require.NoError(t, err)
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// 2. Verify discovery job completion and consistency
+	var jobStatus string
+	var jobHosts int
+	jobQuery := discoveryJobStatusQuery
+	err = suite.database.QueryRowContext(suite.ctx, jobQuery, job.ID).Scan(&jobStatus, &jobHosts)
+	require.NoError(t, err)
+	require.Equal(t, "completed", jobStatus)
+	require.Equal(t, 1, jobHosts)
+	t.Logf("Discovery job verification: status=%s, hosts_discovered=%d", jobStatus, jobHosts)
+
+	// 3. Extended delay for CI environment to ensure all transactions are committed
+	t.Log("DEBUG: Applying extended delay for CI transaction consistency...")
+	time.Sleep(1000 * time.Millisecond)
+
+	// 4. Multi-attempt verification that the host persists with correct discovery_method
+	const maxVerifyAttempts = 5
+	var finalHostCount int
+	for attempt := 1; attempt <= maxVerifyAttempts; attempt++ {
+		err = suite.database.QueryRowContext(suite.ctx, query).Scan(&finalHostCount)
+		require.NoError(t, err)
+
+		if finalHostCount == 1 {
+			t.Logf("Host verification successful on attempt %d: found %d host(s)", attempt, finalHostCount)
+			break
+		}
+
+		if attempt < maxVerifyAttempts {
+			t.Logf("Host verification attempt %d failed, retrying... (found %d hosts)", attempt, finalHostCount)
+			time.Sleep(200 * time.Millisecond)
+		} else {
+			require.Equal(t, 1, finalHostCount,
+				"Host should be available after %d verification attempts", maxVerifyAttempts)
+		}
+	}
+
+	// 5. Final comprehensive database state verification
+	var totalHosts, hostsWithDiscovery, hostsWithIP int
+	err = suite.database.QueryRowContext(suite.ctx,
+		"SELECT COUNT(*) FROM hosts").Scan(&totalHosts)
+	require.NoError(t, err)
+	err = suite.database.QueryRowContext(suite.ctx, hostsWithDiscoveryQuery).Scan(&hostsWithDiscovery)
+	require.NoError(t, err)
+	err = suite.database.QueryRowContext(suite.ctx, hostsWithIPQuery).Scan(&hostsWithIP)
+	require.NoError(t, err)
+
+	t.Logf("Final database state: total_hosts=%d, hosts_with_discovery=%d, hosts_with_ip_127.0.0.1=%d",
+		totalHosts, hostsWithDiscovery, hostsWithIP)
+
+	require.Equal(t, 1, hostsWithIP, "Should have exactly 1 host with IP 127.0.0.1")
+	require.GreaterOrEqual(t, hostsWithDiscovery, 1,
+		"Should have at least 1 host with discovery_method")
+
+	t.Log("DEBUG: Enhanced consistency checks completed successfully")
 
 	// Now scan the discovered hosts
 	testPort := "22" // SSH port for testing
@@ -280,22 +393,84 @@ func TestScanDiscoveredHosts(t *testing.T) {
 		Concurrency: 1,
 	}
 
+	// Add pre-scan database consistency check
+	t.Log("DEBUG: Performing pre-scan database consistency verification...")
+	var preScanHostCount int
+	preScanQuery := `SELECT COUNT(*) FROM hosts WHERE ip_address = '127.0.0.1' ` +
+		`AND discovery_method = 'ping'`
+	err = suite.database.QueryRowContext(suite.ctx, preScanQuery).Scan(&preScanHostCount)
+	require.NoError(t, err)
+	require.Equal(t, 1, preScanHostCount,
+		"Host must exist with discovery_method=ping before scanning")
+	t.Logf("Pre-scan verification: %d host(s) confirmed before scanning", preScanHostCount)
+
 	result, err := internal.RunScanWithContext(suite.ctx, scanConfig, suite.database)
 	require.NoError(t, err)
 	require.NotNil(t, result)
+	t.Log("DEBUG: Scan completed successfully")
 
-	// Verify we have both discovery and scan data
 	t.Run("VerifyIntegratedData", func(t *testing.T) {
+		// Debug: Check what data we actually have
+		var totalHosts, hostsWithDiscovery, totalPortScans, hostsWithPortScans int
+
+		// Total hosts
+		err := suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM hosts").Scan(&totalHosts)
+		require.NoError(t, err)
+		t.Logf("Total hosts in database: %d", totalHosts)
+
+		// Hosts with discovery method
+		query := "SELECT COUNT(*) FROM hosts WHERE discovery_method IS NOT NULL AND ip_address = '127.0.0.1'"
+		err = suite.database.QueryRowContext(suite.ctx, query).Scan(&hostsWithDiscovery)
+		require.NoError(t, err)
+		t.Logf("Hosts with discovery_method: %d", hostsWithDiscovery)
+
+		// Total port scans
+		err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM port_scans").Scan(&totalPortScans)
+		require.NoError(t, err)
+		t.Logf("Total port scans: %d", totalPortScans)
+
+		// Hosts that have port scans
+		query = "SELECT COUNT(DISTINCT host_id) FROM port_scans"
+		err = suite.database.QueryRowContext(suite.ctx, query).Scan(&hostsWithPortScans)
+		require.NoError(t, err)
+		t.Logf("Hosts with port scans: %d", hostsWithPortScans)
+
+		// Debug: Show actual host data
+		query = `
+			SELECT ip_address, discovery_method FROM hosts
+			WHERE ip_address = '127.0.0.1'`
+		rows, err := suite.database.QueryContext(suite.ctx, query)
+		require.NoError(t, err)
+		defer func() {
+			if err := rows.Close(); err != nil {
+				t.Logf("Warning: Failed to close rows: %v", err)
+			}
+		}()
+
+		t.Logf("Host details:")
+		for rows.Next() {
+			var ip string
+			var discoveryMethod *string
+			err := rows.Scan(&ip, &discoveryMethod)
+			require.NoError(t, err)
+			if discoveryMethod != nil {
+				t.Logf("  Host %s: discovery_method=%s", ip, *discoveryMethod)
+			} else {
+				t.Logf("  Host %s: discovery_method=NULL", ip)
+			}
+		}
+
 		// Check that we have hosts with both discovery and scan data
 		var count int
-		query := `
+		query = `
 			SELECT COUNT(DISTINCT h.id)
 			FROM hosts h
 			INNER JOIN port_scans ps ON h.id = ps.host_id
 			WHERE h.discovery_method IS NOT NULL
 		`
-		err := suite.database.QueryRowContext(suite.ctx, query).Scan(&count)
+		err = suite.database.QueryRowContext(suite.ctx, query).Scan(&count)
 		require.NoError(t, err)
+		t.Logf("Hosts with both discovery and scan data: %d", count)
 		assert.GreaterOrEqual(t, count, 1, "Should have at least one host with both discovery and scan data")
 	})
 }
