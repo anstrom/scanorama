@@ -115,6 +115,10 @@ func ConnectToTestDatabase(ctx context.Context) (*db.DB, *DatabaseConfig, error)
 
 // CleanupTestTables removes test data from database tables.
 func CleanupTestTables(ctx context.Context, database *db.DB) error {
+	// DISABLED FOR CI DEBUGGING - cleanup functionality disabled to isolate CI issues
+	fmt.Printf("DEBUG: CleanupTestTables called but cleanup is DISABLED for CI debugging\n")
+	return nil
+
 	// List of tables to clean in dependency order (child tables first)
 	tables := []string{
 		"host_history",

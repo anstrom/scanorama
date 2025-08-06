@@ -166,6 +166,7 @@ func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob)
 	// Check if context is canceled before finalizing
 	select {
 	case <-ctx.Done():
+		log.Printf("DEBUG: Discovery finalization cancelled for job %s", job.ID)
 		return // Don't attempt database operations if context is canceled
 	default:
 	}
@@ -175,8 +176,11 @@ func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob)
 	if job.Status == db.DiscoveryJobStatusRunning {
 		job.Status = db.DiscoveryJobStatusCompleted
 	}
+
 	if err := e.saveDiscoveryJob(ctx, job); err != nil {
-		fmt.Printf("Error saving discovery job completion: %v\n", err)
+		log.Printf("Error saving discovery job completion: %v", err)
+	} else {
+		log.Printf("DEBUG: Discovery job %s finalized successfully", job.ID)
 	}
 }
 
@@ -322,9 +326,12 @@ func (e *Engine) saveDiscoveryJob(ctx context.Context, job *db.DiscoveryJob) err
 
 // saveDiscoveredHost saves or updates a discovered host in the database.
 func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.UUID) error {
+	log.Printf("DEBUG: Discovery attempting to save host %s with method=%s", result.IPAddress, result.Method)
+
 	// Check if context is canceled before database operations
 	select {
 	case <-ctx.Done():
+		log.Printf("DEBUG: Discovery save cancelled for host %s", result.IPAddress)
 		return ctx.Err()
 	default:
 	}
@@ -332,6 +339,7 @@ func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.
 	// Check if host already exists
 	var existingHost db.Host
 	query := `SELECT id, discovery_count FROM hosts WHERE ip_address = $1`
+	log.Printf("DEBUG: Discovery checking if host %s already exists", result.IPAddress)
 	err := e.db.QueryRowContext(ctx, query, db.IPAddr{IP: result.IPAddress}).Scan(
 		&existingHost.ID, &existingHost.DiscoveryCount)
 
@@ -339,13 +347,24 @@ func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.
 	responseTimeMS := int(result.ResponseTime.Milliseconds())
 
 	if err != nil {
+		log.Printf("DEBUG: Discovery host %s not found, creating new (error: %v)", result.IPAddress, err)
 		return e.createNewHost(ctx, result, now, responseTimeMS)
 	}
+	log.Printf("DEBUG: Discovery host %s already exists, updating", result.IPAddress)
 	return e.updateExistingHost(ctx, &existingHost, result, now, responseTimeMS)
 }
 
 // insertHost inserts a new host into the database.
 func (e *Engine) insertHost(ctx context.Context, host *db.Host) error {
+	log.Printf("DEBUG: Discovery inserting new host %s with discovery_method=%v",
+		host.IPAddress.String(),
+		func() string {
+			if host.DiscoveryMethod != nil {
+				return *host.DiscoveryMethod
+			}
+			return "NULL"
+		}())
+
 	query := `
 		INSERT INTO hosts (id, ip_address, hostname, mac_address, vendor, os_family, os_name, os_version,
 						   os_confidence, os_detected_at, os_method, os_details, discovery_method,
@@ -358,6 +377,19 @@ func (e *Engine) insertHost(ctx context.Context, host *db.Host) error {
 		host.OSFamily, host.OSName, host.OSVersion, host.OSConfidence, host.OSDetectedAt,
 		host.OSMethod, host.OSDetails, host.DiscoveryMethod, host.ResponseTimeMS,
 		host.DiscoveryCount, host.IgnoreScanning, host.FirstSeen, host.LastSeen, host.Status)
+
+	if err != nil {
+		log.Printf("DEBUG: Discovery failed to insert host %s: %v", host.IPAddress.String(), err)
+	} else {
+		log.Printf("DEBUG: Discovery successfully inserted host %s with discovery_method=%v",
+			host.IPAddress.String(),
+			func() string {
+				if host.DiscoveryMethod != nil {
+					return *host.DiscoveryMethod
+				}
+				return "NULL"
+			}())
+	}
 
 	return err
 }
@@ -389,6 +421,8 @@ func (e *Engine) createNewHost(ctx context.Context, result *Result, now time.Tim
 func (e *Engine) updateExistingHost(
 	ctx context.Context, existingHost *db.Host, result *Result, now time.Time, responseTimeMS int,
 ) error {
+	log.Printf("DEBUG: Discovery updating existing host %s with discovery_method=%s", result.IPAddress, result.Method)
+
 	updateQuery := `
 		UPDATE hosts SET
 			status = $2,
@@ -415,5 +449,12 @@ func (e *Engine) updateExistingHost(
 
 	updateQuery += ` WHERE id = $1`
 	_, err := e.db.ExecContext(ctx, updateQuery, args...)
+
+	if err != nil {
+		log.Printf("DEBUG: Discovery failed to update host %s: %v", result.IPAddress, err)
+	} else {
+		log.Printf("DEBUG: Discovery successfully updated host %s with discovery_method=%s", result.IPAddress, result.Method)
+	}
+
 	return err
 }

@@ -79,7 +79,10 @@ func (suite *IntegrationTestSuite) teardown(t *testing.T) {
 	// Give background processes time to finish
 	time.Sleep(100 * time.Millisecond)
 
-	cleanupTestData(t, suite.database)
+	// DISABLED FOR CI DEBUGGING - cleanup disabled to isolate CI issues
+	// cleanupTestData(t, suite.database)
+	t.Logf("DEBUG: Test cleanup DISABLED for CI debugging")
+
 	if err := suite.database.Close(); err != nil {
 		t.Logf("Warning: Failed to close database: %v", err)
 	}
@@ -184,12 +187,20 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 	err = discoveryEngine.WaitForCompletion(suite.ctx, job.ID, 15*time.Second)
 	require.NoError(t, err)
 	maxWait := 30 * time.Second
-	checkInterval := 2 * time.Second
+	checkInterval := 1 * time.Second
 	startTime := time.Now()
 
 	for {
 		if time.Since(startTime) > maxWait {
-			t.Fatal("Discovery timed out")
+			// Get final status for debugging
+			var finalStatus string
+			var finalHosts int
+			query := `SELECT status, hosts_discovered FROM discovery_jobs WHERE id = $1`
+			if err := suite.database.QueryRowContext(suite.ctx, query, job.ID).Scan(&finalStatus, &finalHosts); err == nil {
+				t.Fatalf("Discovery timed out after %v - final status: %s, hosts: %d", maxWait, finalStatus, finalHosts)
+			} else {
+				t.Fatalf("Discovery timed out after %v - could not get final status: %v", maxWait, err)
+			}
 		}
 
 		// Check job status
@@ -202,6 +213,15 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 		if status == "completed" || status == "failed" {
 			t.Logf("Discovery %s. Found %d hosts.", status, hostsDiscovered)
 			assert.Equal(t, "completed", status)
+
+			// Additional verification that hosts were actually stored
+			if status == "completed" && hostsDiscovered > 0 {
+				var actualHostCount int
+				hostQuery := `SELECT COUNT(*) FROM hosts WHERE discovery_method = 'ping'`
+				if err := suite.database.QueryRowContext(suite.ctx, hostQuery).Scan(&actualHostCount); err == nil {
+					t.Logf("Verified %d hosts with discovery_method=ping in database", actualHostCount)
+				}
+			}
 			break
 		}
 
@@ -265,6 +285,25 @@ func TestScanDiscoveredHosts(t *testing.T) {
 	// Wait for discovery to complete properly
 	err = discoveryEngine.WaitForCompletion(suite.ctx, job.ID, 15*time.Second)
 	require.NoError(t, err)
+
+	// Verify that discovery actually saved the host with correct discovery_method
+	var discoveredHostCount int
+	query := `SELECT COUNT(*) FROM hosts WHERE discovery_method = 'ping' AND ip_address = '127.0.0.1'`
+	err = suite.database.QueryRowContext(suite.ctx, query).Scan(&discoveredHostCount)
+	require.NoError(t, err)
+
+	// Add some debugging for CI
+	if discoveredHostCount != 1 {
+		var totalHosts int
+		suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM hosts").Scan(&totalHosts)
+		t.Logf("DEBUG: Expected 1 host with discovery_method=ping, found %d (total hosts: %d)", discoveredHostCount, totalHosts)
+	}
+
+	require.Equal(t, 1, discoveredHostCount, "Discovery should have created exactly one host with discovery_method=ping")
+	t.Logf("Discovery verification successful: found %d host with discovery_method=ping", discoveredHostCount)
+
+	// Give a small buffer to ensure database consistency in CI
+	time.Sleep(100 * time.Millisecond)
 
 	// Now scan the discovered hosts
 	testPort := "22" // SSH port for testing

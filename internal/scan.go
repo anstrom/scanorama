@@ -277,11 +277,15 @@ func PrintResults(result *ScanResult) {
 
 // storeScanResults stores scan results in the database.
 func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, result *ScanResult) error {
+	log.Printf("DEBUG: Scan storing results for targets %v", config.Targets)
+
 	// Create a scan job record - for now we'll create a minimal scan target
 	scanTarget, err := createOrGetScanTarget(ctx, database, config)
 	if err != nil {
+		log.Printf("DEBUG: Scan failed to create scan target: %v", err)
 		return fmt.Errorf("failed to create scan target: %w", err)
 	}
+	log.Printf("DEBUG: Scan created/retrieved scan target ID=%s, name=%s", scanTarget.ID, scanTarget.Name)
 
 	// Create scan job
 	scanJob := &db.ScanJob{
@@ -289,6 +293,7 @@ func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, 
 		TargetID: scanTarget.ID,
 		Status:   db.ScanJobStatusCompleted,
 	}
+	log.Printf("DEBUG: Scan creating scan job ID=%s for target ID=%s", scanJob.ID, scanJob.TargetID)
 
 	now := time.Now()
 	scanJob.StartedAt = &result.StartTime
@@ -301,11 +306,20 @@ func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, 
 
 	jobRepo := db.NewScanJobRepository(database)
 	if err := jobRepo.Create(ctx, scanJob); err != nil {
+		log.Printf("DEBUG: Scan failed to create scan job: %v", err)
 		return fmt.Errorf("failed to create scan job: %w", err)
 	}
+	log.Printf("DEBUG: Scan successfully created scan job ID=%s", scanJob.ID)
 
 	// Store host and port scan results
-	return storeHostResults(ctx, database, scanJob.ID, result.Hosts)
+	log.Printf("DEBUG: Scan storing results for %d hosts", len(result.Hosts))
+	err = storeHostResults(ctx, database, scanJob.ID, result.Hosts)
+	if err != nil {
+		log.Printf("DEBUG: Scan failed to store host results: %v", err)
+		return err
+	}
+	log.Printf("DEBUG: Scan successfully stored all results")
+	return nil
 }
 
 // createOrGetScanTarget creates or retrieves a scan target for the given configuration.
@@ -371,11 +385,15 @@ func parseTargetAddress(target string) (db.NetworkAddr, error) {
 // createAdhocScanTarget creates a temporary scan target for ad-hoc scans.
 func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetRepository,
 	target string, config *ScanConfig) (*db.ScanTarget, error) {
+	log.Printf("DEBUG: Scan creating ad-hoc scan target for %s", target)
+
 	// Parse target address
 	networkAddr, err := parseTargetAddress(target)
 	if err != nil {
+		log.Printf("DEBUG: Scan failed to parse target address %s: %v", target, err)
 		return nil, err
 	}
+	log.Printf("DEBUG: Scan parsed target %s as network %s", target, networkAddr.String())
 
 	// Map scan types to database-compatible values
 	dbScanType := config.ScanType
@@ -397,8 +415,10 @@ func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetReposit
 	}
 
 	if err := targetRepo.Create(ctx, scanTarget); err != nil {
+		log.Printf("DEBUG: Scan failed to create scan target: %v", err)
 		return nil, fmt.Errorf("failed to create scan target: %w", err)
 	}
+	log.Printf("DEBUG: Scan successfully created scan target ID=%s, name=%s", scanTarget.ID, scanTarget.Name)
 
 	return scanTarget, nil
 }
