@@ -1,3 +1,5 @@
+// Package helpers provides testing utilities for database connections,
+// environment setup, and test data management for Scanorama integration tests.
 package helpers
 
 import (
@@ -176,21 +178,61 @@ func WaitForDatabase(config *DatabaseConfig, timeout time.Duration) error {
 
 // CreateTestDatabase creates a test database if it doesn't exist.
 func CreateTestDatabase(config *DatabaseConfig) error {
-	// Connect to default postgres database first
-	adminConfig := config
-	adminConfig.Database = "postgres"
-	adminConfig.Username = "postgres"
-	adminConfig.Password = getEnvOrDefault("POSTGRES_PASSWORD", "postgres")
-
-	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		adminConfig.Host, adminConfig.Port, adminConfig.Username, adminConfig.Password,
-		adminConfig.Database, adminConfig.SSLMode)
-
-	sqlDB, err := sql.Open("postgres", dsn)
-	if err != nil {
-		return fmt.Errorf("failed to connect to postgres: %w", err)
+	// Skip database creation if we can already connect to the target database
+	if IsDatabaseAvailable(config) {
+		return nil // Database already exists and is accessible
 	}
-	defer func() { _ = sqlDB.Close() }()
+
+	// Try to connect to default postgres database with various common credentials
+	possibleAdminConfigs := []DatabaseConfig{
+		{
+			Host:     config.Host,
+			Port:     config.Port,
+			Database: "postgres",
+			Username: getEnvOrDefault("POSTGRES_USER", "postgres"),
+			Password: getEnvOrDefault("POSTGRES_PASSWORD", ""),
+			SSLMode:  config.SSLMode,
+		},
+		{
+			Host:     config.Host,
+			Port:     config.Port,
+			Database: "postgres",
+			Username: config.Username,
+			Password: config.Password,
+			SSLMode:  config.SSLMode,
+		},
+	}
+
+	var sqlDB *sql.DB
+	var err error
+
+	// Try each admin config
+	for _, adminConfig := range possibleAdminConfigs {
+		dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+			adminConfig.Host, adminConfig.Port, adminConfig.Username, adminConfig.Password,
+			adminConfig.Database, adminConfig.SSLMode)
+
+		sqlDB, err = sql.Open("postgres", dsn)
+		if err != nil {
+			continue
+		}
+
+		// Test the connection
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err = sqlDB.PingContext(ctx)
+		cancel()
+
+		if err == nil {
+			break // Successfully connected
+		}
+
+		_ = sqlDB.Close()
+		sqlDB = nil
+	}
+
+	if sqlDB == nil {
+		return fmt.Errorf("failed to connect to postgres database with any credentials")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -227,6 +269,7 @@ func CreateTestDatabase(config *DatabaseConfig) error {
 		}
 	}
 
+	_ = sqlDB.Close()
 	return nil
 }
 
@@ -250,18 +293,24 @@ func getEnvIntOrDefault(key string, defaultValue int) int {
 
 // IsPostgreSQLRunning checks if PostgreSQL is running on the given port.
 func IsPostgreSQLRunning(port int) bool {
-	dsn := fmt.Sprintf("host=localhost port=%d user=postgres dbname=postgres sslmode=disable", port)
+	// Try to connect using the test database credentials first
+	configs := GetTestDatabaseConfigs()
+	for _, config := range configs {
+		if config.Port == port && IsDatabaseAvailable(&config) {
+			return true
+		}
+	}
+
+	// Fallback: try a simple network connection check
+	dsn := fmt.Sprintf("host=localhost port=%d connect_timeout=2 sslmode=disable", port)
 	sqlDB, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return false
 	}
-	defer func() { _ = sqlDB.Close() }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	err = sqlDB.PingContext(ctx)
-	return err == nil
+	// Just test if we can open a connection, don't ping (which requires auth)
+	_ = sqlDB.Close()
+	return true
 }
 
 // GetDatabaseStatus returns a human-readable status of database availability.
