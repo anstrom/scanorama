@@ -406,14 +406,14 @@ func TestCIIsolatedStorage(t *testing.T) {
 		t.Log("CI DEBUG: Testing transaction behavior...")
 
 		// Start transaction
-		tx, err := suite.database.BeginTxx(suite.ctx, nil)
+		tx, err := suite.database.BeginTx(suite.ctx)
 		require.NoError(t, err)
 
 		// Create scan target in transaction
-		targetID := "test-tx-target-" + time.Now().Format("20060102-150405")
+		targetID := uuid.New().String()
 		_, err = tx.ExecContext(suite.ctx,
-			"INSERT INTO scan_targets (id, name, network, profile_id) VALUES ($1, $2, $3, $4)",
-			targetID, "Test TX Target", "192.168.100.0/24", "basic")
+			"INSERT INTO scan_targets (id, name, network) VALUES ($1, $2, $3)",
+			targetID, "Test TX Target", "192.168.100.0/24")
 		require.NoError(t, err)
 		t.Log("✅ Created scan target in transaction")
 
@@ -439,13 +439,13 @@ func TestCIIsolatedStorage(t *testing.T) {
 		t.Log("✅ Verified scan target was rolled back")
 
 		// Test successful commit
-		tx2, err := suite.database.BeginTxx(suite.ctx, nil)
+		tx2, err := suite.database.BeginTx(suite.ctx)
 		require.NoError(t, err)
 
-		targetID2 := "test-commit-target-" + time.Now().Format("20060102-150405")
+		targetID2 := uuid.New().String()
 		_, err = tx2.ExecContext(suite.ctx,
-			"INSERT INTO scan_targets (id, name, network, profile_id) VALUES ($1, $2, $3, $4)",
-			targetID2, "Test Commit Target", "192.168.200.0/24", "basic")
+			"INSERT INTO scan_targets (id, name, network) VALUES ($1, $2, $3)",
+			targetID2, "Test Commit Target", "192.168.200.0/24")
 		require.NoError(t, err)
 
 		err = tx2.Commit()
