@@ -98,7 +98,6 @@ func (suite *IntegrationTestSuite) teardown(t *testing.T) {
 
 // TestScanWithDatabaseStorage tests scanning functionality with database storage.
 func TestScanWithDatabaseStorage(t *testing.T) {
-	t.Skip("Temporarily skipping integration tests to focus on basic nmap functionality")
 	suite := setupIntegrationTestSuite(t)
 	defer suite.teardown(t)
 
@@ -174,7 +173,6 @@ func TestScanWithDatabaseStorage(t *testing.T) {
 
 // TestDiscoveryWithDatabaseStorage tests discovery functionality with database storage.
 func TestDiscoveryWithDatabaseStorage(t *testing.T) {
-	t.Skip("Temporarily skipping integration tests to focus on basic nmap functionality")
 	suite := setupIntegrationTestSuite(t)
 	defer suite.teardown(t)
 
@@ -279,7 +277,6 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 
 // TestScanDiscoveredHosts tests scanning hosts that were previously discovered.
 func TestScanDiscoveredHosts(t *testing.T) {
-	t.Skip("Temporarily skipping integration tests to focus on basic nmap functionality")
 	suite := setupIntegrationTestSuite(t)
 	defer suite.teardown(t)
 
@@ -480,7 +477,6 @@ func TestScanDiscoveredHosts(t *testing.T) {
 
 // TestQueryScanResults tests querying stored scan results.
 func TestQueryScanResults(t *testing.T) {
-	t.Skip("Temporarily skipping integration tests to focus on basic nmap functionality")
 	suite := setupIntegrationTestSuite(t)
 	defer suite.teardown(t)
 
@@ -583,7 +579,6 @@ func TestQueryScanResults(t *testing.T) {
 
 // TestMultipleScanTypes tests different scan types with database storage.
 func TestMultipleScanTypes(t *testing.T) {
-	t.Skip("Temporarily skipping integration tests to focus on basic nmap functionality")
 	suite := setupIntegrationTestSuite(t)
 	defer suite.teardown(t)
 
