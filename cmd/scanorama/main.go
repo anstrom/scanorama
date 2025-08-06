@@ -6,9 +6,12 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/anstrom/scanorama/internal"
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/discovery"
@@ -20,7 +23,7 @@ const (
 	// Command line argument requirements.
 	minArgsForSubcommand   = 2
 	minArgsForProfileShow  = 2
-	minArgsForScheduleAdd  = 5
+	minArgsForScheduleAdd  = 4
 	minArgsForScheduleScan = 4
 
 	// Default timeout and concurrency values.
@@ -93,6 +96,10 @@ Discovery Commands:
 Scanning Commands:
   scanorama scan --live-hosts                          # Scan only discovered live hosts
   scanorama scan --targets 192.168.1.10-20            # Scan specific targets
+  scanorama scan --targets host --type version         # Version detection scan
+  scanorama scan --targets host --type intense         # Comprehensive scan with OS detection
+  scanorama scan --targets host --type stealth         # Stealthy scan with slow timing
+  scanorama scan --targets host --type comprehensive   # Full scan with scripts
   scanorama scan --live-hosts --profile auto          # Auto-select profiles by OS
   scanorama scan --os-family windows                  # Scan only Windows hosts
 
@@ -204,17 +211,420 @@ func runDiscovery(args []string) {
 	}
 
 	fmt.Printf("Discovery job started: %s\n", job.ID)
-	fmt.Println("Discovery running in background. Use 'scanorama hosts' to view results.")
+	fmt.Println("Discovery running...")
+
+	// Wait for discovery to complete by polling the job status
+	for {
+		time.Sleep(2 * time.Second)
+
+		// Check job status in database
+		query := `SELECT status, hosts_discovered, completed_at FROM discovery_jobs WHERE id = $1`
+		var status string
+		var hostsDiscovered int
+		var completedAt *time.Time
+
+		err := database.QueryRowContext(ctx, query, job.ID).Scan(&status, &hostsDiscovered, &completedAt)
+		if err != nil {
+			log.Printf("Error checking discovery status: %v", err)
+			break
+		}
+
+		if status == "completed" || status == "failed" {
+			fmt.Printf("Discovery %s. Found %d hosts.\n", status, hostsDiscovered)
+			break
+		}
+
+		// Timeout after 60 seconds
+		if time.Since(*job.StartedAt) > 60*time.Second {
+			fmt.Println("Discovery timed out.")
+			break
+		}
+	}
+
+	fmt.Println("Use 'scanorama hosts' to view discovered hosts.")
 }
 
 func runScan(args []string) {
-	fmt.Println("Scan command - implementation coming soon")
-	// TODO: Implement scanning with profile selection
+	if len(args) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: scanorama scan [options]\n")
+		fmt.Fprintf(os.Stderr, "Examples:\n")
+		fmt.Fprintf(os.Stderr, "  scanorama scan --live-hosts                    # Scan discovered live hosts\n")
+		fmt.Fprintf(os.Stderr, "  scanorama scan --targets 192.168.1.10-20      # Scan specific targets\n")
+		fmt.Fprintf(os.Stderr, "  scanorama scan --targets localhost --ports 80,443  # Scan specific ports\n")
+		fmt.Fprintf(os.Stderr, "  scanorama scan --targets example.com --type version   # Version detection scan\n")
+		fmt.Fprintf(os.Stderr, "  scanorama scan --targets 10.0.0.1 --type intense     # Comprehensive scan with OS detection\n")
+		fmt.Fprintf(os.Stderr, "  scanorama scan --targets target --type stealth       # Stealthy scan with slow timing\n")
+		fmt.Fprintf(os.Stderr, "  scanorama scan --targets host --timeout 30           # Scan with 30 second timeout\n")
+		os.Exit(1)
+	}
+
+	// Parse scan options
+	var targets string
+	var liveHosts bool
+	var ports string = "22,80,443,8080,8443"
+	var scanType string = "connect"
+	var profileID string
+	var timeoutSec int = defaultTimeoutSeconds
+
+	// Parse arguments
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--targets":
+			if i+1 < len(args) {
+				targets = args[i+1]
+				i++
+			}
+		case "--live-hosts":
+			liveHosts = true
+		case "--ports":
+			if i+1 < len(args) {
+				ports = args[i+1]
+				i++
+			}
+		case "--type":
+			if i+1 < len(args) {
+				scanType = args[i+1]
+				i++
+			}
+		case "--profile":
+			if i+1 < len(args) {
+				profileID = args[i+1]
+				i++
+			}
+		case "--timeout":
+			if i+1 < len(args) {
+				if t, err := strconv.Atoi(args[i+1]); err == nil && t > 0 {
+					timeoutSec = t
+				}
+				i++
+			}
+		}
+	}
+
+	// Validate options
+	if !liveHosts && targets == "" {
+		fmt.Fprintf(os.Stderr, "Error: Must specify either --live-hosts or --targets\n")
+		os.Exit(1)
+	}
+
+	// Setup database
+	database, err := setupDatabase()
+	if err != nil {
+		log.Fatalf("Database setup failed: %v", err)
+	}
+	defer func() {
+		if err := database.Close(); err != nil {
+			log.Printf("Failed to close database: %v", err)
+		}
+	}()
+
+	ctx := context.Background()
+
+	if liveHosts {
+		fmt.Println("Scanning discovered live hosts...")
+		err = scanLiveHosts(ctx, database, ports, scanType, profileID, timeoutSec)
+	} else {
+		fmt.Printf("Scanning targets: %s\n", targets)
+		err = scanTargets(ctx, database, targets, ports, scanType, profileID, timeoutSec)
+	}
+
+	if err != nil {
+		if err := database.Close(); err != nil {
+			log.Printf("Failed to close database: %v", err)
+		}
+		log.Fatalf("Scan failed: %v", err) //nolint:gocritic // intentional exit after cleanup
+	}
+
+	fmt.Println("Scan completed successfully")
+}
+
+func scanLiveHosts(ctx context.Context, database *db.DB, ports, scanType, profileID string, timeoutSec int) error {
+	// Get live hosts from database
+	query := `
+		SELECT ip_address, hostname, os_family
+		FROM hosts
+		WHERE status = 'up' AND ignore_scanning = false
+		ORDER BY last_seen DESC
+		LIMIT 100
+	`
+
+	rows, err := database.QueryContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to query live hosts: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Failed to close rows: %v", err)
+		}
+	}()
+
+	var hosts []string
+	for rows.Next() {
+		var ipAddr string
+		var hostname, osFamily *string
+
+		if err := rows.Scan(&ipAddr, &hostname, &osFamily); err != nil {
+			log.Printf("Failed to scan host row: %v", err)
+			continue
+		}
+
+		hosts = append(hosts, ipAddr)
+	}
+
+	if len(hosts) == 0 {
+		fmt.Println("No live hosts found to scan")
+		return nil
+	}
+
+	fmt.Printf("Found %d live hosts to scan\n", len(hosts))
+	return performScan(ctx, database, hosts, ports, scanType, timeoutSec)
+}
+
+func scanTargets(ctx context.Context, database *db.DB, targets, ports, scanType, profileID string, timeoutSec int) error {
+	// For now, split comma-separated targets
+	// TODO: Add support for ranges and CIDR notation
+	hostList := strings.Split(targets, ",")
+
+	var hosts []string
+	for _, host := range hostList {
+		hosts = append(hosts, strings.TrimSpace(host))
+	}
+
+	return performScan(ctx, database, hosts, ports, scanType, timeoutSec)
+}
+
+func performScan(ctx context.Context, database *db.DB, hosts []string, ports, scanType string, timeoutSec int) error {
+	// Create scan configuration
+	scanConfig := &internal.ScanConfig{
+		Targets:     hosts,
+		Ports:       ports,
+		ScanType:    scanType,
+		TimeoutSec:  timeoutSec,
+		Concurrency: defaultConcurrency,
+	}
+
+	fmt.Printf("Starting %s scan of %d target(s)...\n", scanType, len(hosts))
+	fmt.Printf("Ports: %s\n", ports)
+	fmt.Printf("Timeout: %d seconds\n", timeoutSec)
+	fmt.Println()
+
+	// Perform the actual nmap scan
+	result, err := internal.RunScanWithContext(ctx, scanConfig, database)
+	if err != nil {
+		return fmt.Errorf("scan failed: %w", err)
+	}
+
+	// Display results
+	internal.PrintResults(result)
+
+	// Print scan summary
+	fmt.Printf("\nScan Summary:\n")
+	fmt.Printf("  Duration: %v\n", result.Duration)
+	fmt.Printf("  Hosts up: %d\n", result.Stats.Up)
+	fmt.Printf("  Hosts down: %d\n", result.Stats.Down)
+	fmt.Printf("  Total hosts: %d\n", result.Stats.Total)
+
+	return nil
 }
 
 func runHosts(args []string) {
-	fmt.Println("Hosts command - implementation coming soon")
-	// TODO: Implement host management commands
+	// Parse hosts options
+	var status string
+	var osFamily string
+	var lastSeenHours int = 24
+	var showIgnored bool
+
+	// Parse arguments
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--status":
+			if i+1 < len(args) {
+				status = args[i+1]
+				i++
+			}
+		case "--os":
+			if i+1 < len(args) {
+				osFamily = args[i+1]
+				i++
+			}
+		case "--last-seen":
+			if i+1 < len(args) {
+				if args[i+1] == "24h" {
+					lastSeenHours = 24
+				} else if args[i+1] == "7d" {
+					lastSeenHours = 168
+				} else if args[i+1] == "30d" {
+					lastSeenHours = 720
+				}
+				i++
+			}
+		case "--include-ignored":
+			showIgnored = true
+		case "ignore":
+			if i+1 < len(args) {
+				handleHostIgnore(args[i+1])
+				return
+			}
+		}
+	}
+
+	// Setup database
+	database, err := setupDatabase()
+	if err != nil {
+		log.Fatalf("Database setup failed: %v", err)
+	}
+	defer func() {
+		if err := database.Close(); err != nil {
+			log.Printf("Failed to close database: %v", err)
+		}
+	}()
+
+	ctx := context.Background()
+	err = showHosts(ctx, database, status, osFamily, lastSeenHours, showIgnored)
+	if err != nil {
+		if err := database.Close(); err != nil {
+			log.Printf("Failed to close database: %v", err)
+		}
+		log.Fatalf("Failed to show hosts: %v", err) //nolint:gocritic // intentional exit after cleanup
+	}
+}
+
+func showHosts(ctx context.Context, database *db.DB, status, osFamily string, lastSeenHours int, showIgnored bool) error {
+	// Build query with filters
+	query := `
+		SELECT ip_address, hostname, mac_address, vendor, os_family, os_name,
+		       status, last_seen, ignore_scanning, discovery_count
+		FROM hosts
+		WHERE 1=1
+	`
+	var args []interface{}
+	argIndex := 1
+
+	if status != "" {
+		query += fmt.Sprintf(" AND status = $%d", argIndex)
+		args = append(args, status)
+		argIndex++
+	}
+
+	if osFamily != "" {
+		query += fmt.Sprintf(" AND os_family ILIKE $%d", argIndex)
+		args = append(args, "%"+osFamily+"%")
+		argIndex++
+	}
+
+	if lastSeenHours > 0 {
+		query += fmt.Sprintf(" AND last_seen > NOW() - INTERVAL '%d hours'", lastSeenHours)
+	}
+
+	if !showIgnored {
+		query += " AND ignore_scanning = false"
+	}
+
+	query += " ORDER BY last_seen DESC LIMIT 100"
+
+	rows, err := database.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("failed to query hosts: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Failed to close rows: %v", err)
+		}
+	}()
+
+	// Display results
+	fmt.Printf("%-15s %-20s %-17s %-15s %-10s %-10s %-19s %s\n",
+		"IP Address", "Hostname", "MAC Address", "OS Family", "Status", "Ignored", "Last Seen", "Count")
+	fmt.Println(strings.Repeat("-", 120))
+
+	count := 0
+	for rows.Next() {
+		var ipAddr string
+		var hostname, macAddr, vendor, osFamily, osName, status *string
+		var lastSeen time.Time
+		var ignoreScanning bool
+		var discoveryCount int
+
+		err := rows.Scan(&ipAddr, &hostname, &macAddr, &vendor, &osFamily, &osName,
+			&status, &lastSeen, &ignoreScanning, &discoveryCount)
+		if err != nil {
+			log.Printf("Failed to scan host row: %v", err)
+			continue
+		}
+
+		hostnameStr := ""
+		if hostname != nil {
+			hostnameStr = *hostname
+		}
+
+		macAddrStr := ""
+		if macAddr != nil {
+			macAddrStr = *macAddr
+		}
+
+		osFamilyStr := ""
+		if osFamily != nil {
+			osFamilyStr = *osFamily
+		}
+
+		statusStr := ""
+		if status != nil {
+			statusStr = *status
+		}
+
+		ignoredStr := "No"
+		if ignoreScanning {
+			ignoredStr = "Yes"
+		}
+
+		fmt.Printf("%-15s %-20s %-17s %-15s %-10s %-10s %-19s %d\n",
+			ipAddr, hostnameStr, macAddrStr, osFamilyStr, statusStr, ignoredStr,
+			lastSeen.Format("2006-01-02 15:04:05"), discoveryCount)
+
+		count++
+	}
+
+	if count == 0 {
+		fmt.Println("No hosts found matching the criteria")
+	} else {
+		fmt.Printf("\nTotal: %d hosts\n", count)
+	}
+
+	return rows.Err()
+}
+
+func handleHostIgnore(ipAddr string) {
+	// Setup database
+	database, err := setupDatabase()
+	if err != nil {
+		log.Fatalf("Database setup failed: %v", err)
+	}
+	defer func() {
+		if err := database.Close(); err != nil {
+			log.Printf("Failed to close database: %v", err)
+		}
+	}()
+
+	ctx := context.Background()
+	query := `UPDATE hosts SET ignore_scanning = true WHERE ip_address = $1`
+	result, err := database.ExecContext(ctx, query, ipAddr)
+	if err != nil {
+		if err := database.Close(); err != nil {
+			log.Printf("Failed to close database: %v", err)
+		}
+		log.Fatalf("Failed to ignore host: %v", err) //nolint:gocritic // intentional exit after cleanup
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("Warning: Could not get affected rows: %v", err)
+	}
+
+	if rowsAffected > 0 {
+		fmt.Printf("Host %s is now ignored for scanning\n", ipAddr)
+	} else {
+		fmt.Printf("Host %s not found in database\n", ipAddr)
+	}
 }
 
 func runProfiles(args []string) {
