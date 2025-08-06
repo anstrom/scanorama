@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 // NetworkAddr wraps net.IPNet to implement PostgreSQL CIDR type.
@@ -226,20 +227,20 @@ type DiscoveryJob struct {
 
 // ScanProfile represents a scanning profile configuration.
 type ScanProfile struct {
-	ID          string    `db:"id" json:"id"`
-	Name        string    `db:"name" json:"name"`
-	Description string    `db:"description" json:"description"`
-	OSFamily    []string  `db:"os_family" json:"os_family"`
-	OSPattern   []string  `db:"os_pattern" json:"os_pattern"`
-	Ports       string    `db:"ports" json:"ports"`
-	ScanType    string    `db:"scan_type" json:"scan_type"`
-	Timing      string    `db:"timing" json:"timing"`
-	Scripts     []string  `db:"scripts" json:"scripts"`
-	Options     JSONB     `db:"options" json:"options"`
-	Priority    int       `db:"priority" json:"priority"`
-	BuiltIn     bool      `db:"built_in" json:"built_in"`
-	CreatedAt   time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
+	ID          string         `db:"id" json:"id"`
+	Name        string         `db:"name" json:"name"`
+	Description string         `db:"description" json:"description"`
+	OSFamily    pq.StringArray `db:"os_family" json:"os_family"`
+	OSPattern   pq.StringArray `db:"os_pattern" json:"os_pattern"`
+	Ports       string         `db:"ports" json:"ports"`
+	ScanType    string         `db:"scan_type" json:"scan_type"`
+	Timing      string         `db:"timing" json:"timing"`
+	Scripts     pq.StringArray `db:"scripts" json:"scripts"`
+	Options     JSONB          `db:"options" json:"options"`
+	Priority    int            `db:"priority" json:"priority"`
+	BuiltIn     bool           `db:"built_in" json:"built_in"`
+	CreatedAt   time.Time      `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time      `db:"updated_at" json:"updated_at"`
 }
 
 // ScheduledJob represents a scheduled scanning or discovery job.

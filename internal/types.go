@@ -60,7 +60,15 @@ func (c *ScanConfig) Validate() error {
 	if c.Ports == "" {
 		return &ScanError{Op: "validate config", Err: fmt.Errorf("no ports specified")}
 	}
-	if c.ScanType != "connect" && c.ScanType != "syn" && c.ScanType != "version" {
+	validScanTypes := map[string]bool{
+		"connect":       true,
+		"syn":           true,
+		"version":       true,
+		"intense":       true,
+		"stealth":       true,
+		"comprehensive": true,
+	}
+	if !validScanTypes[c.ScanType] {
 		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid scan type: %s", c.ScanType)}
 	}
 
