@@ -7,10 +7,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"strings"
 	"time"
 
 	"github.com/Ullaakut/nmap/v3"
+	"github.com/anstrom/scanorama/internal/db"
+	"github.com/google/uuid"
 )
 
 const (
@@ -20,13 +23,18 @@ const (
 
 // RunScan is a convenience wrapper around RunScanWithContext that uses a background context.
 func RunScan(config *ScanConfig) (*ScanResult, error) {
-	return RunScanWithContext(context.Background(), config)
+	return RunScanWithContext(context.Background(), config, nil)
+}
+
+// RunScanWithDB is a convenience wrapper that includes database storage.
+func RunScanWithDB(config *ScanConfig, database *db.DB) (*ScanResult, error) {
+	return RunScanWithContext(context.Background(), config, database)
 }
 
 // RunScanWithContext performs a network scan based on the provided configuration and context.
 // It uses nmap to scan the specified targets and ports, returning detailed results
-// about discovered hosts and services.
-func RunScanWithContext(ctx context.Context, config *ScanConfig) (*ScanResult, error) {
+// about discovered hosts and services. If database is provided, results are stored.
+func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB) (*ScanResult, error) {
 	// Validate the configuration
 	if err := validateScanConfig(config); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
@@ -51,6 +59,14 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig) (*ScanResult, e
 
 	// Convert results to our format
 	convertNmapResults(result, scanResult)
+
+	// Store results in database if provided
+	if database != nil {
+		if err := storeScanResults(ctx, database, config, scanResult); err != nil {
+			log.Printf("Failed to store scan results in database: %v", err)
+			// Don't fail the scan if database storage fails
+		}
+	}
 
 	return scanResult, nil
 }
@@ -84,15 +100,66 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 		nmap.WithPorts(config.Ports),
 	}
 
-	// Add scan type options
+	// Add scan type options with enhanced capabilities
 	switch config.ScanType {
 	case "connect":
 		options = append(options, nmap.WithConnectScan())
 	case "syn":
 		options = append(options, nmap.WithSYNScan())
 	case "version":
-		options = append(options, nmap.WithServiceInfo())
+		options = append(options,
+			nmap.WithServiceInfo(),
+			nmap.WithVersionAll(),
+		)
+	case "intense":
+		options = append(options,
+			nmap.WithConnectScan(),
+			nmap.WithServiceInfo(),
+			nmap.WithVersionAll(),
+			nmap.WithAggressiveScan(),
+		)
+	case "stealth":
+		options = append(options,
+			nmap.WithConnectScan(),
+			nmap.WithTimingTemplate(nmap.TimingPolite),
+		)
+	case "comprehensive":
+		options = append(options,
+			nmap.WithConnectScan(),
+			nmap.WithServiceInfo(),
+			nmap.WithVersionAll(),
+			nmap.WithDefaultScript(),
+		)
 	}
+
+	// Add timing template based on configuration
+	if config.TimeoutSec > 0 {
+		if config.TimeoutSec <= 5 {
+			options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
+		} else if config.TimeoutSec <= 15 {
+			options = append(options, nmap.WithTimingTemplate(nmap.TimingNormal))
+		} else {
+			options = append(options, nmap.WithTimingTemplate(nmap.TimingPolite))
+		}
+	}
+
+	// Add host discovery options for better reliability
+	options = append(options,
+		nmap.WithSkipHostDiscovery(), // Skip ping and go straight to port scan
+	)
+
+	// Add performance optimizations
+	if config.Concurrency > 0 {
+		// nmap library doesn't directly expose parallelism, but we can use timing
+		if config.Concurrency > 20 {
+			options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
+		}
+	}
+
+	// Add useful scanning options for better results
+	options = append(options,
+		nmap.WithVerbosity(1), // Basic verbosity for better debugging
+	)
 
 	return options
 }
@@ -159,6 +226,10 @@ func PrintResults(result *ScanResult) {
 
 	fmt.Println("Scan Results:")
 	fmt.Println("=============")
+	fmt.Printf("Scan started: %s\n", result.StartTime.Format(time.RFC3339))
+	fmt.Printf("Scan duration: %v\n", result.Duration)
+	fmt.Printf("Total hosts: %d, Up: %d, Down: %d\n\n",
+		result.Stats.Total, result.Stats.Up, result.Stats.Down)
 
 	for _, host := range result.Hosts {
 		fmt.Printf("Host: %s (%s)\n", host.Address, host.Status)
@@ -190,4 +261,172 @@ func PrintResults(result *ScanResult) {
 		}
 		fmt.Println()
 	}
+}
+
+// storeScanResults stores scan results in the database.
+func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, result *ScanResult) error {
+	// Create a scan job record - for now we'll create a minimal scan target
+	scanTarget, err := createOrGetScanTarget(ctx, database, config)
+	if err != nil {
+		return fmt.Errorf("failed to create scan target: %w", err)
+	}
+
+	// Create scan job
+	scanJob := &db.ScanJob{
+		ID:       uuid.New(),
+		TargetID: scanTarget.ID,
+		Status:   db.ScanJobStatusCompleted,
+	}
+
+	now := time.Now()
+	scanJob.StartedAt = &result.StartTime
+	scanJob.CompletedAt = &now
+
+	// Store scan statistics
+	statsJSON := fmt.Sprintf(`{"hosts_up": %d, "hosts_down": %d, "total_hosts": %d, "duration_seconds": %d}`,
+		result.Stats.Up, result.Stats.Down, result.Stats.Total, int(result.Duration.Seconds()))
+	scanJob.ScanStats = db.JSONB(statsJSON)
+
+	jobRepo := db.NewScanJobRepository(database)
+	if err := jobRepo.Create(ctx, scanJob); err != nil {
+		return fmt.Errorf("failed to create scan job: %w", err)
+	}
+
+	// Store host and port scan results
+	return storeHostResults(ctx, database, scanJob.ID, result.Hosts)
+}
+
+// createOrGetScanTarget creates or retrieves a scan target for the given configuration.
+func createOrGetScanTarget(ctx context.Context, database *db.DB, config *ScanConfig) (*db.ScanTarget, error) {
+	targetRepo := db.NewScanTargetRepository(database)
+
+	// Try to find existing target by checking if any target contains our first IP
+	if len(config.Targets) == 0 {
+		return nil, fmt.Errorf("no targets specified")
+	}
+
+	firstTarget := config.Targets[0]
+	ip := net.ParseIP(firstTarget)
+	if ip == nil {
+		// If it's not an IP, treat it as hostname for now
+		// For simplicity, create a /32 network for the resolved IP
+		return createAdhocScanTarget(ctx, targetRepo, firstTarget, config)
+	}
+
+	// Create /32 network for single IP
+	var network string
+	if ip.To4() != nil {
+		network = ip.String() + "/32"
+	} else {
+		network = ip.String() + "/128"
+	}
+
+	return createAdhocScanTarget(ctx, targetRepo, network, config)
+}
+
+// createAdhocScanTarget creates a temporary scan target for ad-hoc scans.
+func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetRepository, target string, config *ScanConfig) (*db.ScanTarget, error) {
+	// Parse as CIDR or create /32
+	var networkAddr db.NetworkAddr
+	if strings.Contains(target, "/") {
+		_, ipnet, err := net.ParseCIDR(target)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CIDR notation: %w", err)
+		}
+		networkAddr.IPNet = *ipnet
+	} else {
+		ip := net.ParseIP(target)
+		if ip == nil {
+			// For hostnames, create a placeholder network
+			ip = net.ParseIP("0.0.0.0")
+		}
+
+		var mask net.IPMask
+		if ip.To4() != nil {
+			mask = net.CIDRMask(32, 32)
+		} else {
+			mask = net.CIDRMask(128, 128)
+		}
+		networkAddr.IPNet = net.IPNet{IP: ip, Mask: mask}
+	}
+
+	// Map scan types to database-compatible values
+	dbScanType := config.ScanType
+	switch config.ScanType {
+	case "comprehensive", "intense":
+		dbScanType = "version" // Map complex scan types to version detection
+	case "stealth":
+		dbScanType = "connect" // Map stealth to basic connect scan
+	}
+
+	scanTarget := &db.ScanTarget{
+		ID:                  uuid.New(),
+		Name:                fmt.Sprintf("Ad-hoc scan: %s", target),
+		Network:             networkAddr,
+		ScanIntervalSeconds: 0, // Ad-hoc scans don't repeat
+		ScanPorts:           config.Ports,
+		ScanType:            dbScanType,
+		Enabled:             false, // Ad-hoc targets are not scheduled
+	}
+
+	if err := targetRepo.Create(ctx, scanTarget); err != nil {
+		return nil, fmt.Errorf("failed to create scan target: %w", err)
+	}
+
+	return scanTarget, nil
+}
+
+// storeHostResults stores host and port scan results in the database.
+func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hosts []Host) error {
+	hostRepo := db.NewHostRepository(database)
+	portRepo := db.NewPortScanRepository(database)
+
+	var allPortScans []*db.PortScan
+
+	for _, host := range hosts {
+		// Create or update host record
+		dbHost := &db.Host{
+			ID:        uuid.New(),
+			IPAddress: db.IPAddr{IP: net.ParseIP(host.Address)},
+			Status:    host.Status,
+		}
+
+		if err := hostRepo.CreateOrUpdate(ctx, dbHost); err != nil {
+			log.Printf("Failed to store host %s: %v", host.Address, err)
+			continue
+		}
+
+		// Create port scan records
+		for _, port := range host.Ports {
+			portScan := &db.PortScan{
+				ID:       uuid.New(),
+				JobID:    jobID,
+				HostID:   dbHost.ID,
+				Port:     int(port.Number),
+				Protocol: port.Protocol,
+				State:    port.State,
+			}
+
+			if port.Service != "" {
+				portScan.ServiceName = &port.Service
+			}
+			if port.Version != "" {
+				portScan.ServiceVersion = &port.Version
+			}
+			if port.ServiceInfo != "" {
+				portScan.ServiceProduct = &port.ServiceInfo
+			}
+
+			allPortScans = append(allPortScans, portScan)
+		}
+	}
+
+	// Batch insert all port scans
+	if len(allPortScans) > 0 {
+		if err := portRepo.CreateBatch(ctx, allPortScans); err != nil {
+			return fmt.Errorf("failed to store port scan results: %w", err)
+		}
+	}
+
+	return nil
 }
