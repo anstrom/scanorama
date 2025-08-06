@@ -81,7 +81,7 @@ func setupTestEnvironment(t *testing.T) bool {
 		if !connected {
 			if name == "HTTP" {
 				// HTTP is required for all tests
-				t.Skipf("Skipping test: required HTTP service not available on port %s after %d attempts", port, maxRetries)
+				t.Skipf("Skipping test: HTTP service unavailable on port %s after %d attempts", port, maxRetries)
 				return false
 			} else {
 				t.Logf("Warning: service %s not available on port %s - some tests may be limited", name, port)

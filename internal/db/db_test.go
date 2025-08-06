@@ -282,6 +282,65 @@ func cleanupDB(db *DB) error {
 	}
 	return nil
 }
+
+// tryDatabaseConnection attempts to connect to a single database configuration.
+func tryDatabaseConnection(
+	ctx context.Context, t *testing.T, config *Config,
+	configIndex int, isDebug bool,
+) (*DB, error) {
+	if isDebug {
+		t.Logf("Trying database config %d: host=%s port=%d user=%s db=%s",
+			configIndex+1, config.Host, config.Port, config.Username, config.Database)
+	}
+
+	// Wait for database with longer timeout in CI
+	waitCtx := ctx
+	var cancelFunc context.CancelFunc
+	if os.Getenv("GITHUB_ACTIONS") == trueString {
+		waitCtx, cancelFunc = context.WithTimeout(ctx, 30*time.Second)
+	}
+	defer func() {
+		if cancelFunc != nil {
+			cancelFunc()
+		}
+	}()
+
+	// Try to connect to this database
+	if err := waitForDB(waitCtx, config); err != nil {
+		if isDebug {
+			t.Logf("Database config %d not available: %v", configIndex+1, err)
+		}
+		return nil, err
+	}
+
+	db, err := Connect(ctx, config)
+	if err != nil {
+		if isDebug {
+			t.Logf("Failed to connect with config %d: %v", configIndex+1, err)
+		}
+		return nil, err
+	}
+
+	if isDebug {
+		t.Logf("Successfully connected to database: %s", config.Database)
+	}
+	return db, nil
+}
+
+// findWorkingDatabase tries multiple database configurations until one works.
+func findWorkingDatabase(ctx context.Context, t *testing.T) *DB {
+	configs := getTestConfigs()
+	isDebug := os.Getenv("DB_DEBUG") == trueString
+
+	for i, config := range configs {
+		if db, err := tryDatabaseConnection(ctx, t, &config, i, isDebug); err == nil {
+			return db
+		}
+	}
+
+	return nil
+}
+
 func setupTestDB(t *testing.T) (testDB *DB, cleanup func()) {
 	t.Helper()
 
@@ -291,54 +350,7 @@ func setupTestDB(t *testing.T) (testDB *DB, cleanup func()) {
 	}
 
 	ctx := context.Background()
-	configs := getTestConfigs()
-	isDebug := os.Getenv("DB_DEBUG") == trueString
-
-	var db *DB
-	var err error
-
-	// Try each configuration until one works
-	for i, config := range configs {
-		if isDebug {
-			t.Logf("Trying database config %d: host=%s port=%d user=%s db=%s",
-				i+1, config.Host, config.Port, config.Username, config.Database)
-		}
-
-		// Wait for database with longer timeout in CI
-		waitCtx := ctx
-		var cancelFunc context.CancelFunc
-		if os.Getenv("GITHUB_ACTIONS") == trueString {
-			waitCtx, cancelFunc = context.WithTimeout(ctx, 30*time.Second)
-		}
-
-		// Try to connect to this database
-		if err := waitForDB(waitCtx, &config); err != nil {
-			if cancelFunc != nil {
-				cancelFunc()
-			}
-			if isDebug {
-				t.Logf("Database config %d not available: %v", i+1, err)
-			}
-			continue
-		}
-
-		db, err = Connect(ctx, &config)
-		if cancelFunc != nil {
-			cancelFunc()
-		}
-		if err != nil {
-			if isDebug {
-				t.Logf("Failed to connect with config %d: %v", i+1, err)
-			}
-			continue
-		}
-
-		// Successfully connected
-		if isDebug {
-			t.Logf("Successfully connected to database: %s", config.Database)
-		}
-		break
-	}
+	db := findWorkingDatabase(ctx, t)
 
 	if db == nil {
 		t.Skipf("Skipping test - no database available from any configuration")

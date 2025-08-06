@@ -130,6 +130,62 @@ func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob)
 	}
 }
 
+// buildNmapOptions constructs nmap options based on network and timeout configuration.
+func buildNmapOptions(network string, timeout time.Duration) []nmap.Option {
+	options := []nmap.Option{
+		nmap.WithTargets(network),
+		nmap.WithPingScan(), // Host discovery only, no port scan
+	}
+
+	// Add timing based on timeout
+	if timeout <= 5*time.Second {
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
+	} else if timeout <= 15*time.Second {
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingNormal))
+	} else {
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingPolite))
+	}
+
+	return options
+}
+
+// convertNmapHostToDBHost converts an nmap host result to database host format.
+func (e *Engine) convertNmapHostToDBHost(host *nmap.Host, config Config) *db.Host {
+	if len(host.Addresses) == 0 || host.Status.State != "up" {
+		return nil
+	}
+
+	dbHost := &db.Host{
+		ID:              uuid.New(),
+		IPAddress:       db.IPAddr{IP: net.ParseIP(host.Addresses[0].Addr)},
+		Status:          host.Status.State,
+		DiscoveryMethod: &config.Method,
+		ResponseTimeMS:  new(int),
+	}
+
+	// Try to extract hostname
+	if len(host.Hostnames) > 0 {
+		hostname := host.Hostnames[0].Name
+		dbHost.Hostname = &hostname
+	}
+
+	// Try to extract MAC address and vendor
+	for _, addr := range host.Addresses {
+		if addr.AddrType == "mac" {
+			macAddr := db.MACAddr{}
+			if err := macAddr.Scan(addr.Addr); err == nil {
+				dbHost.MACAddress = &macAddr
+				if addr.Vendor != "" {
+					dbHost.Vendor = &addr.Vendor
+				}
+			}
+			break
+		}
+	}
+
+	return dbHost
+}
+
 // nmapDiscovery performs host discovery using nmap.
 func (e *Engine) nmapDiscovery(ctx context.Context, network string, config Config) ([]*db.Host, error) {
 	// Set up discovery timeout
@@ -143,19 +199,7 @@ func (e *Engine) nmapDiscovery(ctx context.Context, network string, config Confi
 	defer cancel()
 
 	// Build nmap options for host discovery
-	options := []nmap.Option{
-		nmap.WithTargets(network),
-		nmap.WithPingScan(), // Host discovery only, no port scan
-	}
-
-	// Add timing based on config
-	if timeout <= 5*time.Second {
-		options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
-	} else if timeout <= 15*time.Second {
-		options = append(options, nmap.WithTimingTemplate(nmap.TimingNormal))
-	} else {
-		options = append(options, nmap.WithTimingTemplate(nmap.TimingPolite))
-	}
+	options := buildNmapOptions(network, timeout)
 
 	// Create and run scanner
 	scanner, err := nmap.NewScanner(discoveryCtx, options...)
@@ -176,36 +220,9 @@ func (e *Engine) nmapDiscovery(ctx context.Context, network string, config Confi
 	discoveredHosts := make([]*db.Host, 0, len(result.Hosts))
 	for i := range result.Hosts {
 		host := &result.Hosts[i]
-		if len(host.Addresses) == 0 || host.Status.State != "up" {
+		dbHost := e.convertNmapHostToDBHost(host, config)
+		if dbHost == nil {
 			continue
-		}
-
-		dbHost := &db.Host{
-			ID:              uuid.New(),
-			IPAddress:       db.IPAddr{IP: net.ParseIP(host.Addresses[0].Addr)},
-			Status:          host.Status.State,
-			DiscoveryMethod: &config.Method,
-			ResponseTimeMS:  new(int),
-		}
-
-		// Try to extract hostname
-		if len(host.Hostnames) > 0 {
-			hostname := host.Hostnames[0].Name
-			dbHost.Hostname = &hostname
-		}
-
-		// Try to extract MAC address and vendor
-		for _, addr := range host.Addresses {
-			if addr.AddrType == "mac" {
-				macAddr := db.MACAddr{}
-				if err := macAddr.Scan(addr.Addr); err == nil {
-					dbHost.MACAddress = &macAddr
-					if addr.Vendor != "" {
-						dbHost.Vendor = &addr.Vendor
-					}
-				}
-				break
-			}
 		}
 
 		// Store the host in database
