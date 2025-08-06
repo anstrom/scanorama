@@ -423,6 +423,121 @@ func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetReposit
 	return scanTarget, nil
 }
 
+// debugHostLookup performs detailed debugging of host lookup process.
+func debugHostLookup(ctx context.Context, database *db.DB, hostAddress string, ipAddr db.IPAddr) {
+	log.Printf("DEBUG: Scan looking up host %s with parsed IP %v (type: %T)",
+		hostAddress, ipAddr.IP, ipAddr.IP)
+
+	// Debug: Check what hosts actually exist in database
+	var hostCount int
+	countQuery := `SELECT COUNT(*) FROM hosts WHERE ip_address::text LIKE '%' || $1 || '%'`
+	if err := database.QueryRowContext(ctx, countQuery, hostAddress).Scan(&hostCount); err == nil {
+		log.Printf("DEBUG: Scan found %d hosts containing IP %s", hostCount, hostAddress)
+	}
+}
+
+// debugListExistingHosts lists current hosts in database for debugging.
+func debugListExistingHosts(ctx context.Context, database *db.DB) {
+	var debugHosts []struct {
+		IP     string  `db:"ip_address"`
+		Method *string `db:"discovery_method"`
+		ID     string  `db:"id"`
+	}
+	debugQuery := `SELECT ip_address::text, discovery_method, id::text FROM hosts LIMIT 5`
+	if err := database.SelectContext(ctx, &debugHosts, debugQuery); err == nil {
+		log.Printf("DEBUG: Scan - Current hosts in database:")
+		for _, h := range debugHosts {
+			method := "NULL"
+			if h.Method != nil {
+				method = *h.Method
+			}
+			log.Printf("DEBUG: Scan -   Host IP=%s, Method=%s, ID=%s", h.IP, method, h.ID)
+		}
+	}
+}
+
+// processHostForScan processes a single host for scanning, preserving discovery data.
+func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostRepository,
+	host Host, jobID uuid.UUID) ([]*db.PortScan, error) {
+	ipAddr := db.IPAddr{IP: net.ParseIP(host.Address)}
+	debugHostLookup(ctx, database, host.Address, ipAddr)
+
+	existingHost, err := hostRepo.GetByIP(ctx, ipAddr)
+	log.Printf("DEBUG: Scan GetByIP result for %s: err=%v, found=%v",
+		host.Address, err, existingHost != nil)
+
+	var dbHost *db.Host
+	if err != nil {
+		log.Printf("DEBUG: Scan creating new host for %s (not found: %v)", host.Address, err)
+		debugListExistingHosts(ctx, database)
+		dbHost = &db.Host{
+			ID:        uuid.New(),
+			IPAddress: ipAddr,
+			Status:    host.Status,
+		}
+	} else {
+		log.Printf("DEBUG: Scan found existing host %s (ID=%s) with discovery_method=%v",
+			host.Address, existingHost.ID.String(),
+			func() string {
+				if existingHost.DiscoveryMethod != nil {
+					return *existingHost.DiscoveryMethod
+				}
+				return nullValue
+			}())
+		dbHost = existingHost
+		dbHost.Status = host.Status
+		log.Printf("DEBUG: Scan preserving discovery_method=%v for host %s",
+			func() string {
+				if dbHost.DiscoveryMethod != nil {
+					return *dbHost.DiscoveryMethod
+				}
+				return nullValue
+			}(), host.Address)
+	}
+
+	log.Printf("DEBUG: Scan calling CreateOrUpdate for host %s with discovery_method=%v",
+		host.Address,
+		func() string {
+			if dbHost.DiscoveryMethod != nil {
+				return *dbHost.DiscoveryMethod
+			}
+			return nullValue
+		}())
+
+	if createErr := hostRepo.CreateOrUpdate(ctx, dbHost); createErr != nil {
+		return nil, fmt.Errorf("failed to store host %s: %w", host.Address, createErr)
+	}
+
+	log.Printf("DEBUG: Scan successfully updated host %s", host.Address)
+
+	// Create port scan records
+	portScans := make([]*db.PortScan, 0, len(host.Ports))
+	for _, port := range host.Ports {
+		portScan := &db.PortScan{
+			ID:       uuid.New(),
+			JobID:    jobID,
+			HostID:   dbHost.ID,
+			Port:     int(port.Number),
+			Protocol: port.Protocol,
+			State:    port.State,
+		}
+
+		if port.Service != "" {
+			portScan.ServiceName = &port.Service
+		}
+		if port.Version != "" {
+			portScan.ServiceVersion = &port.Version
+		}
+		if port.ServiceInfo != "" {
+			portScan.ServiceProduct = &port.ServiceInfo
+		}
+
+		portScans = append(portScans, portScan)
+	}
+
+	return portScans, nil
+}
+
 // storeHostResults stores host and port scan results in the database.
 func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hosts []Host) error {
 	hostRepo := db.NewHostRepository(database)
@@ -431,79 +546,12 @@ func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hos
 	var allPortScans []*db.PortScan
 
 	for _, host := range hosts {
-		// Check if host already exists (to preserve discovery data)
-		ipAddr := db.IPAddr{IP: net.ParseIP(host.Address)}
-		existingHost, err := hostRepo.GetByIP(ctx, ipAddr)
-
-		var dbHost *db.Host
+		portScans, err := processHostForScan(ctx, database, hostRepo, host, jobID)
 		if err != nil {
-			// Host doesn't exist, create new one
-			log.Printf("DEBUG: Scan creating new host for %s (not found: %v)", host.Address, err)
-			dbHost = &db.Host{
-				ID:        uuid.New(),
-				IPAddress: ipAddr,
-				Status:    host.Status,
-			}
-		} else {
-			// Host exists, preserve discovery data and only update scan-related fields
-			log.Printf("DEBUG: Scan found existing host %s (ID=%s) with discovery_method=%v",
-				host.Address, existingHost.ID.String(),
-				func() string {
-					if existingHost.DiscoveryMethod != nil {
-						return *existingHost.DiscoveryMethod
-					}
-					return nullValue
-				}())
-			dbHost = existingHost
-			dbHost.Status = host.Status
-			log.Printf("DEBUG: Scan preserving discovery_method=%v for host %s",
-				func() string {
-					if dbHost.DiscoveryMethod != nil {
-						return *dbHost.DiscoveryMethod
-					}
-					return nullValue
-				}(), host.Address)
-		}
-
-		log.Printf("DEBUG: Scan calling CreateOrUpdate for host %s with discovery_method=%v",
-			host.Address,
-			func() string {
-				if dbHost.DiscoveryMethod != nil {
-					return *dbHost.DiscoveryMethod
-				}
-				return nullValue
-			}())
-
-		if createErr := hostRepo.CreateOrUpdate(ctx, dbHost); createErr != nil {
-			log.Printf("Failed to store host %s: %v", host.Address, createErr)
+			log.Printf("Failed to process host %s: %v", host.Address, err)
 			continue
 		}
-
-		log.Printf("DEBUG: Scan successfully updated host %s", host.Address)
-
-		// Create port scan records
-		for _, port := range host.Ports {
-			portScan := &db.PortScan{
-				ID:       uuid.New(),
-				JobID:    jobID,
-				HostID:   dbHost.ID,
-				Port:     int(port.Number),
-				Protocol: port.Protocol,
-				State:    port.State,
-			}
-
-			if port.Service != "" {
-				portScan.ServiceName = &port.Service
-			}
-			if port.Version != "" {
-				portScan.ServiceVersion = &port.Version
-			}
-			if port.ServiceInfo != "" {
-				portScan.ServiceProduct = &port.ServiceInfo
-			}
-
-			allPortScans = append(allPortScans, portScan)
-		}
+		allPortScans = append(allPortScans, portScans...)
 	}
 
 	// Batch insert all port scans
