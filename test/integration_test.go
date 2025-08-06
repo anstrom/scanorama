@@ -289,7 +289,8 @@ func TestScanDiscoveredHosts(t *testing.T) {
 		t.Logf("Total hosts in database: %d", totalHosts)
 
 		// Hosts with discovery method
-		err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM hosts WHERE discovery_method IS NOT NULL").Scan(&hostsWithDiscovery)
+		query := "SELECT COUNT(*) FROM hosts WHERE discovery_method IS NOT NULL"
+		err = suite.database.QueryRowContext(suite.ctx, query).Scan(&hostsWithDiscovery)
 		require.NoError(t, err)
 		t.Logf("Hosts with discovery_method: %d", hostsWithDiscovery)
 
@@ -299,14 +300,19 @@ func TestScanDiscoveredHosts(t *testing.T) {
 		t.Logf("Total port scans: %d", totalPortScans)
 
 		// Hosts that have port scans
-		err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(DISTINCT host_id) FROM port_scans").Scan(&hostsWithPortScans)
+		query = "SELECT COUNT(DISTINCT host_id) FROM port_scans"
+		err = suite.database.QueryRowContext(suite.ctx, query).Scan(&hostsWithPortScans)
 		require.NoError(t, err)
 		t.Logf("Hosts with port scans: %d", hostsWithPortScans)
 
 		// Debug: Show actual host data
 		rows, err := suite.database.QueryContext(suite.ctx, "SELECT ip_address, discovery_method FROM hosts")
 		require.NoError(t, err)
-		defer rows.Close()
+		defer func() {
+			if err := rows.Close(); err != nil {
+				t.Logf("Warning: Failed to close rows: %v", err)
+			}
+		}()
 
 		t.Logf("Host details:")
 		for rows.Next() {
@@ -323,7 +329,7 @@ func TestScanDiscoveredHosts(t *testing.T) {
 
 		// Check that we have hosts with both discovery and scan data
 		var count int
-		query := `
+		query = `
 			SELECT COUNT(DISTINCT h.id)
 			FROM hosts h
 			INNER JOIN port_scans ps ON h.id = ps.host_id
