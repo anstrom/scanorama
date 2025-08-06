@@ -262,7 +262,8 @@ func debugDatabaseState(t *testing.T, suite *IntegrationTestSuite) {
 			// Get details of failed jobs
 			var errorMsg interface{}
 			err = suite.database.QueryRowContext(suite.ctx,
-				"SELECT error_message FROM scan_jobs WHERE status = 'failed' AND error_message IS NOT NULL LIMIT 1").Scan(&errorMsg)
+				`SELECT error_message FROM scan_jobs
+				 WHERE status = 'failed' AND error_message IS NOT NULL LIMIT 1`).Scan(&errorMsg)
 			if err == nil && errorMsg != nil {
 				t.Logf("CI DEBUG: Sample error from failed job: %v", errorMsg)
 			}
@@ -350,7 +351,8 @@ func TestCIIsolatedStorage(t *testing.T) {
 		hostID := uuid.New().String()
 		testIP := "172.16.0.1"
 		_, err := suite.database.ExecContext(suite.ctx,
-			"INSERT INTO hosts (id, ip_address, status, discovery_method, first_seen, last_seen) VALUES ($1, $2, $3, $4, $5, $6)",
+			`INSERT INTO hosts (id, ip_address, status, discovery_method, first_seen, last_seen)
+			 VALUES ($1, $2, $3, $4, $5, $6)`,
 			hostID, testIP, "up", "tcp", time.Now(), time.Now())
 		require.NoError(t, err)
 		t.Logf("✅ Created host: %s (%s)", hostID, testIP)
@@ -379,7 +381,8 @@ func TestCIIsolatedStorage(t *testing.T) {
 		// Create port scan directly
 		portScanID := uuid.New().String()
 		_, err = suite.database.ExecContext(suite.ctx,
-			"INSERT INTO port_scans (id, job_id, host_id, port, protocol, state, scanned_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+			`INSERT INTO port_scans (id, job_id, host_id, port, protocol, state, scanned_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 			portScanID, jobID, hostID, 80, "tcp", "open", time.Now())
 		require.NoError(t, err)
 		t.Logf("✅ Created port scan: %s (port 80/tcp open)", portScanID)
@@ -401,64 +404,9 @@ func TestCIIsolatedStorage(t *testing.T) {
 		t.Log("✅ Verified port scan query by job ID")
 	})
 
-	// Test 4: Transaction rollback behavior
+	// Test 4: Transaction rollback behavior (moved to shared function)
 	t.Run("TransactionBehavior", func(t *testing.T) {
-		t.Log("CI DEBUG: Testing transaction behavior...")
-
-		// Start transaction
-		tx, err := suite.database.BeginTx(suite.ctx)
-		require.NoError(t, err)
-
-		// Create scan target in transaction
-		targetID := uuid.New().String()
-		_, err = tx.ExecContext(suite.ctx,
-			"INSERT INTO scan_targets (id, name, network) VALUES ($1, $2, $3)",
-			targetID, "Test TX Target", "192.168.100.0/24")
-		require.NoError(t, err)
-		t.Log("✅ Created scan target in transaction")
-
-		// Verify it exists within transaction
-		var countInTx int
-		err = tx.QueryRowContext(suite.ctx,
-			"SELECT COUNT(*) FROM scan_targets WHERE id = $1", targetID).Scan(&countInTx)
-		require.NoError(t, err)
-		assert.Equal(t, 1, countInTx, "Should see scan target within transaction")
-		t.Log("✅ Verified scan target exists within transaction")
-
-		// Rollback transaction
-		err = tx.Rollback()
-		require.NoError(t, err)
-		t.Log("✅ Rolled back transaction")
-
-		// Verify it doesn't exist after rollback
-		var countAfterRollback int
-		err = suite.database.QueryRowContext(suite.ctx,
-			"SELECT COUNT(*) FROM scan_targets WHERE id = $1", targetID).Scan(&countAfterRollback)
-		require.NoError(t, err)
-		assert.Equal(t, 0, countAfterRollback, "Should not see scan target after rollback")
-		t.Log("✅ Verified scan target was rolled back")
-
-		// Test successful commit
-		tx2, err := suite.database.BeginTx(suite.ctx)
-		require.NoError(t, err)
-
-		targetID2 := uuid.New().String()
-		_, err = tx2.ExecContext(suite.ctx,
-			"INSERT INTO scan_targets (id, name, network) VALUES ($1, $2, $3)",
-			targetID2, "Test Commit Target", "192.168.200.0/24")
-		require.NoError(t, err)
-
-		err = tx2.Commit()
-		require.NoError(t, err)
-		t.Log("✅ Committed transaction")
-
-		// Verify it exists after commit
-		var countAfterCommit int
-		err = suite.database.QueryRowContext(suite.ctx,
-			"SELECT COUNT(*) FROM scan_targets WHERE id = $1", targetID2).Scan(&countAfterCommit)
-		require.NoError(t, err)
-		assert.Equal(t, 1, countAfterCommit, "Should see scan target after commit")
-		t.Log("✅ Verified scan target was committed")
+		testTransactionBehavior(t, suite)
 	})
 
 	// Test 5: Database constraints and error handling
@@ -516,7 +464,8 @@ func TestCITransactionDebugging(t *testing.T) {
 		// Step 2: Create scan job (this works in CI according to logs)
 		jobID := uuid.New().String()
 		_, err = suite.database.ExecContext(suite.ctx,
-			"INSERT INTO scan_jobs (id, target_id, status, started_at, completed_at, scan_stats) VALUES ($1, $2, $3, $4, $5, $6)",
+			`INSERT INTO scan_jobs (id, target_id, status, started_at, completed_at, scan_stats)
+			 VALUES ($1, $2, $3, $4, $5, $6)`,
 			jobID, targetID, "completed", time.Now(), time.Now(), `{"hosts_up": 1, "hosts_down": 0}`)
 		require.NoError(t, err)
 		t.Logf("✅ Step 2: Created scan job: %s", jobID)
@@ -542,7 +491,8 @@ func TestCITransactionDebugging(t *testing.T) {
 		t.Log("CI DEBUG: About to attempt port scan creation - this is where CI fails...")
 		portScanID := uuid.New().String()
 		_, err = suite.database.ExecContext(suite.ctx,
-			"INSERT INTO port_scans (id, job_id, host_id, port, protocol, state, scanned_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+			`INSERT INTO port_scans (id, job_id, host_id, port, protocol, state, scanned_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 			portScanID, jobID, hostID, 22, "tcp", "closed", time.Now())
 
 		if err != nil {
@@ -687,65 +637,70 @@ func TestCIIsolatedDatabaseStorage(t *testing.T) {
 		t.Logf("✅ Port scan verified in database: count = %d", count)
 	})
 
-	// Test 4: Transaction rollback behavior
+	// Test 4: Transaction rollback behavior (shared implementation)
 	t.Run("TransactionBehavior", func(t *testing.T) {
-		t.Log("CI DEBUG: Testing transaction behavior...")
-
-		// Start a transaction
-		tx, err := suite.database.BeginTx(suite.ctx)
-		require.NoError(t, err)
-
-		// Insert scan target in transaction
-		targetID := uuid.New().String()
-		_, err = tx.ExecContext(suite.ctx,
-			"INSERT INTO scan_targets (id, name, network) VALUES ($1, $2, $3)",
-			targetID, "Test TX Target", "192.168.100.0/24")
-		require.NoError(t, err)
-		t.Log("✅ Created scan target in transaction")
-
-		// Verify it exists within transaction
-		var countInTx int
-		err = tx.QueryRowContext(suite.ctx,
-			"SELECT COUNT(*) FROM scan_targets WHERE id = $1", targetID).Scan(&countInTx)
-		require.NoError(t, err)
-		assert.Equal(t, 1, countInTx, "Should see scan target within transaction")
-		t.Log("✅ Verified scan target exists within transaction")
-
-		// Rollback transaction
-		err = tx.Rollback()
-		require.NoError(t, err)
-		t.Log("✅ Rolled back transaction")
-
-		// Verify it doesn't exist after rollback
-		var countAfterRollback int
-		err = suite.database.QueryRowContext(suite.ctx,
-			"SELECT COUNT(*) FROM scan_targets WHERE id = $1", targetID).Scan(&countAfterRollback)
-		require.NoError(t, err)
-		assert.Equal(t, 0, countAfterRollback, "Should not see scan target after rollback")
-		t.Log("✅ Verified scan target was rolled back")
-
-		// Test successful commit
-		tx2, err := suite.database.BeginTx(suite.ctx)
-		require.NoError(t, err)
-
-		targetID2 := uuid.New().String()
-		_, err = tx2.ExecContext(suite.ctx,
-			"INSERT INTO scan_targets (id, name, network) VALUES ($1, $2, $3)",
-			targetID2, "Test Commit Target", "192.168.200.0/24")
-		require.NoError(t, err)
-
-		err = tx2.Commit()
-		require.NoError(t, err)
-		t.Log("✅ Committed transaction")
-
-		// Verify it exists after commit
-		var countAfterCommit int
-		err = suite.database.QueryRowContext(suite.ctx,
-			"SELECT COUNT(*) FROM scan_targets WHERE id = $1", targetID2).Scan(&countAfterCommit)
-		require.NoError(t, err)
-		assert.Equal(t, 1, countAfterCommit, "Should see scan target after commit")
-		t.Log("✅ Verified scan target was committed")
+		testTransactionBehavior(t, suite)
 	})
+}
+
+// testTransactionBehavior tests transaction rollback and commit behavior.
+func testTransactionBehavior(t *testing.T, suite *IntegrationTestSuite) {
+	t.Log("CI DEBUG: Testing transaction behavior...")
+
+	// Start a transaction
+	tx, err := suite.database.BeginTx(suite.ctx)
+	require.NoError(t, err)
+
+	// Insert scan target in transaction
+	targetID := uuid.New().String()
+	_, err = tx.ExecContext(suite.ctx,
+		"INSERT INTO scan_targets (id, name, network) VALUES ($1, $2, $3)",
+		targetID, "Test TX Target", "192.168.100.0/24")
+	require.NoError(t, err)
+	t.Log("✅ Created scan target in transaction")
+
+	// Verify it exists within transaction
+	var countInTx int
+	err = tx.QueryRowContext(suite.ctx,
+		"SELECT COUNT(*) FROM scan_targets WHERE id = $1", targetID).Scan(&countInTx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, countInTx, "Should see scan target within transaction")
+	t.Log("✅ Verified scan target exists within transaction")
+
+	// Rollback transaction
+	err = tx.Rollback()
+	require.NoError(t, err)
+	t.Log("✅ Rolled back transaction")
+
+	// Verify it doesn't exist after rollback
+	var countAfterRollback int
+	err = suite.database.QueryRowContext(suite.ctx,
+		"SELECT COUNT(*) FROM scan_targets WHERE id = $1", targetID).Scan(&countAfterRollback)
+	require.NoError(t, err)
+	assert.Equal(t, 0, countAfterRollback, "Should not see scan target after rollback")
+	t.Log("✅ Verified scan target was rolled back")
+
+	// Test successful commit
+	tx2, err := suite.database.BeginTx(suite.ctx)
+	require.NoError(t, err)
+
+	targetID2 := uuid.New().String()
+	_, err = tx2.ExecContext(suite.ctx,
+		"INSERT INTO scan_targets (id, name, network) VALUES ($1, $2, $3)",
+		targetID2, "Test Commit Target", "192.168.200.0/24")
+	require.NoError(t, err)
+
+	err = tx2.Commit()
+	require.NoError(t, err)
+	t.Log("✅ Committed transaction")
+
+	// Verify it exists after commit
+	var countAfterCommit int
+	err = suite.database.QueryRowContext(suite.ctx,
+		"SELECT COUNT(*) FROM scan_targets WHERE id = $1", targetID2).Scan(&countAfterCommit)
+	require.NoError(t, err)
+	assert.Equal(t, 1, countAfterCommit, "Should see scan target after commit")
+	t.Log("✅ Verified scan target was committed")
 }
 
 // TestCIMinimalDiscoveryStorage tests just the discovery storage functionality.
@@ -778,7 +733,8 @@ func TestCIMinimalDiscoveryStorage(t *testing.T) {
 		t.Logf("CI DEBUG: Hosts before discovery: %d", hostsBefore)
 
 		var discoveryJobsBefore int
-		err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM discovery_jobs").Scan(&discoveryJobsBefore)
+		err = suite.database.QueryRowContext(suite.ctx,
+			"SELECT COUNT(*) FROM discovery_jobs").Scan(&discoveryJobsBefore)
 		require.NoError(t, err)
 		t.Logf("CI DEBUG: Discovery jobs before: %d", discoveryJobsBefore)
 
@@ -806,18 +762,18 @@ func TestCIMinimalDiscoveryStorage(t *testing.T) {
 		t.Logf("CI DEBUG: Discovery jobs after: %d (was %d)", discoveryJobsAfter, discoveryJobsBefore)
 
 		// Specifically check for hosts with method=tcp
-		var hostsWithTcp int
+		var hostsWithTCP int
 		err = suite.database.QueryRowContext(suite.ctx,
-			"SELECT COUNT(*) FROM hosts WHERE discovery_method = 'tcp'").Scan(&hostsWithTcp)
+			"SELECT COUNT(*) FROM hosts WHERE discovery_method = 'tcp'").Scan(&hostsWithTCP)
 		require.NoError(t, err)
-		t.Logf("CI DEBUG: Hosts with discovery_method=tcp: %d", hostsWithTcp)
+		t.Logf("CI DEBUG: Hosts with discovery_method=tcp: %d", hostsWithTCP)
 
 		// This should work since discovery is working in CI
-		assert.GreaterOrEqual(t, hostsWithTcp, 1, "Should have at least 1 host with discovery_method=tcp")
+		assert.GreaterOrEqual(t, hostsWithTCP, 1, "Should have at least 1 host with discovery_method=tcp")
 	})
 }
 
-// TestCIServiceContainerConnectivity tests if the issue is with service container connectivity
+// TestCIServiceContainerConnectivity tests if the issue is with service container connectivity.
 func TestCIServiceContainerConnectivity(t *testing.T) {
 	t.Log("=== CI DEBUG: Testing service container connectivity ===")
 
