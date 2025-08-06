@@ -21,7 +21,6 @@ var testServices = struct {
 	HTTP          string
 	HTTPS         string
 	Redis         string
-	Flask         string
 	containerName string
 	timeout       int
 	requireAll    bool
@@ -30,7 +29,6 @@ var testServices = struct {
 	HTTP:          "8080",
 	HTTPS:         "8443",
 	Redis:         "8379",
-	Flask:         "8888",
 	containerName: "scanorama-test",
 	timeout:       5,
 	requireAll:    false, // Set to false to skip tests that require missing services
@@ -55,7 +53,6 @@ func setupTestEnvironment(t *testing.T) bool {
 	optionalServices := map[string]string{
 		"SSH":   testServices.SSH,
 		"Redis": testServices.Redis,
-		"Flask": testServices.Flask,
 	}
 
 	if testServices.requireAll {

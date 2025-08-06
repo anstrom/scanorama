@@ -36,7 +36,6 @@ func DefaultTestEnvironment() *TestEnvironment {
 			"SSH":   {Name: "SSH", Port: "8022"},
 			"HTTPS": {Name: "HTTPS", Port: "8443"},
 			"Redis": {Name: "Redis", Port: "8379"},
-			"Flask": {Name: "Flask", Port: "8888"},
 		},
 		ContainerName: "scanorama-test",
 		Timeout:       defaultTestTimeoutSeconds,
@@ -90,7 +89,7 @@ func (env *TestEnvironment) SetupTestEnvironment(t *testing.T) bool {
 	requiredServices := []string{"HTTP"} // HTTP is always required
 
 	// Optional services to check if requireAll is true
-	optionalServices := []string{"SSH", "Redis", "Flask"}
+	optionalServices := []string{"SSH", "Redis"}
 
 	if env.RequireAll {
 		requiredServices = append(requiredServices, optionalServices...)

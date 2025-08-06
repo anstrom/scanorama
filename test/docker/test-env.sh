@@ -122,53 +122,7 @@ up() {
     else
         echo "Test mode: Starting PostgreSQL container on port $POSTGRES_PORT"
     fi
-    # Ensure Flask app directory exists
-    if [ ! -d "${PROJECT_ROOT}/test/docker/flask" ]; then
-        echo "Creating Flask app directory"
-        mkdir -p "${PROJECT_ROOT}/test/docker/flask"
-    fi
 
-    # Ensure Flask requirements directory exists
-    if [ ! -d "${PROJECT_ROOT}/test/docker/flask/requirements" ]; then
-        echo "Creating Flask requirements directory"
-        mkdir -p "${PROJECT_ROOT}/test/docker/flask/requirements"
-    fi
-
-    # Create default Flask app if it doesn't exist
-    if [ ! -f "${PROJECT_ROOT}/test/docker/flask/app.py" ]; then
-        echo "Creating default Flask app"
-        cat > "${PROJECT_ROOT}/test/docker/flask/app.py" << EOF
-from flask import Flask, jsonify
-
-app = Flask(__name__)
-
-@app.route('/')
-def index():
-    return jsonify({
-        "status": "ok",
-        "service": "scanorama-test-flask"
-    })
-
-@app.route('/health')
-def health():
-    return jsonify({
-        "status": "healthy",
-        "version": "1.0.0"
-    })
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
-EOF
-    fi
-
-    # Create default Flask requirements if they don't exist
-    if [ ! -f "${PROJECT_ROOT}/test/docker/flask/requirements/requirements.txt" ]; then
-        echo "Creating default Flask requirements"
-        cat > "${PROJECT_ROOT}/test/docker/flask/requirements/requirements.txt" << EOF
-flask>=2.0.0,<3.0.0
-werkzeug>=2.0.0,<3.0.0
-EOF
-    fi
 
     docker_compose up -d
     echo "Waiting for services to be ready..."
