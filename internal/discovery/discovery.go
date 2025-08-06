@@ -104,6 +104,7 @@ func (e *Engine) Discover(ctx context.Context, config Config) (*db.DiscoveryJob,
 // WaitForCompletion waits for a discovery job to complete or timeout.
 func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
+	log.Printf("DEBUG: WaitForCompletion starting for job %s with timeout %v", jobID.String(), timeout)
 
 	for time.Now().Before(deadline) {
 		// Check job status
@@ -111,22 +112,35 @@ func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout
 		query := `SELECT status FROM discovery_jobs WHERE id = $1`
 		err := e.db.QueryRowContext(ctx, query, jobID).Scan(&status)
 		if err != nil {
+			// Job might not exist yet due to background goroutine timing
+			if err.Error() == "sql: no rows in result set" {
+				log.Printf("DEBUG: Discovery job %s not found yet, waiting...", jobID.String())
+				time.Sleep(retryInterval)
+				continue
+			}
+			log.Printf("DEBUG: Failed to query discovery job %s: %v", jobID.String(), err)
 			return fmt.Errorf("failed to check job status: %w", err)
 		}
 
+		log.Printf("DEBUG: Discovery job %s status: %s", jobID.String(), status)
+
 		switch status {
 		case db.DiscoveryJobStatusCompleted:
+			log.Printf("DEBUG: Discovery job %s completed successfully", jobID.String())
 			return nil
 		case db.DiscoveryJobStatusFailed:
+			log.Printf("DEBUG: Discovery job %s failed", jobID.String())
 			return fmt.Errorf("discovery job failed")
 		case db.DiscoveryJobStatusRunning:
 			// Still running, continue waiting
 			time.Sleep(retryInterval)
 		default:
+			log.Printf("DEBUG: Discovery job %s has unknown status: %s", jobID.String(), status)
 			return fmt.Errorf("unknown job status: %s", status)
 		}
 	}
 
+	log.Printf("DEBUG: Discovery job %s timed out after %v", jobID.String(), timeout)
 	return fmt.Errorf("discovery job did not complete within %v", timeout)
 }
 
