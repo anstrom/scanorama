@@ -483,7 +483,7 @@ func processHostForScanInTransaction(ctx context.Context, tx *sqlx.Tx,
 		}
 
 		insertQuery := `INSERT INTO hosts (id, ip_address, status, first_seen, last_seen)
-			VALUES ($1, $2, $3, $4, $5) RETURNING created_at`
+			VALUES ($1, $2, $3, $4, $5) RETURNING first_seen`
 		err = tx.QueryRowContext(ctx, insertQuery,
 			dbHost.ID, dbHost.IPAddress, dbHost.Status, dbHost.FirstSeen, dbHost.LastSeen).Scan(&dbHost.FirstSeen)
 		if err != nil {
