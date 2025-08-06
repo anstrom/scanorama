@@ -13,9 +13,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/Ullaakut/nmap/v3"
 	"github.com/google/uuid"
 
 	"github.com/anstrom/scanorama/internal/db"
@@ -109,24 +109,20 @@ func (e *Engine) Discover(ctx context.Context, config Config) (*db.DiscoveryJob,
 	return job, nil
 }
 
-// runDiscovery executes the actual discovery process.
+// runDiscovery executes the actual discovery process using nmap.
 func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config Config) {
 	defer e.finalizeDiscoveryJob(ctx, job)
 
-	// Generate host list
-	hosts := e.generateHostList(job.Network.IPNet)
-	if len(hosts) == 0 {
+	// Use nmap for host discovery
+	discoveredHosts, err := e.nmapDiscovery(ctx, job.Network.IPNet.String(), config)
+	if err != nil {
 		job.Status = db.DiscoveryJobStatusFailed
+		fmt.Printf("Discovery failed: %v\n", err)
 		return
 	}
 
-	// Set up discovery parameters
-	concurrency, timeout := e.setupDiscoveryParameters(config)
-
-	// Run discovery workers and collect results
-	discoveredHosts := e.runDiscoveryWorkers(ctx, hosts, config, concurrency, timeout)
-
 	// Update job with results
+	job.HostsResponsive = len(discoveredHosts)
 	job.HostsDiscovered = len(discoveredHosts)
 	fmt.Printf("Discovery completed. Found %d hosts.\n", job.HostsDiscovered)
 }
@@ -158,50 +154,13 @@ func (e *Engine) setupDiscoveryParameters(config Config) (int, time.Duration) {
 	return concurrency, timeout
 }
 
-// runDiscoveryWorkers executes the discovery process using a worker pool.
+// runDiscoveryWorkers is deprecated - replaced by nmapDiscovery.
+// Kept for compatibility but no longer used.
 func (e *Engine) runDiscoveryWorkers(
 	ctx context.Context, hosts []net.IP, config Config, concurrency int, timeout time.Duration,
 ) []*db.Host {
-	// Channel for results
-	results := make(chan Result, len(hosts))
-
-	// Worker pool
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, concurrency)
-
-	// Start workers
-	for _, host := range hosts {
-		wg.Add(1)
-		go func(ip net.IP) {
-			defer wg.Done()
-			semaphore <- struct{}{}        // Acquire
-			defer func() { <-semaphore }() // Release
-
-			result := e.discoverHost(ctx, ip, config.Method, config.DetectOS, timeout)
-			results <- result
-		}(host)
-	}
-
-	// Wait for all workers and close results channel
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	// Collect and process results
-	var discoveredHosts []*db.Host
-	for result := range results {
-		if result.Status == db.HostStatusUp {
-			host, err := e.createHostFromResult(ctx, &result)
-			if err != nil {
-				fmt.Printf("Error creating host from result: %v\n", err)
-				continue
-			}
-			discoveredHosts = append(discoveredHosts, host)
-		}
-	}
-
-	return discoveredHosts
+	// This function is deprecated and replaced by nmapDiscovery
+	return []*db.Host{}
 }
 
 // createHostFromResult creates a database host entry from a discovery result.
@@ -509,58 +468,98 @@ func (e *Engine) extractPingTime(output string) time.Duration {
 	return 0
 }
 
-// generateHostList generates a list of IP addresses from a network.
-func (e *Engine) generateHostList(network net.IPNet) []net.IP {
-	var hosts []net.IP
-
-	// Calculate network size
-	ones, bits := network.Mask.Size()
-	if bits-ones > maxNetworkSizeBits { // Limit to /16 or smaller networks
-		return hosts
+// nmapDiscovery performs host discovery using nmap.
+func (e *Engine) nmapDiscovery(ctx context.Context, network string, config Config) ([]*db.Host, error) {
+	// Set up discovery timeout
+	timeout := config.Timeout
+	if timeout <= 0 {
+		timeout = time.Duration(defaultTimeoutSeconds) * time.Second
 	}
 
-	// Generate all possible IPs in the network
-	ip := network.IP.Mask(network.Mask)
-	for {
-		if network.Contains(ip) && !ip.Equal(network.IP) && !isBroadcast(ip, network) {
-			hosts = append(hosts, net.ParseIP(ip.String()))
-		}
+	// Apply timeout to context
+	discoveryCtx, cancel := context.WithTimeout(ctx, timeout*10) // Give nmap more time for network scans
+	defer cancel()
 
-		// Increment IP
-		if !incrementIP(ip) {
-			break
-		}
-
-		// Check if we've gone beyond the network
-		if !network.Contains(ip) {
-			break
-		}
+	// Build nmap options for host discovery
+	options := []nmap.Option{
+		nmap.WithTargets(network),
+		nmap.WithPingScan(), // Host discovery only, no port scan
 	}
 
-	return hosts
-}
+	// Add timing based on config
+	if timeout <= 5*time.Second {
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
+	} else if timeout <= 15*time.Second {
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingNormal))
+	} else {
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingPolite))
+	}
 
-// incrementIP increments an IP address by 1.
-func incrementIP(ip net.IP) bool {
-	for i := len(ip) - 1; i >= 0; i-- {
-		ip[i]++
-		if ip[i] != 0 {
-			return true
+	// Create and run scanner
+	scanner, err := nmap.NewScanner(discoveryCtx, options...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create nmap scanner: %w", err)
+	}
+
+	result, warnings, err := scanner.Run()
+	if err != nil {
+		return nil, fmt.Errorf("nmap discovery failed: %w", err)
+	}
+
+	if warnings != nil && len(*warnings) > 0 {
+		log.Printf("Discovery completed with warnings: %v", *warnings)
+	}
+
+	// Convert nmap results to our host format
+	var discoveredHosts []*db.Host
+	for i := range result.Hosts {
+		host := &result.Hosts[i]
+		if len(host.Addresses) == 0 || host.Status.State != "up" {
+			continue
 		}
+
+		dbHost := &db.Host{
+			ID:              uuid.New(),
+			IPAddress:       db.IPAddr{IP: net.ParseIP(host.Addresses[0].Addr)},
+			Status:          host.Status.State,
+			DiscoveryMethod: &config.Method,
+			ResponseTimeMS:  new(int),
+		}
+
+		// Try to extract hostname
+		if len(host.Hostnames) > 0 {
+			hostname := host.Hostnames[0].Name
+			dbHost.Hostname = &hostname
+		}
+
+		// Try to extract MAC address and vendor
+		for _, addr := range host.Addresses {
+			if addr.AddrType == "mac" {
+				macAddr := db.MACAddr{}
+				if err := macAddr.Scan(addr.Addr); err == nil {
+					dbHost.MACAddress = &macAddr
+					if addr.Vendor != "" {
+						dbHost.Vendor = &addr.Vendor
+					}
+				}
+				break
+			}
+		}
+
+		// Store the host in database
+		if err := e.saveDiscoveredHost(context.Background(), &Result{
+			IPAddress: dbHost.IPAddress.IP,
+			Status:    dbHost.Status,
+			Method:    config.Method,
+		}, uuid.Nil); err != nil {
+			log.Printf("Failed to save discovered host %s: %v", dbHost.IPAddress.String(), err)
+			continue
+		}
+
+		discoveredHosts = append(discoveredHosts, dbHost)
 	}
-	return false
-}
 
-// isBroadcast checks if an IP is the broadcast address for the network.
-func isBroadcast(ip net.IP, network net.IPNet) bool {
-	broadcast := make(net.IP, len(network.IP))
-	copy(broadcast, network.IP)
-
-	for i := 0; i < len(broadcast); i++ {
-		broadcast[i] |= ^network.Mask[i]
-	}
-
-	return ip.Equal(broadcast)
+	return discoveredHosts, nil
 }
 
 // saveDiscoveryJob saves or updates a discovery job in the database.
