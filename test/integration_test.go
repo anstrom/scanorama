@@ -69,13 +69,12 @@ func setupTestDatabase(t *testing.T) *db.DB {
 }
 
 // cleanupTestData removes any existing test data.
-// NOTE: Currently disabled for CI debugging
-// func cleanupTestData(t *testing.T, database *db.DB) {
-//	err := helpers.CleanupTestTables(context.Background(), database)
-//	if err != nil {
-//		t.Logf("Warning: Failed to cleanup test data: %v", err)
-//	}
-// }
+func cleanupTestData(t *testing.T, database *db.DB) {
+	err := helpers.CleanupTestTables(context.Background(), database)
+	if err != nil {
+		t.Logf("Warning: Failed to cleanup test data: %v", err)
+	}
+}
 
 // teardown cleans up test resources.
 func (suite *IntegrationTestSuite) teardown(t *testing.T) {
@@ -87,9 +86,8 @@ func (suite *IntegrationTestSuite) teardown(t *testing.T) {
 	// Give background processes time to finish
 	time.Sleep(100 * time.Millisecond)
 
-	// DISABLED FOR CI DEBUGGING - cleanup disabled to isolate CI issues
-	// cleanupTestData(t, suite.database)
-	t.Logf("DEBUG: Test cleanup DISABLED for CI debugging")
+	// Clean up test data to prevent interference between tests
+	cleanupTestData(t, suite.database)
 
 	if err := suite.database.Close(); err != nil {
 		t.Logf("Warning: Failed to close database: %v", err)

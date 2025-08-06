@@ -563,6 +563,18 @@ func createPortScansInTransaction(ctx context.Context, tx *sqlx.Tx, scans []*db.
 
 // storeHostResultsInTransaction stores host and port scan results within an existing transaction.
 func storeHostResultsInTransaction(ctx context.Context, tx *sqlx.Tx, jobID uuid.UUID, hosts []Host) error {
+	// Verify job exists within this transaction before creating port scans
+	var jobExists bool
+	checkJobQuery := `SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE id = $1)`
+	err := tx.QueryRowContext(ctx, checkJobQuery, jobID).Scan(&jobExists)
+	if err != nil {
+		return fmt.Errorf("failed to verify job existence: %w", err)
+	}
+	if !jobExists {
+		return fmt.Errorf("job_id %s does not exist in scan_jobs table", jobID.String())
+	}
+	log.Printf("DEBUG: Verified job %s exists before creating port scans", jobID.String())
+
 	var allPortScans []*db.PortScan
 
 	for _, host := range hosts {
