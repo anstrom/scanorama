@@ -239,8 +239,8 @@ func NewScanJobRepository(db *DB) *ScanJobRepository {
 // Create creates a new scan job.
 func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 	query := `
-		INSERT INTO scan_jobs (id, target_id, status)
-		VALUES (:id, :target_id, :status)
+		INSERT INTO scan_jobs (id, target_id, status, started_at, completed_at, scan_stats)
+		VALUES (:id, :target_id, :status, :started_at, :completed_at, :scan_stats)
 		RETURNING created_at`
 
 	if job.ID == uuid.Nil {
