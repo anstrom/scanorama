@@ -246,6 +246,45 @@ logging:
 3. **Alert System**: Add notification system for discovered changes
 4. **Dashboard**: Web-based management interface
 
+## 📝 Code Quality & Development Workflow
+
+### Linting Requirements
+**IMPORTANT**: Always run linting after every code change to maintain code quality standards.
+
+```bash
+# Run linting after any code changes
+make lint
+
+# Alternative: Run linting with auto-fix
+make lint-fix
+
+# Complete pre-commit checks (recommended)
+./scripts/pre-commit-check.sh
+```
+
+### Development Best Practices
+- ✅ **Always run `make lint` after code changes** - this is mandatory
+- ✅ Use `make ci-local` for comprehensive checks before pushing
+- ✅ Run `./scripts/pre-commit-check.sh` before committing
+- ✅ Fix all linting issues immediately - don't accumulate technical debt
+- ✅ Current status: **0 linting issues** (keep it this way!)
+
+### Recent Lint Fixes Applied
+- ✅ Fixed `goconst` issue by creating `nullValue` constant for repeated "NULL" strings
+- ✅ All line length violations resolved
+- ✅ All code complexity issues addressed
+- ✅ Proper error handling implemented throughout
+
+### Git Workflow Integration
+```bash
+# Recommended workflow for any code change:
+1. Make your changes
+2. make lint          # Fix any issues immediately
+3. make test          # Ensure tests pass
+4. ./scripts/pre-commit-check.sh  # Final verification
+5. git commit         # Only after all checks pass
+```
+
 ## 🧪 Testing
 
 ### Run Full Test Suite

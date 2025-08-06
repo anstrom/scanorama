@@ -26,6 +26,9 @@ const (
 )
 
 const (
+	// Database null value representation.
+	nullValue = "NULL"
+
 	// Output formatting constants.
 	outputSeparatorLength = 80
 )
@@ -429,7 +432,7 @@ func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hos
 					if existingHost.DiscoveryMethod != nil {
 						return *existingHost.DiscoveryMethod
 					}
-					return "NULL"
+					return nullValue
 				}())
 			dbHost = existingHost
 			dbHost.Status = host.Status
@@ -438,7 +441,7 @@ func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hos
 					if dbHost.DiscoveryMethod != nil {
 						return *dbHost.DiscoveryMethod
 					}
-					return "NULL"
+					return nullValue
 				}(), host.Address)
 		}
 
@@ -448,7 +451,7 @@ func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hos
 				if dbHost.DiscoveryMethod != nil {
 					return *dbHost.DiscoveryMethod
 				}
-				return "NULL"
+				return nullValue
 			}())
 
 		if createErr := hostRepo.CreateOrUpdate(ctx, dbHost); createErr != nil {
