@@ -58,10 +58,6 @@ func setupTestDatabase(t *testing.T) *db.DB {
 	err = helpers.EnsureTestSchema(ctx, database)
 	require.NoError(t, err, "Database schema is not available")
 
-	// Clean up test data before each test
-	err = helpers.CleanupTestTables(ctx, database)
-	require.NoError(t, err, "Failed to cleanup test data")
-
 	return database
 }
 
@@ -98,9 +94,9 @@ func TestScanWithDatabaseStorage(t *testing.T) {
 	testPort := "22" // SSH port is commonly available
 	t.Logf("Testing scan with port %s", testPort)
 
-	// Create scan configuration
+	// Create scan configuration with unique target
 	scanConfig := &internal.ScanConfig{
-		Targets:     []string{"localhost"},
+		Targets:     []string{"127.0.0.1"},
 		Ports:       testPort,
 		ScanType:    "connect",
 		TimeoutSec:  10,
@@ -172,7 +168,7 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 	// Create discovery engine
 	discoveryEngine := discovery.NewEngine(suite.database)
 
-	// Run discovery on localhost (single host for reliable testing)
+	// Run discovery on localhost for reliable testing
 	discoveryConfig := discovery.Config{
 		Network:     "127.0.0.1/32",
 		Method:      "ping",
@@ -215,7 +211,10 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 	// Verify discovery results in database
 	t.Run("VerifyDiscoveryJobStored", func(t *testing.T) {
 		var discoveryJobs []*db.DiscoveryJob
-		query := `SELECT * FROM discovery_jobs WHERE status = 'completed' ORDER BY created_at DESC LIMIT 5`
+		query := `
+			SELECT * FROM discovery_jobs
+			WHERE status = 'completed' AND network >>= '127.0.0.1/32'
+			ORDER BY created_at DESC LIMIT 5`
 		err := suite.database.SelectContext(suite.ctx, &discoveryJobs, query)
 		require.NoError(t, err)
 		require.NotEmpty(t, discoveryJobs, "No completed discovery jobs found")
@@ -229,7 +228,10 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 
 	t.Run("VerifyDiscoveredHostsStored", func(t *testing.T) {
 		var hosts []*db.Host
-		query := `SELECT * FROM hosts WHERE discovery_method = 'ping' ORDER BY last_seen DESC LIMIT 5`
+		query := `
+			SELECT * FROM hosts
+			WHERE discovery_method = 'ping' AND ip_address = '127.0.0.1'
+			ORDER BY last_seen DESC LIMIT 5`
 		err := suite.database.SelectContext(suite.ctx, &hosts, query)
 		require.NoError(t, err)
 		require.NotEmpty(t, hosts, "No discovered hosts found")
@@ -247,7 +249,7 @@ func TestScanDiscoveredHosts(t *testing.T) {
 	suite := setupIntegrationTestSuite(t)
 	defer suite.teardown(t)
 
-	// First, run discovery
+	// First, run discovery on localhost
 	discoveryEngine := discovery.NewEngine(suite.database)
 	discoveryConfig := discovery.Config{
 		Network:     "127.0.0.1/32",
@@ -278,7 +280,6 @@ func TestScanDiscoveredHosts(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// Verify we have both discovery and scan data
 	t.Run("VerifyIntegratedData", func(t *testing.T) {
 		// Debug: Check what data we actually have
 		var totalHosts, hostsWithDiscovery, totalPortScans, hostsWithPortScans int
@@ -289,7 +290,7 @@ func TestScanDiscoveredHosts(t *testing.T) {
 		t.Logf("Total hosts in database: %d", totalHosts)
 
 		// Hosts with discovery method
-		query := "SELECT COUNT(*) FROM hosts WHERE discovery_method IS NOT NULL"
+		query := "SELECT COUNT(*) FROM hosts WHERE discovery_method IS NOT NULL AND ip_address = '127.0.0.1'"
 		err = suite.database.QueryRowContext(suite.ctx, query).Scan(&hostsWithDiscovery)
 		require.NoError(t, err)
 		t.Logf("Hosts with discovery_method: %d", hostsWithDiscovery)
@@ -306,7 +307,10 @@ func TestScanDiscoveredHosts(t *testing.T) {
 		t.Logf("Hosts with port scans: %d", hostsWithPortScans)
 
 		// Debug: Show actual host data
-		rows, err := suite.database.QueryContext(suite.ctx, "SELECT ip_address, discovery_method FROM hosts")
+		query = `
+			SELECT ip_address, discovery_method FROM hosts
+			WHERE ip_address = '127.0.0.1'`
+		rows, err := suite.database.QueryContext(suite.ctx, query)
 		require.NoError(t, err)
 		defer func() {
 			if err := rows.Close(); err != nil {

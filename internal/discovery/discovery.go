@@ -104,7 +104,6 @@ func (e *Engine) Discover(ctx context.Context, config Config) (*db.DiscoveryJob,
 // WaitForCompletion waits for a discovery job to complete or timeout.
 func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
-	log.Printf("DEBUG: WaitForCompletion starting for job %s with timeout %v", jobID.String(), timeout)
 
 	for time.Now().Before(deadline) {
 		// Check job status
@@ -114,56 +113,43 @@ func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout
 		if err != nil {
 			// Job might not exist yet due to background goroutine timing
 			if err.Error() == "sql: no rows in result set" {
-				log.Printf("DEBUG: Discovery job %s not found yet, waiting...", jobID.String())
 				time.Sleep(retryInterval)
 				continue
 			}
-			log.Printf("DEBUG: Failed to query discovery job %s: %v", jobID.String(), err)
 			return fmt.Errorf("failed to check job status: %w", err)
 		}
 
-		log.Printf("DEBUG: Discovery job %s status: %s", jobID.String(), status)
-
 		switch status {
 		case db.DiscoveryJobStatusCompleted:
-			log.Printf("DEBUG: Discovery job %s completed successfully", jobID.String())
 			return nil
 		case db.DiscoveryJobStatusFailed:
-			log.Printf("DEBUG: Discovery job %s failed", jobID.String())
 			return fmt.Errorf("discovery job failed")
 		case db.DiscoveryJobStatusRunning:
 			// Still running, continue waiting
 			time.Sleep(retryInterval)
 		default:
-			log.Printf("DEBUG: Discovery job %s has unknown status: %s", jobID.String(), status)
 			return fmt.Errorf("unknown job status: %s", status)
 		}
 	}
 
-	log.Printf("DEBUG: Discovery job %s timed out after %v", jobID.String(), timeout)
 	return fmt.Errorf("discovery job did not complete within %v", timeout)
 }
 
 // runDiscovery executes the actual discovery process using nmap.
 func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config Config) {
-	log.Printf("DEBUG: runDiscovery starting for job %s", job.ID.String())
 	defer e.finalizeDiscoveryJob(ctx, job)
 
 	// Check if context is already canceled
 	select {
 	case <-ctx.Done():
-		log.Printf("DEBUG: runDiscovery context canceled for job %s", job.ID.String())
 		job.Status = db.DiscoveryJobStatusFailed
 		return
 	default:
 	}
 
-	log.Printf("DEBUG: Starting nmap discovery for job %s, network %s", job.ID.String(), job.Network.IPNet.String())
-
 	// Use nmap for host discovery
 	discoveredHosts, err := e.nmapDiscovery(ctx, job.Network.IPNet.String(), config)
 	if err != nil {
-		log.Printf("DEBUG: Discovery failed for job %s: %v", job.ID.String(), err)
 		job.Status = db.DiscoveryJobStatusFailed
 		fmt.Printf("Discovery failed: %v\n", err)
 		return
@@ -172,38 +158,25 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 	// Update job with results
 	job.HostsResponsive = len(discoveredHosts)
 	job.HostsDiscovered = len(discoveredHosts)
-	log.Printf("DEBUG: Discovery logic completed for job %s. Found %d hosts, setting status to running before finalization", job.ID.String(), job.HostsDiscovered)
 	fmt.Printf("Discovery completed. Found %d hosts.\n", job.HostsDiscovered)
 }
 
 // finalizeDiscoveryJob handles the completion and saving of a discovery job.
 func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob) {
-	log.Printf("DEBUG: finalizeDiscoveryJob starting for job %s, current status: %s", job.ID.String(), job.Status)
-
 	// Check if context is canceled before finalizing
 	select {
 	case <-ctx.Done():
-		log.Printf("DEBUG: finalizeDiscoveryJob context canceled for job %s", job.ID.String())
 		return // Don't attempt database operations if context is canceled
 	default:
 	}
 
 	now := time.Now()
 	job.CompletedAt = &now
-	oldStatus := job.Status
 	if job.Status == db.DiscoveryJobStatusRunning {
 		job.Status = db.DiscoveryJobStatusCompleted
-		log.Printf("DEBUG: Changed job %s status from %s to %s", job.ID.String(), oldStatus, job.Status)
-	} else {
-		log.Printf("DEBUG: Job %s status remains %s (not running)", job.ID.String(), job.Status)
 	}
-
-	log.Printf("DEBUG: Attempting to save discovery job %s to database with status %s", job.ID.String(), job.Status)
 	if err := e.saveDiscoveryJob(ctx, job); err != nil {
-		log.Printf("ERROR: Failed to save discovery job %s completion: %v", job.ID.String(), err)
 		fmt.Printf("Error saving discovery job completion: %v\n", err)
-	} else {
-		log.Printf("DEBUG: Successfully saved discovery job %s with status %s", job.ID.String(), job.Status)
 	}
 }
 
@@ -308,8 +281,6 @@ func (e *Engine) nmapDiscovery(ctx context.Context, network string, config Confi
 			Status:    dbHost.Status,
 			Method:    config.Method,
 		}
-		log.Printf("DEBUG: Attempting to save discovered host %s with method=%s, status=%s",
-			result.IPAddress.String(), result.Method, result.Status)
 
 		if err := e.saveDiscoveredHost(ctx, result, uuid.Nil); err != nil {
 			// Check if context was canceled
@@ -319,8 +290,6 @@ func (e *Engine) nmapDiscovery(ctx context.Context, network string, config Confi
 			log.Printf("Failed to save discovered host %s: %v", dbHost.IPAddress.String(), err)
 			continue
 		}
-
-		log.Printf("DEBUG: Successfully saved discovered host %s", result.IPAddress.String())
 
 		discoveredHosts = append(discoveredHosts, dbHost)
 	}
@@ -370,12 +339,8 @@ func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.
 	responseTimeMS := int(result.ResponseTime.Milliseconds())
 
 	if err != nil {
-		log.Printf("DEBUG: Creating new host for %s with discovery_method=%s",
-			result.IPAddress.String(), result.Method)
 		return e.createNewHost(ctx, result, now, responseTimeMS)
 	}
-	log.Printf("DEBUG: Updating existing host %s (id=%s) with discovery_method=%s",
-		result.IPAddress.String(), existingHost.ID.String(), result.Method)
 	return e.updateExistingHost(ctx, &existingHost, result, now, responseTimeMS)
 }
 
@@ -410,16 +375,6 @@ func (e *Engine) createNewHost(ctx context.Context, result *Result, now time.Tim
 		LastSeen:        now,
 	}
 
-	log.Printf("DEBUG: Creating new host with ID=%s, IP=%s, DiscoveryMethod=%v",
-		host.ID.String(), host.IPAddress.String(),
-		func() string {
-			if host.DiscoveryMethod != nil {
-				return *host.DiscoveryMethod
-			} else {
-				return "NULL"
-			}
-		}())
-
 	// Set OS information if detected
 	if result.OSInfo != nil {
 		if err := host.SetOSFingerprint(result.OSInfo); err != nil {
@@ -434,9 +389,6 @@ func (e *Engine) createNewHost(ctx context.Context, result *Result, now time.Tim
 func (e *Engine) updateExistingHost(
 	ctx context.Context, existingHost *db.Host, result *Result, now time.Time, responseTimeMS int,
 ) error {
-	log.Printf("DEBUG: Updating existing host ID=%s with discovery_method=%s",
-		existingHost.ID.String(), result.Method)
-
 	updateQuery := `
 		UPDATE hosts SET
 			status = $2,
