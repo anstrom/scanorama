@@ -119,27 +119,30 @@ func CleanupTestTables(ctx context.Context, database *db.DB) error {
 	fmt.Printf("DEBUG: CleanupTestTables called but cleanup is DISABLED for CI debugging\n")
 	return nil
 
+	// NOTE: The following cleanup code is temporarily disabled for CI debugging
+	// Uncomment and remove the early return above to re-enable cleanup
+
 	// List of tables to clean in dependency order (child tables first)
-	tables := []string{
-		"host_history",
-		"services",
-		"port_scans",
-		"scan_jobs",
-		"discovery_jobs",
-		"hosts",
-		"scan_targets",
-	}
-
-	for _, table := range tables {
-		query := fmt.Sprintf("DELETE FROM %s WHERE 1=1", table)
-		_, err := database.ExecContext(ctx, query)
-		if err != nil {
-			// Log warning but continue - some tables might not exist
-			fmt.Printf("Warning: Failed to clean table %s: %v\n", table, err)
-		}
-	}
-
-	return nil
+	// tables := []string{
+	//	"host_history",
+	//	"services",
+	//	"port_scans",
+	//	"scan_jobs",
+	//	"discovery_jobs",
+	//	"hosts",
+	//	"scan_targets",
+	// }
+	//
+	// for _, table := range tables {
+	//	query := fmt.Sprintf("DELETE FROM %s WHERE 1=1", table)
+	//	_, err := database.ExecContext(ctx, query)
+	//	if err != nil {
+	//		// Log warning but continue - some tables might not exist
+	//		fmt.Printf("Warning: Failed to clean table %s: %v\n", table, err)
+	//	}
+	// }
+	//
+	// return nil
 }
 
 // EnsureTestSchema ensures the database schema is set up for testing.

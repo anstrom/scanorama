@@ -166,7 +166,7 @@ func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob)
 	// Check if context is canceled before finalizing
 	select {
 	case <-ctx.Done():
-		log.Printf("DEBUG: Discovery finalization cancelled for job %s", job.ID)
+		log.Printf("DEBUG: Discovery finalization canceled for job %s", job.ID)
 		return // Don't attempt database operations if context is canceled
 	default:
 	}
@@ -331,7 +331,7 @@ func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.
 	// Check if context is canceled before database operations
 	select {
 	case <-ctx.Done():
-		log.Printf("DEBUG: Discovery save cancelled for host %s", result.IPAddress)
+		log.Printf("DEBUG: Discovery save canceled for host %s", result.IPAddress)
 		return ctx.Err()
 	default:
 	}
@@ -453,7 +453,8 @@ func (e *Engine) updateExistingHost(
 	if err != nil {
 		log.Printf("DEBUG: Discovery failed to update host %s: %v", result.IPAddress, err)
 	} else {
-		log.Printf("DEBUG: Discovery successfully updated host %s with discovery_method=%s", result.IPAddress, result.Method)
+		log.Printf("DEBUG: Discovery successfully updated host %s with discovery_method=%s",
+			result.IPAddress, result.Method)
 	}
 
 	return err

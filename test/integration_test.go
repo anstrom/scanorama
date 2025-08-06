@@ -16,6 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	statusCompleted = "completed"
+)
+
 // IntegrationTestSuite holds test environment and database connection.
 // IntegrationTestSuite holds the test database and configuration.
 type IntegrationTestSuite struct {
@@ -62,12 +66,13 @@ func setupTestDatabase(t *testing.T) *db.DB {
 }
 
 // cleanupTestData removes any existing test data.
-func cleanupTestData(t *testing.T, database *db.DB) {
-	err := helpers.CleanupTestTables(context.Background(), database)
-	if err != nil {
-		t.Logf("Warning: Failed to cleanup test data: %v", err)
-	}
-}
+// NOTE: Currently disabled for CI debugging
+// func cleanupTestData(t *testing.T, database *db.DB) {
+//	err := helpers.CleanupTestTables(context.Background(), database)
+//	if err != nil {
+//		t.Logf("Warning: Failed to cleanup test data: %v", err)
+//	}
+// }
 
 // teardown cleans up test resources.
 func (suite *IntegrationTestSuite) teardown(t *testing.T) {
@@ -196,10 +201,13 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 			var finalStatus string
 			var finalHosts int
 			query := `SELECT status, hosts_discovered FROM discovery_jobs WHERE id = $1`
-			if err := suite.database.QueryRowContext(suite.ctx, query, job.ID).Scan(&finalStatus, &finalHosts); err == nil {
-				t.Fatalf("Discovery timed out after %v - final status: %s, hosts: %d", maxWait, finalStatus, finalHosts)
+			err := suite.database.QueryRowContext(suite.ctx, query, job.ID).Scan(&finalStatus, &finalHosts)
+			if err == nil {
+				t.Fatalf("Discovery timed out after %v - final status: %s, hosts: %d",
+					maxWait, finalStatus, finalHosts)
 			} else {
-				t.Fatalf("Discovery timed out after %v - could not get final status: %v", maxWait, err)
+				t.Fatalf("Discovery timed out after %v - could not get final status: %v",
+					maxWait, err)
 			}
 		}
 
@@ -210,12 +218,12 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 		err := suite.database.QueryRowContext(suite.ctx, query, job.ID).Scan(&status, &hostsDiscovered)
 		require.NoError(t, err)
 
-		if status == "completed" || status == "failed" {
+		if status == statusCompleted || status == "failed" {
 			t.Logf("Discovery %s. Found %d hosts.", status, hostsDiscovered)
-			assert.Equal(t, "completed", status)
+			assert.Equal(t, statusCompleted, status)
 
 			// Additional verification that hosts were actually stored
-			if status == "completed" && hostsDiscovered > 0 {
+			if status == statusCompleted && hostsDiscovered > 0 {
 				var actualHostCount int
 				hostQuery := `SELECT COUNT(*) FROM hosts WHERE discovery_method = 'ping'`
 				if err := suite.database.QueryRowContext(suite.ctx, hostQuery).Scan(&actualHostCount); err == nil {
@@ -295,11 +303,14 @@ func TestScanDiscoveredHosts(t *testing.T) {
 	// Add some debugging for CI
 	if discoveredHostCount != 1 {
 		var totalHosts int
-		suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM hosts").Scan(&totalHosts)
-		t.Logf("DEBUG: Expected 1 host with discovery_method=ping, found %d (total hosts: %d)", discoveredHostCount, totalHosts)
+		err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM hosts").Scan(&totalHosts)
+		require.NoError(t, err)
+		t.Logf("DEBUG: Expected 1 host with discovery_method=ping, found %d (total hosts: %d)",
+			discoveredHostCount, totalHosts)
 	}
 
-	require.Equal(t, 1, discoveredHostCount, "Discovery should have created exactly one host with discovery_method=ping")
+	require.Equal(t, 1, discoveredHostCount,
+		"Discovery should have created exactly one host with discovery_method=ping")
 	t.Logf("Discovery verification successful: found %d host with discovery_method=ping", discoveredHostCount)
 
 	// Give a small buffer to ensure database consistency in CI
