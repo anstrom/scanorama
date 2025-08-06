@@ -68,7 +68,7 @@ func NewScheduler(database *db.DB, discoveryEngine *discovery.Engine, profileMan
 
 	return &Scheduler{
 		db:        database,
-		cron:      cron.New(cron.WithSeconds()),
+		cron:      cron.New(),
 		discovery: discoveryEngine,
 		profiles:  profileManager,
 		jobs:      make(map[uuid.UUID]*ScheduledJob),
@@ -144,7 +144,7 @@ func (s *Scheduler) AddScanJob(ctx context.Context, name, cronExpr string, confi
 func (s *Scheduler) createScheduledJob(
 	ctx context.Context, name, cronExpr, jobType string, config interface{},
 ) (*db.ScheduledJob, error) {
-	// Validate cron expression
+	// Validate cron expression using standard 5-field format
 	if _, err := cron.ParseStandard(cronExpr); err != nil {
 		return nil, fmt.Errorf("invalid cron expression: %w", err)
 	}
@@ -166,7 +166,7 @@ func (s *Scheduler) createScheduledJob(
 		CreatedAt:      time.Now(),
 	}
 
-	// Calculate next run time
+	// Calculate next run time using standard parser
 	schedule, _ := cron.ParseStandard(cronExpr)
 	nextRun := schedule.Next(time.Now())
 	job.NextRun = &nextRun
@@ -227,17 +227,64 @@ func (s *Scheduler) RemoveJob(ctx context.Context, jobID uuid.UUID) error {
 	return nil
 }
 
-// GetJobs returns all scheduled jobs.
+// GetJobs returns all scheduled jobs from the database.
 func (s *Scheduler) GetJobs() []*ScheduledJob {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	ctx := context.Background()
+	dbJobs, err := s.loadJobsFromDatabase(ctx)
+	if err != nil {
+		log.Printf("Failed to load jobs from database: %v", err)
+		return []*ScheduledJob{}
+	}
 
-	jobs := make([]*ScheduledJob, 0, len(s.jobs))
-	for _, job := range s.jobs {
+	jobs := make([]*ScheduledJob, 0, len(dbJobs))
+	for _, dbJob := range dbJobs {
+		// Calculate next run time
+		schedule, _ := cron.ParseStandard(dbJob.CronExpression)
+		nextRun := schedule.Next(time.Now())
+
+		job := &ScheduledJob{
+			ID:      dbJob.ID,
+			Config:  dbJob,
+			NextRun: nextRun,
+		}
 		jobs = append(jobs, job)
 	}
 
 	return jobs
+}
+
+// loadJobsFromDatabase loads all scheduled jobs from the database.
+func (s *Scheduler) loadJobsFromDatabase(ctx context.Context) ([]*db.ScheduledJob, error) {
+	query := `
+		SELECT id, name, type, cron_expression, config, enabled, last_run, next_run, created_at
+		FROM scheduled_jobs
+		ORDER BY created_at DESC
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query scheduled jobs: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Failed to close rows: %v", err)
+		}
+	}()
+
+	var jobs []*db.ScheduledJob
+	for rows.Next() {
+		job := &db.ScheduledJob{}
+		err := rows.Scan(
+			&job.ID, &job.Name, &job.Type, &job.CronExpression,
+			&job.Config, &job.Enabled, &job.LastRun, &job.NextRun, &job.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan scheduled job: %w", err)
+		}
+		jobs = append(jobs, job)
+	}
+
+	return jobs, rows.Err()
 }
 
 // EnableJob enables a scheduled job.
@@ -633,7 +680,7 @@ func (s *Scheduler) addScanJobToCron(job *db.ScheduledJob) (cron.EntryID, error)
 
 // storeJobInMemory stores the job in the scheduler's memory.
 func (s *Scheduler) storeJobInMemory(job *db.ScheduledJob, cronID cron.EntryID) {
-	// Calculate next run time
+	// Calculate next run time using standard parser
 	schedule, _ := cron.ParseStandard(job.CronExpression)
 	nextRun := schedule.Next(time.Now())
 

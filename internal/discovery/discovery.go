@@ -245,7 +245,10 @@ func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob)
 func buildNmapOptions(network string, timeout time.Duration) []nmap.Option {
 	options := []nmap.Option{
 		nmap.WithTargets(network),
-		nmap.WithPingScan(), // Host discovery only, no port scan
+		// Use TCP connect discovery instead of ICMP ping (no root privileges required)
+		nmap.WithPorts("22,80,443,8080,8443,3389,5432,6379"),
+		nmap.WithConnectScan(),
+		// TCP connect scan works without root privileges and provides host discovery
 	}
 
 	// Add timing based on timeout
@@ -408,23 +411,14 @@ func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.
 		}
 	}()
 
-	// Check if host already exists
-	var existingHost db.Host
-	query := `SELECT id, discovery_count FROM hosts WHERE ip_address = $1`
-	log.Printf("DEBUG: Discovery checking if host %s already exists", result.IPAddress)
-	err = tx.QueryRowContext(ctx, query, db.IPAddr{IP: result.IPAddress}).Scan(
-		&existingHost.ID, &existingHost.DiscoveryCount)
+	// Use UPSERT to handle race conditions between discovery processes
+	// This atomically handles both insert and update cases
+	log.Printf("DEBUG: Discovery upserting host %s with discovery_method=%s", result.IPAddress, result.Method)
 
 	now := time.Now()
 	responseTimeMS := int(result.ResponseTime.Milliseconds())
 
-	if err != nil {
-		log.Printf("DEBUG: Discovery host %s not found, creating new (error: %v)", result.IPAddress, err)
-		err = e.createNewHostTx(ctx, tx, result, now, responseTimeMS)
-	} else {
-		log.Printf("DEBUG: Discovery host %s already exists, updating", result.IPAddress)
-		err = e.updateExistingHostTx(ctx, tx, &existingHost, result, now, responseTimeMS)
-	}
+	err = e.upsertHostTx(ctx, tx, result, now, responseTimeMS)
 
 	if err != nil {
 		log.Printf("DEBUG: Discovery failed to save host %s: %v", result.IPAddress, err)
@@ -465,107 +459,61 @@ func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.
 	return nil
 }
 
-// insertHostTx inserts a new host into the database within a transaction.
-func (e *Engine) insertHostTx(ctx context.Context, tx *sqlx.Tx, host *db.Host) error {
-	log.Printf("DEBUG: Discovery inserting new host %s with discovery_method=%v",
-		host.IPAddress.String(),
-		func() string {
-			if host.DiscoveryMethod != nil {
-				return *host.DiscoveryMethod
-			}
-			return "NULL"
-		}())
+// upsertHostTx atomically inserts or updates a host to prevent race conditions.
+func (e *Engine) upsertHostTx(ctx context.Context, tx *sqlx.Tx, result *Result,
+	now time.Time, responseTimeMS int) error {
+	hostID := uuid.New()
 
+	// Prepare OS information
+	var osFamily, osName, osVersion, osMethod *string
+	var osConfidence *int
+	var osDetectedAt *time.Time
+	var osDetails *[]byte
+
+	if result.OSInfo != nil {
+		osFamily = &result.OSInfo.Family
+		osName = &result.OSInfo.Name
+		osVersion = &result.OSInfo.Version
+		osConfidence = &result.OSInfo.Confidence
+		osDetectedAt = &now
+		osMethod = &result.OSInfo.Method
+		if result.OSInfo.Details != nil {
+			detailsJSON, _ := json.Marshal(result.OSInfo.Details)
+			osDetails = &detailsJSON
+		}
+	}
+
+	// Use UPSERT to handle race conditions atomically
 	query := `
 		INSERT INTO hosts (id, ip_address, hostname, mac_address, vendor, os_family, os_name, os_version,
 						   os_confidence, os_detected_at, os_method, os_details, discovery_method,
 						   response_time_ms, discovery_count, ignore_scanning, first_seen, last_seen, status)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		ON CONFLICT (ip_address) DO UPDATE SET
+			status = EXCLUDED.status,
+			last_seen = EXCLUDED.last_seen,
+			discovery_method = EXCLUDED.discovery_method,
+			response_time_ms = EXCLUDED.response_time_ms,
+			discovery_count = hosts.discovery_count + 1,
+			os_family = COALESCE(EXCLUDED.os_family, hosts.os_family),
+			os_name = COALESCE(EXCLUDED.os_name, hosts.os_name),
+			os_version = COALESCE(EXCLUDED.os_version, hosts.os_version),
+			os_confidence = COALESCE(EXCLUDED.os_confidence, hosts.os_confidence),
+			os_detected_at = COALESCE(EXCLUDED.os_detected_at, hosts.os_detected_at),
+			os_method = COALESCE(EXCLUDED.os_method, hosts.os_method),
+			os_details = CASE WHEN EXCLUDED.os_details IS NOT NULL THEN EXCLUDED.os_details ELSE hosts.os_details END
 	`
 
 	_, err := tx.ExecContext(ctx, query,
-		host.ID, host.IPAddress, host.Hostname, host.MACAddress, host.Vendor,
-		host.OSFamily, host.OSName, host.OSVersion, host.OSConfidence, host.OSDetectedAt,
-		host.OSMethod, host.OSDetails, host.DiscoveryMethod, host.ResponseTimeMS,
-		host.DiscoveryCount, host.IgnoreScanning, host.FirstSeen, host.LastSeen, host.Status)
+		hostID, db.IPAddr{IP: result.IPAddress}, nil, nil, nil,
+		osFamily, osName, osVersion, osConfidence, osDetectedAt,
+		osMethod, osDetails, &result.Method, &responseTimeMS,
+		1, false, now, now, result.Status)
 
 	if err != nil {
-		log.Printf("DEBUG: Discovery failed to insert host %s: %v", host.IPAddress.String(), err)
+		log.Printf("DEBUG: Discovery failed to upsert host %s: %v", result.IPAddress, err)
 	} else {
-		log.Printf("DEBUG: Discovery successfully inserted host %s with discovery_method=%v",
-			host.IPAddress.String(),
-			func() string {
-				if host.DiscoveryMethod != nil {
-					return *host.DiscoveryMethod
-				}
-				return "NULL"
-			}())
-	}
-
-	return err
-}
-
-// createNewHostTx creates a new host entry in the database within a transaction.
-func (e *Engine) createNewHostTx(ctx context.Context, tx *sqlx.Tx, result *Result,
-	now time.Time, responseTimeMS int) error {
-	host := db.Host{
-		ID:              uuid.New(),
-		IPAddress:       db.IPAddr{IP: result.IPAddress},
-		Status:          result.Status,
-		DiscoveryMethod: &result.Method,
-		ResponseTimeMS:  &responseTimeMS,
-		DiscoveryCount:  1,
-		FirstSeen:       now,
-		LastSeen:        now,
-	}
-
-	// Set OS information if detected
-	if result.OSInfo != nil {
-		if err := host.SetOSFingerprint(result.OSInfo); err != nil {
-			log.Printf("Failed to set OS fingerprint: %v", err)
-		}
-	}
-
-	return e.insertHostTx(ctx, tx, &host)
-}
-
-// updateExistingHostTx updates an existing host entry in the database within a transaction.
-func (e *Engine) updateExistingHostTx(
-	ctx context.Context, tx *sqlx.Tx, existingHost *db.Host, result *Result, now time.Time, responseTimeMS int,
-) error {
-	log.Printf("DEBUG: Discovery updating existing host %s with discovery_method=%s", result.IPAddress, result.Method)
-
-	updateQuery := `
-		UPDATE hosts SET
-			status = $2,
-			last_seen = $3,
-			discovery_method = $4,
-			response_time_ms = $5,
-			discovery_count = discovery_count + 1
-	`
-	args := []interface{}{existingHost.ID, result.Status, now, result.Method, responseTimeMS}
-
-	// Add OS information if detected
-	if result.OSInfo != nil {
-		updateQuery += `, os_family = $6, os_name = $7, os_version = $8, os_confidence = $9, ` +
-			`os_detected_at = $10, os_method = $11, os_details = $12`
-
-		var detailsJSON []byte
-		if result.OSInfo.Details != nil {
-			detailsJSON, _ = json.Marshal(result.OSInfo.Details)
-		}
-
-		args = append(args, result.OSInfo.Family, result.OSInfo.Name, result.OSInfo.Version,
-			result.OSInfo.Confidence, now, result.OSInfo.Method, detailsJSON)
-	}
-
-	updateQuery += ` WHERE id = $1`
-	_, err := tx.ExecContext(ctx, updateQuery, args...)
-
-	if err != nil {
-		log.Printf("DEBUG: Discovery failed to update host %s: %v", result.IPAddress, err)
-	} else {
-		log.Printf("DEBUG: Discovery successfully updated host %s with discovery_method=%s",
+		log.Printf("DEBUG: Discovery successfully upserted host %s with discovery_method=%s",
 			result.IPAddress, result.Method)
 	}
 

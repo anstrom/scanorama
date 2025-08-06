@@ -124,6 +124,7 @@ func CleanupTestTables(ctx context.Context, database *db.DB) error {
 		"discovery_jobs",
 		"hosts",
 		"scan_targets",
+		"scheduled_jobs",
 	}
 
 	for _, table := range tables {
