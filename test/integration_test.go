@@ -280,6 +280,47 @@ func TestScanDiscoveredHosts(t *testing.T) {
 
 	// Verify we have both discovery and scan data
 	t.Run("VerifyIntegratedData", func(t *testing.T) {
+		// Debug: Check what data we actually have
+		var totalHosts, hostsWithDiscovery, totalPortScans, hostsWithPortScans int
+
+		// Total hosts
+		err := suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM hosts").Scan(&totalHosts)
+		require.NoError(t, err)
+		t.Logf("Total hosts in database: %d", totalHosts)
+
+		// Hosts with discovery method
+		err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM hosts WHERE discovery_method IS NOT NULL").Scan(&hostsWithDiscovery)
+		require.NoError(t, err)
+		t.Logf("Hosts with discovery_method: %d", hostsWithDiscovery)
+
+		// Total port scans
+		err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM port_scans").Scan(&totalPortScans)
+		require.NoError(t, err)
+		t.Logf("Total port scans: %d", totalPortScans)
+
+		// Hosts that have port scans
+		err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(DISTINCT host_id) FROM port_scans").Scan(&hostsWithPortScans)
+		require.NoError(t, err)
+		t.Logf("Hosts with port scans: %d", hostsWithPortScans)
+
+		// Debug: Show actual host data
+		rows, err := suite.database.QueryContext(suite.ctx, "SELECT ip_address, discovery_method FROM hosts")
+		require.NoError(t, err)
+		defer rows.Close()
+
+		t.Logf("Host details:")
+		for rows.Next() {
+			var ip string
+			var discoveryMethod *string
+			err := rows.Scan(&ip, &discoveryMethod)
+			require.NoError(t, err)
+			if discoveryMethod != nil {
+				t.Logf("  Host %s: discovery_method=%s", ip, *discoveryMethod)
+			} else {
+				t.Logf("  Host %s: discovery_method=NULL", ip)
+			}
+		}
+
 		// Check that we have hosts with both discovery and scan data
 		var count int
 		query := `
@@ -288,8 +329,9 @@ func TestScanDiscoveredHosts(t *testing.T) {
 			INNER JOIN port_scans ps ON h.id = ps.host_id
 			WHERE h.discovery_method IS NOT NULL
 		`
-		err := suite.database.QueryRowContext(suite.ctx, query).Scan(&count)
+		err = suite.database.QueryRowContext(suite.ctx, query).Scan(&count)
 		require.NoError(t, err)
+		t.Logf("Hosts with both discovery and scan data: %d", count)
 		assert.GreaterOrEqual(t, count, 1, "Should have at least one host with both discovery and scan data")
 	})
 }
