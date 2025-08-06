@@ -178,7 +178,7 @@ EOF
     if [ "$IS_CI" = "true" ]; then
         # In CI, check if the GitHub Actions PostgreSQL service is ready
         for i in {1..10}; do
-            if psql -h localhost -p $POSTGRES_PORT -U test_user -d scanorama_test -c "SELECT 1" &>/dev/null; then
+            if PGPASSWORD=test_password psql -h localhost -p $POSTGRES_PORT -U test_user -d scanorama_test -c "SELECT 1" &>/dev/null; then
                 echo "GitHub Actions PostgreSQL service is ready on port $POSTGRES_PORT"
                 break
             fi
@@ -187,9 +187,9 @@ EOF
         done
     elif nc -z localhost 5432 2>/dev/null && [ "$POSTGRES_PORT" = "5432" ]; then
         # Check if existing database is accessible
-        if psql -h localhost -p 5432 -U scanorama_dev -d scanorama_dev -c "SELECT 1" 2>/dev/null; then
+        if PGPASSWORD=dev_password psql -h localhost -p 5432 -U scanorama_dev -d scanorama_dev -c "SELECT 1" 2>/dev/null; then
             echo "Existing development database is ready on port 5432"
-        elif psql -h localhost -p 5432 -U test_user -d scanorama_test -c "SELECT 1" 2>/dev/null; then
+        elif PGPASSWORD=test_password psql -h localhost -p 5432 -U test_user -d scanorama_test -c "SELECT 1" 2>/dev/null; then
             echo "Existing test database is ready on port 5432"
         else
             echo "Warning: Database on port 5432 is not accessible with expected credentials"
