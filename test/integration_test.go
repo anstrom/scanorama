@@ -17,10 +17,11 @@ import (
 )
 
 // IntegrationTestSuite holds test environment and database connection.
+// IntegrationTestSuite holds the test database and configuration.
 type IntegrationTestSuite struct {
 	database *db.DB
-	testEnv  *helpers.TestEnvironment
 	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 // setupIntegrationTestSuite sets up the test database and environment.
@@ -29,16 +30,16 @@ func setupIntegrationTestSuite(t *testing.T) *IntegrationTestSuite {
 		t.Skip("Skipping integration tests in short mode")
 	}
 
-	// Set up test environment (no Docker services needed)
-	testEnv := helpers.DefaultTestEnvironment()
-
 	// Set up test database
 	database := setupTestDatabase(t)
 
+	// Create cancellable context for proper cleanup
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &IntegrationTestSuite{
 		database: database,
-		testEnv:  testEnv,
-		ctx:      context.Background(),
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 }
 
@@ -74,6 +75,14 @@ func cleanupTestData(t *testing.T, database *db.DB) {
 
 // teardown cleans up test resources.
 func (suite *IntegrationTestSuite) teardown(t *testing.T) {
+	// Cancel context to stop background processes
+	if suite.cancel != nil {
+		suite.cancel()
+	}
+
+	// Give background processes time to finish
+	time.Sleep(100 * time.Millisecond)
+
 	cleanupTestData(t, suite.database)
 	if err := suite.database.Close(); err != nil {
 		t.Logf("Warning: Failed to close database: %v", err)
@@ -174,9 +183,10 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 
 	job, err := discoveryEngine.Discover(suite.ctx, discoveryConfig)
 	require.NoError(t, err)
-	require.NotNil(t, job)
 
-	// Wait for discovery to complete
+	// Wait for discovery to complete properly
+	err = discoveryEngine.WaitForCompletion(suite.ctx, job.ID, 15*time.Second)
+	require.NoError(t, err)
 	maxWait := 30 * time.Second
 	checkInterval := 2 * time.Second
 	startTime := time.Now()
@@ -247,11 +257,12 @@ func TestScanDiscoveredHosts(t *testing.T) {
 		Concurrency: 1,
 	}
 
-	_, err := discoveryEngine.Discover(suite.ctx, discoveryConfig)
+	job, err := discoveryEngine.Discover(suite.ctx, discoveryConfig)
 	require.NoError(t, err)
 
-	// Wait for discovery to complete
-	time.Sleep(5 * time.Second)
+	// Wait for discovery to complete properly
+	err = discoveryEngine.WaitForCompletion(suite.ctx, job.ID, 15*time.Second)
+	require.NoError(t, err)
 
 	// Now scan the discovered hosts
 	testPort := "22" // SSH port for testing

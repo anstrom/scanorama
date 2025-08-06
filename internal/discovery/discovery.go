@@ -22,6 +22,7 @@ const (
 	defaultConcurrency    = 50
 	defaultTimeoutSeconds = 3
 	maxNetworkSizeBits    = 16 // Limit to /16 or smaller networks
+	retryInterval         = 100 * time.Millisecond
 )
 
 // Engine handles network discovery operations.
@@ -95,14 +96,51 @@ func (e *Engine) Discover(ctx context.Context, config Config) (*db.DiscoveryJob,
 	}
 
 	// Start discovery in background
-	go e.runDiscovery(context.Background(), job, config)
+	go e.runDiscovery(ctx, job, config)
 
 	return job, nil
+}
+
+// WaitForCompletion waits for a discovery job to complete or timeout.
+func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		// Check job status
+		var status string
+		query := `SELECT status FROM discovery_jobs WHERE id = $1`
+		err := e.db.QueryRowContext(ctx, query, jobID).Scan(&status)
+		if err != nil {
+			return fmt.Errorf("failed to check job status: %w", err)
+		}
+
+		switch status {
+		case db.DiscoveryJobStatusCompleted:
+			return nil
+		case db.DiscoveryJobStatusFailed:
+			return fmt.Errorf("discovery job failed")
+		case db.DiscoveryJobStatusRunning:
+			// Still running, continue waiting
+			time.Sleep(retryInterval)
+		default:
+			return fmt.Errorf("unknown job status: %s", status)
+		}
+	}
+
+	return fmt.Errorf("discovery job did not complete within %v", timeout)
 }
 
 // runDiscovery executes the actual discovery process using nmap.
 func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config Config) {
 	defer e.finalizeDiscoveryJob(ctx, job)
+
+	// Check if context is already canceled
+	select {
+	case <-ctx.Done():
+		job.Status = db.DiscoveryJobStatusFailed
+		return
+	default:
+	}
 
 	// Use nmap for host discovery
 	discoveredHosts, err := e.nmapDiscovery(ctx, job.Network.IPNet.String(), config)
@@ -120,6 +158,13 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 
 // finalizeDiscoveryJob handles the completion and saving of a discovery job.
 func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob) {
+	// Check if context is canceled before finalizing
+	select {
+	case <-ctx.Done():
+		return // Don't attempt database operations if context is canceled
+	default:
+	}
+
 	now := time.Now()
 	job.CompletedAt = &now
 	if job.Status == db.DiscoveryJobStatusRunning {
@@ -226,11 +271,15 @@ func (e *Engine) nmapDiscovery(ctx context.Context, network string, config Confi
 		}
 
 		// Store the host in database
-		if err := e.saveDiscoveredHost(context.Background(), &Result{
+		if err := e.saveDiscoveredHost(ctx, &Result{
 			IPAddress: dbHost.IPAddress.IP,
 			Status:    dbHost.Status,
 			Method:    config.Method,
 		}, uuid.Nil); err != nil {
+			// Check if context was canceled
+			if ctx.Err() != nil {
+				return discoveredHosts, ctx.Err()
+			}
 			log.Printf("Failed to save discovered host %s: %v", dbHost.IPAddress.String(), err)
 			continue
 		}
@@ -266,6 +315,13 @@ func (e *Engine) saveDiscoveryJob(ctx context.Context, job *db.DiscoveryJob) err
 
 // saveDiscoveredHost saves or updates a discovered host in the database.
 func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.UUID) error {
+	// Check if context is canceled before database operations
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	// Check if host already exists
 	var existingHost db.Host
 	query := `SELECT id, discovery_count FROM hosts WHERE ip_address = $1`
