@@ -182,7 +182,7 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 	// Run discovery on localhost for reliable testing
 	discoveryConfig := discovery.Config{
 		Network:     "127.0.0.1/32",
-		Method:      "ping",
+		Method:      "tcp",
 		DetectOS:    false,
 		Timeout:     10 * time.Second,
 		Concurrency: 1,
@@ -228,9 +228,9 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 			// Additional verification that hosts were actually stored
 			if status == statusCompleted && hostsDiscovered > 0 {
 				var actualHostCount int
-				hostQuery := `SELECT COUNT(*) FROM hosts WHERE discovery_method = 'ping'`
+				hostQuery := `SELECT COUNT(*) FROM hosts WHERE discovery_method = 'tcp'`
 				if err := suite.database.QueryRowContext(suite.ctx, hostQuery).Scan(&actualHostCount); err == nil {
-					t.Logf("Verified %d hosts with discovery_method=ping in database", actualHostCount)
+					t.Logf("Verified %d hosts with discovery_method=tcp in database", actualHostCount)
 				}
 			}
 			break
@@ -261,7 +261,7 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 		var hosts []*db.Host
 		query := `
 			SELECT * FROM hosts
-			WHERE discovery_method = 'ping' AND ip_address = '127.0.0.1'
+			WHERE discovery_method = 'tcp' AND ip_address = '127.0.0.1'
 			ORDER BY last_seen DESC LIMIT 5`
 		err := suite.database.SelectContext(suite.ctx, &hosts, query)
 		require.NoError(t, err)
@@ -271,7 +271,7 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 		host := hosts[0]
 		assert.Equal(t, "up", host.Status)
 		assert.NotNil(t, host.DiscoveryMethod)
-		assert.Equal(t, "ping", *host.DiscoveryMethod)
+		assert.Equal(t, "tcp", *host.DiscoveryMethod)
 	})
 }
 
@@ -284,7 +284,7 @@ func TestScanDiscoveredHosts(t *testing.T) {
 	discoveryEngine := discovery.NewEngine(suite.database)
 	discoveryConfig := discovery.Config{
 		Network:     "127.0.0.1/32",
-		Method:      "ping",
+		Method:      "tcp",
 		DetectOS:    false,
 		Timeout:     10 * time.Second,
 		Concurrency: 1,
@@ -301,7 +301,7 @@ func TestScanDiscoveredHosts(t *testing.T) {
 
 	// Verify that discovery actually saved the host with correct discovery_method
 	var discoveredHostCount int
-	query := `SELECT COUNT(*) FROM hosts WHERE discovery_method = 'ping' AND ip_address = '127.0.0.1'`
+	query := `SELECT COUNT(*) FROM hosts WHERE discovery_method = 'tcp' AND ip_address = '127.0.0.1'`
 	err = suite.database.QueryRowContext(suite.ctx, query).Scan(&discoveredHostCount)
 	require.NoError(t, err)
 
@@ -310,13 +310,13 @@ func TestScanDiscoveredHosts(t *testing.T) {
 		var totalHosts int
 		err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM hosts").Scan(&totalHosts)
 		require.NoError(t, err)
-		t.Logf("DEBUG: Expected 1 host with discovery_method=ping, found %d (total hosts: %d)",
+		t.Logf("DEBUG: Expected 1 host with discovery_method=tcp, found %d (total hosts: %d)",
 			discoveredHostCount, totalHosts)
 	}
 
 	require.Equal(t, 1, discoveredHostCount,
-		"Discovery should have created exactly one host with discovery_method=ping")
-	t.Logf("Discovery verification successful: found %d host with discovery_method=ping", discoveredHostCount)
+		"Discovery should have created exactly one host with discovery_method=tcp")
+	t.Logf("Discovery verification successful: found %d host with discovery_method=tcp", discoveredHostCount)
 
 	// Enhanced database consistency checks for CI reliability
 	t.Log("DEBUG: Starting enhanced database consistency checks for CI...")
@@ -397,11 +397,11 @@ func TestScanDiscoveredHosts(t *testing.T) {
 	t.Log("DEBUG: Performing pre-scan database consistency verification...")
 	var preScanHostCount int
 	preScanQuery := `SELECT COUNT(*) FROM hosts WHERE ip_address = '127.0.0.1' ` +
-		`AND discovery_method = 'ping'`
+		`AND discovery_method = 'tcp'`
 	err = suite.database.QueryRowContext(suite.ctx, preScanQuery).Scan(&preScanHostCount)
 	require.NoError(t, err)
 	require.Equal(t, 1, preScanHostCount,
-		"Host must exist with discovery_method=ping before scanning")
+		"Host must exist with discovery_method=tcp before scanning")
 	t.Logf("Pre-scan verification: %d host(s) confirmed before scanning", preScanHostCount)
 
 	result, err := internal.RunScanWithContext(suite.ctx, scanConfig, suite.database)
