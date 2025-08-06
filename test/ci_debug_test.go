@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -287,8 +288,9 @@ func TestCIIsolatedStorage(t *testing.T) {
 		targetID := uuid.New().String()
 		_, err := suite.database.ExecContext(suite.ctx,
 			"INSERT INTO scan_targets (id, name, network) VALUES ($1, $2, $3)",
-			targetID, "Test Target", "192.168.1.0/24")
+			targetID, "Test Target", "127.0.0.0/24")
 		require.NoError(t, err)
+
 		t.Logf("✅ Created scan target: %s", targetID)
 
 		// Verify it exists
@@ -315,8 +317,9 @@ func TestCIIsolatedStorage(t *testing.T) {
 		jobID := uuid.New().String()
 		_, err = suite.database.ExecContext(suite.ctx,
 			"INSERT INTO scan_jobs (id, target_id, status, created_at) VALUES ($1, $2, $3, $4)",
-			jobID, targetID, "pending", time.Now())
+			jobID, targetID, "running", time.Now())
 		require.NoError(t, err)
+
 		t.Logf("✅ Created scan job: %s", jobID)
 
 		// Verify it exists
@@ -349,7 +352,8 @@ func TestCIIsolatedStorage(t *testing.T) {
 
 		// Create host directly
 		hostID := uuid.New().String()
-		testIP := "172.16.0.1"
+		// Generate unique IP address to avoid constraint violations
+		testIP := fmt.Sprintf("172.16.%d.%d", time.Now().UnixNano()%255+1, (time.Now().UnixNano()/1000)%255+1)
 		_, err := suite.database.ExecContext(suite.ctx,
 			`INSERT INTO hosts (id, ip_address, status, discovery_method, first_seen, last_seen)
 			 VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -415,7 +419,8 @@ func TestCIIsolatedStorage(t *testing.T) {
 
 		// Test duplicate IP address constraint
 		hostID1 := uuid.New().String()
-		testIP := "10.10.10.10"
+		// Generate unique IP address for this test
+		testIP := fmt.Sprintf("10.10.%d.%d", time.Now().UnixNano()%255+1, (time.Now().UnixNano()/1000)%255+1)
 		_, err := suite.database.ExecContext(suite.ctx,
 			"INSERT INTO hosts (id, ip_address, status) VALUES ($1, $2, $3)",
 			hostID1, testIP, "up")
@@ -480,7 +485,8 @@ func TestCITransactionDebugging(t *testing.T) {
 
 		// Step 3: Create host (this works in CI)
 		hostID := uuid.New().String()
-		testIP := "10.0.0.100" // Use unique IP to avoid constraint violation
+		// Generate unique IP address to avoid constraint violations
+		testIP := fmt.Sprintf("10.0.%d.%d", time.Now().UnixNano()%255+1, (time.Now().UnixNano()/1000)%255+1)
 		_, err = suite.database.ExecContext(suite.ctx,
 			"INSERT INTO hosts (id, ip_address, status) VALUES ($1, $2, $3)",
 			hostID, testIP, "up")
@@ -539,12 +545,13 @@ func TestCIIsolatedDatabaseStorage(t *testing.T) {
 	t.Run("DirectHostInsertion", func(t *testing.T) {
 		t.Log("CI DEBUG: Testing direct host insertion...")
 
-		// Insert a host directly
+		// Insert a host directly with unique IP to avoid constraints
 		hostID := uuid.New().String()
+		testIP := fmt.Sprintf("192.168.%d.%d", time.Now().UnixNano()%255+1, (time.Now().UnixNano()/1000)%255+1)
 		_, err := suite.database.ExecContext(suite.ctx,
 			`INSERT INTO hosts (id, ip_address, status, discovery_method, first_seen, last_seen)
 			 VALUES ($1, $2, $3, $4, NOW(), NOW())`,
-			hostID, "192.168.1.100", "up", "tcp")
+			hostID, testIP, "up", "tcp")
 		require.NoError(t, err)
 		t.Log("✅ Direct host insertion successful")
 

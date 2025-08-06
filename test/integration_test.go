@@ -101,6 +101,21 @@ func TestScanWithDatabaseStorage(t *testing.T) {
 	suite := setupIntegrationTestSuite(t)
 	defer suite.teardown(t)
 
+	t.Log("=== CI DEBUG: Starting scan with database storage test ===")
+
+	// Check initial database state
+	var initialHosts, initialScanJobs, initialPortScans int
+	err := suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM hosts").Scan(&initialHosts)
+	require.NoError(t, err)
+	err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM scan_jobs").Scan(&initialScanJobs)
+	require.NoError(t, err)
+	err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM port_scans").Scan(&initialPortScans)
+	require.NoError(t, err)
+
+	t.Logf("CI DEBUG: Initial state - hosts: %d, scan_jobs: %d, port_scans: %d",
+		initialHosts, initialScanJobs, initialPortScans)
+
+	t.Logf("Testing scan with port 22")
 	// Use a real port that should be available for testing
 	testPort := "22" // SSH port is commonly available
 	t.Logf("Testing scan with port %s", testPort)
@@ -162,6 +177,25 @@ func TestScanWithDatabaseStorage(t *testing.T) {
 		query := `SELECT * FROM scan_jobs ORDER BY created_at DESC LIMIT 10`
 		err := suite.database.SelectContext(suite.ctx, &scanJobs, query)
 		require.NoError(t, err)
+
+		t.Logf("CI DEBUG: Found %d scan jobs in database", len(scanJobs))
+		if len(scanJobs) == 0 {
+			// Debug: Check scan_targets table
+			var targetCount int
+			err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM scan_targets").Scan(&targetCount)
+			if err == nil {
+				t.Logf("CI DEBUG: Scan targets in database: %d", targetCount)
+			}
+
+			// Check if scan jobs exist with any status
+			var allStatuses []string
+			err = suite.database.SelectContext(suite.ctx, &allStatuses,
+				"SELECT DISTINCT status FROM scan_jobs")
+			if err == nil {
+				t.Logf("CI DEBUG: Scan job statuses found: %v", allStatuses)
+			}
+		}
+
 		require.NotEmpty(t, scanJobs, "No scan jobs found in database")
 
 		// Verify scan job data
