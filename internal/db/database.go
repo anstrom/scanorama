@@ -326,8 +326,16 @@ func NewHostRepository(db *DB) *HostRepository {
 // CreateOrUpdate creates a new host or updates existing one.
 func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 	query := `
-		INSERT INTO hosts (id, ip_address, hostname, mac_address, vendor, os_family, os_version, status, discovery_method, response_time_ms, discovery_count)
-		VALUES (:id, :ip_address, :hostname, :mac_address, :vendor, :os_family, :os_version, :status, :discovery_method, :response_time_ms, :discovery_count)
+		INSERT INTO hosts (
+			id, ip_address, hostname, mac_address, vendor,
+			os_family, os_version, status, discovery_method,
+			response_time_ms, discovery_count
+		)
+		VALUES (
+			:id, :ip_address, :hostname, :mac_address, :vendor,
+			:os_family, :os_version, :status, :discovery_method,
+			:response_time_ms, :discovery_count
+		)
 		ON CONFLICT (ip_address)
 		DO UPDATE SET
 			hostname = COALESCE(EXCLUDED.hostname, hosts.hostname),
