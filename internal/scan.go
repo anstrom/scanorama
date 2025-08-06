@@ -408,15 +408,26 @@ func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hos
 	var allPortScans []*db.PortScan
 
 	for _, host := range hosts {
-		// Create or update host record
-		dbHost := &db.Host{
-			ID:        uuid.New(),
-			IPAddress: db.IPAddr{IP: net.ParseIP(host.Address)},
-			Status:    host.Status,
+		// Check if host already exists (to preserve discovery data)
+		ipAddr := db.IPAddr{IP: net.ParseIP(host.Address)}
+		existingHost, err := hostRepo.GetByIP(ctx, ipAddr)
+
+		var dbHost *db.Host
+		if err != nil {
+			// Host doesn't exist, create new one
+			dbHost = &db.Host{
+				ID:        uuid.New(),
+				IPAddress: ipAddr,
+				Status:    host.Status,
+			}
+		} else {
+			// Host exists, preserve discovery data and only update scan-related fields
+			dbHost = existingHost
+			dbHost.Status = host.Status
 		}
 
-		if err := hostRepo.CreateOrUpdate(ctx, dbHost); err != nil {
-			log.Printf("Failed to store host %s: %v", host.Address, err)
+		if createErr := hostRepo.CreateOrUpdate(ctx, dbHost); createErr != nil {
+			log.Printf("Failed to store host %s: %v", host.Address, createErr)
 			continue
 		}
 
