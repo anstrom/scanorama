@@ -68,7 +68,6 @@ runs:
             "context"
             "fmt"
             "log"
-            "os"
 
             "github.com/anstrom/scanorama/internal/db"
         )
