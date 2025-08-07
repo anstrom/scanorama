@@ -55,6 +55,108 @@ runs:
         psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "SELECT version();"
         psql -h localhost -p 5432 -U ${{ inputs.database-user }} -d ${{ inputs.database-name }} -c "SELECT current_database(), current_user;"
 
+    - name: Test migration system
+      shell: bash
+      run: |
+        echo "Testing database migration system..."
+
+        # Create a simple migration test program
+        cat > test_migrations.go << 'EOF'
+        package main
+
+        import (
+            "context"
+            "fmt"
+            "log"
+            "os"
+
+            "github.com/anstrom/scanorama/internal/db"
+        )
+
+        func main() {
+            dbConfig := db.Config{
+                Host:     "localhost",
+                Port:     5432,
+                Database: "${{ inputs.database-name }}",
+                Username: "${{ inputs.database-user }}",
+                Password: "${{ inputs.database-password }}",
+                SSLMode:  "disable",
+            }
+
+            ctx := context.Background()
+
+            // Test ConnectAndMigrate function
+            fmt.Println("Testing ConnectAndMigrate...")
+            database, err := db.ConnectAndMigrate(ctx, &dbConfig)
+            if err != nil {
+                log.Fatalf("Migration failed: %v", err)
+            }
+            defer database.Close()
+
+            fmt.Println("✅ Migrations applied successfully")
+
+            // Verify migrations were applied
+            var migrationCount int
+            err = database.Get(&migrationCount, "SELECT COUNT(*) FROM schema_migrations")
+            if err != nil {
+                log.Fatalf("Failed to check migrations: %v", err)
+            }
+
+            fmt.Printf("Applied %d migrations\n", migrationCount)
+
+            if migrationCount < 2 {
+                log.Fatalf("Expected at least 2 migrations, got %d", migrationCount)
+            }
+
+            // Verify performance objects exist
+            var viewCount int
+            err = database.Get(&viewCount, "SELECT COUNT(*) FROM pg_matviews WHERE schemaname = 'public'")
+            if err != nil {
+                log.Fatalf("Failed to check materialized views: %v", err)
+            }
+
+            fmt.Printf("Created %d materialized views\n", viewCount)
+
+            if viewCount < 2 {
+                log.Fatalf("Expected at least 2 materialized views, got %d", viewCount)
+            }
+
+            // Test new table columns
+            var hasColumn bool
+            err = database.Get(&hasColumn, `
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'scan_jobs' AND column_name = 'progress_percent'
+                )
+            `)
+            if err != nil {
+                log.Fatalf("Failed to check new columns: %v", err)
+            }
+
+            if !hasColumn {
+                log.Fatalf("Expected new column 'progress_percent' not found")
+            }
+
+            fmt.Println("✅ All migration tests passed!")
+        }
+        EOF
+
+        # Run the migration test
+        go mod tidy
+        go run test_migrations.go
+
+        # Clean up test file
+        rm test_migrations.go
+
+        # Verify final table count
+        TABLE_COUNT=$(psql -h localhost -p 5432 -U ${{ inputs.database-user }} -d ${{ inputs.database-name }} -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';")
+        echo "Final table count: $TABLE_COUNT"
+
+        if [ "$TABLE_COUNT" -lt 8 ]; then
+          echo "Error: Expected at least 8 tables after migrations, but only found $TABLE_COUNT"
+          exit 1
+        fi
+
     - name: Create database config
       shell: bash
       run: |
