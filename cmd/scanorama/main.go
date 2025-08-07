@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -28,7 +29,10 @@ const (
 
 	// Default timeout and concurrency values.
 	defaultTimeoutSeconds = 3
-	defaultConcurrency    = 50
+
+	// Display formatting constants.
+	TableSeparatorWidth = 120
+	defaultConcurrency  = 50
 
 	// Default values for scheduling.
 	defaultMaxAge = 24
@@ -244,6 +248,61 @@ func runDiscovery(args []string) {
 	fmt.Println("Use 'scanorama hosts' to view discovered hosts.")
 }
 
+// scanOptions holds the parsed command line options for scan command.
+type scanOptions struct {
+	targets    string
+	liveHosts  bool
+	ports      string
+	scanType   string
+	profileID  string
+	timeoutSec int
+}
+
+// parseScanArgs parses command line arguments for the scan command.
+func parseScanArgs(args []string) scanOptions {
+	opts := scanOptions{
+		ports:      "22,80,443,8080,8443",
+		scanType:   "connect",
+		timeoutSec: defaultTimeoutSeconds,
+	}
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--targets":
+			if i+1 < len(args) {
+				opts.targets = args[i+1]
+				i++
+			}
+		case "--live-hosts":
+			opts.liveHosts = true
+		case "--ports":
+			if i+1 < len(args) {
+				opts.ports = args[i+1]
+				i++
+			}
+		case "--type":
+			if i+1 < len(args) {
+				opts.scanType = args[i+1]
+				i++
+			}
+		case "--profile":
+			if i+1 < len(args) {
+				opts.profileID = args[i+1]
+				i++
+			}
+		case "--timeout":
+			if i+1 < len(args) {
+				if t, err := strconv.Atoi(args[i+1]); err == nil && t > 0 {
+					opts.timeoutSec = t
+				}
+				i++
+			}
+		}
+	}
+
+	return opts
+}
+
 func runScan(args []string) {
 	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "Usage: scanorama scan [options]\n")
@@ -252,57 +311,18 @@ func runScan(args []string) {
 		fmt.Fprintf(os.Stderr, "  scanorama scan --targets 192.168.1.10-20      # Scan specific targets\n")
 		fmt.Fprintf(os.Stderr, "  scanorama scan --targets localhost --ports 80,443  # Scan specific ports\n")
 		fmt.Fprintf(os.Stderr, "  scanorama scan --targets example.com --type version   # Version detection scan\n")
-		fmt.Fprintf(os.Stderr, "  scanorama scan --targets 10.0.0.1 --type intense     # Comprehensive scan with OS detection\n")
-		fmt.Fprintf(os.Stderr, "  scanorama scan --targets target --type stealth       # Stealthy scan with slow timing\n")
+		fmt.Fprintf(os.Stderr, "  scanorama scan --targets 10.0.0.1 --type intense\n")
+		fmt.Fprintf(os.Stderr, "    # Comprehensive scan with OS detection\n")
+		fmt.Fprintf(os.Stderr, "  scanorama scan --targets target --type stealth\n")
+		fmt.Fprintf(os.Stderr, "    # Stealthy scan with slow timing\n")
 		fmt.Fprintf(os.Stderr, "  scanorama scan --targets host --timeout 30           # Scan with 30 second timeout\n")
 		os.Exit(1)
 	}
 
-	// Parse scan options
-	var targets string
-	var liveHosts bool
-	var ports string = "22,80,443,8080,8443"
-	var scanType string = "connect"
-	var profileID string
-	var timeoutSec int = defaultTimeoutSeconds
-
-	// Parse arguments
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--targets":
-			if i+1 < len(args) {
-				targets = args[i+1]
-				i++
-			}
-		case "--live-hosts":
-			liveHosts = true
-		case "--ports":
-			if i+1 < len(args) {
-				ports = args[i+1]
-				i++
-			}
-		case "--type":
-			if i+1 < len(args) {
-				scanType = args[i+1]
-				i++
-			}
-		case "--profile":
-			if i+1 < len(args) {
-				profileID = args[i+1]
-				i++
-			}
-		case "--timeout":
-			if i+1 < len(args) {
-				if t, err := strconv.Atoi(args[i+1]); err == nil && t > 0 {
-					timeoutSec = t
-				}
-				i++
-			}
-		}
-	}
+	opts := parseScanArgs(args)
 
 	// Validate options
-	if !liveHosts && targets == "" {
+	if !opts.liveHosts && opts.targets == "" {
 		fmt.Fprintf(os.Stderr, "Error: Must specify either --live-hosts or --targets\n")
 		os.Exit(1)
 	}
@@ -320,12 +340,12 @@ func runScan(args []string) {
 
 	ctx := context.Background()
 
-	if liveHosts {
+	if opts.liveHosts {
 		fmt.Println("Scanning discovered live hosts...")
-		err = scanLiveHosts(ctx, database, ports, scanType, profileID, timeoutSec)
+		err = scanLiveHosts(ctx, database, opts.ports, opts.scanType, opts.profileID, opts.timeoutSec)
 	} else {
-		fmt.Printf("Scanning targets: %s\n", targets)
-		err = scanTargets(ctx, database, targets, ports, scanType, profileID, timeoutSec)
+		fmt.Printf("Scanning targets: %s\n", opts.targets)
+		err = scanTargets(ctx, database, opts.targets, opts.ports, opts.scanType, opts.profileID, opts.timeoutSec)
 	}
 
 	if err != nil {
@@ -338,7 +358,7 @@ func runScan(args []string) {
 	fmt.Println("Scan completed successfully")
 }
 
-func scanLiveHosts(ctx context.Context, database *db.DB, ports, scanType, profileID string, timeoutSec int) error {
+func scanLiveHosts(ctx context.Context, database *db.DB, ports, scanType, _ string, timeoutSec int) error {
 	// Get live hosts from database
 	query := `
 		SELECT ip_address, hostname, os_family
@@ -371,6 +391,10 @@ func scanLiveHosts(ctx context.Context, database *db.DB, ports, scanType, profil
 		hosts = append(hosts, ipAddr)
 	}
 
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating over host rows: %w", err)
+	}
+
 	if len(hosts) == 0 {
 		fmt.Println("No live hosts found to scan")
 		return nil
@@ -380,12 +404,13 @@ func scanLiveHosts(ctx context.Context, database *db.DB, ports, scanType, profil
 	return performScan(ctx, database, hosts, ports, scanType, timeoutSec)
 }
 
-func scanTargets(ctx context.Context, database *db.DB, targets, ports, scanType, profileID string, timeoutSec int) error {
+func scanTargets(ctx context.Context, database *db.DB, targets, ports, scanType,
+	_ string, timeoutSec int) error {
 	// For now, split comma-separated targets
 	// TODO: Add support for ranges and CIDR notation
 	hostList := strings.Split(targets, ",")
 
-	var hosts []string
+	hosts := make([]string, 0, 10) // Pre-allocate with reasonable capacity
 	for _, host := range hostList {
 		hosts = append(hosts, strings.TrimSpace(host))
 	}
@@ -427,45 +452,61 @@ func performScan(ctx context.Context, database *db.DB, hosts []string, ports, sc
 	return nil
 }
 
-func runHosts(args []string) {
-	// Parse hosts options
-	var status string
-	var osFamily string
-	var lastSeenHours int = 24
-	var showIgnored bool
+// hostsOptions holds the parsed command line options for hosts command.
+type hostsOptions struct {
+	status        string
+	osFamily      string
+	lastSeenHours int
+	showIgnored   bool
+}
 
-	// Parse arguments
+// parseHostsArgs parses command line arguments for the hosts command.
+func parseHostsArgs(args []string) (hostsOptions, bool) {
+	opts := hostsOptions{
+		lastSeenHours: 24,
+	}
+
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--status":
 			if i+1 < len(args) {
-				status = args[i+1]
+				opts.status = args[i+1]
 				i++
 			}
 		case "--os":
 			if i+1 < len(args) {
-				osFamily = args[i+1]
+				opts.osFamily = args[i+1]
 				i++
 			}
 		case "--last-seen":
 			if i+1 < len(args) {
-				if args[i+1] == "24h" {
-					lastSeenHours = 24
-				} else if args[i+1] == "7d" {
-					lastSeenHours = 168
-				} else if args[i+1] == "30d" {
-					lastSeenHours = 720
+				switch args[i+1] {
+				case "24h":
+					opts.lastSeenHours = 24
+				case "7d":
+					opts.lastSeenHours = 168
+				case "30d":
+					opts.lastSeenHours = 720
 				}
 				i++
 			}
 		case "--include-ignored":
-			showIgnored = true
+			opts.showIgnored = true
 		case "ignore":
 			if i+1 < len(args) {
 				handleHostIgnore(args[i+1])
-				return
+				return opts, true // early return handled
 			}
 		}
+	}
+
+	return opts, false
+}
+
+func runHosts(args []string) {
+	opts, handled := parseHostsArgs(args)
+	if handled {
+		return
 	}
 
 	// Setup database
@@ -480,7 +521,7 @@ func runHosts(args []string) {
 	}()
 
 	ctx := context.Background()
-	err = showHosts(ctx, database, status, osFamily, lastSeenHours, showIgnored)
+	err = showHosts(ctx, database, opts.status, opts.osFamily, opts.lastSeenHours, opts.showIgnored)
 	if err != nil {
 		if err := database.Close(); err != nil {
 			log.Printf("Failed to close database: %v", err)
@@ -489,15 +530,14 @@ func runHosts(args []string) {
 	}
 }
 
-func showHosts(ctx context.Context, database *db.DB, status, osFamily string, lastSeenHours int, showIgnored bool) error {
-	// Build query with filters
-	query := `
+// buildHostsQuery constructs the SQL query and arguments for host filtering.
+func buildHostsQuery(status, osFamily string, lastSeenHours int, showIgnored bool) (query string, args []interface{}) {
+	query = `
 		SELECT ip_address, hostname, mac_address, vendor, os_family, os_name,
 		       status, last_seen, ignore_scanning, discovery_count
 		FROM hosts
 		WHERE 1=1
 	`
-	var args []interface{}
 	argIndex := 1
 
 	if status != "" {
@@ -509,7 +549,7 @@ func showHosts(ctx context.Context, database *db.DB, status, osFamily string, la
 	if osFamily != "" {
 		query += fmt.Sprintf(" AND os_family ILIKE $%d", argIndex)
 		args = append(args, "%"+osFamily+"%")
-		argIndex++
+		_ = argIndex // argIndex will be used when more filters are added
 	}
 
 	if lastSeenHours > 0 {
@@ -521,6 +561,65 @@ func showHosts(ctx context.Context, database *db.DB, status, osFamily string, la
 	}
 
 	query += " ORDER BY last_seen DESC LIMIT 100"
+	return
+}
+
+// displayHostsHeader prints the table header for host results.
+func displayHostsHeader() {
+	fmt.Printf("%-15s %-20s %-17s %-15s %-10s %-10s %-19s %s\n",
+		"IP Address", "Hostname", "MAC Address", "OS Family", "Status", "Ignored", "Last Seen", "Count")
+	fmt.Println(strings.Repeat("-", TableSeparatorWidth))
+}
+
+// formatHostRow scans a database row and formats it for display.
+func formatHostRow(rows *sql.Rows) error {
+	var ipAddr string
+	var hostname, macAddr, vendor, osFamily, osName, status *string
+	var lastSeen time.Time
+	var ignoreScanning bool
+	var discoveryCount int
+
+	err := rows.Scan(&ipAddr, &hostname, &macAddr, &vendor, &osFamily, &osName,
+		&status, &lastSeen, &ignoreScanning, &discoveryCount)
+	if err != nil {
+		return err
+	}
+
+	hostnameStr := ""
+	if hostname != nil {
+		hostnameStr = *hostname
+	}
+
+	macAddrStr := ""
+	if macAddr != nil {
+		macAddrStr = *macAddr
+	}
+
+	osFamilyStr := ""
+	if osFamily != nil {
+		osFamilyStr = *osFamily
+	}
+
+	statusStr := ""
+	if status != nil {
+		statusStr = *status
+	}
+
+	ignoredStr := "No"
+	if ignoreScanning {
+		ignoredStr = "Yes"
+	}
+
+	fmt.Printf("%-15s %-20s %-17s %-15s %-10s %-10s %-19s %d\n",
+		ipAddr, hostnameStr, macAddrStr, osFamilyStr, statusStr, ignoredStr,
+		lastSeen.Format("2006-01-02 15:04:05"), discoveryCount)
+
+	return nil
+}
+
+func showHosts(ctx context.Context, database *db.DB, status, osFamily string,
+	lastSeenHours int, showIgnored bool) error {
+	query, args := buildHostsQuery(status, osFamily, lastSeenHours, showIgnored)
 
 	rows, err := database.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -532,55 +631,14 @@ func showHosts(ctx context.Context, database *db.DB, status, osFamily string, la
 		}
 	}()
 
-	// Display results
-	fmt.Printf("%-15s %-20s %-17s %-15s %-10s %-10s %-19s %s\n",
-		"IP Address", "Hostname", "MAC Address", "OS Family", "Status", "Ignored", "Last Seen", "Count")
-	fmt.Println(strings.Repeat("-", 120))
+	displayHostsHeader()
 
 	count := 0
 	for rows.Next() {
-		var ipAddr string
-		var hostname, macAddr, vendor, osFamily, osName, status *string
-		var lastSeen time.Time
-		var ignoreScanning bool
-		var discoveryCount int
-
-		err := rows.Scan(&ipAddr, &hostname, &macAddr, &vendor, &osFamily, &osName,
-			&status, &lastSeen, &ignoreScanning, &discoveryCount)
-		if err != nil {
+		if err := formatHostRow(rows); err != nil {
 			log.Printf("Failed to scan host row: %v", err)
 			continue
 		}
-
-		hostnameStr := ""
-		if hostname != nil {
-			hostnameStr = *hostname
-		}
-
-		macAddrStr := ""
-		if macAddr != nil {
-			macAddrStr = *macAddr
-		}
-
-		osFamilyStr := ""
-		if osFamily != nil {
-			osFamilyStr = *osFamily
-		}
-
-		statusStr := ""
-		if status != nil {
-			statusStr = *status
-		}
-
-		ignoredStr := "No"
-		if ignoreScanning {
-			ignoredStr = "Yes"
-		}
-
-		fmt.Printf("%-15s %-20s %-17s %-15s %-10s %-10s %-19s %d\n",
-			ipAddr, hostnameStr, macAddrStr, osFamilyStr, statusStr, ignoredStr,
-			lastSeen.Format("2006-01-02 15:04:05"), discoveryCount)
-
 		count++
 	}
 
