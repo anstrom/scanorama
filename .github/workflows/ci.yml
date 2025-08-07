@@ -126,7 +126,7 @@ jobs:
           TEST_DB_NAME: scanorama_test
           TEST_DB_USER: test_user
           TEST_DB_PASSWORD: test_password
-        run: go test -v -race ./...
+        run: go test -v -race -p 1 ./...
 
       - name: Generate coverage
         env:
@@ -137,7 +137,7 @@ jobs:
           TEST_DB_USER: test_user
           TEST_DB_PASSWORD: test_password
         run: |
-          go test -race -coverprofile=coverage.out -covermode=atomic ./...
+          go test -race -p 1 -coverprofile=coverage.out -covermode=atomic ./...
           go tool cover -html=coverage.out -o coverage.html
 
       - name: Upload coverage to Codecov
