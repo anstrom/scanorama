@@ -210,6 +210,8 @@ type ScanTarget struct {
 	Enabled             bool        `db:"enabled" json:"enabled"`
 	CreatedAt           time.Time   `db:"created_at" json:"created_at"`
 	UpdatedAt           time.Time   `db:"updated_at" json:"updated_at"`
+	CreatedBy           *string     `db:"created_by" json:"created_by,omitempty"`
+	ModifiedBy          *string     `db:"modified_by" json:"modified_by,omitempty"`
 }
 
 // DiscoveryJob represents a network discovery job.
@@ -245,28 +247,37 @@ type ScanProfile struct {
 
 // ScheduledJob represents a scheduled scanning or discovery job.
 type ScheduledJob struct {
-	ID             uuid.UUID  `db:"id" json:"id"`
-	Name           string     `db:"name" json:"name"`
-	Type           string     `db:"type" json:"type"` // 'discovery' or 'scan'
-	CronExpression string     `db:"cron_expression" json:"cron_expression"`
-	Config         JSONB      `db:"config" json:"config"`
-	Enabled        bool       `db:"enabled" json:"enabled"`
-	LastRun        *time.Time `db:"last_run" json:"last_run,omitempty"`
-	NextRun        *time.Time `db:"next_run" json:"next_run,omitempty"`
-	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	ID                  uuid.UUID  `db:"id" json:"id"`
+	Name                string     `db:"name" json:"name"`
+	Type                string     `db:"type" json:"type"` // 'discovery' or 'scan'
+	CronExpression      string     `db:"cron_expression" json:"cron_expression"`
+	Config              JSONB      `db:"config" json:"config"`
+	Enabled             bool       `db:"enabled" json:"enabled"`
+	LastRun             *time.Time `db:"last_run" json:"last_run,omitempty"`
+	NextRun             *time.Time `db:"next_run" json:"next_run,omitempty"`
+	CreatedAt           time.Time  `db:"created_at" json:"created_at"`
+	LastRunDurationMs   *int       `db:"last_run_duration_ms" json:"last_run_duration_ms,omitempty"`
+	LastRunStatus       *string    `db:"last_run_status" json:"last_run_status,omitempty"`
+	ConsecutiveFailures *int       `db:"consecutive_failures" json:"consecutive_failures,omitempty"`
+	MaxFailures         *int       `db:"max_failures" json:"max_failures,omitempty"`
 }
 
 // ScanJob represents a scan job execution.
 type ScanJob struct {
-	ID           uuid.UUID  `db:"id" json:"id"`
-	TargetID     uuid.UUID  `db:"target_id" json:"target_id"`
-	ProfileID    *string    `db:"profile_id" json:"profile_id,omitempty"`
-	Status       string     `db:"status" json:"status"`
-	StartedAt    *time.Time `db:"started_at" json:"started_at,omitempty"`
-	CompletedAt  *time.Time `db:"completed_at" json:"completed_at,omitempty"`
-	ErrorMessage *string    `db:"error_message" json:"error_message,omitempty"`
-	ScanStats    JSONB      `db:"scan_stats" json:"scan_stats,omitempty"`
-	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	ID               uuid.UUID  `db:"id" json:"id"`
+	TargetID         uuid.UUID  `db:"target_id" json:"target_id"`
+	ProfileID        *string    `db:"profile_id" json:"profile_id,omitempty"`
+	Status           string     `db:"status" json:"status"`
+	StartedAt        *time.Time `db:"started_at" json:"started_at,omitempty"`
+	CompletedAt      *time.Time `db:"completed_at" json:"completed_at,omitempty"`
+	ErrorMessage     *string    `db:"error_message" json:"error_message,omitempty"`
+	ScanStats        JSONB      `db:"scan_stats" json:"scan_stats,omitempty"`
+	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
+	ProgressPercent  *int       `db:"progress_percent" json:"progress_percent,omitempty"`
+	TimeoutAt        *time.Time `db:"timeout_at" json:"timeout_at,omitempty"`
+	ExecutionDetails JSONB      `db:"execution_details" json:"execution_details,omitempty"`
+	WorkerID         *string    `db:"worker_id" json:"worker_id,omitempty"`
+	CreatedBy        *string    `db:"created_by" json:"created_by,omitempty"`
 }
 
 // OSFingerprint represents OS detection information.
@@ -392,13 +403,16 @@ type Service struct {
 
 // HostHistory represents changes to hosts over time.
 type HostHistory struct {
-	ID        uuid.UUID `db:"id" json:"id"`
-	HostID    uuid.UUID `db:"host_id" json:"host_id"`
-	JobID     uuid.UUID `db:"job_id" json:"job_id"`
-	EventType string    `db:"event_type" json:"event_type"`
-	OldValue  JSONB     `db:"old_value" json:"old_value,omitempty"`
-	NewValue  JSONB     `db:"new_value" json:"new_value,omitempty"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	ID           uuid.UUID `db:"id" json:"id"`
+	HostID       uuid.UUID `db:"host_id" json:"host_id"`
+	JobID        uuid.UUID `db:"job_id" json:"job_id"`
+	EventType    string    `db:"event_type" json:"event_type"`
+	OldValue     JSONB     `db:"old_value" json:"old_value,omitempty"`
+	NewValue     JSONB     `db:"new_value" json:"new_value,omitempty"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+	ChangedBy    *string   `db:"changed_by" json:"changed_by,omitempty"`
+	ChangeReason *string   `db:"change_reason" json:"change_reason,omitempty"`
+	ClientIP     *IPAddr   `db:"client_ip" json:"client_ip,omitempty"`
 }
 
 // ActiveHost represents the active_hosts view.

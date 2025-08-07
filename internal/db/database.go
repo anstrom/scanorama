@@ -239,8 +239,8 @@ func NewScanJobRepository(db *DB) *ScanJobRepository {
 // Create creates a new scan job.
 func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 	query := `
-		INSERT INTO scan_jobs (id, target_id, status)
-		VALUES (:id, :target_id, :status)
+		INSERT INTO scan_jobs (id, target_id, status, started_at, completed_at, scan_stats)
+		VALUES (:id, :target_id, :status, :started_at, :completed_at, :scan_stats)
 		RETURNING created_at`
 
 	if job.ID == uuid.Nil {
@@ -326,16 +326,27 @@ func NewHostRepository(db *DB) *HostRepository {
 // CreateOrUpdate creates a new host or updates existing one.
 func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 	query := `
-		INSERT INTO hosts (id, ip_address, hostname, mac_address, vendor, os_family, os_version, status)
-		VALUES (:id, :ip_address, :hostname, :mac_address, :vendor, :os_family, :os_version, :status)
+		INSERT INTO hosts (
+			id, ip_address, hostname, mac_address, vendor,
+			os_family, os_version, status, discovery_method,
+			response_time_ms, discovery_count
+		)
+		VALUES (
+			:id, :ip_address, :hostname, :mac_address, :vendor,
+			:os_family, :os_version, :status, :discovery_method,
+			:response_time_ms, :discovery_count
+		)
 		ON CONFLICT (ip_address)
 		DO UPDATE SET
-			hostname = EXCLUDED.hostname,
-			mac_address = EXCLUDED.mac_address,
-			vendor = EXCLUDED.vendor,
-			os_family = EXCLUDED.os_family,
-			os_version = EXCLUDED.os_version,
+			hostname = COALESCE(EXCLUDED.hostname, hosts.hostname),
+			mac_address = COALESCE(EXCLUDED.mac_address, hosts.mac_address),
+			vendor = COALESCE(EXCLUDED.vendor, hosts.vendor),
+			os_family = COALESCE(EXCLUDED.os_family, hosts.os_family),
+			os_version = COALESCE(EXCLUDED.os_version, hosts.os_version),
 			status = EXCLUDED.status,
+			discovery_method = COALESCE(EXCLUDED.discovery_method, hosts.discovery_method),
+			response_time_ms = COALESCE(EXCLUDED.response_time_ms, hosts.response_time_ms),
+			discovery_count = COALESCE(EXCLUDED.discovery_count, hosts.discovery_count),
 			last_seen = NOW()
 		RETURNING id, first_seen, last_seen`
 
@@ -410,6 +421,24 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	// Verify all host_ids exist to prevent foreign key constraint violations
+	hostIDs := make(map[uuid.UUID]bool)
+	for _, scan := range scans {
+		hostIDs[scan.HostID] = true
+	}
+
+	for hostID := range hostIDs {
+		var exists bool
+		verifyQuery := `SELECT EXISTS(SELECT 1 FROM hosts WHERE id = $1)`
+		err := tx.QueryRowContext(ctx, verifyQuery, hostID).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("failed to verify host existence for %s: %w", hostID, err)
+		}
+		if !exists {
+			return fmt.Errorf("host %s does not exist, cannot create port scans", hostID)
+		}
+	}
 
 	query := `
 		INSERT INTO port_scans (
