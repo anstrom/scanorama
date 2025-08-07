@@ -89,21 +89,21 @@ test: ## Run all tests (checks for existing DB first)
 
 test-with-containers: test-up ## Run tests with Docker containers
 	@echo "Running tests with Docker containers..."
-	@POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v ./... ; ret=$$? ; \
+	@POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v -p 1 ./... ; ret=$$? ; \
 	make test-down ; \
 	exit $$ret
 
 test-with-existing-db: ## Run tests using existing database
 	@echo "Running tests with existing database..."
 	@echo "Using database on localhost:5432"
-	@POSTGRES_PORT=5432 $(GOTEST) -v ./...
+	@POSTGRES_PORT=5432 $(GOTEST) -v -p 1 ./...
 
 test-debug: ## Run tests with debug output
 	@echo "Running tests with debug output..."
 	@echo "Starting test environment..."
 	@$(TEST_ENV_SCRIPT) up
 	@echo "Running tests with DB_DEBUG=true..."
-	@POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v ./... ; ret=$$? ; \
+	@POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v -p 1 ./... ; ret=$$? ; \
 	$(TEST_ENV_SCRIPT) down ; \
 	exit $$ret
 
@@ -113,14 +113,14 @@ test-local: ## Run tests against local PostgreSQL without Docker
 	@echo "  - Database: scanorama_test"
 	@echo "  - Username: test_user"
 	@echo "  - Password: test_password"
-	@POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v ./...
+	@POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v -p 1 ./...
 
 test-integration: ## Run integration tests with database
 	@echo "Running integration tests..."
 	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
 		DB_TYPE=$$(./scripts/check-db.sh -q 2>/dev/null || echo "unknown"); \
 		echo "Using existing $$DB_TYPE database on localhost:5432"; \
-		$(GOTEST) -v ./test -run TestIntegration -timeout 30m; \
+		$(GOTEST) -v -p 1 ./test -run TestIntegration -timeout 30m; \
 	else \
 		echo "No database found, please start one with 'make db-up' or 'make test-up'"; \
 		exit 1; \
@@ -131,7 +131,7 @@ test-benchmark: ## Run benchmark tests
 	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
 		DB_TYPE=$$(./scripts/check-db.sh -q 2>/dev/null || echo "unknown"); \
 		echo "Using existing $$DB_TYPE database on localhost:5432"; \
-		$(GOTEST) -v ./test -bench=. -benchmem -timeout 30m; \
+		$(GOTEST) -v -p 1 ./test -bench=. -benchmem -timeout 30m; \
 	else \
 		echo "No database found, please start one with 'make db-up' or 'make test-up'"; \
 		exit 1; \
@@ -142,7 +142,7 @@ test-db: ## Run database-specific integration tests
 	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
 		DB_TYPE=$$(./scripts/check-db.sh -q 2>/dev/null || echo "unknown"); \
 		echo "Using existing $$DB_TYPE database on localhost:5432"; \
-		$(GOTEST) -v ./test -run "TestScanWithDatabaseStorage|TestDiscoveryWithDatabaseStorage|TestQueryScanResults" -timeout 15m; \
+		$(GOTEST) -v -p 1 ./test -run "TestScanWithDatabaseStorage|TestDiscoveryWithDatabaseStorage|TestQueryScanResults" -timeout 15m; \
 	else \
 		echo "No database found, please start one with 'make db-up' or 'make test-up'"; \
 		exit 1; \
@@ -158,8 +158,8 @@ test-all: ## Run all tests including integration and benchmarks
 		$(MAKE) db-up; \
 		sleep 3; \
 	fi
-	@$(GOTEST) -v ./... ; ret1=$$? ; \
-	$(GOTEST) -v ./test -timeout 30m ; ret2=$$? ; \
+	@$(GOTEST) -v -p 1 ./... ; ret1=$$? ; \
+	$(GOTEST) -v -p 1 ./test -timeout 30m ; ret2=$$? ; \
 	if [ $$ret1 -ne 0 ] || [ $$ret2 -ne 0 ]; then \
 		echo "Some tests failed" ; \
 		exit 1 ; \
@@ -194,7 +194,7 @@ db-status: ## Check PostgreSQL development container status
 
 coverage: test-up ## Generate test coverage report
 	@echo "Generating coverage report..."
-	@POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -cover ./... -coverprofile=$(COVERAGE_FILE) ; ret=$$? ; \
+	@POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -cover -p 1 ./... -coverprofile=$(COVERAGE_FILE) ; ret=$$? ; \
 	if [ $$ret -eq 0 ]; then \
 		$(GO) tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_FILE).html && \
 		echo "Coverage report: $(COVERAGE_FILE).html" ; \
@@ -257,7 +257,7 @@ check-db-status: ## Check if database is available
 test-with-alternative-port: ## Run tests on alternative port when 5432 is busy
 	@echo "Running tests on alternative port..."
 	@$(TEST_ENV_SCRIPT) up --postgres-port 5433
-	@POSTGRES_PORT=5433 $(GOTEST) -v ./... ; ret=$$? ; \
+	@POSTGRES_PORT=5433 $(GOTEST) -v -p 1 ./... ; ret=$$? ; \
 	POSTGRES_PORT=5433 $(TEST_ENV_SCRIPT) down ; \
 	exit $$ret
 
