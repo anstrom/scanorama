@@ -29,12 +29,13 @@ export PATH := $(GOBIN):$(PATH)
 DOCKER_COMPOSE := docker compose
 COMPOSE_FILE := ./test/docker/docker-compose.yml
 
-.PHONY: help build clean clean-test test test-up test-down test-logs test-debug test-local coverage lint lint-install lint-fix deps install run fmt vet check all version ci-local setup-dev-db setup-hooks db-up db-down db-status
+.PHONY: help build clean clean-test test test-up test-down test-logs test-debug coverage lint lint-fix deps install run ci-local setup-dev-db setup-hooks db-up db-down db-status
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
 	@echo ''
 	@echo 'Quick Start:'
+	@echo '  make setup-hooks  # Set up Git hooks for code quality'
 	@echo '  make setup-dev-db # Set up development database'
 	@echo '  make ci-local     # Run all CI checks locally before pushing'
 	@echo '  make test         # Run tests with database'
@@ -107,64 +108,7 @@ test-debug: ## Run tests with debug output
 	$(TEST_ENV_SCRIPT) down ; \
 	exit $$ret
 
-test-local: ## Run tests against local PostgreSQL without Docker
-	@echo "Running tests directly against local PostgreSQL..."
-	@echo "Make sure PostgreSQL is running on port $(POSTGRES_PORT) with:"
-	@echo "  - Database: scanorama_test"
-	@echo "  - Username: test_user"
-	@echo "  - Password: test_password"
-	@POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v -p 1 ./...
 
-test-integration: ## Run integration tests with database
-	@echo "Running integration tests..."
-	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
-		DB_TYPE=$$(./scripts/check-db.sh -q 2>/dev/null || echo "unknown"); \
-		echo "Using existing $$DB_TYPE database on localhost:5432"; \
-		$(GOTEST) -v -p 1 ./test -run TestIntegration -timeout 30m; \
-	else \
-		echo "No database found, please start one with 'make db-up' or 'make test-up'"; \
-		exit 1; \
-	fi
-
-test-benchmark: ## Run benchmark tests
-	@echo "Running benchmark tests..."
-	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
-		DB_TYPE=$$(./scripts/check-db.sh -q 2>/dev/null || echo "unknown"); \
-		echo "Using existing $$DB_TYPE database on localhost:5432"; \
-		$(GOTEST) -v -p 1 ./test -bench=. -benchmem -timeout 30m; \
-	else \
-		echo "No database found, please start one with 'make db-up' or 'make test-up'"; \
-		exit 1; \
-	fi
-
-test-db: ## Run database-specific integration tests
-	@echo "Running database integration tests..."
-	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
-		DB_TYPE=$$(./scripts/check-db.sh -q 2>/dev/null || echo "unknown"); \
-		echo "Using existing $$DB_TYPE database on localhost:5432"; \
-		$(GOTEST) -v -p 1 ./test -run "TestScanWithDatabaseStorage|TestDiscoveryWithDatabaseStorage|TestQueryScanResults" -timeout 15m; \
-	else \
-		echo "No database found, please start one with 'make db-up' or 'make test-up'"; \
-		exit 1; \
-	fi
-
-test-all: ## Run all tests including integration and benchmarks
-	@echo "Running all tests..."
-	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
-		DB_TYPE=$$(./scripts/check-db.sh -q 2>/dev/null || echo "unknown"); \
-		echo "Using existing $$DB_TYPE database on localhost:5432"; \
-	else \
-		echo "Starting development database..."; \
-		$(MAKE) db-up; \
-		sleep 3; \
-	fi
-	@$(GOTEST) -v -p 1 ./... ; ret1=$$? ; \
-	$(GOTEST) -v -p 1 ./test -timeout 30m ; ret2=$$? ; \
-	if [ $$ret1 -ne 0 ] || [ $$ret2 -ne 0 ]; then \
-		echo "Some tests failed" ; \
-		exit 1 ; \
-	fi
-	@echo "All tests passed!"
 
 setup-dev-db: ## Set up development PostgreSQL database
 	@echo "Setting up development database..."
@@ -206,29 +150,17 @@ coverage: test-up ## Generate test coverage report
 	make test-down ; \
 	exit $$ret
 
-lint-install: ## Install golangci-lint
+lint: ## Run golangci-lint (installs if needed)
 	@echo "Installing latest golangci-lint..."
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) latest
-
-lint: lint-install ## Run golangci-lint
 	@echo "Running golangci-lint..."
 	@$(GOBIN)/golangci-lint run --config .golangci.yml
 
-lint-verbose: lint-install ## Run golangci-lint with verbose output
-	@echo "Running golangci-lint with verbose output..."
-	@$(GOBIN)/golangci-lint run --config .golangci.yml --verbose
-
-lint-fix: lint-install ## Fix formatting and linting issues automatically
+lint-fix: ## Fix formatting and linting issues automatically
+	@echo "Installing latest golangci-lint..."
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) latest
 	@echo "Running golangci-lint with auto-fix..."
 	@$(GOBIN)/golangci-lint run --config .golangci.yml --fix
-
-fmt: ## Format Go files (alias for lint-fix)
-	@echo "Formatting Go files..."
-	@$(MAKE) lint-fix
-
-vet: ## Run go vet (included in golangci-lint)
-	@echo "Running go vet via golangci-lint..."
-	@$(MAKE) lint
 
 deps: ## Download and tidy dependencies
 	@echo "Installing dependencies..."
@@ -243,34 +175,7 @@ run: build ## Build and run the application
 	@echo "Running $(BINARY_NAME)..."
 	@./$(BUILD_DIR)/$(BINARY_NAME)
 
-check-db-status: ## Check if database is available
-	@if nc -z localhost 5432 2>/dev/null; then \
-		echo "✅ Database is available on localhost:5432"; \
-		if psql -h localhost -p 5432 -U scanorama_dev -d scanorama_dev -c "SELECT 1" 2>/dev/null; then \
-			echo "✅ Development database (scanorama_dev) is accessible"; \
-		elif psql -h localhost -p 5432 -U test_user -d scanorama_test -c "SELECT 1" 2>/dev/null; then \
-			echo "✅ Test database (scanorama_test) is accessible"; \
-		else \
-			echo "⚠️  Database is running but not accessible with expected credentials"; \
-		fi \
-	else \
-		echo "❌ No database found on localhost:5432"; \
-		echo "   Start with: make db-up"; \
-	fi
 
-test-with-alternative-port: ## Run tests on alternative port when 5432 is busy
-	@echo "Running tests on alternative port..."
-	@$(TEST_ENV_SCRIPT) up --postgres-port 5433
-	@POSTGRES_PORT=5433 $(GOTEST) -v -p 1 ./... ; ret=$$? ; \
-	POSTGRES_PORT=5433 $(TEST_ENV_SCRIPT) down ; \
-	exit $$ret
-
-test-force-containers: test-down ## Force tests to use Docker containers (stops existing containers first)
-	@echo "Forcing tests to use Docker containers..."
-	@$(MAKE) test-with-containers
-
-check: lint test ## Run lint and tests
-	@echo "All checks passed!"
 
 test-logs: ## View logs from test containers
 	@echo "Viewing test container logs..."
@@ -300,7 +205,5 @@ security-local: ## Run security checks locally
 	@$(MAKE) lint
 	@echo "Running govulncheck..."
 	@$(GOBIN)/govulncheck ./... || echo "⚠️ Vulnerabilities found (informational only)"
-
-all: clean deps check build ## Clean, install dependencies, run checks and build
 
 .DEFAULT_GOAL := help
