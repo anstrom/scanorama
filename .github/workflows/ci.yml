@@ -55,6 +55,42 @@ jobs:
           --health-retries 10
           --health-start-period 30s
 
+      nginx:
+        image: nginx:alpine
+        ports:
+          - 8080:80
+        options: >-
+          --health-cmd "wget --quiet --tries=1 --spider http://localhost:80 || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:alpine
+        ports:
+          - 8379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      openssh:
+        image: lscr.io/linuxserver/openssh-server:latest
+        env:
+          PUID: 1000
+          PGID: 1000
+          PASSWORD_ACCESS: true
+          USER_PASSWORD: testpass
+          USER_NAME: testuser
+        ports:
+          - 8022:2222
+        options: >-
+          --health-cmd "ps aux | grep sshd"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -120,10 +156,144 @@ jobs:
             coverage.html
           retention-days: 30
 
+  migration:
+    name: Migration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: scanorama_migration_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d scanorama_migration_test"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 10
+          --health-start-period 30s
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Download Go dependencies
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Setup database for migration testing
+        uses: ./.github/actions/setup-database
+        with:
+          database-name: scanorama_migration_test
+          database-user: migration_user
+          database-password: migration_pass
+
+      - name: Test migration system with fresh database
+        env:
+          TEST_DB_HOST: localhost
+          TEST_DB_PORT: 5432
+          TEST_DB_NAME: scanorama_migration_test
+          TEST_DB_USER: migration_user
+          TEST_DB_PASSWORD: migration_pass
+        run: |
+          echo "Testing migration system on fresh database..."
+
+          # Create migration test
+          cat > test_migration_fresh.go << 'EOF'
+          package main
+
+          import (
+              "context"
+              "fmt"
+              "log"
+
+              "github.com/anstrom/scanorama/internal/db"
+          )
+
+          func main() {
+              dbConfig := db.Config{
+                  Host:     "localhost",
+                  Port:     5432,
+                  Database: "scanorama_migration_test",
+                  Username: "migration_user",
+                  Password: "migration_pass",
+                  SSLMode:  "disable",
+              }
+
+              ctx := context.Background()
+
+              // Test migration on clean database
+              fmt.Println("Testing migrations on fresh database...")
+              database, err := db.ConnectAndMigrate(ctx, &dbConfig)
+              if err != nil {
+                  log.Fatalf("Fresh migration failed: %v", err)
+              }
+              defer database.Close()
+
+              // Verify all expected migrations
+              var migrations []string
+              err = database.Select(&migrations, "SELECT name FROM schema_migrations ORDER BY id")
+              if err != nil {
+                  log.Fatalf("Failed to query migrations: %v", err)
+              }
+
+              expectedMigrations := []string{"001_initial_schema", "002_performance_improvements"}
+              if len(migrations) != len(expectedMigrations) {
+                  log.Fatalf("Expected %d migrations, got %d: %v", len(expectedMigrations), len(migrations), migrations)
+              }
+
+              for i, expected := range expectedMigrations {
+                  if migrations[i] != expected {
+                      log.Fatalf("Migration %d: expected %s, got %s", i, expected, migrations[i])
+                  }
+              }
+
+              fmt.Printf("✅ All %d migrations applied correctly\n", len(migrations))
+
+              // Test materialized views exist and work
+              err = database.Exec("REFRESH MATERIALIZED VIEW host_summary")
+              if err != nil {
+                  log.Fatalf("Failed to refresh materialized view: %v", err)
+              }
+
+              fmt.Println("✅ Materialized views working correctly")
+
+              // Test new functions exist and work
+              var result int
+              err = database.Get(&result, "SELECT cleanup_old_scan_data(365)")
+              if err != nil {
+                  log.Fatalf("Failed to test cleanup function: %v", err)
+              }
+
+              fmt.Println("✅ Migration functions working correctly")
+
+              fmt.Println("✅ All migration tests passed!")
+          }
+          EOF
+
+          go run test_migration_fresh.go
+          rm test_migration_fresh.go
+
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint, test, migration]
     strategy:
       matrix:
         include:
