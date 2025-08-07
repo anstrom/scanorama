@@ -29,7 +29,7 @@ export PATH := $(GOBIN):$(PATH)
 DOCKER_COMPOSE := docker compose
 COMPOSE_FILE := ./test/docker/docker-compose.yml
 
-.PHONY: help build clean clean-test test test-up test-down test-logs test-debug coverage quality lint format security ci deps install run setup-dev-db setup-hooks db-up db-down db-status
+.PHONY: help build clean test quality lint format security ci setup-dev-db setup-hooks
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -41,6 +41,10 @@ help: ## Show this help message
 	@echo '  make test         # Run tests with database'
 	@echo '  make build        # Build binary'
 	@echo ''
+	@echo 'Environment Variables:'
+	@echo '  DEBUG=true make test    # Run tests with debug output'
+	@echo '  POSTGRES_PORT=5433      # Use custom PostgreSQL port'
+	@echo ''
 	@echo 'All Targets:'
 	@awk '/^[a-zA-Z_-]+:.*?## / { \
 		printf "  \033[36m%-15s\033[0m %s\n", \
@@ -48,7 +52,7 @@ help: ## Show this help message
 		substr($$0, index($$0, "##") + 3) \
 	}' $(MAKEFILE_LIST)
 
-build: deps ## Build the binary
+build: ## Build the binary
 	@echo "Building $(BINARY_NAME) $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
 	@$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/scanorama
@@ -58,48 +62,39 @@ version: ## Show version information
 	@echo "Commit: $(COMMIT)"
 	@echo "Build Time: $(BUILD_TIME)"
 
-clean: test-down ## Remove build artifacts and stop test containers
+clean: ## Remove build artifacts and clean up test files
 	@echo "Cleaning..."
 	@rm -rf $(BUILD_DIR)
-	@rm -f $(COVERAGE_FILE) $(COVERAGE_FILE).html
-
-clean-test: test-down ## Clean up test artifacts
-	@echo "Cleaning test artifacts..."
 	@rm -f $(COVERAGE_FILE) $(COVERAGE_FILE).html
 	@find . -name "*.test" -type f -delete
 	@find . -name "test_*.xml" -type f -delete
 	@find . -name "*.tmp" -type f -delete
-
-test-up: ## Start test containers
-	@echo "Starting test environment..."
-	@$(TEST_ENV_SCRIPT) up
-
-test-down: ## Stop test containers
-	@echo "Stopping test environment..."
-	@$(TEST_ENV_SCRIPT) down
 
 test: ## Run all tests (checks for existing DB first)
 	@echo "Running tests..."
 	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
 		echo "Database available, using existing database..."; \
 		echo "Using database on localhost:5432"; \
-		POSTGRES_PORT=5432 $(GOTEST) -v -p 1 ./...; \
+		if [ "$(DEBUG)" = "true" ]; then \
+			echo "Running with debug output..."; \
+			POSTGRES_PORT=5432 DB_DEBUG=true $(GOTEST) -v -p 1 ./...; \
+		else \
+			POSTGRES_PORT=5432 $(GOTEST) -v -p 1 ./...; \
+		fi; \
 	else \
 		echo "No database found, starting test containers..."; \
 		$(TEST_ENV_SCRIPT) up; \
-		POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v -p 1 ./... ; ret=$$?; \
+		if [ "$(DEBUG)" = "true" ]; then \
+			echo "Running with debug output..."; \
+			POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v -p 1 ./...; \
+		else \
+			POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v -p 1 ./...; \
+		fi; \
+		ret=$$?; \
 		$(TEST_ENV_SCRIPT) down; \
 		exit $$ret; \
 	fi
 
-test-debug: ## Run tests with debug output
-	@echo "Running tests with debug output..."
-	@echo "Starting test environment..."
-	@$(TEST_ENV_SCRIPT) up
-	@echo "Running tests with DB_DEBUG=true..."
-	@POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v -p 1 ./... ; ret=$$? ; \
-	$(TEST_ENV_SCRIPT) down ; \
-	exit $$ret
 
 
 
@@ -110,38 +105,6 @@ setup-dev-db: ## Set up development PostgreSQL database
 setup-hooks: ## Set up Git hooks for code quality checks
 	@echo "Setting up Git hooks..."
 	@./scripts/setup-hooks.sh
-
-db-up: ## Start PostgreSQL container for development
-	@echo "Starting PostgreSQL container for development..."
-	@docker run --name scanorama-dev-postgres \
-		-e POSTGRES_DB=scanorama_dev \
-		-e POSTGRES_USER=scanorama_dev \
-		-e POSTGRES_PASSWORD=dev_password \
-		-p 5432:5432 \
-		-d postgres:16-alpine || echo "Container may already exist"
-	@echo "Waiting for PostgreSQL to be ready..."
-	@sleep 5
-	@echo "PostgreSQL is ready on localhost:5432"
-	@echo "Database: scanorama_dev, User: scanorama_dev, Password: dev_password"
-
-db-down: ## Stop and remove PostgreSQL development container
-	@echo "Stopping PostgreSQL development container..."
-	@docker stop scanorama-dev-postgres || true
-	@docker rm scanorama-dev-postgres || true
-
-db-status: ## Check PostgreSQL development container status
-	@echo "PostgreSQL development container status:"
-	@docker ps -a --filter name=scanorama-dev-postgres --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || echo "Container not found"
-
-coverage: test-up ## Generate test coverage report
-	@echo "Generating coverage report..."
-	@POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -cover -p 1 ./... -coverprofile=$(COVERAGE_FILE) ; ret=$$? ; \
-	if [ $$ret -eq 0 ]; then \
-		$(GO) tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_FILE).html && \
-		echo "Coverage report: $(COVERAGE_FILE).html" ; \
-	fi ; \
-	make test-down ; \
-	exit $$ret
 
 quality: ## Run comprehensive code quality checks (lint + format + security)
 	@echo "Running comprehensive code quality checks..."
@@ -162,24 +125,7 @@ format: ## Format code and fix linting issues automatically
 	@echo "Formatting code and fixing issues..."
 	@$(GOBIN)/golangci-lint run --config .golangci.yml --fix
 
-deps: ## Download and tidy dependencies
-	@echo "Installing dependencies..."
-	@$(GOMOD) download
-	@$(GOMOD) tidy
 
-install: build ## Install binary to GOPATH
-	@echo "Installing $(BINARY_NAME)..."
-	@$(GO) install -ldflags "$(LDFLAGS)" ./cmd/scanorama
-
-run: build ## Build and run the application
-	@echo "Running $(BINARY_NAME)..."
-	@./$(BUILD_DIR)/$(BINARY_NAME)
-
-
-
-test-logs: ## View logs from test containers
-	@echo "Viewing test container logs..."
-	@$(TEST_ENV_SCRIPT) logs
 
 ci: ## Run full CI pipeline locally (quality + test + build)
 	@echo "Running local CI pipeline..."

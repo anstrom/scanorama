@@ -44,15 +44,13 @@ cd scanorama
 
 1. Build and test the project using Make:
 
-```/dev/null/build.sh#L1-8
-# Install dependencies
-make deps
+```/dev/null/build.sh#L1-6
+# Set up development environment
+make setup-hooks
+make setup-dev-db
 
-# Build the project
-make build
-
-# Run tests
-make test
+# Build and test the project
+make ci
 ```
 
 ## Usage
@@ -139,16 +137,15 @@ scanorama/
 
 ```/dev/null/make-help.sh#L1-10
 make help            # Show available commands
+make setup-hooks     # Set up Git hooks for code quality
+make setup-dev-db    # Set up development database
 make ci              # Run full CI pipeline locally
+make test            # Run tests (DEBUG=true for verbose output)
 make build           # Build the binary
-make clean           # Remove build artifacts
-make test            # Run tests
-make coverage        # Generate test coverage report
 make quality         # Run comprehensive code quality checks
 make lint            # Run linters
 make format          # Fix formatting and common issues
-make deps            # Download dependencies
-make install         # Install binary to GOPATH
+make clean           # Remove build artifacts
 ```
 
 
@@ -180,17 +177,17 @@ The project uses Docker to provide a consistent test environment with the follow
 To manage the test environment:
 
 ```/dev/null/test-env.sh#L1-10
-# Start the test environment
-make test-up
+# Set up development database (one-time setup)
+make setup-dev-db
 
-# Stop the test environment
-make test-down
+# Run tests (automatically manages test environment)
+make test
 
-# View test environment logs
-make test-logs
+# Run tests with debug output
+DEBUG=true make test
 
-# Check test environment status
-./test/docker/test-env.sh status
+# Check database status
+./scripts/check-db.sh
 ```
 
 The test environment automatically starts before tests run and stops after tests complete when using `make test`.
@@ -199,12 +196,12 @@ The test environment automatically starts before tests run and stops after tests
 
 To run specific test suites:
 
-```/dev/null/test.sh#L1-18
+```/dev/null/test.sh#L1-12
 # Run all tests
 make test
 
 # Run tests with debug output
-make test-debug
+DEBUG=true make test
 
 # Run scan tests only
 go test ./internal -run "Scan"
@@ -214,9 +211,6 @@ go test ./internal -run "XML"
 
 # Run database tests only
 go test ./internal/db -v
-
-# Generate test coverage report
-make coverage
 ```
 
 #### Test Environment Configuration
@@ -254,38 +248,37 @@ POSTGRES_PORT=5433 make test
 
 1. Fork the repository
 2. Clone your fork and navigate to the project directory
-3. Set up Git hooks for code quality checks:
+3. Set up the complete development environment:
    ```bash
-   make setup-hooks
-   ```
-   This will configure Git to automatically run linting checks before each commit.
-
-4. Set up the development database:
-   ```bash
-   make setup-dev-db
+   make setup-hooks    # Configure Git hooks for code quality
+   make setup-dev-db   # Set up PostgreSQL development database
    ```
 
-5. Run all CI checks locally before pushing:
+4. Verify everything works:
    ```bash
-   make ci
+   make ci             # Run full CI pipeline locally
    ```
+
+This single command runs quality checks, tests, and builds the project to ensure everything is working correctly.
 
 ### Workflow
 
 1. Create your feature branch (`git checkout -b feature/amazing-feature`)
 2. Make your changes
-3. The pre-commit hook will automatically run linting checks
-4. Run tests: `make test`
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+3. Run the full CI pipeline: `make ci`
+   - This runs quality checks, tests, and builds
+   - The pre-commit hook will also run linting checks automatically
+4. Commit your changes (`git commit -m 'Add amazing feature'`)
+5. Push to the branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
 
 ### Code Quality
 
 - All code must pass linting checks (enforced by pre-commit hooks)
 - All tests must pass
 - Follow conventional commit message format
-- Run `make ci` to verify all checks pass before pushing
+- Use `make ci` to run the complete quality pipeline locally
+- Use `DEBUG=true make test` for verbose test output when debugging
 
 
 ## License
