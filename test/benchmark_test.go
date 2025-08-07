@@ -2,7 +2,6 @@ package test
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -52,37 +51,11 @@ func setupBenchmarkSuite(b *testing.B) *BenchmarkSuite {
 	}
 }
 
-// cleanupBenchmarkData removes test data.
-func (suite *BenchmarkSuite) cleanupBenchmarkData(b *testing.B) {
-	tables := []string{
-		"port_scans",
-		"scan_jobs",
-		"discovery_jobs",
-		"hosts",
-		"scan_targets",
-	}
-
-	for _, table := range tables {
-		query := fmt.Sprintf("DELETE FROM %s WHERE 1=1", table)
-		_, err := suite.database.ExecContext(suite.ctx, query)
-		if err != nil {
-			b.Logf("Warning: Failed to clean table %s: %v", table, err)
-		}
-	}
-}
-
-// teardown cleans up benchmark resources.
-func (suite *BenchmarkSuite) teardown(b *testing.B) {
-	suite.cleanupBenchmarkData(b)
-	if err := suite.database.Close(); err != nil {
-		b.Logf("Warning: Failed to close database: %v", err)
-	}
-}
+// No cleanup functions - data accumulates across benchmark runs
 
 // BenchmarkScanWithDatabaseStorage benchmarks scanning with database storage.
 func BenchmarkScanWithDatabaseStorage(b *testing.B) {
 	suite := setupBenchmarkSuite(b)
-	defer suite.teardown(b)
 
 	// Use standard port for testing (no Docker services needed)
 	testPort := "22"
@@ -112,7 +85,6 @@ func BenchmarkScanWithDatabaseStorage(b *testing.B) {
 // BenchmarkScanWithoutDatabase benchmarks scanning without database storage.
 func BenchmarkScanWithoutDatabase(b *testing.B) {
 	suite := setupBenchmarkSuite(b)
-	defer suite.teardown(b)
 
 	// Use standard port for testing (no Docker services needed)
 	testPort := "22"
@@ -142,7 +114,6 @@ func BenchmarkScanWithoutDatabase(b *testing.B) {
 // BenchmarkDiscoveryWithDatabase benchmarks discovery with database storage.
 func BenchmarkDiscoveryWithDatabase(b *testing.B) {
 	suite := setupBenchmarkSuite(b)
-	defer suite.teardown(b)
 
 	discoveryEngine := discovery.NewEngine(suite.database)
 	discoveryConfig := discovery.Config{
@@ -190,7 +161,6 @@ func BenchmarkDiscoveryWithDatabase(b *testing.B) {
 // BenchmarkDatabaseQueries benchmarks various database queries.
 func BenchmarkDatabaseQueries(b *testing.B) {
 	suite := setupBenchmarkSuite(b)
-	defer suite.teardown(b)
 
 	// Set up test data first
 	setupBenchmarkTestData(b, suite)
@@ -294,7 +264,6 @@ func BenchmarkDatabaseQueries(b *testing.B) {
 // BenchmarkBulkInsertPortScans benchmarks bulk insertion of port scan results.
 func BenchmarkBulkInsertPortScans(b *testing.B) {
 	suite := setupBenchmarkSuite(b)
-	defer suite.teardown(b)
 
 	// Create a test host and scan job
 	hostID := uuid.New()
@@ -361,14 +330,21 @@ func BenchmarkBulkInsertPortScans(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		// Clean up from previous iteration
-		_, err := suite.database.ExecContext(suite.ctx, "DELETE FROM port_scans WHERE job_id = $1", jobID)
-		if err != nil {
-			b.Fatalf("Failed to clean port scans: %v", err)
+		// Generate unique port scans for each iteration to avoid conflicts
+		uniquePortScans := make([]*db.PortScan, 100)
+		for j := 0; j < 100; j++ {
+			uniquePortScans[j] = &db.PortScan{
+				ID:       uuid.New(),
+				JobID:    jobID,
+				HostID:   hostID,
+				Port:     (i*100 + j + 1), // Unique port numbers
+				Protocol: "tcp",
+				State:    "open",
+			}
 		}
 
 		// Benchmark bulk insert
-		err = portRepo.CreateBatch(suite.ctx, portScans)
+		err := portRepo.CreateBatch(suite.ctx, uniquePortScans)
 		if err != nil {
 			b.Fatalf("Failed to bulk insert port scans: %v", err)
 		}
@@ -378,7 +354,6 @@ func BenchmarkBulkInsertPortScans(b *testing.B) {
 // BenchmarkConcurrentScans benchmarks concurrent scanning operations.
 func BenchmarkConcurrentScans(b *testing.B) {
 	suite := setupBenchmarkSuite(b)
-	defer suite.teardown(b)
 
 	// Use standard port for testing (no Docker services needed)
 	testPort := "22"

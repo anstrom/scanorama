@@ -15,6 +15,27 @@ if [ "$IS_CI" = "true" ]; then
   export POSTGRES_PORT="5432"
 fi
 
+# Check for port conflicts and set alternative port if needed
+check_port_available() {
+    local port=$1
+    if nc -z localhost "$port" 2>/dev/null; then
+        return 1  # Port is in use
+    else
+        return 0  # Port is available
+    fi
+}
+
+# Set POSTGRES_PORT with conflict detection
+if [ -z "$POSTGRES_PORT" ]; then
+    if check_port_available 5432; then
+        export POSTGRES_PORT="5432"
+        echo "Using default PostgreSQL port: 5432"
+    else
+        export POSTGRES_PORT="5433"
+        echo "Port 5432 is busy, using alternative port: 5433"
+    fi
+fi
+
 # Create fixtures directory if it doesn't exist
 FIXTURES_DIR="${PROJECT_ROOT}/test/fixtures"
 if [ ! -d "$FIXTURES_DIR" ]; then
@@ -65,11 +86,6 @@ docker_compose() {
     # Run from project root to ensure paths are correct
     cd "$PROJECT_ROOT"
 
-    # Ensure we set the PostgreSQL port for local environments if not already set
-    if [ -z "$POSTGRES_PORT" ]; then
-        export POSTGRES_PORT="5432"
-    fi
-
     # In CI environment, we need to handle services differently
     if [ "$IS_CI" = "true" ]; then
         if [ "$1" = "up" ]; then
@@ -82,8 +98,16 @@ docker_compose() {
             docker compose -f "$COMPOSE_FILE" "$@"
         fi
     else
-        # Run all services locally
-        docker compose -f "$COMPOSE_FILE" "$@"
+        # Check if we should skip PostgreSQL if it's already running on 5432
+        if [ "$1" = "up" ] && [ "$POSTGRES_PORT" = "5432" ] && nc -z localhost 5432 2>/dev/null; then
+            echo "PostgreSQL already running on port 5432, skipping container startup"
+            echo "Starting other test services only..."
+            shift
+            docker compose -f "$COMPOSE_FILE" up -d --scale scanorama-postgres=0 "$@"
+        else
+            # Run all services locally
+            docker compose -f "$COMPOSE_FILE" "$@"
+        fi
     fi
 }
 
@@ -93,78 +117,45 @@ up() {
     # Print CI status
     if [ "$IS_CI" = "true" ]; then
         echo "CI mode: Using GitHub Actions PostgreSQL service on port $POSTGRES_PORT"
-    fi
-    # Ensure Flask app directory exists
-    if [ ! -d "${PROJECT_ROOT}/test/docker/flask" ]; then
-        echo "Creating Flask app directory"
-        mkdir -p "${PROJECT_ROOT}/test/docker/flask"
-    fi
-
-    # Ensure Flask requirements directory exists
-    if [ ! -d "${PROJECT_ROOT}/test/docker/flask/requirements" ]; then
-        echo "Creating Flask requirements directory"
-        mkdir -p "${PROJECT_ROOT}/test/docker/flask/requirements"
+    elif nc -z localhost 5432 2>/dev/null && [ "$POSTGRES_PORT" = "5432" ]; then
+        echo "Development mode: Using existing PostgreSQL on port 5432"
+    else
+        echo "Test mode: Starting PostgreSQL container on port $POSTGRES_PORT"
     fi
 
-    # Create default Flask app if it doesn't exist
-    if [ ! -f "${PROJECT_ROOT}/test/docker/flask/app.py" ]; then
-        echo "Creating default Flask app"
-        cat > "${PROJECT_ROOT}/test/docker/flask/app.py" << EOF
-from flask import Flask, jsonify
-
-app = Flask(__name__)
-
-@app.route('/')
-def index():
-    return jsonify({
-        "status": "ok",
-        "service": "scanorama-test-flask"
-    })
-
-@app.route('/health')
-def health():
-    return jsonify({
-        "status": "healthy",
-        "version": "1.0.0"
-    })
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
-EOF
-    fi
-
-    # Create default Flask requirements if they don't exist
-    if [ ! -f "${PROJECT_ROOT}/test/docker/flask/requirements/requirements.txt" ]; then
-        echo "Creating default Flask requirements"
-        cat > "${PROJECT_ROOT}/test/docker/flask/requirements/requirements.txt" << EOF
-flask>=2.0.0,<3.0.0
-werkzeug>=2.0.0,<3.0.0
-EOF
-    fi
 
     docker_compose up -d
     echo "Waiting for services to be ready..."
     sleep 5  # Basic delay to allow services to initialize
 
     # Check if postgres is ready
-    # Only check PostgreSQL container if we're not in CI
-    if [ "$IS_CI" != "true" ]; then
-        for i in {1..30}; do
-            if docker_compose exec scanorama-postgres pg_isready -U test_user -d scanorama_test &>/dev/null; then
-                echo "PostgreSQL is ready on port $POSTGRES_PORT"
-                break
-            fi
-            echo "Waiting for PostgreSQL to be ready ($i/30)..."
-            sleep 1
-        done
-    else
+    if [ "$IS_CI" = "true" ]; then
         # In CI, check if the GitHub Actions PostgreSQL service is ready
         for i in {1..10}; do
-            if psql -h localhost -p $POSTGRES_PORT -U test_user -d scanorama_test -c "SELECT 1" &>/dev/null; then
+            if PGPASSWORD=test_password psql -h localhost -p $POSTGRES_PORT -U test_user -d scanorama_test -c "SELECT 1" &>/dev/null; then
                 echo "GitHub Actions PostgreSQL service is ready on port $POSTGRES_PORT"
                 break
             fi
             echo "Waiting for GitHub Actions PostgreSQL to be ready ($i/10)..."
+            sleep 1
+        done
+    elif nc -z localhost 5432 2>/dev/null && [ "$POSTGRES_PORT" = "5432" ]; then
+        # Check if existing database is accessible
+        if PGPASSWORD=dev_password psql -h localhost -p 5432 -U scanorama_dev -d scanorama_dev -c "SELECT 1" 2>/dev/null; then
+            echo "Existing development database is ready on port 5432"
+        elif PGPASSWORD=test_password psql -h localhost -p 5432 -U test_user -d scanorama_test -c "SELECT 1" 2>/dev/null; then
+            echo "Existing test database is ready on port 5432"
+        else
+            echo "Warning: Database on port 5432 is not accessible with expected credentials"
+        fi
+    else
+        # Check Docker container PostgreSQL
+        for i in {1..30}; do
+            if docker_compose exec scanorama-postgres pg_isready -U test_user -d scanorama_test &>/dev/null; then
+                echo "PostgreSQL container is ready on port $POSTGRES_PORT"
+                break
+            fi
+            echo "Waiting for PostgreSQL container to be ready ($i/30)..."
             sleep 1
         done
     fi
