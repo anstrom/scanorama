@@ -3,7 +3,7 @@ BINARY_NAME ?= scanorama
 BUILD_DIR := build
 COVERAGE_FILE := coverage.out
 TEST_ENV_SCRIPT := ./test/docker/test-env.sh
-DB_DEBUG ?= false
+
 # Use default PostgreSQL port for simplicity
 POSTGRES_PORT ?= 5432
 
@@ -29,7 +29,7 @@ export PATH := $(GOBIN):$(PATH)
 DOCKER_COMPOSE := docker compose
 COMPOSE_FILE := ./test/docker/docker-compose.yml
 
-.PHONY: help build clean clean-test test test-up test-down test-logs test-debug test-local coverage lint lint-install lint-fix deps install run fmt vet check all version ci-local setup-dev-db db-up db-down db-status
+.PHONY: help build clean clean-test test test-up test-down test-logs test-local coverage lint lint-install lint-fix deps install run fmt vet check all version ci-local setup-dev-db db-up db-down db-status
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -98,14 +98,7 @@ test-with-existing-db: ## Run tests using existing database
 	@echo "Using database on localhost:5432"
 	@POSTGRES_PORT=5432 $(GOTEST) -v ./...
 
-test-debug: ## Run tests with debug output
-	@echo "Running tests with debug output..."
-	@echo "Starting test environment..."
-	@$(TEST_ENV_SCRIPT) up
-	@echo "Running tests with DB_DEBUG=true..."
-	@POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v ./... ; ret=$$? ; \
-	$(TEST_ENV_SCRIPT) down ; \
-	exit $$ret
+
 
 test-local: ## Run tests against local PostgreSQL without Docker
 	@echo "Running tests directly against local PostgreSQL..."
@@ -113,7 +106,7 @@ test-local: ## Run tests against local PostgreSQL without Docker
 	@echo "  - Database: scanorama_test"
 	@echo "  - Username: test_user"
 	@echo "  - Password: test_password"
-	@POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v ./...
+	@POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v ./...
 
 test-integration: ## Run integration tests with database
 	@echo "Running integration tests..."

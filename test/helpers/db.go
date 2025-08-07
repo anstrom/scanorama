@@ -131,8 +131,7 @@ func CleanupTestTables(ctx context.Context, database *db.DB) error {
 		query := fmt.Sprintf("DELETE FROM %s WHERE 1=1", table)
 		_, err := database.ExecContext(ctx, query)
 		if err != nil {
-			// Log warning but continue - some tables might not exist
-			fmt.Printf("Warning: Failed to clean table %s: %v\n", table, err)
+			// Continue on error - some tables might not exist
 		}
 	}
 

@@ -42,20 +42,15 @@ func TestNmapLocalhostPingScan(t *testing.T) {
 		t.Fatalf("Failed to create scanner: %v", err)
 	}
 
-	result, warnings, err := scanner.Run()
+	result, _, err := scanner.Run()
 	if err != nil {
 		t.Fatalf("Nmap scan failed: %v", err)
-	}
-
-	if warnings != nil && len(*warnings) > 0 {
-		t.Logf("Scan completed with warnings: %v", *warnings)
 	}
 
 	if result == nil {
 		t.Fatal("Scan result is nil")
 	}
 
-	t.Logf("Scan completed successfully. Found %d hosts", len(result.Hosts))
 }
 
 // TestNmapVersionCheck tests that nmap binary is available and working.
@@ -77,7 +72,6 @@ func TestNmapVersionCheck(t *testing.T) {
 		t.Fatal("Scanner creation returned nil")
 	}
 
-	t.Log("Nmap scanner created successfully - nmap binary is available")
 }
 
 // TestNmapServiceContainer tests scanning the nginx service container.
@@ -94,33 +88,17 @@ func TestNmapServiceContainer(t *testing.T) {
 		t.Fatalf("Failed to create scanner for service container scan: %v", err)
 	}
 
-	result, warnings, err := scanner.Run()
+	result, _, err := scanner.Run()
 	if err != nil {
 		t.Fatalf("Nmap scan of service container failed: %v", err)
-	}
-
-	if warnings != nil && len(*warnings) > 0 {
-		t.Logf("Service container scan completed with warnings: %v", *warnings)
 	}
 
 	if result == nil {
 		t.Fatal("Service container scan result is nil")
 	}
 
-	t.Logf("Service container scan completed. Found %d hosts", len(result.Hosts))
-
 	// Verify we found localhost and check if port 8080 is detected
-	if len(result.Hosts) > 0 {
-		host := result.Hosts[0]
-		t.Logf("Host status: %s", host.Status.State)
-		if len(host.Ports) > 0 {
-			for _, port := range host.Ports {
-				t.Logf("Found port %d/%s in state %s", port.ID, port.Protocol, port.State.State)
-			}
-		} else {
-			t.Log("No ports detected in scan results")
-		}
-	}
+
 }
 
 // TestNmapOptions tests that we can build nmap options like in discovery.
@@ -171,8 +149,6 @@ func TestNmapOptions(t *testing.T) {
 				t.Fatal("Scanner is nil")
 			}
 
-			t.Logf("Successfully created scanner for %s with %d second timeout",
-				tc.targets[0], int(tc.timeout.Seconds()))
 		})
 	}
 }
@@ -195,28 +171,15 @@ func TestNmapAllServicePorts(t *testing.T) {
 		t.Fatalf("Failed to create scanner for service ports: %v", err)
 	}
 
-	result, warnings, err := scanner.Run()
+	result, _, err := scanner.Run()
 	if err != nil {
 		t.Fatalf("Nmap scan of service ports failed: %v", err)
-	}
-
-	if warnings != nil && len(*warnings) > 0 {
-		t.Logf("Service ports scan completed with warnings: %v", *warnings)
 	}
 
 	if result == nil {
 		t.Fatal("Service ports scan result is nil")
 	}
 
-	t.Logf("Service ports scan completed. Found %d hosts", len(result.Hosts))
-
-	if len(result.Hosts) > 0 {
-		host := result.Hosts[0]
-		t.Logf("Host %s status: %s", host.Addresses[0].Addr, host.Status.State)
-		for _, port := range host.Ports {
-			t.Logf("Port %d/%s: %s", port.ID, port.Protocol, port.State.State)
-		}
-	}
 }
 
 // scanServiceHelper performs an nmap scan of a specific service and logs results.
@@ -235,13 +198,9 @@ func scanServiceHelper(t *testing.T, serviceName, port string, expectedPortID ui
 		t.Fatalf("Failed to create scanner for %s service: %v", serviceName, err)
 	}
 
-	result, warnings, err := scanner.Run()
+	result, _, err := scanner.Run()
 	if err != nil {
 		t.Fatalf("Nmap scan of %s service failed: %v", serviceName, err)
-	}
-
-	if warnings != nil && len(*warnings) > 0 {
-		t.Logf("%s service scan completed with warnings: %v", serviceName, *warnings)
 	}
 
 	if result == nil {
@@ -253,12 +212,10 @@ func scanServiceHelper(t *testing.T, serviceName, port string, expectedPortID ui
 		for i := range host.Ports {
 			p := &host.Ports[i]
 			if p.ID == expectedPortID {
-				t.Logf("✅ %s service found on port %s in state: %s", serviceName, port, p.State.State)
 				return
 			}
 		}
 	}
-	t.Logf("⚠️  %s service on port %s not detected", serviceName, port)
 }
 
 // TestNmapNginxService tests scanning the nginx service container.
@@ -292,9 +249,7 @@ func TestNmapDiscoveryPingPrivileges(t *testing.T) {
 
 	result, warnings, err := scanner.Run()
 	if err != nil {
-		t.Logf("❌ ICMP ping scan failed (expected in CI without root): %v", err)
-		t.Log("This explains why discovery fails in CI - ping requires root privileges")
-		return // Expected failure in CI
+		return // Expected failure in CI without root privileges
 	}
 
 	if warnings != nil && len(*warnings) > 0 {

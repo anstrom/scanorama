@@ -35,9 +35,8 @@ var testTables = []string{
 
 // It prioritizes environment variables, then tries config files, then defaults.
 func getTestConfigs() []Config {
-	// Check if running in CI environment or debug mode
+	// Check if running in CI environment
 	isCI := os.Getenv("GITHUB_ACTIONS") == trueString
-	isDebug := os.Getenv("DB_DEBUG") == trueString
 
 	// Use 5432 as the default port (PostgreSQL standard)
 	defaultPort := 5432
@@ -85,13 +84,6 @@ func getTestConfigs() []Config {
 		if err == nil {
 			// Use file config as first preference if no environment variables are set
 			configs = append([]Config{fileConfig}, configs...)
-		}
-	}
-
-	if isDebug {
-		for i, config := range configs {
-			fmt.Printf("Database config %d: host=%s port=%d user=%s db=%s\n",
-				i+1, config.Host, config.Port, config.Username, config.Database)
 		}
 	}
 
@@ -157,10 +149,7 @@ func loadDBConfigFromFile(env string) (Config, error) {
 // getEnvOrDefault gets a string from environment or returns the default.
 func getEnvOrDefault(key, defaultValue string) string {
 	if val, ok := os.LookupEnv(key); ok && val != "" {
-		// Log for debugging
-		if os.Getenv("DB_DEBUG") == trueString {
-			fmt.Printf("Using environment variable %s=%s\n", key, val)
-		}
+
 		return val
 	}
 	return defaultValue
@@ -168,20 +157,15 @@ func getEnvOrDefault(key, defaultValue string) string {
 
 // getEnvIntOrDefault gets an int from environment or returns the default.
 func getEnvIntOrDefault(key string, defaultValue int) int {
-	isDebug := os.Getenv("DB_DEBUG") == trueString
+
 	if val, ok := os.LookupEnv(key); ok && val != "" {
 		var i int
 		if _, err := fmt.Sscanf(val, "%d", &i); err == nil {
-			// Log for debugging
-			if isDebug {
-				fmt.Printf("Using environment variable %s=%d\n", key, i)
-			}
+
 			return i
 		}
 	}
-	if isDebug {
-		fmt.Printf("Using default value for %s=%d\n", key, defaultValue)
-	}
+
 	return defaultValue
 }
 
@@ -198,11 +182,6 @@ func waitForDB(ctx context.Context, config *Config) error {
 		defer cancel()
 	}
 
-	isDebug := os.Getenv("DB_DEBUG") == trueString
-	if isDebug {
-		fmt.Printf("Attempting to connect to database at %s:%d...\n", config.Host, config.Port)
-	}
-
 	for {
 		select {
 		case <-timeoutCtx.Done():
@@ -210,16 +189,9 @@ func waitForDB(ctx context.Context, config *Config) error {
 		case <-ticker.C:
 			db, err := Connect(timeoutCtx, config)
 			if err == nil {
-				if isDebug {
-					fmt.Printf("Successfully connected to database at %s:%d\n", config.Host, config.Port)
-				}
 				_ = db.Close()
 				return nil
 			} else {
-				// Log the error for debugging
-				if isDebug {
-					fmt.Printf("Database connection attempt failed: %v\n", err)
-				}
 				// Add a small delay between connection attempts
 				time.Sleep(500 * time.Millisecond)
 			}
@@ -286,12 +258,8 @@ func cleanupDB(db *DB) error {
 // tryDatabaseConnection attempts to connect to a single database configuration.
 func tryDatabaseConnection(
 	ctx context.Context, t *testing.T, config *Config,
-	configIndex int, isDebug bool,
+	configIndex int,
 ) (*DB, error) {
-	if isDebug {
-		t.Logf("Trying database config %d: host=%s port=%d user=%s db=%s",
-			configIndex+1, config.Host, config.Port, config.Username, config.Database)
-	}
 
 	// Wait for database with longer timeout in CI
 	waitCtx := ctx
@@ -307,33 +275,24 @@ func tryDatabaseConnection(
 
 	// Try to connect to this database
 	if err := waitForDB(waitCtx, config); err != nil {
-		if isDebug {
-			t.Logf("Database config %d not available: %v", configIndex+1, err)
-		}
+
 		return nil, err
 	}
 
 	db, err := Connect(ctx, config)
 	if err != nil {
-		if isDebug {
-			t.Logf("Failed to connect with config %d: %v", configIndex+1, err)
-		}
+
 		return nil, err
 	}
 
-	if isDebug {
-		t.Logf("Successfully connected to database: %s", config.Database)
-	}
 	return db, nil
 }
 
 // findWorkingDatabase tries multiple database configurations until one works.
 func findWorkingDatabase(ctx context.Context, t *testing.T) *DB {
 	configs := getTestConfigs()
-	isDebug := os.Getenv("DB_DEBUG") == trueString
-
 	for i, config := range configs {
-		if db, err := tryDatabaseConnection(ctx, t, &config, i, isDebug); err == nil {
+		if db, err := tryDatabaseConnection(ctx, t, &config, i); err == nil {
 			return db
 		}
 	}

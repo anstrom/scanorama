@@ -272,7 +272,7 @@ func (d *Daemon) setupSignalHandlers() {
 				// TODO: Implement custom action (e.g., status dump)
 			case syscall.SIGUSR2:
 				d.logger.Println("Received SIGUSR2 - custom action not implemented")
-				// TODO: Implement custom action (e.g., toggle debug mode)
+				// TODO: Implement custom action
 			}
 		}
 	}()

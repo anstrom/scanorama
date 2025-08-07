@@ -202,9 +202,6 @@ To run specific test suites:
 # Run all tests
 make test
 
-# Run tests with debug output
-make test-debug
-
 # Run scan tests only
 go test ./internal -run "Scan"
 

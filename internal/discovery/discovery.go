@@ -110,29 +110,20 @@ func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout
 	startTime := time.Now()
 	checkCount := 0
 
-	log.Printf("DEBUG: WaitForCompletion starting for job %s with timeout %v", jobID, timeout)
-
 	for time.Now().Before(deadline) {
 		checkCount++
 		elapsed := time.Since(startTime)
-		remaining := timeout - elapsed
 
-		// Check job status with detailed debugging
+		// Check job status
 		var status string
 		var completedAt *time.Time
 		var hostsDiscovered int
 		query := `SELECT status, completed_at, hosts_discovered FROM discovery_jobs WHERE id = $1`
 		err := e.db.QueryRowContext(ctx, query, jobID).Scan(&status, &completedAt, &hostsDiscovered)
 
-		log.Printf("DEBUG: WaitForCompletion check #%d (elapsed: %v, remaining: %v): "+
-			"job=%s, status=%q, completed_at=%v, hosts=%d, err=%v",
-			checkCount, elapsed.Truncate(time.Millisecond), remaining.Truncate(time.Millisecond),
-			jobID, status, completedAt, hostsDiscovered, err)
-
 		if err != nil {
 			// Job might not exist yet due to background goroutine timing
 			if err.Error() == "sql: no rows in result set" {
-				log.Printf("DEBUG: WaitForCompletion job %s not found yet, continuing to wait...", jobID)
 				time.Sleep(retryInterval)
 				continue
 			}
@@ -143,8 +134,6 @@ func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout
 		switch status {
 		case db.DiscoveryJobStatusCompleted:
 			// Discovery job completed - ensure transaction consistency for CI
-			log.Printf("DEBUG: Discovery job %s completed after %d checks (elapsed: %v), verifying consistency...",
-				jobID, checkCount, elapsed.Truncate(time.Millisecond))
 
 			// Force database consistency check
 			if err := e.ensureHostTransactionConsistency(ctx); err != nil {
@@ -156,18 +145,16 @@ func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout
 				// Verify consistency only if hosts were discovered
 				if err := e.verifyDiscoveryConsistency(ctx, jobID, hostsDiscovered); err != nil {
 					log.Printf("WARNING: Discovery consistency check failed: %v", err)
-					// Don't fail the operation, just log warning for CI debugging
+					// Don't fail the operation, just log warning
 				}
 			}
 
-			log.Printf("DEBUG: Discovery job %s consistency checks completed successfully", jobID)
 			return nil
 		case db.DiscoveryJobStatusFailed:
 			log.Printf("ERROR: Discovery job %s failed after %d checks (elapsed: %v)", jobID, checkCount, elapsed)
 			return fmt.Errorf("discovery job failed")
 		case db.DiscoveryJobStatusRunning:
 			// Still running, continue waiting
-			log.Printf("DEBUG: WaitForCompletion job %s still running, sleeping %v...", jobID, retryInterval)
 			time.Sleep(retryInterval)
 		default:
 			log.Printf("ERROR: WaitForCompletion unknown job status %q for %s", status, jobID)
@@ -175,7 +162,7 @@ func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout
 		}
 	}
 
-	// Timeout reached - get final status for debugging
+	// Timeout reached - get final status
 	var finalStatus string
 	var finalCompletedAt *time.Time
 	var finalHosts int
@@ -223,7 +210,6 @@ func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob)
 	// Check if context is canceled before finalizing
 	select {
 	case <-ctx.Done():
-		log.Printf("DEBUG: Discovery finalization canceled for job %s", job.ID)
 		return // Don't attempt database operations if context is canceled
 	default:
 	}
@@ -236,8 +222,6 @@ func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob)
 
 	if err := e.saveDiscoveryJob(ctx, job); err != nil {
 		log.Printf("Error saving discovery job completion: %v", err)
-	} else {
-		log.Printf("DEBUG: Discovery job %s finalized successfully", job.ID)
 	}
 }
 
@@ -386,12 +370,10 @@ func (e *Engine) saveDiscoveryJob(ctx context.Context, job *db.DiscoveryJob) err
 
 // saveDiscoveredHost saves or updates a discovered host in the database with transaction safety.
 func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.UUID) error {
-	log.Printf("DEBUG: Discovery attempting to save host %s with method=%s", result.IPAddress, result.Method)
 
 	// Check if context is canceled before database operations
 	select {
 	case <-ctx.Done():
-		log.Printf("DEBUG: Discovery save canceled for host %s", result.IPAddress)
 		return ctx.Err()
 	default:
 	}
@@ -399,21 +381,16 @@ func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.
 	// Use explicit transaction for host save to ensure proper commit
 	tx, err := e.db.BeginTx(ctx)
 	if err != nil {
-		log.Printf("DEBUG: Discovery failed to begin transaction for host %s: %v", result.IPAddress, err)
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() {
 		if err != nil {
-			if rollbackErr := tx.Rollback(); rollbackErr != nil {
-				log.Printf("DEBUG: Discovery failed to rollback transaction for host %s: %v",
-					result.IPAddress, rollbackErr)
-			}
+			_ = tx.Rollback()
 		}
 	}()
 
 	// Use UPSERT to handle race conditions between discovery processes
 	// This atomically handles both insert and update cases
-	log.Printf("DEBUG: Discovery upserting host %s with discovery_method=%s", result.IPAddress, result.Method)
 
 	now := time.Now()
 	responseTimeMS := int(result.ResponseTime.Milliseconds())
@@ -421,14 +398,12 @@ func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.
 	err = e.upsertHostTx(ctx, tx, result, now, responseTimeMS)
 
 	if err != nil {
-		log.Printf("DEBUG: Discovery failed to save host %s: %v", result.IPAddress, err)
 		return err
 	}
 
 	// Commit the transaction
 	err = tx.Commit()
 	if err != nil {
-		log.Printf("DEBUG: Discovery failed to commit transaction for host %s: %v", result.IPAddress, err)
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
@@ -438,7 +413,6 @@ func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.
 	err = e.db.QueryRowContext(ctx, verifyQuery, db.IPAddr{IP: result.IPAddress}).Scan(
 		&verificationHost.ID, &verificationHost.DiscoveryMethod)
 	if err != nil {
-		log.Printf("DEBUG: Discovery verification failed for host %s: %v", result.IPAddress, err)
 		return fmt.Errorf("host verification failed after save: %w", err)
 	}
 
@@ -449,13 +423,8 @@ func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.
 	}
 
 	if actualMethod != expectedMethod {
-		log.Printf("DEBUG: Discovery method mismatch for host %s: expected=%s, actual=%s",
-			result.IPAddress, expectedMethod, actualMethod)
 		return fmt.Errorf("discovery method verification failed: expected %s, got %s", expectedMethod, actualMethod)
 	}
-
-	log.Printf("DEBUG: Discovery successfully verified host %s with discovery_method=%s",
-		result.IPAddress, actualMethod)
 	return nil
 }
 
@@ -510,13 +479,6 @@ func (e *Engine) upsertHostTx(ctx context.Context, tx *sqlx.Tx, result *Result,
 		osMethod, osDetails, &result.Method, &responseTimeMS,
 		1, false, now, now, result.Status)
 
-	if err != nil {
-		log.Printf("DEBUG: Discovery failed to upsert host %s: %v", result.IPAddress, err)
-	} else {
-		log.Printf("DEBUG: Discovery successfully upserted host %s with discovery_method=%s",
-			result.IPAddress, result.Method)
-	}
-
 	return err
 }
 
@@ -540,9 +502,6 @@ func (e *Engine) verifyDiscoveryConsistency(ctx context.Context, jobID uuid.UUID
 		return fmt.Errorf("failed to count discovered hosts: %w", err)
 	}
 
-	log.Printf("DEBUG: Discovery consistency check for job %s: expected=%d, actual=%d (method=%s)",
-		jobID, expectedHosts, actualHosts, jobMethod)
-
 	// Allow some tolerance for CI environments
 	if actualHosts < expectedHosts {
 		return fmt.Errorf("consistency mismatch: expected %d hosts with method %s, found %d",
@@ -562,8 +521,6 @@ func (e *Engine) ensureHostTransactionConsistency(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to sync database: %w", err)
 	}
-
-	log.Printf("DEBUG: Database consistency check: %d recent hosts found", syncResult)
 
 	// Small delay to ensure transaction commits in CI
 	time.Sleep(ciConsistencyDelay)
