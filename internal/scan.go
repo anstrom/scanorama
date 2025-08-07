@@ -119,28 +119,28 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 
 	// Add scan type options with enhanced capabilities
 	switch config.ScanType {
-	case "connect":
+	case scanTypeConnect:
 		options = append(options, nmap.WithConnectScan())
 	case "syn":
 		options = append(options, nmap.WithSYNScan())
-	case "version":
+	case scanTypeVersion:
 		options = append(options,
 			nmap.WithServiceInfo(),
 			nmap.WithVersionAll(),
 		)
-	case "intense":
+	case scanTypeIntense:
 		options = append(options,
 			nmap.WithConnectScan(),
 			nmap.WithServiceInfo(),
 			nmap.WithVersionAll(),
 			nmap.WithAggressiveScan(),
 		)
-	case "stealth":
+	case scanTypeStealth:
 		options = append(options,
 			nmap.WithConnectScan(),
 			nmap.WithTimingTemplate(nmap.TimingPolite),
 		)
-	case "comprehensive":
+	case scanTypeComprehensive:
 		options = append(options,
 			nmap.WithConnectScan(),
 			nmap.WithServiceInfo(),
@@ -307,7 +307,8 @@ func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, 
 	scanJob.CompletedAt = &now
 
 	// Store scan statistics
-	statsJSON := fmt.Sprintf(`{"hosts_up": %d, "hosts_down": %d, "total_hosts": %d, "duration_seconds": %d}`,
+	statsJSON := fmt.Sprintf(
+		`{"hosts_up": %d, "hosts_down": %d, "total_hosts": %d, "duration_seconds": %d}`,
 		result.Stats.Up, result.Stats.Down, result.Stats.Total, int(result.Duration.Seconds()))
 	scanJob.ScanStats = db.JSONB(statsJSON)
 
@@ -343,21 +344,35 @@ func createOrGetScanTargetTx(ctx context.Context, tx *sqlx.Tx, config *ScanConfi
 	}
 
 	firstTarget := config.Targets[0]
-	ip := net.ParseIP(firstTarget)
-	var network string
-	if ip == nil {
-		// For hostnames, create a /32 network
-		network = firstTarget + "/32"
-	} else {
-		// Create /32 network for single IP
-		if ip.To4() != nil {
-			network = ip.String() + "/32"
-		} else {
-			network = ip.String() + "/128"
-		}
-	}
-
+	network := resolveTargetToNetwork(firstTarget)
 	return createAdhocScanTargetTx(ctx, tx, network, config)
+}
+
+// resolveTargetToNetwork converts a target (IP or hostname) to CIDR network notation.
+func resolveTargetToNetwork(target string) string {
+	ip := net.ParseIP(target)
+	if ip == nil {
+		return resolveHostnameToNetwork(target)
+	}
+	return ipToNetworkString(ip)
+}
+
+// resolveHostnameToNetwork resolves a hostname to CIDR network notation.
+func resolveHostnameToNetwork(hostname string) string {
+	ips, err := net.LookupIP(hostname)
+	if err != nil || len(ips) == 0 {
+		// If hostname resolution fails, use a placeholder network
+		return "127.0.0.1/32"
+	}
+	return ipToNetworkString(ips[0])
+}
+
+// ipToNetworkString converts an IP address to CIDR network notation with /32 or /128.
+func ipToNetworkString(ip net.IP) string {
+	if ip.To4() != nil {
+		return ip.String() + "/32"
+	}
+	return ip.String() + "/128"
 }
 
 // parseTargetAddress parses a target string as CIDR, IP address, or hostname.
