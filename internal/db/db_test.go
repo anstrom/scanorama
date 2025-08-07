@@ -149,7 +149,6 @@ func loadDBConfigFromFile(env string) (Config, error) {
 // getEnvOrDefault gets a string from environment or returns the default.
 func getEnvOrDefault(key, defaultValue string) string {
 	if val, ok := os.LookupEnv(key); ok && val != "" {
-
 		return val
 	}
 	return defaultValue
@@ -157,11 +156,9 @@ func getEnvOrDefault(key, defaultValue string) string {
 
 // getEnvIntOrDefault gets an int from environment or returns the default.
 func getEnvIntOrDefault(key string, defaultValue int) int {
-
 	if val, ok := os.LookupEnv(key); ok && val != "" {
 		var i int
 		if _, err := fmt.Sscanf(val, "%d", &i); err == nil {
-
 			return i
 		}
 	}
@@ -257,10 +254,9 @@ func cleanupDB(db *DB) error {
 
 // tryDatabaseConnection attempts to connect to a single database configuration.
 func tryDatabaseConnection(
-	ctx context.Context, t *testing.T, config *Config,
-	configIndex int,
+	ctx context.Context, _ *testing.T, config *Config,
+	_ int,
 ) (*DB, error) {
-
 	// Wait for database with longer timeout in CI
 	waitCtx := ctx
 	var cancelFunc context.CancelFunc
@@ -275,13 +271,11 @@ func tryDatabaseConnection(
 
 	// Try to connect to this database
 	if err := waitForDB(waitCtx, config); err != nil {
-
 		return nil, err
 	}
 
 	db, err := Connect(ctx, config)
 	if err != nil {
-
 		return nil, err
 	}
 

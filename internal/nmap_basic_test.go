@@ -50,7 +50,6 @@ func TestNmapLocalhostPingScan(t *testing.T) {
 	if result == nil {
 		t.Fatal("Scan result is nil")
 	}
-
 }
 
 // TestNmapVersionCheck tests that nmap binary is available and working.
@@ -71,7 +70,6 @@ func TestNmapVersionCheck(t *testing.T) {
 	if scanner == nil {
 		t.Fatal("Scanner creation returned nil")
 	}
-
 }
 
 // TestNmapServiceContainer tests scanning the nginx service container.
@@ -98,7 +96,6 @@ func TestNmapServiceContainer(t *testing.T) {
 	}
 
 	// Verify we found localhost and check if port 8080 is detected
-
 }
 
 // TestNmapOptions tests that we can build nmap options like in discovery.
@@ -148,7 +145,6 @@ func TestNmapOptions(t *testing.T) {
 			if scanner == nil {
 				t.Fatal("Scanner is nil")
 			}
-
 		})
 	}
 }
@@ -179,7 +175,6 @@ func TestNmapAllServicePorts(t *testing.T) {
 	if result == nil {
 		t.Fatal("Service ports scan result is nil")
 	}
-
 }
 
 // scanServiceHelper performs an nmap scan of a specific service and logs results.

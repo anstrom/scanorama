@@ -238,6 +238,17 @@ func NewScanJobRepository(db *DB) *ScanJobRepository {
 
 // Create creates a new scan job.
 func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
+	// Verify target exists before creating job to prevent foreign key violations
+	var targetExists bool
+	checkQuery := `SELECT EXISTS(SELECT 1 FROM scan_targets WHERE id = $1)`
+	err := r.db.QueryRowContext(ctx, checkQuery, job.TargetID).Scan(&targetExists)
+	if err != nil {
+		return fmt.Errorf("failed to verify scan target existence: %w", err)
+	}
+	if !targetExists {
+		return fmt.Errorf("scan target %s does not exist, cannot create scan job", job.TargetID)
+	}
+
 	query := `
 		INSERT INTO scan_jobs (id, target_id, status, started_at, completed_at, scan_stats)
 		VALUES (:id, :target_id, :status, :started_at, :completed_at, :scan_stats)
@@ -325,6 +336,15 @@ func NewHostRepository(db *DB) *HostRepository {
 
 // CreateOrUpdate creates a new host or updates existing one.
 func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
+	// Use a transaction for consistency in CI environments
+	tx, err := r.db.BeginTxx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelReadCommitted,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	query := `
 		INSERT INTO hosts (
 			id, ip_address, hostname, mac_address, vendor,
@@ -354,7 +374,7 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 		host.ID = uuid.New()
 	}
 
-	rows, err := r.db.NamedQueryContext(ctx, query, host)
+	rows, err := tx.NamedQuery(query, host)
 	if err != nil {
 		return fmt.Errorf("failed to create or update host: %w", err)
 	}
@@ -368,6 +388,10 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 		if err := rows.Scan(&host.ID, &host.FirstSeen, &host.LastSeen); err != nil {
 			return fmt.Errorf("failed to scan created/updated host: %w", err)
 		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit host transaction: %w", err)
 	}
 
 	return nil
@@ -416,22 +440,41 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 		return nil
 	}
 
-	tx, err := r.db.BeginTxx(ctx, nil)
+	// Use serializable isolation for CI consistency
+	tx, err := r.db.BeginTxx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Verify all host_ids exist to prevent foreign key constraint violations
+	// Verify all required parent records exist with row-level locking
 	hostIDs := make(map[uuid.UUID]bool)
+	jobIDs := make(map[uuid.UUID]bool)
 	for _, scan := range scans {
 		hostIDs[scan.HostID] = true
+		jobIDs[scan.JobID] = true
 	}
 
+	// Verify scan jobs exist and lock them
+	for jobID := range jobIDs {
+		var exists bool
+		verifyJobQuery := `SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE id = $1) FOR UPDATE`
+		err := tx.QueryRowContext(ctx, verifyJobQuery, jobID).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("failed to verify scan job existence for %s: %w", jobID, err)
+		}
+		if !exists {
+			return fmt.Errorf("scan job %s does not exist, cannot create port scans", jobID)
+		}
+	}
+
+	// Verify hosts exist and lock them
 	for hostID := range hostIDs {
 		var exists bool
-		verifyQuery := `SELECT EXISTS(SELECT 1 FROM hosts WHERE id = $1)`
-		err := tx.QueryRowContext(ctx, verifyQuery, hostID).Scan(&exists)
+		verifyHostQuery := `SELECT EXISTS(SELECT 1 FROM hosts WHERE id = $1) FOR UPDATE`
+		err := tx.QueryRowContext(ctx, verifyHostQuery, hostID).Scan(&exists)
 		if err != nil {
 			return fmt.Errorf("failed to verify host existence for %s: %w", hostID, err)
 		}

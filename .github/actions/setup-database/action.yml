@@ -27,10 +27,18 @@ runs:
         sudo apt-get update -qq
         sudo apt-get install -y postgresql-client
 
-    - name: Wait for PostgreSQL
+    - name: Diagnose service containers
       shell: bash
       run: |
-        echo "Waiting for PostgreSQL to be ready..."
+        echo "=== Service Container Diagnostics ==="
+        echo "Docker containers:"
+        docker ps -a || echo "Docker not available"
+        echo ""
+        echo "PostgreSQL service logs:"
+        docker logs $(docker ps -q --filter "ancestor=postgres:17-alpine") 2>/dev/null || echo "No postgres container found"
+        echo ""
+        echo "Network connectivity test:"
+        nc -zv localhost 5432 2PostgreSQL to be ready..."
         for i in {1..60}; do
           if pg_isready -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }}; then
             echo "PostgreSQL is ready!"
@@ -40,39 +48,39 @@ runs:
           sleep 2
         done
 
-    - name: Setup test user and extensions
+    - name: Setup database and extensions
       shell: bash
       run: |
-        echo "Creating test user and setting up database..."
-        psql -h localhost -p 5432 -U postgres -d postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${{ inputs.database-user }}') THEN CREATE USER ${{ inputs.database-user }} WITH PASSWORD '${{ inputs.database-password }}' CREATEDB SUPERUSER; END IF; END \$\$;"
-        psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "GRANT ALL PRIVILEGES ON DATABASE ${{ inputs.database-name }} TO ${{ inputs.database-user }};"
-
         echo "Setting up database extensions..."
         psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
         psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "CREATE EXTENSION IF NOT EXISTS \"btree_gist\";"
 
         echo "Verifying database setup..."
         psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "SELECT version();"
-        psql -h localhost -p 5432 -U ${{ inputs.database-user }} -d ${{ inputs.database-name }} -c "SELECT current_database(), current_user;"
+        psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "SELECT current_database(), current_user;"
 
     - name: Initialize database schema
       shell: bash
       run: |
         echo "Initializing database schema..."
         if [ -f "internal/db/001_initial_schema.sql" ]; then
-          psql -h localhost -p 5432 -U ${{ inputs.database-user }} -d ${{ inputs.database-name }} -f internal/db/001_initial_schema.sql
+          psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -f internal/db/001_initial_schema.sql
           echo "Schema initialization completed"
 
           # Verify tables were created
-          TABLE_COUNT=$(psql -h localhost -p 5432 -U ${{ inputs.database-user }} -d ${{ inputs.database-name }} -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';")
+          TABLE_COUNT=$(psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" | tr -d ' ')
           echo "Created $TABLE_COUNT tables"
 
           if [ "$TABLE_COUNT" -lt 3 ]; then
             echo "Error: Expected at least 3 tables, but only found $TABLE_COUNT"
+            echo "Available tables:"
+            psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "\dt"
             exit 1
           fi
         else
           echo "Warning: Schema file not found at internal/db/001_initial_schema.sql"
+          echo "Available files:"
+          find . -name "*.sql" -type f | head -10
         fi
 
     - name: Create database config
@@ -84,7 +92,17 @@ runs:
           host: localhost
           port: 5432
           database: ${{ inputs.database-name }}
-          username: ${{ inputs.database-user }}
-          password: ${{ inputs.database-password }}
+          username: postgres
+          password: postgres
+          ssl_mode: disable
+        ci:
+          host: localhost
+          port: 5432
+          database: ${{ inputs.database-name }}
+          username: postgres
+          password: postgres
           ssl_mode: disable
         EOF
+
+        echo "Database config created:"
+        cat test/fixtures/database.yml

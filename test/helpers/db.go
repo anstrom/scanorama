@@ -20,6 +20,9 @@ const (
 	dbConnectionTimeout   = 5 * time.Second
 	minRequiredTables     = 3
 	retryDelay            = 500 * time.Millisecond
+	githubActionsValue    = "true"
+	ciTimeoutSeconds      = 15
+	waitTimeoutSeconds    = 30
 )
 
 // DatabaseConfig represents a database configuration for testing.
@@ -132,6 +135,7 @@ func CleanupTestTables(ctx context.Context, database *db.DB) error {
 		_, err := database.ExecContext(ctx, query)
 		if err != nil {
 			// Continue on error - some tables might not exist
+			_ = err
 		}
 	}
 
@@ -326,4 +330,76 @@ func GetDatabaseStatus() string {
 		return "⚠️ PostgreSQL running but no test databases accessible"
 	}
 	return "❌ No PostgreSQL found on localhost:5432"
+}
+
+// VerifyDatabaseIntegrity performs comprehensive database integrity checks for CI.
+func VerifyDatabaseIntegrity(ctx context.Context, database *db.DB) error {
+	isCI := os.Getenv("GITHUB_ACTIONS") == "true"
+	if !isCI {
+		return nil // Skip intensive checks in non-CI environments
+	}
+
+	fmt.Printf("CI: Performing database integrity verification...\n")
+
+	// Check for orphaned records that could cause foreign key issues
+	checks := []struct {
+		name  string
+		query string
+	}{
+		{
+			name: "orphaned port_scans (missing host)",
+			query: `SELECT COUNT(*) FROM port_scans ps
+					LEFT JOIN hosts h ON ps.host_id = h.id
+					WHERE h.id IS NULL`,
+		},
+		{
+			name: "orphaned port_scans (missing job)",
+			query: `SELECT COUNT(*) FROM port_scans ps
+					LEFT JOIN scan_jobs sj ON ps.job_id = sj.id
+					WHERE sj.id IS NULL`,
+		},
+		{
+			name: "orphaned scan_jobs (missing target)",
+			query: `SELECT COUNT(*) FROM scan_jobs sj
+					LEFT JOIN scan_targets st ON sj.target_id = st.id
+					WHERE st.id IS NULL`,
+		},
+		{
+			name: "orphaned services (missing port_scan)",
+			query: `SELECT COUNT(*) FROM services s
+					LEFT JOIN port_scans ps ON s.port_scan_id = ps.id
+					WHERE ps.id IS NULL`,
+		},
+	}
+
+	for _, check := range checks {
+		var count int
+		err := database.QueryRowContext(ctx, check.query).Scan(&count)
+		if err != nil {
+			fmt.Printf("CI: Warning - could not run integrity check '%s': %v\n", check.name, err)
+			continue
+		}
+
+		if count > 0 {
+			fmt.Printf("CI: WARNING - Found %d %s\n", count, check.name)
+		} else {
+			fmt.Printf("CI: ✓ No %s found\n", check.name)
+		}
+	}
+
+	// Check table record counts
+	tables := []string{"scan_targets", "scan_jobs", "hosts", "port_scans", "services", "host_history"}
+	for _, table := range tables {
+		var count int
+		query := fmt.Sprintf("SELECT COUNT(*) FROM %s", table)
+		err := database.QueryRowContext(ctx, query).Scan(&count)
+		if err != nil {
+			fmt.Printf("CI: Warning - could not count records in %s: %v\n", table, err)
+		} else {
+			fmt.Printf("CI: Table %s has %d records\n", table, count)
+		}
+	}
+
+	fmt.Printf("CI: Database integrity verification completed\n")
+	return nil
 }

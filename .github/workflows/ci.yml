@@ -115,8 +115,8 @@ jobs:
         uses: ./.github/actions/setup-database
         with:
           database-name: scanorama_test
-          database-user: test_user
-          database-password: test_password
+          database-user: postgres
+          database-password: postgres
 
       - name: Run tests
         env:
@@ -124,8 +124,8 @@ jobs:
           TEST_DB_HOST: localhost
           TEST_DB_PORT: 5432
           TEST_DB_NAME: scanorama_test
-          TEST_DB_USER: test_user
-          TEST_DB_PASSWORD: test_password
+          TEST_DB_USER: postgres
+          TEST_DB_PASSWORD: postgres
         run: go test -v -race ./...
 
       - name: Generate coverage
@@ -134,8 +134,8 @@ jobs:
           TEST_DB_HOST: localhost
           TEST_DB_PORT: 5432
           TEST_DB_NAME: scanorama_test
-          TEST_DB_USER: test_user
-          TEST_DB_PASSWORD: test_password
+          TEST_DB_USER: postgres
+          TEST_DB_PASSWORD: postgres
         run: |
           go test -race -coverprofile=coverage.out -covermode=atomic ./...
           go tool cover -html=coverage.out -o coverage.html

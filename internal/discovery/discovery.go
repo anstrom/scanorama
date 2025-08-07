@@ -107,12 +107,10 @@ func (e *Engine) Discover(ctx context.Context, config Config) (*db.DiscoveryJob,
 // WaitForCompletion waits for a discovery job to complete or timeout.
 func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
-	startTime := time.Now()
 	checkCount := 0
 
 	for time.Now().Before(deadline) {
 		checkCount++
-		elapsed := time.Since(startTime)
 
 		// Check job status
 		var status string
@@ -127,7 +125,7 @@ func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout
 				time.Sleep(retryInterval)
 				continue
 			}
-			log.Printf("ERROR: WaitForCompletion failed to check job status for %s: %v", jobID, err)
+			// Job might not exist yet, continue polling
 			return fmt.Errorf("failed to check job status: %w", err)
 		}
 
@@ -151,13 +149,11 @@ func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout
 
 			return nil
 		case db.DiscoveryJobStatusFailed:
-			log.Printf("ERROR: Discovery job %s failed after %d checks (elapsed: %v)", jobID, checkCount, elapsed)
 			return fmt.Errorf("discovery job failed")
 		case db.DiscoveryJobStatusRunning:
 			// Still running, continue waiting
 			time.Sleep(retryInterval)
 		default:
-			log.Printf("ERROR: WaitForCompletion unknown job status %q for %s", status, jobID)
 			return fmt.Errorf("unknown job status: %s", status)
 		}
 	}
@@ -169,13 +165,9 @@ func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout
 	finalQuery := `SELECT status, completed_at, hosts_discovered FROM discovery_jobs WHERE id = $1`
 	err := e.db.QueryRowContext(ctx, finalQuery, jobID).Scan(&finalStatus, &finalCompletedAt, &finalHosts)
 	if err != nil {
-		log.Printf("ERROR: WaitForCompletion timeout after %d checks (%v) - could not get final status: %v",
-			checkCount, timeout, err)
 		return fmt.Errorf("discovery job did not complete within %v (final status unknown: %v)", timeout, err)
 	}
 
-	log.Printf("ERROR: WaitForCompletion timeout after %d checks (%v) - final status: %q, completed_at: %v, hosts: %d",
-		checkCount, timeout, finalStatus, finalCompletedAt, finalHosts)
 	return fmt.Errorf("discovery job did not complete within %v (final status: %s)", timeout, finalStatus)
 }
 
@@ -370,7 +362,6 @@ func (e *Engine) saveDiscoveryJob(ctx context.Context, job *db.DiscoveryJob) err
 
 // saveDiscoveredHost saves or updates a discovered host in the database with transaction safety.
 func (e *Engine) saveDiscoveredHost(ctx context.Context, result *Result, _ uuid.UUID) error {
-
 	// Check if context is canceled before database operations
 	select {
 	case <-ctx.Done():

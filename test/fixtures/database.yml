@@ -3,8 +3,8 @@ test:
   host: localhost
   port: 5432
   database: scanorama_test
-  username: test_user
-  password: test_password
+  username: postgres
+  password: postgres
   ssl_mode: disable
   max_open_conns: 5
   max_idle_conns: 2
@@ -16,8 +16,8 @@ ci:
   host: localhost
   port: 5432
   database: scanorama_test
-  username: test_user
-  password: test_password
+  username: postgres
+  password: postgres
   ssl_mode: disable
   max_open_conns: 5
   max_idle_conns: 2

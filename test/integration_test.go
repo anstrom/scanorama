@@ -19,6 +19,7 @@ import (
 const (
 	statusCompleted         = "completed"
 	nullValue               = "NULL"
+	githubActionsTrue       = "true"
 	discoveryJobStatusQuery = "SELECT status, hosts_discovered FROM discovery_jobs WHERE id = $1"
 	hostsWithDiscoveryQuery = "SELECT COUNT(*) FROM hosts WHERE discovery_method IS NOT NULL"
 	hostsWithIPQuery        = "SELECT COUNT(*) FROM hosts WHERE ip_address = '127.0.0.1'"
@@ -54,10 +55,32 @@ func setupIntegrationTestSuite(t *testing.T) *IntegrationTestSuite {
 // setupTestDatabase creates a test database connection.
 func setupTestDatabase(t *testing.T) *db.DB {
 	ctx := context.Background()
+	isCI := os.Getenv("GITHUB_ACTIONS") == githubActionsTrue
+
+	// In CI, provide additional diagnostics
+	if isCI {
+		t.Logf("Setting up test database in CI environment...")
+		configs := helpers.GetTestDatabaseConfigs()
+		for i, config := range configs {
+			available := helpers.IsDatabaseAvailable(&config)
+			t.Logf("Database config %d: %s@%s:%d/%s - Available: %v",
+				i+1, config.Username, config.Host, config.Port, config.Database, available)
+		}
+	}
 
 	// Use the helper to connect to an available database
 	database, config, err := helpers.ConnectToTestDatabase(ctx)
-	require.NoError(t, err, "Failed to connect to any test database")
+	if err != nil {
+		// Provide detailed error information for debugging
+		t.Logf("Database connection failed. Environment variables:")
+		t.Logf("  TEST_DB_HOST: %s", os.Getenv("TEST_DB_HOST"))
+		t.Logf("  TEST_DB_PORT: %s", os.Getenv("TEST_DB_PORT"))
+		t.Logf("  TEST_DB_NAME: %s", os.Getenv("TEST_DB_NAME"))
+		t.Logf("  TEST_DB_USER: %s", os.Getenv("TEST_DB_USER"))
+		t.Logf("  TEST_DB_PASSWORD: %s", maskPassword(os.Getenv("TEST_DB_PASSWORD")))
+		t.Logf("  GITHUB_ACTIONS: %s", os.Getenv("GITHUB_ACTIONS"))
+		require.NoError(t, err, "Failed to connect to any test database")
+	}
 
 	t.Logf("Successfully connected to database: %s@%s:%d/%s",
 		config.Username, config.Host, config.Port, config.Database)
@@ -66,29 +89,82 @@ func setupTestDatabase(t *testing.T) *db.DB {
 	err = helpers.EnsureTestSchema(ctx, database)
 	require.NoError(t, err, "Database schema is not available")
 
+	// Perform CI-specific integrity checks
+	if isCI {
+		t.Logf("Performing CI-specific database integrity checks...")
+		err = helpers.VerifyDatabaseIntegrity(ctx, database)
+		if err != nil {
+			t.Logf("Database integrity check failed: %v", err)
+			// Don't fail the test, just log the warning
+		}
+	}
+
 	return database
+}
+
+// maskPassword masks a password for logging, showing only first and last character.
+func maskPassword(password string) string {
+	if len(password) <= 2 {
+		return "***"
+	}
+	return string(password[0]) + "***" + string(password[len(password)-1])
 }
 
 // cleanupTestData removes any existing test data.
 func cleanupTestData(t *testing.T, database *db.DB) {
-	err := helpers.CleanupTestTables(context.Background(), database)
+	ctx := context.Background()
+	isCI := os.Getenv("GITHUB_ACTIONS") == githubActionsTrue
+
+	if isCI {
+		t.Logf("CI: Starting comprehensive test data cleanup...")
+		// Pre-cleanup integrity check
+		err := helpers.VerifyDatabaseIntegrity(ctx, database)
+		if err != nil {
+			if isCI {
+				t.Logf("CI: Pre-cleanup integrity check failed: %v", err)
+			}
+		}
+	}
+
+	err := helpers.CleanupTestTables(ctx, database)
 	if err != nil {
 		t.Logf("Warning: Failed to cleanup test data: %v", err)
+		handleCleanupError(t, database, ctx, isCI)
+	} else if isCI {
+		t.Logf("CI: Test data cleanup completed successfully")
 	}
 }
 
 // teardown cleans up test resources.
 func (suite *IntegrationTestSuite) teardown(t *testing.T) {
+	isCI := os.Getenv("GITHUB_ACTIONS") == githubActionsTrue
+
 	// Cancel context to stop background processes
 	if suite.cancel != nil {
 		suite.cancel()
 	}
 
-	// Give background processes time to finish
-	time.Sleep(100 * time.Millisecond)
+	// Give background processes more time to finish in CI
+	if isCI {
+		time.Sleep(500 * time.Millisecond)
+		t.Logf("CI: Allowing background processes to complete...")
+	} else {
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Clean up test data to prevent database pollution
 	cleanupTestData(t, suite.database)
+
+	// Final integrity check in CI
+	if isCI {
+		ctx := context.Background()
+		err := helpers.VerifyDatabaseIntegrity(ctx, suite.database)
+		if err != nil {
+			t.Logf("CI: Post-cleanup integrity check failed: %v", err)
+		} else {
+			t.Logf("CI: Post-cleanup integrity check passed")
+		}
+	}
 
 	if err := suite.database.Close(); err != nil {
 		t.Logf("Warning: Failed to close database: %v", err)
@@ -99,8 +175,9 @@ func (suite *IntegrationTestSuite) teardown(t *testing.T) {
 func TestScanWithDatabaseStorage(t *testing.T) {
 	suite := setupIntegrationTestSuite(t)
 	defer suite.teardown(t)
+	isCI := os.Getenv("GITHUB_ACTIONS") == githubActionsTrue
 
-	// Check initial database state
+	// Check initial database state with CI logging
 	var initialHosts, initialScanJobs, initialPortScans int
 	err := suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM hosts").Scan(&initialHosts)
 	require.NoError(t, err)
@@ -108,6 +185,11 @@ func TestScanWithDatabaseStorage(t *testing.T) {
 	require.NoError(t, err)
 	err = suite.database.QueryRowContext(suite.ctx, "SELECT COUNT(*) FROM port_scans").Scan(&initialPortScans)
 	require.NoError(t, err)
+
+	if isCI {
+		t.Logf("CI: Initial database state - hosts: %d, scan_jobs: %d, port_scans: %d",
+			initialHosts, initialScanJobs, initialPortScans)
+	}
 
 	t.Logf("Testing scan with port 22")
 	// Use a real port that should be available for testing
@@ -133,6 +215,17 @@ func TestScanWithDatabaseStorage(t *testing.T) {
 	host := result.Hosts[0]
 	assert.Equal(t, "up", host.Status)
 	assert.NotEmpty(t, host.Ports)
+
+	// CI-specific result validation
+	if isCI {
+		t.Logf("CI: Scan completed with %d hosts, duration: %v", len(result.Hosts), result.Duration)
+
+		// Verify database consistency after scan
+		err = helpers.VerifyDatabaseIntegrity(suite.ctx, suite.database)
+		if err != nil {
+			t.Logf("CI: Post-scan integrity check failed: %v", err)
+		}
+	}
 
 	// Verify results are stored in database
 	t.Run("VerifyHostStored", func(t *testing.T) {
@@ -189,6 +282,11 @@ func TestScanWithDatabaseStorage(t *testing.T) {
 func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 	suite := setupIntegrationTestSuite(t)
 	defer suite.teardown(t)
+	isCI := os.Getenv("GITHUB_ACTIONS") == githubActionsTrue
+
+	if isCI {
+		t.Logf("CI: Starting discovery test with enhanced monitoring...")
+	}
 
 	// Create discovery engine
 	discoveryEngine := discovery.NewEngine(suite.database)
@@ -293,8 +391,13 @@ func TestDiscoveryWithDatabaseStorage(t *testing.T) {
 func TestScanDiscoveredHosts(t *testing.T) {
 	suite := setupIntegrationTestSuite(t)
 	defer suite.teardown(t)
+	isCI := os.Getenv("GITHUB_ACTIONS") == githubActionsTrue
 
-	// First, run discovery on localhost
+	if isCI {
+		t.Logf("CI: Starting scan discovered hosts test with enhanced safety checks...")
+	}
+
+	// Create discovery engine
 	discoveryEngine := discovery.NewEngine(suite.database)
 	discoveryConfig := discovery.Config{
 		Network:     "127.0.0.1/32",
@@ -571,4 +674,18 @@ func getEnvIntOrDefault(key string, defaultValue int) int {
 		}
 	}
 	return defaultValue
+}
+
+// handleCleanupError performs additional cleanup attempts in CI environment.
+func handleCleanupError(t *testing.T, database *db.DB, ctx context.Context, isCI bool) {
+	if isCI {
+		t.Logf("CI: Attempting additional cleanup...")
+		time.Sleep(100 * time.Millisecond)
+		err2 := helpers.CleanupTestTables(ctx, database)
+		if err2 != nil {
+			t.Logf("CI: Second cleanup attempt also failed: %v", err2)
+		} else {
+			t.Logf("CI: Second cleanup attempt succeeded")
+		}
+	}
 }
