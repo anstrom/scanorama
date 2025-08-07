@@ -77,11 +77,26 @@ test-down: ## Stop test containers
 	@echo "Stopping test environment..."
 	@$(TEST_ENV_SCRIPT) down
 
-test: test-up ## Run all tests
+test: ## Run all tests (checks for existing DB first)
 	@echo "Running tests..."
+	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
+		echo "Database available, using existing database..."; \
+		$(MAKE) test-with-existing-db; \
+	else \
+		echo "No database found, starting test containers..."; \
+		$(MAKE) test-with-containers; \
+	fi
+
+test-with-containers: test-up ## Run tests with Docker containers
+	@echo "Running tests with Docker containers..."
 	@POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v ./... ; ret=$$? ; \
 	make test-down ; \
 	exit $$ret
+
+test-with-existing-db: ## Run tests using existing database
+	@echo "Running tests with existing database..."
+	@echo "Using database on localhost:5432"
+	@POSTGRES_PORT=5432 $(GOTEST) -v ./...
 
 test-debug: ## Run tests with debug output
 	@echo "Running tests with debug output..."
@@ -102,22 +117,47 @@ test-local: ## Run tests against local PostgreSQL without Docker
 
 test-integration: ## Run integration tests with database
 	@echo "Running integration tests..."
-	@echo "Make sure PostgreSQL is running on port 5432 with development database"
-	@$(GOTEST) -v ./test -run TestIntegration -timeout 30m
+	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
+		DB_TYPE=$$(./scripts/check-db.sh -q 2>/dev/null || echo "unknown"); \
+		echo "Using existing $$DB_TYPE database on localhost:5432"; \
+		$(GOTEST) -v ./test -run TestIntegration -timeout 30m; \
+	else \
+		echo "No database found, please start one with 'make db-up' or 'make test-up'"; \
+		exit 1; \
+	fi
 
 test-benchmark: ## Run benchmark tests
 	@echo "Running benchmark tests..."
-	@echo "Make sure PostgreSQL is running on port 5432 with development database"
-	@$(GOTEST) -v ./test -bench=. -benchmem -timeout 30m
+	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
+		DB_TYPE=$$(./scripts/check-db.sh -q 2>/dev/null || echo "unknown"); \
+		echo "Using existing $$DB_TYPE database on localhost:5432"; \
+		$(GOTEST) -v ./test -bench=. -benchmem -timeout 30m; \
+	else \
+		echo "No database found, please start one with 'make db-up' or 'make test-up'"; \
+		exit 1; \
+	fi
 
 test-db: ## Run database-specific integration tests
 	@echo "Running database integration tests..."
-	@echo "Make sure PostgreSQL is running on port 5432 with development database"
-	@$(GOTEST) -v ./test -run "TestScanWithDatabaseStorage|TestDiscoveryWithDatabaseStorage|TestQueryScanResults" -timeout 15m
+	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
+		DB_TYPE=$$(./scripts/check-db.sh -q 2>/dev/null || echo "unknown"); \
+		echo "Using existing $$DB_TYPE database on localhost:5432"; \
+		$(GOTEST) -v ./test -run "TestScanWithDatabaseStorage|TestDiscoveryWithDatabaseStorage|TestQueryScanResults" -timeout 15m; \
+	else \
+		echo "No database found, please start one with 'make db-up' or 'make test-up'"; \
+		exit 1; \
+	fi
 
-test-all: db-up ## Run all tests including integration and benchmarks
+test-all: ## Run all tests including integration and benchmarks
 	@echo "Running all tests..."
-	@sleep 3
+	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
+		DB_TYPE=$$(./scripts/check-db.sh -q 2>/dev/null || echo "unknown"); \
+		echo "Using existing $$DB_TYPE database on localhost:5432"; \
+	else \
+		echo "Starting development database..."; \
+		$(MAKE) db-up; \
+		sleep 3; \
+	fi
 	@$(GOTEST) -v ./... ; ret1=$$? ; \
 	$(GOTEST) -v ./test -timeout 30m ; ret2=$$? ; \
 	if [ $$ret1 -ne 0 ] || [ $$ret2 -ne 0 ]; then \
@@ -199,6 +239,32 @@ run: build ## Build and run the application
 	@echo "Running $(BINARY_NAME)..."
 	@./$(BUILD_DIR)/$(BINARY_NAME)
 
+check-db-status: ## Check if database is available
+	@if nc -z localhost 5432 2>/dev/null; then \
+		echo "✅ Database is available on localhost:5432"; \
+		if psql -h localhost -p 5432 -U scanorama_dev -d scanorama_dev -c "SELECT 1" 2>/dev/null; then \
+			echo "✅ Development database (scanorama_dev) is accessible"; \
+		elif psql -h localhost -p 5432 -U test_user -d scanorama_test -c "SELECT 1" 2>/dev/null; then \
+			echo "✅ Test database (scanorama_test) is accessible"; \
+		else \
+			echo "⚠️  Database is running but not accessible with expected credentials"; \
+		fi \
+	else \
+		echo "❌ No database found on localhost:5432"; \
+		echo "   Start with: make db-up"; \
+	fi
+
+test-with-alternative-port: ## Run tests on alternative port when 5432 is busy
+	@echo "Running tests on alternative port..."
+	@$(TEST_ENV_SCRIPT) up --postgres-port 5433
+	@POSTGRES_PORT=5433 $(GOTEST) -v ./... ; ret=$$? ; \
+	POSTGRES_PORT=5433 $(TEST_ENV_SCRIPT) down ; \
+	exit $$ret
+
+test-force-containers: test-down ## Force tests to use Docker containers (stops existing containers first)
+	@echo "Forcing tests to use Docker containers..."
+	@$(MAKE) test-with-containers
+
 check: lint test ## Run lint and tests
 	@echo "All checks passed!"
 
@@ -208,6 +274,8 @@ test-logs: ## View logs from test containers
 
 ci-local: ## Run full CI checks locally (lint, test, build, security)
 	@echo "Running local CI checks..."
+	@echo "=== Checking database status ==="
+	@./scripts/check-db.sh || echo "Note: Some tests may require database"
 	@echo "=== Running linters ==="
 	@$(MAKE) lint
 	@echo "=== Running tests ==="
