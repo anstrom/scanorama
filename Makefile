@@ -29,7 +29,7 @@ export PATH := $(GOBIN):$(PATH)
 DOCKER_COMPOSE := docker compose
 COMPOSE_FILE := ./test/docker/docker-compose.yml
 
-.PHONY: help build clean clean-test test test-up test-down test-logs test-debug coverage lint lint-fix deps install run ci-local setup-dev-db setup-hooks db-up db-down db-status
+.PHONY: help build clean clean-test test test-up test-down test-logs test-debug coverage quality lint format security ci deps install run setup-dev-db setup-hooks db-up db-down db-status
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -37,7 +37,7 @@ help: ## Show this help message
 	@echo 'Quick Start:'
 	@echo '  make setup-hooks  # Set up Git hooks for code quality'
 	@echo '  make setup-dev-db # Set up development database'
-	@echo '  make ci-local     # Run all CI checks locally before pushing'
+	@echo '  make ci           # Run full CI pipeline locally before pushing'
 	@echo '  make test         # Run tests with database'
 	@echo '  make build        # Build binary'
 	@echo ''
@@ -150,16 +150,23 @@ coverage: test-up ## Generate test coverage report
 	make test-down ; \
 	exit $$ret
 
-lint: ## Run golangci-lint (installs if needed)
+quality: ## Run comprehensive code quality checks (lint + format + security)
+	@echo "Running comprehensive code quality checks..."
+	@$(MAKE) lint
+	@$(MAKE) format
+	@$(MAKE) security
+	@echo "✅ All quality checks passed!"
+
+lint: ## Run golangci-lint to check code quality
 	@echo "Installing latest golangci-lint..."
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) latest
 	@echo "Running golangci-lint..."
 	@$(GOBIN)/golangci-lint run --config .golangci.yml
 
-lint-fix: ## Fix formatting and linting issues automatically
+format: ## Format code and fix linting issues automatically
 	@echo "Installing latest golangci-lint..."
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) latest
-	@echo "Running golangci-lint with auto-fix..."
+	@echo "Formatting code and fixing issues..."
 	@$(GOBIN)/golangci-lint run --config .golangci.yml --fix
 
 deps: ## Download and tidy dependencies
@@ -181,23 +188,21 @@ test-logs: ## View logs from test containers
 	@echo "Viewing test container logs..."
 	@$(TEST_ENV_SCRIPT) logs
 
-ci-local: ## Run full CI checks locally (lint, test, build, security)
-	@echo "Running local CI checks..."
+ci: ## Run full CI pipeline locally (quality + test + build)
+	@echo "Running local CI pipeline..."
 	@echo "=== Checking database status ==="
 	@./scripts/check-db.sh || echo "Note: Some tests may require database"
-	@echo "=== Running linters ==="
-	@$(MAKE) lint
+	@echo "=== Running quality checks ==="
+	@$(MAKE) quality
 	@echo "=== Running tests ==="
 	@$(MAKE) test
-	@echo "=== Running security checks ==="
-	@$(MAKE) security-local
 	@echo "=== Building ==="
 	@$(MAKE) build
 	@echo "=== Testing binary ==="
 	@./$(BUILD_DIR)/$(BINARY_NAME) version
-	@echo "✅ All local CI checks passed!"
+	@echo "✅ All CI checks passed!"
 
-security-local: ## Run security checks locally
+security: ## Run security vulnerability scans
 	@echo "Running security scans..."
 	@echo "Installing security tools..."
 	@go install golang.org/x/vuln/cmd/govulncheck@latest

@@ -139,13 +139,14 @@ scanorama/
 
 ```/dev/null/make-help.sh#L1-10
 make help            # Show available commands
-make all             # Clean, build and test
+make ci              # Run full CI pipeline locally
 make build           # Build the binary
 make clean           # Remove build artifacts
 make test            # Run tests
 make coverage        # Generate test coverage report
+make quality         # Run comprehensive code quality checks
 make lint            # Run linters
-make lint-fix        # Fix formatting and common issues
+make format          # Fix formatting and common issues
 make deps            # Download dependencies
 make install         # Install binary to GOPATH
 ```
@@ -266,7 +267,7 @@ POSTGRES_PORT=5433 make test
 
 5. Run all CI checks locally before pushing:
    ```bash
-   make ci-local
+   make ci
    ```
 
 ### Workflow
@@ -284,7 +285,7 @@ POSTGRES_PORT=5433 make test
 - All code must pass linting checks (enforced by pre-commit hooks)
 - All tests must pass
 - Follow conventional commit message format
-- Run `make ci-local` to verify all checks pass before pushing
+- Run `make ci` to verify all checks pass before pushing
 
 
 ## License
