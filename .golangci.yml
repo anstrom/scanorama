@@ -127,20 +127,16 @@ linters:
     rules:
       - path: _test\.go
         linters:
-          - mnd
           - funlen
-          - lll
-          - dupl
-          - goconst
 
-      - path: cmd/.*main\.go
-        linters:
-          - funlen
-          - mnd
+  #     - path: cmd/.*main\.go
+  #       linters:
+  #         - funlen
+  #         - mnd
 
-      - path: ".*\\.pb\\.go"
-        linters:
-          - lll
+  #     - path: ".*\\.pb\\.go"
+  #       linters:
+  #         - lll
 
 issues:
   max-issues-per-linter: 0
