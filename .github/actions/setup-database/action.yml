@@ -38,7 +38,8 @@ runs:
         docker logs $(docker ps -q --filter "ancestor=postgres:17-alpine") 2>/dev/null || echo "No postgres container found"
         echo ""
         echo "Network connectivity test:"
-        nc -zv localhost 5432 2PostgreSQL to be ready..."
+        nc -zv localhost 5432 2>/dev/null || echo "Connection test failed"
+        echo "Waiting for PostgreSQL to be ready..."
         for i in {1..60}; do
           if pg_isready -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }}; then
             echo "PostgreSQL is ready!"
