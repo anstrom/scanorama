@@ -82,22 +82,15 @@ test: ## Run all tests (checks for existing DB first)
 	@echo "Running tests..."
 	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
 		echo "Database available, using existing database..."; \
-		$(MAKE) test-with-existing-db; \
+		echo "Using database on localhost:5432"; \
+		POSTGRES_PORT=5432 $(GOTEST) -v -p 1 ./...; \
 	else \
 		echo "No database found, starting test containers..."; \
-		$(MAKE) test-with-containers; \
+		$(TEST_ENV_SCRIPT) up; \
+		POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v -p 1 ./... ; ret=$$?; \
+		$(TEST_ENV_SCRIPT) down; \
+		exit $$ret; \
 	fi
-
-test-with-containers: test-up ## Run tests with Docker containers
-	@echo "Running tests with Docker containers..."
-	@POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v -p 1 ./... ; ret=$$? ; \
-	make test-down ; \
-	exit $$ret
-
-test-with-existing-db: ## Run tests using existing database
-	@echo "Running tests with existing database..."
-	@echo "Using database on localhost:5432"
-	@POSTGRES_PORT=5432 $(GOTEST) -v -p 1 ./...
 
 test-debug: ## Run tests with debug output
 	@echo "Running tests with debug output..."
