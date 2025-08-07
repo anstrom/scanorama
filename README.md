@@ -249,11 +249,42 @@ POSTGRES_PORT=5433 make test
 
 ## Contributing
 
+### Development Setup
+
 1. Fork the repository
+2. Clone your fork and navigate to the project directory
+3. Set up Git hooks for code quality checks:
+   ```bash
+   make setup-hooks
+   ```
+   This will configure Git to automatically run linting checks before each commit.
+
+4. Set up the development database:
+   ```bash
+   make setup-dev-db
+   ```
+
+5. Run all CI checks locally before pushing:
+   ```bash
+   make ci-local
+   ```
+
+### Workflow
+
 1. Create your feature branch (`git checkout -b feature/amazing-feature`)
-1. Commit your changes (`git commit -m 'Add amazing feature'`)
-1. Push to the branch (`git push origin feature/amazing-feature`)
-1. Open a Pull Request
+2. Make your changes
+3. The pre-commit hook will automatically run linting checks
+4. Run tests: `make test`
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+### Code Quality
+
+- All code must pass linting checks (enforced by pre-commit hooks)
+- All tests must pass
+- Follow conventional commit message format
+- Run `make ci-local` to verify all checks pass before pushing
 
 
 ## License
