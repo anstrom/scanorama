@@ -29,7 +29,7 @@ export PATH := $(GOBIN):$(PATH)
 DOCKER_COMPOSE := docker compose
 COMPOSE_FILE := ./test/docker/docker-compose.yml
 
-.PHONY: help build clean clean-test test test-up test-down test-logs test-debug test-local coverage lint lint-install lint-fix deps install run fmt vet check all version ci-local setup-dev-db db-up db-down db-status
+.PHONY: help build clean clean-test test test-up test-down test-logs test-debug test-local coverage lint lint-install lint-fix deps install run fmt vet check all version ci-local setup-dev-db setup-hooks db-up db-down db-status
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -169,6 +169,10 @@ test-all: ## Run all tests including integration and benchmarks
 setup-dev-db: ## Set up development PostgreSQL database
 	@echo "Setting up development database..."
 	@./scripts/setup-dev-db.sh
+
+setup-hooks: ## Set up Git hooks for code quality checks
+	@echo "Setting up Git hooks..."
+	@./scripts/setup-hooks.sh
 
 db-up: ## Start PostgreSQL container for development
 	@echo "Starting PostgreSQL container for development..."
