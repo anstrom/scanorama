@@ -21,7 +21,6 @@ var testServices = struct {
 	HTTP          string
 	HTTPS         string
 	Redis         string
-	Flask         string
 	containerName string
 	timeout       int
 	requireAll    bool
@@ -30,7 +29,6 @@ var testServices = struct {
 	HTTP:          "8080",
 	HTTPS:         "8443",
 	Redis:         "8379",
-	Flask:         "8888",
 	containerName: "scanorama-test",
 	timeout:       5,
 	requireAll:    false, // Set to false to skip tests that require missing services
@@ -55,7 +53,6 @@ func setupTestEnvironment(t *testing.T) bool {
 	optionalServices := map[string]string{
 		"SSH":   testServices.SSH,
 		"Redis": testServices.Redis,
-		"Flask": testServices.Flask,
 	}
 
 	if testServices.requireAll {
@@ -81,7 +78,7 @@ func setupTestEnvironment(t *testing.T) bool {
 		if !connected {
 			if name == "HTTP" {
 				// HTTP is required for all tests
-				t.Skipf("Skipping test: required HTTP service not available on port %s after %d attempts", port, maxRetries)
+				t.Skipf("Skipping test: HTTP service unavailable on port %s after %d attempts", port, maxRetries)
 				return false
 			} else {
 				t.Logf("Warning: service %s not available on port %s - some tests may be limited", name, port)
@@ -186,7 +183,6 @@ func TestValidateScanConfig(t *testing.T) {
 }
 
 func TestLocalScan(t *testing.T) {
-	// Start a local test server to have a guaranteed open port
 	if !setupTestEnvironment(t) {
 		return // Test was skipped
 	}
@@ -242,15 +238,6 @@ func TestLocalScan(t *testing.T) {
 }
 
 func TestScanTimeout(t *testing.T) {
-	// Only check for HTTP service availability since that's all we need for this test
-	conn, err := net.DialTimeout("tcp", "localhost:"+testServices.HTTP, 2*time.Second)
-	if err != nil {
-		t.Skip("Skipping test: HTTP service not available")
-		return
-	}
-	if conn != nil {
-		_ = conn.Close()
-	}
 	tests := []struct {
 		name      string
 		config    ScanConfig
@@ -311,16 +298,6 @@ func TestScanTimeout(t *testing.T) {
 }
 
 func TestScanResults(t *testing.T) {
-	// Only check for HTTP service availability
-	conn, err := net.DialTimeout("tcp", "localhost:"+testServices.HTTP, 2*time.Second)
-	if err != nil {
-		t.Skip("Skipping test: HTTP service not available")
-		return
-	}
-	if conn != nil {
-		_ = conn.Close()
-	}
-
 	httpPort := testServices.HTTP
 
 	// Try to use the SSH port if available
@@ -480,16 +457,6 @@ func TestPrintResults(t *testing.T) {
 }
 
 func TestServiceDetection(t *testing.T) {
-	// Check for HTTP service availability (minimum requirement)
-	httpConn, err := net.DialTimeout("tcp", "localhost:"+testServices.HTTP, 2*time.Second)
-	if err != nil {
-		t.Skip("Skipping test: HTTP service not available")
-		return
-	}
-	if httpConn != nil {
-		_ = httpConn.Close()
-	}
-
 	// Find which services are available
 	availablePorts := []string{testServices.HTTP} // HTTP is confirmed available
 

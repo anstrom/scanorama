@@ -153,75 +153,90 @@ func TestXMLErrorHandling(t *testing.T) {
 	})
 }
 
+// createComplexTestResult creates a complex scan result for testing.
+func createComplexTestResult() *ScanResult {
+	return &ScanResult{
+		Hosts: []Host{
+			{
+				Address: "192.168.1.1",
+				Status:  "up",
+				Ports: []Port{
+					{
+						Number:      80,
+						Protocol:    "tcp",
+						State:       "open",
+						Service:     "http",
+						Version:     "nginx 1.18.0",
+						ServiceInfo: "Server",
+					},
+					{
+						Number:   443,
+						Protocol: "tcp",
+						State:    "closed",
+						Service:  "https",
+					},
+				},
+			},
+			{
+				Address: "192.168.1.2",
+				Status:  "down",
+				Ports:   []Port{},
+			},
+		},
+	}
+}
+
+// createSpecialCharsTestResult creates a scan result with special characters.
+func createSpecialCharsTestResult() *ScanResult {
+	return &ScanResult{
+		Hosts: []Host{
+			{
+				Address: "test.local",
+				Status:  "up",
+				Ports: []Port{
+					{
+						Number:      8080,
+						Protocol:    "tcp",
+						State:       "open",
+						Service:     "http-proxy",
+						Version:     "1.0 & <2.0>",
+						ServiceInfo: "Test & Demo",
+					},
+				},
+			},
+		},
+	}
+}
+
+// createEmptyPortsTestResult creates a scan result with no ports.
+func createEmptyPortsTestResult() *ScanResult {
+	return &ScanResult{
+		Hosts: []Host{
+			{
+				Address: "localhost",
+				Status:  "up",
+				Ports:   []Port{},
+			},
+		},
+	}
+}
+
 func TestXMLRoundTrip(t *testing.T) {
 	tests := []struct {
 		name     string
 		original *ScanResult
 	}{
 		{
-			name: "Complex Result",
-			original: &ScanResult{
-				Hosts: []Host{
-					{
-						Address: "192.168.1.1",
-						Status:  "up",
-						Ports: []Port{
-							{
-								Number:      80,
-								Protocol:    "tcp",
-								State:       "open",
-								Service:     "http",
-								Version:     "nginx 1.18.0",
-								ServiceInfo: "Server",
-							},
-							{
-								Number:   443,
-								Protocol: "tcp",
-								State:    "closed",
-								Service:  "https",
-							},
-						},
-					},
-					{
-						Address: "192.168.1.2",
-						Status:  "down",
-						Ports:   []Port{},
-					},
-				},
-			},
+			name:     "Complex Result",
+			original: createComplexTestResult(),
 		},
 		{
-			name: "Special Characters",
-			original: &ScanResult{
-				Hosts: []Host{
-					{
-						Address: "test.local",
-						Status:  "up",
-						Ports: []Port{
-							{
-								Number:      8080,
-								Protocol:    "tcp",
-								State:       "open",
-								Service:     "http-proxy",
-								Version:     "1.0 & <2.0>",
-								ServiceInfo: "Test & Demo",
-							},
-						},
-					},
-				},
-			},
+			name:     "Special Characters",
+			original: createSpecialCharsTestResult(),
 		},
 		{
-			name: "Empty Ports",
-			original: &ScanResult{
-				Hosts: []Host{
-					{
-						Address: "localhost",
-						Status:  "up",
-						Ports:   []Port{},
-					},
-				},
-			},
+			name:     "Empty Ports",
+			original: createEmptyPortsTestResult(),
 		},
 	}
 
