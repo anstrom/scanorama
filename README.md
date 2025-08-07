@@ -28,7 +28,7 @@ discovery and security auditing.
 
 ## Requirements
 
-- Go 1.24.5 or later
+- Go 1.24.6 or later
 - nmap 7.0 or later
 - Root/sudo privileges for SYN scans (optional)
 
