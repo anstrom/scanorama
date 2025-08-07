@@ -14,7 +14,7 @@ cd "$(git rev-parse --show-toplevel)"
 echo "📝 Running linter..."
 if ! make lint; then
     echo "❌ Linting failed! Please fix the issues above before committing."
-    echo "💡 You can run 'make lint-fix' to automatically fix some issues."
+    echo "💡 You can run 'make format' to automatically fix formatting issues."
     exit 1
 fi
 
