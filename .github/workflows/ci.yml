@@ -267,7 +267,7 @@ jobs:
               fmt.Printf("✅ All %d migrations applied correctly\n", len(migrations))
 
               // Test materialized views exist and work
-              err = database.Exec("REFRESH MATERIALIZED VIEW host_summary")
+              _, err = database.Exec("REFRESH MATERIALIZED VIEW host_summary")
               if err != nil {
                   log.Fatalf("Failed to refresh materialized view: %v", err)
               }
