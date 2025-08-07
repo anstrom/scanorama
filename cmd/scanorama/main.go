@@ -129,10 +129,6 @@ Migration Commands:
   scanorama migrate up                                 # Apply pending migrations
   scanorama migrate reset                              # Reset database (WARNING: destroys data)
 
-Migration Commands:
-  scanorama migrate up                                 # Apply pending migrations
-  scanorama migrate reset                              # Reset database (WARNING: destroys data)
-
 For detailed help on any command, use: scanorama <command> --help
 `)
 }
@@ -693,73 +689,6 @@ func handleHostIgnore(ipAddr string) {
 		fmt.Printf("Host %s is now ignored for scanning\n", ipAddr)
 	} else {
 		fmt.Printf("Host %s not found in database\n", ipAddr)
-	}
-}
-
-func runMigrate(args []string) {
-	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: scanorama migrate <command>\n")
-		fmt.Fprintf(os.Stderr, "Commands:\n")
-		fmt.Fprintf(os.Stderr, "  up      Apply pending migrations\n")
-		fmt.Fprintf(os.Stderr, "  reset   Reset database (WARNING: destroys all data)\n")
-		os.Exit(1)
-	}
-
-	command := args[0]
-
-	// Load configuration
-	cfg, err := config.Load("config.yaml")
-	if err != nil {
-		cfg = config.Default()
-	}
-
-	// Connect to database (without auto-migration)
-	ctx := context.Background()
-	database, err := db.Connect(ctx, &cfg.Database)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to connect to database: %v\n", err)
-		os.Exit(1)
-	}
-	defer func() {
-		if err := database.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to close database: %v\n", err)
-		}
-	}()
-
-	migrator := db.NewMigrator(database.DB)
-
-	switch command {
-	case "up":
-		fmt.Println("Applying pending migrations...")
-		if err := migrator.Up(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Migration failed: %v\n", err)
-			return
-		}
-		fmt.Println("Migrations applied successfully")
-
-	case "reset":
-		fmt.Println("WARNING: This will destroy all data in the database!")
-		fmt.Print("Type 'yes' to confirm: ")
-		var confirmation string
-		if _, err := fmt.Scanln(&confirmation); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read confirmation: %v\n", err)
-			return
-		}
-		if confirmation != "yes" {
-			fmt.Println("Migration reset canceled")
-			return
-		}
-
-		if err := migrator.Reset(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Database reset failed: %v\n", err)
-			return
-		}
-		fmt.Println("Database reset and migrations applied successfully")
-
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown migration command: %s\n", command)
-		fmt.Fprintf(os.Stderr, "Available commands: up, reset\n")
-		return
 	}
 }
 
