@@ -13,7 +13,6 @@ import (
 
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -56,62 +55,6 @@ func getTestConfig() Config {
 	}
 }
 
-// hasEnvOverrides checks if any database environment variables are set.
-func hasEnvOverrides() bool {
-	envVars := []string{"TEST_DB_HOST", "TEST_DB_PORT", "TEST_DB_NAME", "TEST_DB_USER", "TEST_DB_PASSWORD"}
-	for _, envVar := range envVars {
-		if _, exists := os.LookupEnv(envVar); exists {
-			return true
-		}
-	}
-	return false
-}
-
-// loadDBConfigFromFile loads database configuration from the test fixtures.
-func loadDBConfigFromFile(env string) (Config, error) {
-	// Find project root by looking for test directory
-	wd, err := os.Getwd()
-	if err != nil {
-		return Config{}, err
-	}
-
-	// Look for database.yml in several possible locations
-	possiblePaths := []string{
-		filepath.Join(wd, "..", "..", "test", "fixtures", "database.yml"),
-		filepath.Join(wd, "..", "test", "fixtures", "database.yml"),
-		filepath.Join(wd, "test", "fixtures", "database.yml"),
-	}
-
-	var configFile string
-	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
-			configFile = path
-			break
-		}
-	}
-
-	if configFile == "" {
-		return Config{}, fmt.Errorf("database.yml not found")
-	}
-
-	data, err := os.ReadFile(configFile) //nolint:gosec // test file with controlled paths
-	if err != nil {
-		return Config{}, err
-	}
-
-	var configs map[string]Config
-	if err := yaml.Unmarshal(data, &configs); err != nil {
-		return Config{}, err
-	}
-
-	config, ok := configs[env]
-	if !ok {
-		return Config{}, fmt.Errorf("environment %s not found in database.yml", env)
-	}
-
-	return config, nil
-}
-
 // getEnvOrDefault gets a string from environment or returns the default.
 func getEnvOrDefault(key, defaultValue string) string {
 	if val, ok := os.LookupEnv(key); ok && val != "" {
@@ -130,23 +73,6 @@ func getEnvIntOrDefault(key string, defaultValue int) int {
 	}
 
 	return defaultValue
-}
-
-// waitForDB waits for the database to become available with timeout.
-func waitForDB(ctx context.Context, config *Config) error {
-	// Use a much shorter timeout for testing to fail fast
-	timeoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-
-	// Try connecting immediately first
-	db, err := Connect(timeoutCtx, config)
-	if err == nil {
-		_ = db.Close()
-		return nil
-	}
-
-	// If immediate connection fails, return the error without retrying
-	return fmt.Errorf("database not available at %s:%d: %w", config.Host, config.Port, err)
 }
 
 // initializeSchema applies the database schema if tables don't exist.
@@ -212,7 +138,7 @@ func findWorkingDatabase(ctx context.Context, t *testing.T) *DB {
 	return db
 }
 
-// Shared database connection for all tests
+// Shared database connection for all tests.
 var sharedTestDB *DB
 
 func setupTestDB(t *testing.T) *DB {
