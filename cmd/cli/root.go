@@ -27,7 +27,7 @@ var (
 
 // Build information - these will be set by ldflags during build.
 var (
-	version   = "0.2.0"
+	version   = "dev"
 	commit    = "none"
 	buildTime = "unknown"
 )
@@ -122,10 +122,7 @@ func setConfigDefaults() {
 
 // getVersion returns the version string.
 func getVersion() string {
-	if version == "dev" {
-		return fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, buildTime)
-	}
-	return version
+	return fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, buildTime)
 }
 
 // SetVersion sets the version information (called from main).
