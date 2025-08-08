@@ -136,7 +136,7 @@ func loadDBConfigFromFile(env string) (Config, error) {
 		return Config{}, fmt.Errorf("database.yml not found")
 	}
 
-	data, err := os.ReadFile(configFile) //nolint:gosec // test file with controlled paths
+	data, err := os.ReadFile(configFile)
 	if err != nil {
 		return Config{}, err
 	}
@@ -246,7 +246,7 @@ func initializeSchema(db *DB) error {
 		currentDir := filepath.Dir(currentFile)
 		schemaPath := filepath.Join(currentDir, "001_initial_schema.sql")
 
-		schemaBytes, err := os.ReadFile(schemaPath) //nolint:gosec // test file with controlled paths
+		schemaBytes, err := os.ReadFile(schemaPath)
 		if err != nil {
 			return fmt.Errorf("failed to read schema file: %w", err)
 		}

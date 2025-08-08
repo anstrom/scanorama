@@ -55,7 +55,7 @@ func TestSaveAndLoadXML(t *testing.T) {
 		}
 
 		// Read file content
-		content, err := os.ReadFile(tmpFile) //nolint:gosec // test file with controlled paths
+		content, err := os.ReadFile(tmpFile)
 		if err != nil {
 			t.Fatalf("Failed to read XML file: %v", err)
 		}
@@ -257,7 +257,7 @@ func TestXMLRoundTrip(t *testing.T) {
 			compareResults(t, tt.original, loaded)
 
 			// Verify file contents
-			content, err := os.ReadFile(tmpFile) //nolint:gosec // G304: safe to read test temp file
+			content, err := os.ReadFile(tmpFile)
 			require.NoError(t, err, "Failed to read XML file")
 			xmlContent := string(content)
 			assert.Contains(t, xmlContent, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
