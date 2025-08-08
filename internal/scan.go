@@ -96,6 +96,13 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 	// Create and run scanner
 	result, err := createAndRunScanner(ctx, config)
 	if err != nil {
+		// Check if this is a timeout error and preserve that information
+		if strings.Contains(err.Error(), "timed out") || ctx.Err() == context.DeadlineExceeded {
+			metrics.IncrementScanErrors(config.ScanType, "scanner", "timeout")
+			logging.Error("Scanner execution timed out", "scan_type", config.ScanType, "error", err)
+			return nil, errors.WrapScanError(errors.CodeTimeout, "scan operation timed out", err)
+		}
+
 		metrics.IncrementScanErrors(config.ScanType, "scanner", "execution_failed")
 		logging.Error("Scanner execution failed", "scan_type", config.ScanType, "error", err)
 		return nil, errors.WrapScanError(errors.CodeScanFailed, "scanner execution failed", err)
