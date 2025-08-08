@@ -34,12 +34,40 @@ make build
 # View discovered hosts
 ./scanorama hosts
 ./scanorama hosts --status up
+
+# Use verbose mode for detailed structured logging
+./scanorama -v scan --targets localhost --type version
+
+# Configure logging via config file (config.yaml)
+# logging:
+#   level: debug
+#   format: json
+#   output: /var/log/scanorama.log
 ```
+
+## Features
+
+### Structured Logging
+- Built-in structured logging with `slog` support
+- Configurable output formats (text, JSON)
+- Context-aware logging for scans, discovery, and operations
+- File output with automatic directory creation
+
+### Monitoring & Metrics
+- Built-in metrics collection for performance monitoring
+- Counters, gauges, and histograms with label support
+- Automatic timing of scan and discovery operations
+- Database query performance tracking
+
+### Error Handling
+- Structured error types with error codes and context
+- Retryable vs fatal error classification
+- Detailed error information for troubleshooting
 
 ## Commands
 
 - `discover <network>` - Discover active hosts on network ranges
-- `scan --targets <hosts>` - Perform port and service scanning (connect, syn, version, aggressive, stealth)
+- `scan --targets <hosts>` - Perform port and service scanning (connect, syn, version, comprehensive, aggressive, stealth)
 - `hosts` - Manage and view discovered hosts
 - `daemon` - Run as background service with scheduling
 - `schedule` - Manage automated scan jobs

@@ -13,6 +13,9 @@ import (
 
 	"github.com/Ullaakut/nmap/v3"
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/errors"
+	"github.com/anstrom/scanorama/internal/logging"
+	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
@@ -48,9 +51,22 @@ func RunScanWithDB(config *ScanConfig, database *db.DB) (*ScanResult, error) {
 // It uses nmap to scan the specified targets and ports, returning detailed results
 // about discovered hosts and services. If database is provided, results are stored.
 func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB) (*ScanResult, error) {
+	// Start timing for metrics
+	timer := metrics.NewTimer(metrics.MetricScanDuration, metrics.Labels{
+		metrics.LabelScanType: config.ScanType,
+	})
+	defer timer.Stop()
+
+	// Log scan start
+	logging.Info("Starting scan operation",
+		"scan_type", config.ScanType,
+		"target_count", len(config.Targets),
+		"ports", config.Ports)
+
 	// Validate the configuration
 	if err := validateScanConfig(config); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+		metrics.IncrementScanErrors(config.ScanType, "validation", "config_invalid")
+		return nil, errors.WrapScanError(errors.CodeValidation, "invalid configuration", err)
 	}
 
 	// Apply timeout if specified
@@ -62,12 +78,27 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 
 	// Initialize scan result with start time
 	scanResult := NewScanResult()
-	defer scanResult.Complete()
+	defer func() {
+		scanResult.Complete()
+		// Record scan completion metrics
+		status := "success"
+		if scanResult.Error != nil {
+			status = "error"
+		}
+		metrics.IncrementScanTotal(config.ScanType, status)
+		logging.Info("Scan operation completed",
+			"scan_type", config.ScanType,
+			"duration", scanResult.Duration,
+			"hosts_scanned", len(scanResult.Hosts),
+			"status", status)
+	}()
 
 	// Create and run scanner
 	result, err := createAndRunScanner(ctx, config)
 	if err != nil {
-		return nil, err
+		metrics.IncrementScanErrors(config.ScanType, "scanner", "execution_failed")
+		logging.Error("Scanner execution failed", "scan_type", config.ScanType, "error", err)
+		return nil, errors.WrapScanError(errors.CodeScanFailed, "scanner execution failed", err)
 	}
 
 	// Convert results to our format
@@ -76,7 +107,9 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 	// Store results in database if provided
 	if database != nil {
 		if err := storeScanResults(ctx, database, config, scanResult); err != nil {
-			log.Printf("Failed to store scan results in database: %v", err)
+			logging.ErrorDatabase("Failed to store scan results", err,
+				"scan_type", config.ScanType,
+				"host_count", len(scanResult.Hosts))
 			// Don't fail the scan if database storage fails
 		}
 	}
