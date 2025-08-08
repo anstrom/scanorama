@@ -67,7 +67,7 @@ var scheduleAddScanCmd = &cobra.Command{
 You can schedule scans for live hosts or specific targets.`,
 	Example: `  scanorama schedule add-scan "daily-live" "0 */6 * * *" --live-hosts
   scanorama schedule add-scan "weekly-servers" "0 3 * * 1" --targets "10.0.1.1,10.0.1.2"
-  scanorama schedule add-scan "nightly-comprehensive" "0 22 * * *" --live-hosts --type comprehensive`,
+  scanorama schedule add-scan "nightly-aggressive" "0 22 * * *" --live-hosts --type aggressive`,
 	Args: cobra.ExactArgs(2),
 	Run:  runScheduleAddScan,
 }
@@ -139,7 +139,7 @@ func init() {
 	scheduleAddScanCmd.Flags().Lookup("targets").Usage = "Specific targets to scan in scheduled job"
 	scheduleAddScanCmd.Flags().Lookup("live-hosts").Usage = "Scan all discovered live hosts in scheduled job"
 	scheduleAddScanCmd.Flags().Lookup("type").Usage = "Scan type: connect, syn, version, " +
-		"comprehensive, intense, stealth"
+		"comprehensive, aggressive, stealth"
 }
 
 func runScheduleList(cmd *cobra.Command, args []string) {

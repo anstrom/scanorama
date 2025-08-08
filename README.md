@@ -1,6 +1,6 @@
 # Scanorama
 
-A network scanner that finds hosts and open ports. Uses nmap to scan networks and stores results in a database.
+Scanorama is an advanced network scanning and discovery tool built for continuous network monitoring. It provides OS-aware scanning capabilities, automated scheduling, and robust database persistence for enterprise network management.
 
 ## Requirements
 
@@ -13,9 +13,9 @@ A network scanner that finds hosts and open ports. Uses nmap to scan networks an
 ```bash
 git clone https://github.com/anstrom/scanorama.git
 cd scanorama
-make setup-hooks
-make setup-dev-db
-make ci
+make setup-hooks    # Set up development environment
+make setup-dev-db   # Initialize PostgreSQL database
+make ci             # Build and test
 ```
 
 ## Usage
@@ -27,9 +27,9 @@ make build
 # Discover hosts on a network
 ./scanorama discover 192.168.1.0/24
 
-# Scan specific targets
+# Scan specific targets with different scan types
 ./scanorama scan --targets localhost --ports 80,443,8080
-./scanorama scan --targets 192.168.1.1,192.168.1.10 --ports 22,80,443
+./scanorama scan --targets 192.168.1.1,192.168.1.10 --ports 22,80,443 --type aggressive
 
 # View discovered hosts
 ./scanorama hosts
@@ -38,10 +38,12 @@ make build
 
 ## Commands
 
-- `discover <network>` - Find hosts on a network
-- `scan --targets <hosts>` - Scan specific hosts for open ports
-- `hosts` - List discovered hosts
-- `version` - Show version info
+- `discover <network>` - Discover active hosts on network ranges
+- `scan --targets <hosts>` - Perform port and service scanning (connect, syn, version, aggressive, stealth)
+- `hosts` - Manage and view discovered hosts
+- `daemon` - Run as background service with scheduling
+- `schedule` - Manage automated scan jobs
+- `profiles` - Use predefined scan configurations
 
 ## Make Targets
 
@@ -71,11 +73,14 @@ go test ./internal -run "Scan"
 ## Contributing
 
 1. Fork and clone the repository
-2. Run `make setup-hooks` and `make setup-dev-db`
-3. Make your changes
-4. Run `make ci` to verify everything works
-5. Commit and push
-6. Create a pull request
+2. Run `make setup-hooks` to install Git hooks
+3. Run `make setup-dev-db` to set up development database
+4. Make your changes with appropriate tests
+5. Run `make ci` to ensure all checks pass
+6. Commit with clear, descriptive messages
+7. Create a pull request with detailed description
+
+See `docs/` for technical documentation and contribution guidelines.
 
 ## License
 

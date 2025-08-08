@@ -45,8 +45,8 @@ available depending on your needs and privileges.`,
   scanorama scan --targets 192.168.1.10-20
   scanorama scan --targets "192.168.1.1,192.168.1.10" --ports "22,80,443"
   scanorama scan --targets localhost --type version
-  scanorama scan --live-hosts --type comprehensive
-  scanorama scan --os-family windows --type intense`,
+  scanorama scan --live-hosts --type aggressive
+  scanorama scan --os-family windows --type aggressive`,
 	Run: runScan,
 }
 
@@ -58,7 +58,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanLiveHosts, "live-hosts", false, "Scan only discovered live hosts")
 	scanCmd.Flags().StringVar(&scanPorts, "ports", "22,80,443,8080,8443", "Ports to scan (comma-separated)")
 	scanCmd.Flags().StringVar(&scanType, "type", "connect",
-		"Scan type: connect, syn, version, comprehensive, intense, stealth")
+		"Scan type: connect, syn, version, aggressive, stealth")
 	scanCmd.Flags().StringVar(&scanProfile, "profile", "", "Scan profile to use (overrides scan type)")
 	scanCmd.Flags().IntVar(&scanTimeout, "timeout", defaultScanTimeout, "Scan timeout in seconds")
 	scanCmd.Flags().StringVar(&scanOSFamily, "os-family", "",
@@ -73,7 +73,7 @@ func init() {
 	scanCmd.Flags().Lookup("live-hosts").Usage = "Scan all hosts discovered as 'up' in previous discovery"
 	scanCmd.Flags().Lookup("ports").Usage = "Port specification: '80,443' or '1-1000' or 'T:' for top ports"
 	scanCmd.Flags().Lookup("type").Usage = "Scan type: connect (default), syn (requires root), " +
-		"version, comprehensive, intense, stealth"
+		"version, comprehensive, aggressive, stealth"
 	scanCmd.Flags().Lookup("profile").Usage = "Use predefined scan profile (windows-server, linux-server, etc.)"
 	scanCmd.Flags().Lookup("timeout").Usage = "Maximum time to wait for scan completion"
 	scanCmd.Flags().Lookup("os-family").Usage = "Filter targets by OS family when using --live-hosts"
@@ -95,12 +95,12 @@ func runScan(cmd *cobra.Command, args []string) {
 		"syn":           true,
 		"version":       true,
 		"comprehensive": true,
-		"intense":       true,
+		"aggressive":    true,
 		"stealth":       true,
 	}
 	if !validTypes[scanType] {
 		fmt.Fprintf(os.Stderr, "Error: invalid scan type '%s'\n", scanType)
-		fmt.Fprintf(os.Stderr, "Valid types: connect, syn, version, comprehensive, intense, stealth\n")
+		fmt.Fprintf(os.Stderr, "Valid types: connect, syn, version, aggressive, stealth\n")
 		os.Exit(1)
 	}
 
