@@ -13,9 +13,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
+
+// DatabasePinger defines the interface for database health checking.
+type DatabasePinger interface {
+	Ping(ctx context.Context) error
+}
 
 // Timeout constants.
 const (
@@ -33,14 +37,18 @@ const (
 
 // HealthHandler handles health check and status endpoints.
 type HealthHandler struct {
-	database  *db.DB
+	database  DatabasePinger
 	logger    *slog.Logger
-	metrics   *metrics.Registry
+	metrics   metrics.MetricsRegistry
 	startTime time.Time
 }
 
 // NewHealthHandler creates a new health handler.
-func NewHealthHandler(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry) *HealthHandler {
+func NewHealthHandler(
+	database DatabasePinger,
+	logger *slog.Logger,
+	metricsManager metrics.MetricsRegistry,
+) *HealthHandler {
 	return &HealthHandler{
 		database:  database,
 		logger:    logger.With("handler", "health"),

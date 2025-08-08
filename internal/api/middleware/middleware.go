@@ -131,34 +131,38 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 			w.Header().Set("X-Request-ID", requestID)
 
 			// Log request
-			logger.Info("HTTP request started",
-				"request_id", requestID,
-				"method", r.Method,
-				"path", r.URL.Path,
-				"query", r.URL.RawQuery,
-				"remote_addr", getClientIP(r),
-				"user_agent", r.UserAgent(),
-				"content_length", r.ContentLength)
+			if logger != nil {
+				logger.Info("HTTP request started",
+					"request_id", requestID,
+					"method", r.Method,
+					"path", r.URL.Path,
+					"query", r.URL.RawQuery,
+					"remote_addr", getClientIP(r),
+					"user_agent", r.UserAgent(),
+					"content_length", r.ContentLength)
+			}
 
 			// Process request
 			next.ServeHTTP(wrapped, r)
 
 			// Log response
 			duration := time.Since(start)
-			logger.Info("HTTP request completed",
-				"request_id", requestID,
-				"method", r.Method,
-				"path", r.URL.Path,
-				"status", wrapped.statusCode,
-				"duration_ms", duration.Milliseconds(),
-				"response_size", wrapped.size,
-				"remote_addr", getClientIP(r))
+			if logger != nil {
+				logger.Info("HTTP request completed",
+					"request_id", requestID,
+					"method", r.Method,
+					"path", r.URL.Path,
+					"status_code", wrapped.statusCode,
+					"response_size", wrapped.size,
+					"duration_ms", duration.Milliseconds(),
+					"remote_addr", getClientIP(r))
+			}
 		})
 	}
 }
 
 // Metrics creates a metrics middleware that collects HTTP request metrics.
-func Metrics(metricsRegistry *metrics.Registry) func(http.Handler) http.Handler {
+func Metrics(metricsRegistry metrics.MetricsRegistry) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -174,25 +178,27 @@ func Metrics(metricsRegistry *metrics.Registry) func(http.Handler) http.Handler 
 			next.ServeHTTP(wrapped, r)
 
 			// Record metrics
-			duration := time.Since(start)
-			labels := map[string]string{
-				"method": r.Method,
-				"path":   r.URL.Path,
-				"status": strconv.Itoa(wrapped.statusCode),
-			}
-
-			metricsRegistry.Counter("http_requests_total", labels)
-			metricsRegistry.Histogram("http_request_duration_seconds", duration.Seconds(), labels)
-			metricsRegistry.Histogram("http_response_size_bytes", float64(wrapped.size), labels)
-
-			// Record error rate
-			if wrapped.statusCode >= httpErrorThreshold {
-				errorLabels := map[string]string{
+			if metricsRegistry != nil {
+				duration := time.Since(start)
+				labels := map[string]string{
 					"method": r.Method,
 					"path":   r.URL.Path,
 					"status": strconv.Itoa(wrapped.statusCode),
 				}
-				metricsRegistry.Counter("http_errors_total", errorLabels)
+
+				metricsRegistry.Counter("http_requests_total", labels)
+				metricsRegistry.Histogram("http_request_duration_seconds", duration.Seconds(), labels)
+				metricsRegistry.Histogram("http_response_size_bytes", float64(wrapped.size), labels)
+
+				// Record error rate
+				if wrapped.statusCode >= httpErrorThreshold {
+					errorLabels := map[string]string{
+						"method": r.Method,
+						"path":   r.URL.Path,
+						"status": strconv.Itoa(wrapped.statusCode),
+					}
+					metricsRegistry.Counter("http_errors_total", errorLabels)
+				}
 			}
 		})
 	}
@@ -289,7 +295,7 @@ func Authentication(apiKeys []string, logger *slog.Logger) func(http.Handler) ht
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				response := map[string]interface{}{
-					"error":      "Invalid API key",
+					"error":      "Authentication failed: Invalid API key",
 					"request_id": GetRequestID(r),
 					"timestamp":  time.Now().UTC(),
 				}
@@ -447,8 +453,10 @@ func getClientIP(r *http.Request) string {
 	}
 
 	// Fall back to RemoteAddr
-	if ip := strings.Split(r.RemoteAddr, ":")[0]; ip != "" {
-		return ip
+	if strings.Contains(r.RemoteAddr, ":") {
+		if ip := strings.Split(r.RemoteAddr, ":")[0]; ip != "" {
+			return ip
+		}
 	}
 
 	return "unknown"
