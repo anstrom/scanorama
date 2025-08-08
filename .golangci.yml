@@ -128,6 +128,12 @@ linters:
       - path: _test\.go
         linters:
           - funlen
+          - errcheck # Allow unchecked errors in tests
+          - gosec # Allow security warnings in test files
+          - dupl # Allow duplicate code patterns in tests
+          - gocyclo # Allow high complexity in comprehensive tests
+          - goconst # Don't require constants for test strings
+          - mnd # Allow magic numbers in tests
 
   #     - path: cmd/.*main\.go
   #       linters:
