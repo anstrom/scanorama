@@ -100,7 +100,9 @@ func runScan(cmd *cobra.Command, args []string) {
 		"stealth":       true,
 	}
 	if !validTypes[scanType] {
-		logging.Error("Invalid scan type specified", "scan_type", scanType, "valid_types", "connect, syn, version, comprehensive, aggressive, stealth")
+		logging.Error("Invalid scan type specified",
+			"scan_type", scanType,
+			"valid_types", "connect, syn, version, comprehensive, aggressive, stealth")
 		os.Exit(1)
 	}
 
