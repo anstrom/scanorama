@@ -24,7 +24,7 @@ var (
 
 // Build information - these will be set by ldflags during build.
 var (
-	version   = "dev"
+	version   = "0.2.0"
 	commit    = "none"
 	buildTime = "unknown"
 )
@@ -33,7 +33,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "scanorama",
 	Short: "Advanced Network Scanner",
-	Long: `Scanorama is a comprehensive network scanning and discovery tool designed for
+	Long: `Scanorama is an advanced network scanning and discovery tool designed for
 continuous network monitoring with OS-aware scanning capabilities, automated
 scheduling, and robust database persistence.
 
