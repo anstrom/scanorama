@@ -50,7 +50,7 @@ func TestPIDFileHandling(t *testing.T) {
 	}
 
 	// Verify PID file content
-	content, err := os.ReadFile(pidFile) //nolint:gosec // test file with controlled paths
+	content, err := os.ReadFile(pidFile)
 	if err != nil {
 		t.Fatalf("Failed to read PID file: %v", err)
 	}
