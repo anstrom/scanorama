@@ -4,7 +4,7 @@ import (
 	"github.com/anstrom/scanorama/cmd/cli"
 )
 
-// Build information - these will be set by ldflags during build
+// Build information - these will be set by ldflags during build.
 var (
 	version   = "dev"
 	commit    = "none"

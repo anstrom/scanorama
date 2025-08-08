@@ -1,15 +1,21 @@
+// Package cli provides command-line interface commands for the Scanorama network scanner.
+// This package implements the Cobra-based CLI structure with commands for scanning,
+// discovery, host management, scheduling, and daemon operations.
 package cli
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
 
-	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/discovery"
 	"github.com/spf13/cobra"
+)
+
+const (
+	// Discovery operation constants.
+	defaultDiscoveryTimeout = 30 // seconds for discovery timeout
 )
 
 var (
@@ -19,7 +25,7 @@ var (
 	discoverTimeout     int
 )
 
-// discoverCmd represents the discover command
+// discoverCmd represents the discover command.
 var discoverCmd = &cobra.Command{
 	Use:   "discover [network]",
 	Short: "Perform network discovery",
@@ -51,7 +57,7 @@ func init() {
 	discoverCmd.Flags().BoolVar(&discoverDetectOS, "detect-os", false, "Enable OS detection during discovery")
 	discoverCmd.Flags().BoolVar(&discoverAllNetworks, "all-networks", false, "Discover and scan all local networks")
 	discoverCmd.Flags().StringVar(&discoverMethod, "method", "tcp", "Discovery method: tcp, ping, or arp")
-	discoverCmd.Flags().IntVar(&discoverTimeout, "timeout", 30, "Discovery timeout in seconds")
+	discoverCmd.Flags().IntVar(&discoverTimeout, "timeout", defaultDiscoveryTimeout, "Discovery timeout in seconds")
 
 	// Add flag descriptions
 	discoverCmd.Flags().Lookup("detect-os").Usage = "Enable OS fingerprinting during host discovery"
@@ -61,20 +67,6 @@ func init() {
 }
 
 func runDiscovery(cmd *cobra.Command, args []string) {
-	// Setup database connection
-	cfg, err := config.Load("config.yaml")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
-
-	database, err := db.Connect(context.Background(), &cfg.Database)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
-		os.Exit(1)
-	}
-	defer database.Close()
-
 	// Determine target network
 	var network string
 	if len(args) > 0 {
@@ -85,7 +77,9 @@ func runDiscovery(cmd *cobra.Command, args []string) {
 		network = ""
 	} else {
 		fmt.Fprintf(os.Stderr, "Error: network argument required when --all-networks is not specified\n")
-		cmd.Help()
+		if helpErr := cmd.Help(); helpErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to display help: %v\n", helpErr)
+		}
 		os.Exit(1)
 	}
 
@@ -100,26 +94,28 @@ func runDiscovery(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Create discovery configuration
-	discoverConfig := discovery.Config{
-		Network:     network,
-		Method:      discoverMethod,
-		DetectOS:    discoverDetectOS,
-		Timeout:     time.Duration(discoverTimeout) * time.Second,
-		Concurrency: 50,
-	}
+	withDatabaseOrExit(func(database *db.DB) {
+		// Create discovery configuration
+		discoverConfig := discovery.Config{
+			Network:     network,
+			Method:      discoverMethod,
+			DetectOS:    discoverDetectOS,
+			Timeout:     time.Duration(discoverTimeout) * time.Second,
+			Concurrency: 50,
+		}
 
-	if verbose {
-		fmt.Printf("Starting discovery with config: %+v\n", discoverConfig)
-	}
+		if verbose {
+			fmt.Printf("Starting discovery with config: %+v\n", discoverConfig)
+		}
 
-	// Run discovery
-	fmt.Printf("Discovering hosts on %s using %s method...\n", network, discoverMethod)
+		// Run discovery
+		fmt.Printf("Discovering hosts on %s using %s method...\n", network, discoverMethod)
 
-	// TODO: Implement discovery using actual internal API
-	fmt.Printf("Discovery functionality not yet fully implemented with new CLI\n")
-	fmt.Printf("Network: %s, Method: %s, DetectOS: %v\n", network, discoverMethod, discoverDetectOS)
+		// TODO: Implement discovery using actual internal API
+		fmt.Printf("Discovery functionality not yet fully implemented with new CLI\n")
+		fmt.Printf("Network: %s, Method: %s, DetectOS: %v\n", network, discoverMethod, discoverDetectOS)
 
-	fmt.Println("\nUse 'scanorama hosts' to view discovered hosts")
-	fmt.Println("Use 'scanorama scan --live-hosts' to scan discovered hosts")
+		fmt.Println("\nUse 'scanorama hosts' to view discovered hosts")
+		fmt.Println("Use 'scanorama scan --live-hosts' to scan discovered hosts")
+	})
 }
