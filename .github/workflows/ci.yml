@@ -339,7 +339,7 @@ jobs:
         if: matrix.goos == 'linux'
         run: |
           chmod +x dist/scanorama-${{ matrix.goos }}-${{ matrix.goarch }}
-          ./dist/scanorama-${{ matrix.goos }}-${{ matrix.goarch }} version
+          ./dist/scanorama-${{ matrix.goos }}-${{ matrix.goarch }} --version
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
