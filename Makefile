@@ -125,6 +125,8 @@ format: ## Format code and fix linting issues automatically
 	@echo "Formatting code and fixing issues..."
 	@$(GOBIN)/golangci-lint run --config .golangci.yml --fix
 
+lint-fix: format ## Alias for format - auto-fix linting issues
+
 
 
 ci: ## Run full CI pipeline locally (quality + test + build)

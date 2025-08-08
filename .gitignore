@@ -52,3 +52,4 @@ test/docker/flask/__pycache__/
 
 # Claude development files (never commit)
 .claude-*
+REFACTORING_COMPLETE.md

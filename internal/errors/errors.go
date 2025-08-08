@@ -42,6 +42,10 @@ const (
 	CodeServiceUnavailable ErrorCode = "SERVICE_UNAVAILABLE"
 	CodeServiceTimeout     ErrorCode = "SERVICE_TIMEOUT"
 	CodeRateLimited        ErrorCode = "RATE_LIMITED"
+
+	// Generic resource errors.
+	CodeNotFound ErrorCode = "NOT_FOUND"
+	CodeConflict ErrorCode = "CONFLICT"
 )
 
 // ScanError represents an error that occurred during scanning operations.
@@ -287,6 +291,16 @@ func GetCode(err error) ErrorCode {
 	return CodeUnknown
 }
 
+// IsNotFound checks if an error indicates a resource was not found.
+func IsNotFound(err error) bool {
+	return IsCode(err, CodeNotFound) || IsCode(err, CodeFileNotFound)
+}
+
+// IsConflict checks if an error indicates a resource conflict.
+func IsConflict(err error) bool {
+	return IsCode(err, CodeConflict)
+}
+
 // IsRetryable determines if an error indicates a retryable condition.
 func IsRetryable(err error) bool {
 	code := GetCode(err)
@@ -349,4 +363,24 @@ func ErrConfigInvalid(field string, value interface{}) *ConfigError {
 // ErrConfigMissing creates an error for missing required configuration.
 func ErrConfigMissing(field string) *ConfigError {
 	return NewConfigFieldError(CodeConfiguration, "Required configuration field missing", field, nil)
+}
+
+// ErrNotFound creates a generic not found error.
+func ErrNotFound(resource string) *ScanError {
+	return NewScanError(CodeNotFound, fmt.Sprintf("%s not found", resource))
+}
+
+// ErrNotFoundWithID creates a not found error with specific ID.
+func ErrNotFoundWithID(resource, id string) *ScanError {
+	return NewScanError(CodeNotFound, fmt.Sprintf("%s with ID %s not found", resource, id))
+}
+
+// ErrConflict creates a generic conflict error.
+func ErrConflict(resource string) *ScanError {
+	return NewScanError(CodeConflict, fmt.Sprintf("%s already exists or conflict detected", resource))
+}
+
+// ErrConflictWithReason creates a conflict error with specific reason.
+func ErrConflictWithReason(resource, reason string) *ScanError {
+	return NewScanError(CodeConflict, fmt.Sprintf("%s conflict: %s", resource, reason))
 }

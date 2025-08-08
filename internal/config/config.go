@@ -154,22 +154,37 @@ type APIConfig struct {
 	// Enable API server
 	Enabled bool `yaml:"enabled" json:"enabled"`
 
-	// Listen address
-	ListenAddr string `yaml:"listen_addr" json:"listen_addr"`
+	// Listen host
+	Host string `yaml:"host" json:"host"`
 
 	// Listen port
 	Port int `yaml:"port" json:"port"`
 
+	// HTTP timeouts
+	ReadTimeout  time.Duration `yaml:"read_timeout" json:"read_timeout"`
+	WriteTimeout time.Duration `yaml:"write_timeout" json:"write_timeout"`
+	IdleTimeout  time.Duration `yaml:"idle_timeout" json:"idle_timeout"`
+
+	// Maximum header size
+	MaxHeaderBytes int `yaml:"max_header_bytes" json:"max_header_bytes"`
+
 	// Enable TLS
 	TLS TLSConfig `yaml:"tls" json:"tls"`
 
-	// API key for authentication
-	APIKey string `yaml:"api_key" json:"api_key"`
+	// Authentication settings
+	AuthEnabled bool     `yaml:"auth_enabled" json:"auth_enabled"`
+	APIKeys     []string `yaml:"api_keys" json:"api_keys"`
 
 	// CORS settings
-	CORS CORSConfig `yaml:"cors" json:"cors"`
+	EnableCORS  bool     `yaml:"enable_cors" json:"enable_cors"`
+	CORSOrigins []string `yaml:"cors_origins" json:"cors_origins"`
 
-	// Request timeout
+	// Rate limiting
+	RateLimitEnabled  bool          `yaml:"rate_limit_enabled" json:"rate_limit_enabled"`
+	RateLimitRequests int           `yaml:"rate_limit_requests" json:"rate_limit_requests"`
+	RateLimitWindow   time.Duration `yaml:"rate_limit_window" json:"rate_limit_window"`
+
+	// Request timeout (deprecated, use ReadTimeout)
 	RequestTimeout time.Duration `yaml:"request_timeout" json:"request_timeout"`
 
 	// Maximum request size
@@ -296,24 +311,28 @@ func defaultScanningConfig() ScanningConfig {
 // defaultAPIConfig returns the default API configuration.
 func defaultAPIConfig() APIConfig {
 	return APIConfig{
-		Enabled:    true,
-		ListenAddr: "127.0.0.1",
-		Port:       defaultAPIPort,
+		Enabled:        true,
+		Host:           "127.0.0.1",
+		Port:           defaultAPIPort,
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   10 * time.Second,
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 1 << 20, // 1 MB
 		TLS: TLSConfig{
 			Enabled:  false,
 			CertFile: "",
 			KeyFile:  "",
 			CAFile:   "",
 		},
-		APIKey: "",
-		CORS: CORSConfig{
-			Enabled:        true,
-			AllowedOrigins: []string{"*"},
-			AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-			AllowedHeaders: []string{"Content-Type", "Authorization"},
-		},
-		RequestTimeout: defaultRequestTimeoutSec * time.Second,
-		MaxRequestSize: defaultMaxRequestSizeMB * bytesPerMB, // 1MB
+		AuthEnabled:       false,
+		APIKeys:           []string{},
+		EnableCORS:        true,
+		CORSOrigins:       []string{"*"},
+		RateLimitEnabled:  true,
+		RateLimitRequests: 100,
+		RateLimitWindow:   time.Minute,
+		RequestTimeout:    defaultRequestTimeoutSec * time.Second,
+		MaxRequestSize:    defaultMaxRequestSizeMB * bytesPerMB, // 1MB
 	}
 }
 
@@ -529,13 +548,56 @@ func (c *Config) validateScanning() error {
 
 // validateAPI validates the API configuration.
 func (c *Config) validateAPI() error {
-	if c.API.Enabled {
-		if c.API.Port <= 0 || c.API.Port > 65535 {
-			return fmt.Errorf("API port must be between 1 and 65535")
-		}
-		if c.API.ListenAddr == "" {
-			return fmt.Errorf("API listen address is required when API is enabled")
-		}
+	if !c.API.Enabled {
+		return nil
+	}
+
+	if c.API.Port <= 0 || c.API.Port > 65535 {
+		return fmt.Errorf("API port must be between 1 and 65535")
+	}
+	if c.API.Host == "" {
+		return fmt.Errorf("API host address is required when API is enabled")
+	}
+
+	// Validate timeouts
+	if c.API.ReadTimeout <= 0 {
+		return fmt.Errorf("API read timeout must be positive")
+	}
+	if c.API.WriteTimeout <= 0 {
+		return fmt.Errorf("API write timeout must be positive")
+	}
+	if c.API.IdleTimeout <= 0 {
+		return fmt.Errorf("API idle timeout must be positive")
+	}
+
+	// Validate max header bytes
+	if c.API.MaxHeaderBytes <= 0 {
+		return fmt.Errorf("API max header bytes must be positive")
+	}
+
+	// Validate rate limiting
+	if err := c.validateAPIRateLimiting(); err != nil {
+		return err
+	}
+
+	// Validate authentication
+	if c.API.AuthEnabled && len(c.API.APIKeys) == 0 {
+		return fmt.Errorf("at least one API key must be provided when authentication is enabled")
+	}
+
+	return nil
+}
+
+// validateAPIRateLimiting validates the API rate limiting configuration.
+func (c *Config) validateAPIRateLimiting() error {
+	if !c.API.RateLimitEnabled {
+		return nil
+	}
+	if c.API.RateLimitRequests <= 0 {
+		return fmt.Errorf("rate limit requests must be positive when rate limiting is enabled")
+	}
+	if c.API.RateLimitWindow <= 0 {
+		return fmt.Errorf("rate limit window must be positive when rate limiting is enabled")
 	}
 	return nil
 }
@@ -587,7 +649,7 @@ func (c *Config) IsDaemonMode() bool {
 
 // GetAPIAddress returns the full API address.
 func (c *Config) GetAPIAddress() string {
-	return fmt.Sprintf("%s:%d", c.API.ListenAddr, c.API.Port)
+	return fmt.Sprintf("%s:%d", c.API.Host, c.API.Port)
 }
 
 // IsAPIEnabled returns true if API server is enabled.
