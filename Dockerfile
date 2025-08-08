@@ -1,9 +1,13 @@
 # Multi-stage build for Scanorama network scanner
 # Stage 1: Build the Go application
-FROM golang:1.21-alpine AS builder
+FROM golang:latest AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    ca-certificates \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /build
@@ -27,20 +31,20 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     ./cmd/scanorama
 
 # Stage 2: Create minimal runtime image
-FROM alpine:3.19
+FROM ubuntu:22.04
 
 # Install runtime dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
     nmap \
-    nmap-scripts \
     curl \
-    && rm -rf /var/cache/apk/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Create non-root user for security
-RUN addgroup -g 1001 -S scanorama && \
-    adduser -u 1001 -S scanorama -G scanorama
+RUN groupadd -g 1001 scanorama && \
+    useradd -u 1001 -g scanorama -s /bin/bash -m scanorama
 
 # Create directories
 RUN mkdir -p /app/config /app/logs /app/static /app/data && \
@@ -52,9 +56,8 @@ WORKDIR /app
 # Copy binary from builder stage
 COPY --from=builder /build/scanorama /app/scanorama
 
-# Copy configuration files
-COPY config.example.yaml /app/config/config.yaml
-COPY --chown=scanorama:scanorama config.example.yaml /app/config/
+# Create default config structure (config should be mounted at runtime)
+RUN echo 'database:\n  host: postgres\n  port: 5432\n  database: scanorama\n  username: scanorama\n  ssl_mode: disable\nlogging:\n  level: info\n  format: json\napi:\n  port: 8080' > /app/config/config.yaml
 
 # Create static directory for future frontend assets
 RUN mkdir -p /app/static/css /app/static/js /app/static/images

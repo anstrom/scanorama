@@ -284,7 +284,7 @@ security: ## Run security vulnerability scans
 # Docker targets
 docker-build: ## Build Docker image
 	@echo "Building Docker image $(DOCKER_FULL_IMAGE)..."
-	@docker build \
+	@PATH="/Applications/Docker.app/Contents/Resources/bin:$$PATH" docker build \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg BUILD_TIME=$(BUILD_TIME) \
@@ -295,7 +295,7 @@ docker-build: ## Build Docker image
 
 docker-run: docker-build ## Build and run Docker container locally
 	@echo "Running Docker container..."
-	@docker run --rm -it \
+	@PATH="/Applications/Docker.app/Contents/Resources/bin:$$PATH" docker run --rm -it \
 		-p 8080:8080 \
 		-e SCANORAMA_LOG_LEVEL=info \
 		--name scanorama-test \
@@ -307,7 +307,7 @@ docker-push: docker-build ## Push Docker image to registry
 		echo "Error: DOCKER_REGISTRY not set"; \
 		exit 1; \
 	fi
-	@docker push $(DOCKER_FULL_IMAGE)
+	@PATH="/Applications/Docker.app/Contents/Resources/bin:$$PATH" docker push $(DOCKER_FULL_IMAGE)
 	@echo "✅ Docker image pushed: $(DOCKER_FULL_IMAGE)"
 
 docker-dev: ## Start development environment with docker-compose

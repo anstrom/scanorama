@@ -51,9 +51,6 @@ Makefile
 # Environment and config files (use mounted configs instead)
 .env
 .env.*
-config.yaml
-config.dev.yaml
-config.example.yaml
 
 # Cache and temporary directories
 .cache/
