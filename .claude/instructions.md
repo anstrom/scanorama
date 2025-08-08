@@ -285,6 +285,21 @@ git commit -m "fix(db): optimize query performance with connection pooling"
 git commit -m "refactor: extract common validation logic to middleware"
 ```
 
+#### Never Use Adjectives in Commit Messages
+```bash
+# ❌ Adjective-heavy commits (lazy writing)
+git commit -m "feat: add comprehensive test coverage"
+git commit -m "fix: improve excellent error handling"
+git commit -m "test: add extensive middleware tests"
+git commit -m "docs: create detailed documentation"
+
+# ✅ Adjective-free commits (precise, factual)
+git commit -m "feat: add test coverage for API handlers"
+git commit -m "fix: resolve nil pointer in error handling"
+git commit -m "test: add middleware CORS and logging tests"
+git commit -m "docs: document authentication flow"
+```
+
 ### Rebase Strategy (Avoid Fix Commit Noise)
 
 #### During Development - Use Fixup Commits
