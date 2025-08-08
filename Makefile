@@ -140,7 +140,7 @@ ci: ## Run full CI pipeline locally (quality + test + build)
 	@echo "=== Building ==="
 	@$(MAKE) build
 	@echo "=== Testing binary ==="
-	@./$(BUILD_DIR)/$(BINARY_NAME) version
+	@./$(BUILD_DIR)/$(BINARY_NAME) --version
 	@echo "✅ All CI checks passed!"
 
 security: ## Run security vulnerability scans
