@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anstrom/scanorama/internal/api"
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 )
@@ -32,13 +33,14 @@ const (
 
 // Daemon represents the main daemon process.
 type Daemon struct {
-	config   *config.Config
-	database *db.DB
-	pidFile  string
-	logger   *log.Logger
-	ctx      context.Context
-	cancel   context.CancelFunc
-	done     chan struct{}
+	config    *config.Config
+	database  *db.DB
+	apiServer *api.Server
+	pidFile   string
+	logger    *log.Logger
+	ctx       context.Context
+	cancel    context.CancelFunc
+	done      chan struct{}
 }
 
 // New creates a new daemon instance.
@@ -98,6 +100,12 @@ func (d *Daemon) Start() error {
 	if err := d.initDatabase(); err != nil {
 		d.cleanup()
 		return fmt.Errorf("failed to initialize database: %w", err)
+	}
+
+	// Initialize API server if enabled
+	if err := d.initAPIServer(); err != nil {
+		d.cleanup()
+		return fmt.Errorf("failed to initialize API server: %w", err)
 	}
 
 	// Start the main daemon loop
@@ -294,6 +302,26 @@ func (d *Daemon) initDatabase() error {
 	return nil
 }
 
+// initAPIServer initializes the API server.
+func (d *Daemon) initAPIServer() error {
+	if !d.config.IsAPIEnabled() {
+		d.logger.Println("API server disabled, skipping initialization")
+		return nil
+	}
+
+	d.logger.Printf("Initializing API server on %s", d.config.GetAPIAddress())
+
+	// Create API server
+	apiServer, err := api.New(d.config, d.database)
+	if err != nil {
+		return fmt.Errorf("API server creation failed: %w", err)
+	}
+
+	d.apiServer = apiServer
+	d.logger.Println("API server initialized")
+	return nil
+}
+
 // checkExistingPID checks if a PID file exists and if the process is still running.
 func (d *Daemon) checkExistingPID() error {
 	if _, err := os.Stat(d.pidFile); os.IsNotExist(err) {
@@ -338,6 +366,16 @@ func (d *Daemon) isProcessRunning(pid int) bool {
 func (d *Daemon) run() error {
 	d.logger.Println("Entering main daemon loop...")
 
+	// Start API server if configured
+	if d.apiServer != nil {
+		go func() {
+			d.logger.Printf("Starting API server on %s", d.config.GetAPIAddress())
+			if err := d.apiServer.Start(d.ctx); err != nil {
+				d.logger.Printf("API server error: %v", err)
+			}
+		}()
+	}
+
 	// Main daemon loop
 	for {
 		select {
@@ -372,6 +410,16 @@ func (d *Daemon) performHealthCheck() {
 // cleanup performs cleanup tasks.
 func (d *Daemon) cleanup() {
 	d.logger.Println("Performing cleanup...")
+
+	// Stop API server
+	if d.apiServer != nil {
+		d.logger.Println("Stopping API server...")
+		if err := d.apiServer.Stop(); err != nil {
+			d.logger.Printf("Error stopping API server: %v", err)
+		} else {
+			d.logger.Println("API server stopped")
+		}
+	}
 
 	// Close database connection
 	if d.database != nil {
