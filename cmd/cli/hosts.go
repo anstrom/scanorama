@@ -1,16 +1,25 @@
+// Package cli provides command-line interface commands for the Scanorama network scanner.
+// This package implements the Cobra-based CLI structure with commands for scanning,
+// discovery, host management, scheduling, and daemon operations.
 package cli
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/spf13/cobra"
+)
+
+const (
+	// Host management constants.
+	hostsSeparatorLength = 100 // characters for host list separator
+	maxOSNameLength      = 18  // max OS name length before truncation
+	ipAddressParts       = 4   // expected parts in IP address
+	hoursPerDay          = 24  // hours in a day for duration calculation
 )
 
 var (
@@ -18,10 +27,9 @@ var (
 	hostsOSFamily    string
 	hostsLastSeen    string
 	hostsShowIgnored bool
-	hostsIgnoreIP    string
 )
 
-// hostsCmd represents the hosts command
+// hostsCmd represents the hosts command.
 var hostsCmd = &cobra.Command{
 	Use:   "hosts",
 	Short: "Manage discovered hosts",
@@ -36,7 +44,7 @@ last seen time, and whether to include ignored hosts.`,
 	Run: runHosts,
 }
 
-// hostsIgnoreCmd represents the hosts ignore command
+// hostsIgnoreCmd represents the hosts ignore command.
 var hostsIgnoreCmd = &cobra.Command{
 	Use:   "ignore [IP]",
 	Short: "Ignore a host from future scans",
@@ -49,7 +57,7 @@ unless --show-ignored is used.`,
 	Run:  runHostsIgnore,
 }
 
-// hostsUnignoreCmd represents the hosts unignore command
+// hostsUnignoreCmd represents the hosts unignore command.
 var hostsUnignoreCmd = &cobra.Command{
 	Use:   "unignore [IP]",
 	Short: "Remove ignore flag from a host",
@@ -73,7 +81,8 @@ func init() {
 	hostsCmd.Flags().BoolVar(&hostsShowIgnored, "show-ignored", false, "Include ignored hosts in results")
 
 	// Add detailed flag descriptions
-	hostsCmd.Flags().Lookup("status").Usage = "Show only hosts with specific status (up = responsive, down = not responding)"
+	hostsCmd.Flags().Lookup("status").Usage = "Show only hosts with specific status " +
+		"(up = responsive, down = not responding)"
 	hostsCmd.Flags().Lookup("os").Usage = "Filter by detected operating system family"
 	hostsCmd.Flags().Lookup("last-seen").Usage = "Show hosts seen within time period (1h, 6h, 24h, 7d, 30d)"
 	hostsCmd.Flags().Lookup("show-ignored").Usage = "Include hosts marked as ignored in the results"
@@ -110,112 +119,65 @@ func runHosts(cmd *cobra.Command, args []string) {
 			"unknown": true,
 		}
 		if !validOSFamilies[hostsOSFamily] {
-			fmt.Fprintf(os.Stderr, "Error: invalid OS family '%s'. Valid families: windows, linux, macos, unknown\n", hostsOSFamily)
+			fmt.Fprintf(os.Stderr, "Error: invalid OS family '%s'. "+
+				"Valid families: windows, linux, macos, unknown\n", hostsOSFamily)
 			os.Exit(1)
 		}
 	}
 
-	// Setup database connection
-	cfg, err := config.Load("config.yaml")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
+	withDatabaseOrExit(func(database *db.DB) {
+		// Build query filters
+		filters := buildHostsFilters()
 
-	database, err := db.Connect(context.Background(), &cfg.Database)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
-		os.Exit(1)
-	}
-	defer database.Close()
+		if verbose {
+			fmt.Printf("Querying hosts with filters: %+v\n", filters)
+		}
 
-	// Build query filters
-	filters := buildHostsFilters()
+		// Query hosts
+		hosts, err := queryHosts(database, filters)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error querying hosts: %v\n", err)
+			os.Exit(1)
+		}
 
-	if verbose {
-		fmt.Printf("Querying hosts with filters: %+v\n", filters)
-	}
-
-	// Query hosts
-	hosts, err := queryHosts(database, filters)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error querying hosts: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Display results
-	displayHosts(hosts)
+		// Display results
+		displayHosts(hosts)
+	})
 }
 
 func runHostsIgnore(cmd *cobra.Command, args []string) {
 	ip := args[0]
 
-	// Validate IP format
-	if err := validateIP(ip); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: invalid IP address '%s': %v\n", ip, err)
-		os.Exit(1)
-	}
+	withHostDatabaseOperation(ip, func(database *db.DB) error {
+		// Set ignore flag
+		err := setHostIgnoreFlag(database, ip, true)
+		if err != nil {
+			return fmt.Errorf("ignoring host %s: %v", ip, err)
+		}
 
-	// Setup database connection
-	cfg, err := config.Load("config.yaml")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
-
-	database, err := db.Connect(context.Background(), &cfg.Database)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
-		os.Exit(1)
-	}
-	defer database.Close()
-
-	// Set ignore flag
-	err = setHostIgnoreFlag(database, ip, true)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error ignoring host %s: %v\n", ip, err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Host %s has been marked as ignored\n", ip)
-	fmt.Println("It will be excluded from future automatic scans")
+		fmt.Printf("Host %s has been marked as ignored\n", ip)
+		fmt.Println("It will be excluded from future automatic scans")
+		return nil
+	})
 }
 
 func runHostsUnignore(cmd *cobra.Command, args []string) {
 	ip := args[0]
 
-	// Validate IP format
-	if err := validateIP(ip); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: invalid IP address '%s': %v\n", ip, err)
-		os.Exit(1)
-	}
+	withHostDatabaseOperation(ip, func(database *db.DB) error {
+		// Remove ignore flag
+		err := setHostIgnoreFlag(database, ip, false)
+		if err != nil {
+			return fmt.Errorf("unignoring host %s: %v", ip, err)
+		}
 
-	// Setup database connection
-	cfg, err := config.Load("config.yaml")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
-
-	database, err := db.Connect(context.Background(), &cfg.Database)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
-		os.Exit(1)
-	}
-	defer database.Close()
-
-	// Remove ignore flag
-	err = setHostIgnoreFlag(database, ip, false)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error unignoring host %s: %v\n", ip, err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Host %s is no longer ignored\n", ip)
-	fmt.Println("It will be included in future automatic scans")
+		fmt.Printf("Host %s is no longer ignored\n", ip)
+		fmt.Println("It will be included in future automatic scans")
+		return nil
+	})
 }
 
-// HostFilters represents the filters for querying hosts
+// HostFilters represents the filters for querying hosts.
 type HostFilters struct {
 	Status      string
 	OSFamily    string
@@ -223,7 +185,7 @@ type HostFilters struct {
 	ShowIgnored bool
 }
 
-// Host represents a discovered host
+// Host represents a discovered host.
 type Host struct {
 	IP              string
 	Status          string
@@ -292,7 +254,6 @@ func queryHosts(database *db.DB, filters HostFilters) ([]Host, error) {
 	if filters.LastSeenDur > 0 {
 		query += fmt.Sprintf(" AND h.last_seen >= $%d", argIndex)
 		args = append(args, time.Now().Add(-filters.LastSeenDur))
-		argIndex++
 	}
 
 	// Add ignored filter
@@ -301,14 +262,19 @@ func queryHosts(database *db.DB, filters HostFilters) ([]Host, error) {
 	}
 
 	query += `
-		GROUP BY h.id, h.ip_address, h.status, h.os_family, h.os_name, h.last_seen, h.first_seen, h.is_ignored, h.discovery_method
+		GROUP BY h.id, h.ip_address, h.status, h.os_family, h.os_name, h.last_seen, h.first_seen,
+			h.is_ignored, h.discovery_method
 		ORDER BY h.last_seen DESC, h.ip_address`
 
 	rows, err := database.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close rows: %v\n", closeErr)
+		}
+	}()
 
 	var hosts []Host
 	for rows.Next() {
@@ -344,10 +310,11 @@ func displayHosts(hosts []Host) {
 	fmt.Printf("Found %d host(s):\n\n", len(hosts))
 	fmt.Printf("%-15s %-8s %-12s %-20s %-12s %-8s %-8s %s\n",
 		"IP Address", "Status", "OS Family", "OS Name", "Last Seen", "Method", "Ports", "Ignored")
-	fmt.Println(strings.Repeat("-", 100))
+	fmt.Println(strings.Repeat("-", hostsSeparatorLength))
 
 	// Print hosts
-	for _, host := range hosts {
+	for i := range hosts {
+		host := &hosts[i]
 		lastSeenStr := formatDuration(time.Since(host.LastSeen))
 		ignoredStr := ""
 		if host.IsIgnored {
@@ -355,8 +322,8 @@ func displayHosts(hosts []Host) {
 		}
 
 		osName := host.OSName
-		if len(osName) > 18 {
-			osName = osName[:15] + "..."
+		if len(osName) > maxOSNameLength {
+			osName = osName[:maxOSNameLength-3] + "..."
 		}
 
 		fmt.Printf("%-15s %-8s %-12s %-20s %-12s %-8s %-8d %s\n",
@@ -374,7 +341,8 @@ func displayHosts(hosts []Host) {
 	upCount := 0
 	downCount := 0
 	ignoredCount := 0
-	for _, host := range hosts {
+	for i := range hosts {
+		host := &hosts[i]
 		if host.Status == "up" {
 			upCount++
 		} else {
@@ -441,7 +409,7 @@ func parseDuration(duration string) (time.Duration, error) {
 func validateIP(ip string) error {
 	// Simple IP validation - in real implementation you'd use net.ParseIP
 	parts := strings.Split(ip, ".")
-	if len(parts) != 4 {
+	if len(parts) != ipAddressParts {
 		return fmt.Errorf("invalid IP format")
 	}
 
@@ -461,7 +429,7 @@ func formatDuration(d time.Duration) string {
 	} else if d < 24*time.Hour {
 		return fmt.Sprintf("%.1fh", d.Hours())
 	} else {
-		days := int(d.Hours() / 24)
+		days := int(d.Hours() / hoursPerDay)
 		return fmt.Sprintf("%dd", days)
 	}
 }

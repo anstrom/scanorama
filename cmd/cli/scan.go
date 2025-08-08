@@ -1,3 +1,6 @@
+// Package cli provides command-line interface commands for the Scanorama network scanner.
+// This package implements the Cobra-based CLI structure with commands for scanning,
+// discovery, host management, scheduling, and daemon operations.
 package cli
 
 import (
@@ -13,6 +16,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	// Scan operation constants.
+	defaultScanTimeout = 300 // default scan timeout in seconds
+)
+
 var (
 	scanTargets   string
 	scanLiveHosts bool
@@ -23,7 +31,7 @@ var (
 	scanOSFamily  string
 )
 
-// scanCmd represents the scan command
+// scanCmd represents the scan command.
 var scanCmd = &cobra.Command{
 	Use:   "scan",
 	Short: "Scan hosts for open ports and services",
@@ -49,19 +57,23 @@ func init() {
 	scanCmd.Flags().StringVar(&scanTargets, "targets", "", "Comma-separated list of targets to scan")
 	scanCmd.Flags().BoolVar(&scanLiveHosts, "live-hosts", false, "Scan only discovered live hosts")
 	scanCmd.Flags().StringVar(&scanPorts, "ports", "22,80,443,8080,8443", "Ports to scan (comma-separated)")
-	scanCmd.Flags().StringVar(&scanType, "type", "connect", "Scan type: connect, syn, version, comprehensive, intense, stealth")
+	scanCmd.Flags().StringVar(&scanType, "type", "connect",
+		"Scan type: connect, syn, version, comprehensive, intense, stealth")
 	scanCmd.Flags().StringVar(&scanProfile, "profile", "", "Scan profile to use (overrides scan type)")
-	scanCmd.Flags().IntVar(&scanTimeout, "timeout", 300, "Scan timeout in seconds")
-	scanCmd.Flags().StringVar(&scanOSFamily, "os-family", "", "Scan only hosts with specific OS family (windows, linux, macos)")
+	scanCmd.Flags().IntVar(&scanTimeout, "timeout", defaultScanTimeout, "Scan timeout in seconds")
+	scanCmd.Flags().StringVar(&scanOSFamily, "os-family", "",
+		"Scan only hosts with specific OS family (windows, linux, macos)")
 
 	// Make targets and live-hosts mutually exclusive
 	scanCmd.MarkFlagsMutuallyExclusive("targets", "live-hosts")
 
 	// Add detailed flag descriptions
-	scanCmd.Flags().Lookup("targets").Usage = "Specific targets to scan (e.g., '192.168.1.1,192.168.1.10' or '192.168.1.1-10')"
+	scanCmd.Flags().Lookup("targets").Usage = "Specific targets to scan " +
+		"(e.g., '192.168.1.1,192.168.1.10' or '192.168.1.1-10')"
 	scanCmd.Flags().Lookup("live-hosts").Usage = "Scan all hosts discovered as 'up' in previous discovery"
 	scanCmd.Flags().Lookup("ports").Usage = "Port specification: '80,443' or '1-1000' or 'T:' for top ports"
-	scanCmd.Flags().Lookup("type").Usage = "Scan type: connect (default), syn (requires root), version, comprehensive, intense, stealth"
+	scanCmd.Flags().Lookup("type").Usage = "Scan type: connect (default), syn (requires root), " +
+		"version, comprehensive, intense, stealth"
 	scanCmd.Flags().Lookup("profile").Usage = "Use predefined scan profile (windows-server, linux-server, etc.)"
 	scanCmd.Flags().Lookup("timeout").Usage = "Maximum time to wait for scan completion"
 	scanCmd.Flags().Lookup("os-family").Usage = "Filter targets by OS family when using --live-hosts"
@@ -71,7 +83,9 @@ func runScan(cmd *cobra.Command, args []string) {
 	// Validate arguments
 	if !scanLiveHosts && scanTargets == "" {
 		fmt.Fprintf(os.Stderr, "Error: either --targets or --live-hosts must be specified\n\n")
-		cmd.Help()
+		if helpErr := cmd.Help(); helpErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to display help: %v\n", helpErr)
+		}
 		os.Exit(1)
 	}
 
@@ -108,7 +122,11 @@ func runScan(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
 		os.Exit(1)
 	}
-	defer database.Close()
+	defer func() {
+		if closeErr := database.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close database connection: %v\n", closeErr)
+		}
+	}()
 
 	// Create scan configuration
 	scanConfig := internal.ScanConfig{
@@ -127,13 +145,13 @@ func runScan(cmd *cobra.Command, args []string) {
 
 	// Run scan based on mode
 	if scanLiveHosts {
-		runLiveHostsScan(database, scanConfig)
+		runLiveHostsScan(database, &scanConfig)
 	} else {
-		runTargetsScan(database, scanConfig, scanTargets)
+		runTargetsScan(database, &scanConfig, scanTargets)
 	}
 }
 
-func runLiveHostsScan(database *db.DB, config internal.ScanConfig) error {
+func runLiveHostsScan(_ *db.DB, _ *internal.ScanConfig) {
 	fmt.Println("Scanning discovered live hosts...")
 
 	if scanOSFamily != "" {
@@ -142,10 +160,9 @@ func runLiveHostsScan(database *db.DB, config internal.ScanConfig) error {
 
 	// TODO: Implement live hosts scanning using internal package
 	fmt.Println("Live hosts scanning not yet implemented with new CLI")
-	return nil
 }
 
-func runTargetsScan(database *db.DB, config internal.ScanConfig, targets string) error {
+func runTargetsScan(_ *db.DB, _ *internal.ScanConfig, targets string) {
 	fmt.Printf("Scanning targets: %s\n", targets)
 
 	// Parse targets
@@ -159,21 +176,11 @@ func runTargetsScan(database *db.DB, config internal.ScanConfig, targets string)
 		fmt.Printf("Parsed %d targets: %v\n", len(targetList), targetList)
 	}
 
-	// Update scan config with targets
-	config.Targets = targetList
+	// Note: targets are handled by the scan engine directly
+	_ = targetList // targets will be passed to scan engine
 
 	// TODO: Implement target scanning using internal package
 	fmt.Printf("Target scanning not yet fully implemented with new CLI for targets: %v\n", targetList)
-	return nil
-}
-
-func displayScanResults(result *internal.ScanResult) {
-	fmt.Printf("\nScan completed successfully!\n")
-	fmt.Printf("Duration: %v\n", result.Duration)
-	fmt.Printf("Hosts up: %d\n", result.Stats.Up)
-	fmt.Printf("Hosts down: %d\n", result.Stats.Down)
-	fmt.Printf("Total hosts: %d\n", result.Stats.Total)
-	fmt.Println("\nUse 'scanorama hosts' to view all discovered hosts")
 }
 
 func validatePorts(ports string) error {
@@ -194,36 +201,60 @@ func validatePorts(ports string) error {
 			continue
 		}
 
-		// Check for range (e.g., "80-443")
-		if strings.Contains(part, "-") {
-			rangeParts := strings.Split(part, "-")
-			if len(rangeParts) != 2 {
-				return fmt.Errorf("invalid port range: %s", part)
-			}
-
-			start, err := strconv.Atoi(strings.TrimSpace(rangeParts[0]))
-			if err != nil || start < 1 || start > 65535 {
-				return fmt.Errorf("invalid start port in range: %s", rangeParts[0])
-			}
-
-			end, err := strconv.Atoi(strings.TrimSpace(rangeParts[1]))
-			if err != nil || end < 1 || end > 65535 {
-				return fmt.Errorf("invalid end port in range: %s", rangeParts[1])
-			}
-
-			if start > end {
-				return fmt.Errorf("start port cannot be greater than end port: %s", part)
-			}
-		} else {
-			// Single port
-			port, err := strconv.Atoi(part)
-			if err != nil || port < 1 || port > 65535 {
-				return fmt.Errorf("invalid port: %s", part)
-			}
+		if err := validatePortPart(part); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+func validatePortPart(part string) error {
+	// Check for range (e.g., "80-443")
+	if strings.Contains(part, "-") {
+		return validatePortRange(part)
+	}
+	// Single port
+	return validateSinglePort(part)
+}
+
+func validatePortRange(part string) error {
+	rangeParts := strings.Split(part, "-")
+	if len(rangeParts) != 2 {
+		return fmt.Errorf("invalid port range: %s", part)
+	}
+
+	start, err := parsePort(rangeParts[0])
+	if err != nil {
+		return fmt.Errorf("invalid start port in range: %s", rangeParts[0])
+	}
+
+	end, err := parsePort(rangeParts[1])
+	if err != nil {
+		return fmt.Errorf("invalid end port in range: %s", rangeParts[1])
+	}
+
+	if start > end {
+		return fmt.Errorf("start port cannot be greater than end port: %s", part)
+	}
+
+	return nil
+}
+
+func validateSinglePort(part string) error {
+	_, err := parsePort(part)
+	if err != nil {
+		return fmt.Errorf("invalid port: %s", part)
+	}
+	return nil
+}
+
+func parsePort(portStr string) (int, error) {
+	port, err := strconv.Atoi(strings.TrimSpace(portStr))
+	if err != nil || port < 1 || port > 65535 {
+		return 0, fmt.Errorf("port must be between 1 and 65535")
+	}
+	return port, nil
 }
 
 func parseTargets(targets string) []string {

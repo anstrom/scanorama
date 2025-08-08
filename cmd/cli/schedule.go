@@ -1,18 +1,30 @@
+// Package cli provides command-line interface commands for the Scanorama network scanner.
+// This package implements the Cobra-based CLI structure with commands for scanning,
+// discovery, host management, scheduling, and daemon operations.
 package cli
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/spf13/cobra"
 )
 
-// scheduleCmd represents the schedule command
+const (
+	// Schedule management constants.
+	scheduleArgsCount       = 3   // required args for add-discovery command
+	scheduleScanArgsCount   = 5   // required args for add-scan command
+	scheduleDefaultTimeout  = 300 // default timeout in seconds
+	scheduleSeparatorLength = 85  // characters for schedule list separator
+	scheduleDetailSeparator = 50  // characters for schedule detail separator
+	maxJobNameLength        = 20  // max job name length before truncation
+	maxPortsDisplay         = 5   // max ports to show before truncation
+)
+
+// scheduleCmd represents the schedule command.
 var scheduleCmd = &cobra.Command{
 	Use:   "schedule",
 	Short: "Manage scheduled jobs",
@@ -25,7 +37,7 @@ at specified intervals.`,
   scanorama schedule remove "weekly-sweep"`,
 }
 
-// scheduleListCmd represents the schedule list command
+// scheduleListCmd represents the schedule list command.
 var scheduleListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all scheduled jobs",
@@ -34,7 +46,7 @@ next run times, and job details.`,
 	Run: runScheduleList,
 }
 
-// scheduleAddDiscoveryCmd represents the schedule add-discovery command
+// scheduleAddDiscoveryCmd represents the schedule add-discovery command.
 var scheduleAddDiscoveryCmd = &cobra.Command{
 	Use:   "add-discovery [name] [cron] [network]",
 	Short: "Add a scheduled discovery job",
@@ -43,11 +55,11 @@ The cron expression follows standard cron format (minute hour day month weekday)
 	Example: `  scanorama schedule add-discovery "weekly-sweep" "0 2 * * 0" "10.0.0.0/8"
   scanorama schedule add-discovery "daily-local" "0 1 * * *" "192.168.0.0/16"
   scanorama schedule add-discovery "hourly-critical" "0 * * * *" "10.0.1.0/24"`,
-	Args: cobra.ExactArgs(3),
+	Args: cobra.ExactArgs(scheduleArgsCount),
 	Run:  runScheduleAddDiscovery,
 }
 
-// scheduleAddScanCmd represents the schedule add-scan command
+// scheduleAddScanCmd represents the schedule add-scan command.
 var scheduleAddScanCmd = &cobra.Command{
 	Use:   "add-scan [name] [cron]",
 	Short: "Add a scheduled scan job",
@@ -60,7 +72,7 @@ You can schedule scans for live hosts or specific targets.`,
 	Run:  runScheduleAddScan,
 }
 
-// scheduleRemoveCmd represents the schedule remove command
+// scheduleRemoveCmd represents the schedule remove command.
 var scheduleRemoveCmd = &cobra.Command{
 	Use:   "remove [name]",
 	Short: "Remove a scheduled job",
@@ -72,7 +84,7 @@ run automatically after removal.`,
 	Run:  runScheduleRemove,
 }
 
-// scheduleShowCmd represents the schedule show command
+// scheduleShowCmd represents the schedule show command.
 var scheduleShowCmd = &cobra.Command{
 	Use:   "show [name]",
 	Short: "Show details of a scheduled job",
@@ -85,7 +97,7 @@ including its configuration, schedule, and execution history.`,
 }
 
 var (
-	// Flags for add-scan command
+	// Flags for add-scan command.
 	scheduleTargets   string
 	scheduleLiveHosts bool
 	schedulePorts     string
@@ -94,7 +106,7 @@ var (
 	scheduleTimeout   int
 	scheduleOSFamily  string
 
-	// Flags for add-discovery command
+	// Flags for add-discovery command.
 	scheduleDetectOS bool
 	scheduleMethod   string
 )
@@ -113,7 +125,7 @@ func init() {
 	scheduleAddScanCmd.Flags().StringVar(&schedulePorts, "ports", "22,80,443,8080,8443", "Ports to scan")
 	scheduleAddScanCmd.Flags().StringVar(&scheduleScanType, "type", "connect", "Scan type")
 	scheduleAddScanCmd.Flags().StringVar(&scheduleProfile, "profile", "", "Scan profile to use")
-	scheduleAddScanCmd.Flags().IntVar(&scheduleTimeout, "timeout", 300, "Scan timeout in seconds")
+	scheduleAddScanCmd.Flags().IntVar(&scheduleTimeout, "timeout", scheduleDefaultTimeout, "Scan timeout in seconds")
 	scheduleAddScanCmd.Flags().StringVar(&scheduleOSFamily, "os-family", "", "Scan only specific OS family")
 
 	// Make targets and live-hosts mutually exclusive
@@ -126,32 +138,21 @@ func init() {
 	// Add detailed descriptions
 	scheduleAddScanCmd.Flags().Lookup("targets").Usage = "Specific targets to scan in scheduled job"
 	scheduleAddScanCmd.Flags().Lookup("live-hosts").Usage = "Scan all discovered live hosts in scheduled job"
-	scheduleAddScanCmd.Flags().Lookup("type").Usage = "Scan type: connect, syn, version, comprehensive, intense, stealth"
+	scheduleAddScanCmd.Flags().Lookup("type").Usage = "Scan type: connect, syn, version, " +
+		"comprehensive, intense, stealth"
 }
 
 func runScheduleList(cmd *cobra.Command, args []string) {
-	// Setup database connection
-	cfg, err := config.Load("config.yaml")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
+	withDatabaseOrExit(func(database *db.DB) {
+		// Query scheduled jobs
+		jobs, err := queryScheduledJobs(database)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error querying scheduled jobs: %v\n", err)
+			os.Exit(1)
+		}
 
-	database, err := db.Connect(context.Background(), &cfg.Database)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
-		os.Exit(1)
-	}
-	defer database.Close()
-
-	// Query scheduled jobs
-	jobs, err := queryScheduledJobs(database)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error querying scheduled jobs: %v\n", err)
-		os.Exit(1)
-	}
-
-	displayScheduledJobs(jobs)
+		displayScheduledJobs(jobs)
+	})
 }
 
 func runScheduleAddDiscovery(cmd *cobra.Command, args []string) {
@@ -162,56 +163,37 @@ func runScheduleAddDiscovery(cmd *cobra.Command, args []string) {
 	// Validate cron expression
 	if err := validateCronExpression(cronExpr); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: invalid cron expression '%s': %v\n", cronExpr, err)
-		fmt.Fprintf(os.Stderr, "Format: minute hour day month weekday (e.g., '0 2 * * 0' for Sunday 2 AM)\n")
 		os.Exit(1)
 	}
 
-	// Validate network
-	if err := validateNetwork(network); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: invalid network '%s': %v\n", network, err)
-		os.Exit(1)
-	}
+	withDatabaseOrExit(func(database *db.DB) {
+		// Create discovery job
+		job := DiscoveryJob{
+			Name:     name,
+			CronExpr: cronExpr,
+			Network:  network,
+			Method:   scheduleMethod,
+			DetectOS: scheduleDetectOS,
+		}
 
-	// Setup database connection
-	cfg, err := config.Load("config.yaml")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
+		if verbose {
+			fmt.Printf("Creating discovery job: %+v\n", job)
+		}
 
-	database, err := db.Connect(context.Background(), &cfg.Database)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
-		os.Exit(1)
-	}
-	defer database.Close()
+		err := createScheduledDiscoveryJob(database, job)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating scheduled discovery job: %v\n", err)
+			os.Exit(1)
+		}
 
-	// Create discovery job
-	job := DiscoveryJob{
-		Name:     name,
-		CronExpr: cronExpr,
-		Network:  network,
-		Method:   scheduleMethod,
-		DetectOS: scheduleDetectOS,
-	}
-
-	if verbose {
-		fmt.Printf("Creating discovery job: %+v\n", job)
-	}
-
-	err = createScheduledDiscoveryJob(database, job)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating scheduled job: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Successfully created scheduled discovery job '%s'\n", name)
-	fmt.Printf("Schedule: %s (next run: %s)\n", cronExpr, getNextRunTime(cronExpr))
-	fmt.Printf("Network: %s\n", network)
-	fmt.Printf("Method: %s\n", scheduleMethod)
-	if scheduleDetectOS {
-		fmt.Println("OS detection: enabled")
-	}
+		fmt.Printf("Successfully created scheduled discovery job '%s'\n", name)
+		fmt.Printf("Schedule: %s (next run: %s)\n", cronExpr, getNextRunTime(cronExpr))
+		fmt.Printf("Network: %s\n", network)
+		fmt.Printf("Method: %s\n", scheduleMethod)
+		if scheduleDetectOS {
+			fmt.Printf("OS Detection: enabled\n")
+		}
+	})
 }
 
 func runScheduleAddScan(cmd *cobra.Command, args []string) {
@@ -221,7 +203,6 @@ func runScheduleAddScan(cmd *cobra.Command, args []string) {
 	// Validate cron expression
 	if err := validateCronExpression(cronExpr); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: invalid cron expression '%s': %v\n", cronExpr, err)
-		fmt.Fprintf(os.Stderr, "Format: minute hour day month weekday (e.g., '0 */6 * * *' for every 6 hours)\n")
 		os.Exit(1)
 	}
 
@@ -231,115 +212,73 @@ func runScheduleAddScan(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Validate ports
-	if err := validatePorts(schedulePorts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: invalid port specification '%s': %v\n", schedulePorts, err)
-		os.Exit(1)
-	}
+	withDatabaseOrExit(func(database *db.DB) {
+		// Create scan job
+		job := ScanJob{
+			Name:      name,
+			CronExpr:  cronExpr,
+			Targets:   scheduleTargets,
+			LiveHosts: scheduleLiveHosts,
+			Ports:     schedulePorts,
+			ScanType:  scheduleScanType,
+			Profile:   scheduleProfile,
+			Timeout:   scheduleTimeout,
+			OSFamily:  scheduleOSFamily,
+		}
 
-	// Setup database connection
-	cfg, err := config.Load("config.yaml")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
+		if verbose {
+			fmt.Printf("Creating scan job: %+v\n", job)
+		}
 
-	database, err := db.Connect(context.Background(), &cfg.Database)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
-		os.Exit(1)
-	}
-	defer database.Close()
+		err := createScheduledScanJob(database, &job)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating scheduled scan job: %v\n", err)
+			os.Exit(1)
+		}
 
-	// Create scan job
-	job := ScanJob{
-		Name:      name,
-		CronExpr:  cronExpr,
-		Targets:   scheduleTargets,
-		LiveHosts: scheduleLiveHosts,
-		Ports:     schedulePorts,
-		ScanType:  scheduleScanType,
-		Profile:   scheduleProfile,
-		Timeout:   scheduleTimeout,
-		OSFamily:  scheduleOSFamily,
-	}
-
-	if verbose {
-		fmt.Printf("Creating scan job: %+v\n", job)
-	}
-
-	err = createScheduledScanJob(database, job)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating scheduled job: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Successfully created scheduled scan job '%s'\n", name)
-	fmt.Printf("Schedule: %s (next run: %s)\n", cronExpr, getNextRunTime(cronExpr))
-	if scheduleLiveHosts {
-		fmt.Println("Target: all live hosts")
-	} else {
-		fmt.Printf("Targets: %s\n", scheduleTargets)
-	}
-	fmt.Printf("Ports: %s\n", schedulePorts)
-	fmt.Printf("Scan type: %s\n", scheduleScanType)
+		fmt.Printf("Successfully created scheduled scan job '%s'\n", name)
+		fmt.Printf("Schedule: %s (next run: %s)\n", cronExpr, getNextRunTime(cronExpr))
+		if scheduleLiveHosts {
+			fmt.Println("Target: all live hosts")
+		} else {
+			fmt.Printf("Targets: %s\n", scheduleTargets)
+		}
+		fmt.Printf("Scan type: %s\n", scheduleScanType)
+		fmt.Printf("Ports: %s\n", schedulePorts)
+	})
 }
 
 func runScheduleRemove(cmd *cobra.Command, args []string) {
 	name := args[0]
 
-	// Setup database connection
-	cfg, err := config.Load("config.yaml")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
+	withDatabaseOrExit(func(database *db.DB) {
+		// Remove scheduled job
+		err := removeScheduledJob(database, name)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error removing scheduled job '%s': %v\n", name, err)
+			os.Exit(1)
+		}
 
-	database, err := db.Connect(context.Background(), &cfg.Database)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
-		os.Exit(1)
-	}
-	defer database.Close()
-
-	// Remove scheduled job
-	err = removeScheduledJob(database, name)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error removing scheduled job: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Successfully removed scheduled job '%s'\n", name)
+		fmt.Printf("Successfully removed scheduled job '%s'\n", name)
+	})
 }
 
 func runScheduleShow(cmd *cobra.Command, args []string) {
 	name := args[0]
 
-	// Setup database connection
-	cfg, err := config.Load("config.yaml")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
+	withDatabaseOrExit(func(database *db.DB) {
+		// Query job details
+		job, err := getScheduledJob(database, name)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting scheduled job: %v\n", err)
+			os.Exit(1)
+		}
 
-	database, err := db.Connect(context.Background(), &cfg.Database)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
-		os.Exit(1)
-	}
-	defer database.Close()
-
-	// Query job details
-	job, err := getScheduledJob(database, name)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting scheduled job: %v\n", err)
-		os.Exit(1)
-	}
-
-	displayJobDetails(job)
+		displayJobDetails(job)
+	})
 }
 
-// ScheduledJob represents a scheduled job
+// ScheduledJob represents a scheduled job.
 type ScheduledJob struct {
 	ID        string
 	Name      string
@@ -353,7 +292,7 @@ type ScheduledJob struct {
 	Config    map[string]interface{}
 }
 
-// DiscoveryJob represents a discovery job configuration
+// DiscoveryJob represents a discovery job configuration.
 type DiscoveryJob struct {
 	Name     string
 	CronExpr string
@@ -362,7 +301,7 @@ type DiscoveryJob struct {
 	DetectOS bool
 }
 
-// ScanJob represents a scan job configuration
+// ScanJob represents a scan job configuration.
 type ScanJob struct {
 	Name      string
 	CronExpr  string
@@ -387,7 +326,11 @@ func queryScheduledJobs(database *db.DB) ([]ScheduledJob, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close rows: %v\n", closeErr)
+		}
+	}()
 
 	var jobs []ScheduledJob
 	for rows.Next() {
@@ -427,9 +370,10 @@ func displayScheduledJobs(jobs []ScheduledJob) {
 	fmt.Printf("Found %d scheduled job(s):\n\n", len(jobs))
 	fmt.Printf("%-20s %-12s %-15s %-8s %-20s %-5s\n",
 		"Name", "Type", "Schedule", "Active", "Next Run", "Runs")
-	fmt.Println(strings.Repeat("-", 85))
+	fmt.Println(strings.Repeat("-", scheduleSeparatorLength))
 
-	for _, job := range jobs {
+	for i := range jobs {
+		job := &jobs[i]
 		activeStr := "No"
 		if job.IsActive {
 			activeStr = "Yes"
@@ -438,7 +382,7 @@ func displayScheduledJobs(jobs []ScheduledJob) {
 		nextRunStr := job.NextRun.Format("2006-01-02 15:04")
 
 		fmt.Printf("%-20s %-12s %-15s %-8s %-20s %-5d\n",
-			truncateString(job.Name, 20),
+			truncateString(job.Name, maxJobNameLength),
 			job.JobType,
 			job.CronExpr,
 			activeStr,
@@ -452,7 +396,7 @@ func createScheduledDiscoveryJob(database *db.DB, job DiscoveryJob) error {
 		INSERT INTO scheduled_jobs (name, job_type, cron_expression, configuration, is_active)
 		VALUES ($1, 'discovery', $2, $3, true)`
 
-	configJSON := fmt.Sprintf(`{"network":"%s","method":"%s","detect_os":%t}`,
+	configJSON := fmt.Sprintf(`{"network":%q,"method":%q,"detect_os":%t}`,
 		job.Network, job.Method, job.DetectOS)
 
 	_, err := database.Exec(query, job.Name, job.CronExpr, configJSON)
@@ -463,12 +407,13 @@ func createScheduledDiscoveryJob(database *db.DB, job DiscoveryJob) error {
 	return nil
 }
 
-func createScheduledScanJob(database *db.DB, job ScanJob) error {
+func createScheduledScanJob(database *db.DB, job *ScanJob) error {
 	query := `
 		INSERT INTO scheduled_jobs (name, job_type, cron_expression, configuration, is_active)
 		VALUES ($1, 'scan', $2, $3, true)`
 
-	configJSON := fmt.Sprintf(`{"targets":"%s","live_hosts":%t,"ports":"%s","scan_type":"%s","profile":"%s","timeout":%d,"os_family":"%s"}`,
+	configJSON := fmt.Sprintf(
+		`{"targets":%q,"live_hosts":%t,"ports":%q,"scan_type":%q,"profile":%q,"timeout":%d,"os_family":%q}`,
 		job.Targets, job.LiveHosts, job.Ports, job.ScanType, job.Profile, job.Timeout, job.OSFamily)
 
 	_, err := database.Exec(query, job.Name, job.CronExpr, configJSON)
@@ -531,7 +476,7 @@ func getScheduledJob(database *db.DB, name string) (*ScheduledJob, error) {
 
 func displayJobDetails(job *ScheduledJob) {
 	fmt.Printf("Scheduled Job Details: %s\n", job.Name)
-	fmt.Println(strings.Repeat("=", 50))
+	fmt.Println(strings.Repeat("=", scheduleDetailSeparator))
 	fmt.Printf("ID: %s\n", job.ID)
 	fmt.Printf("Type: %s\n", job.JobType)
 	fmt.Printf("Schedule: %s\n", job.CronExpr)
@@ -548,24 +493,13 @@ func displayJobDetails(job *ScheduledJob) {
 
 func validateCronExpression(cronExpr string) error {
 	parts := strings.Fields(cronExpr)
-	if len(parts) != 5 {
+	if len(parts) != scheduleScanArgsCount {
 		return fmt.Errorf("cron expression must have 5 fields (minute hour day month weekday)")
 	}
 	return nil
 }
 
-func validateNetwork(network string) error {
-	if network == "" {
-		return fmt.Errorf("network cannot be empty")
-	}
-	// Basic CIDR validation - in real implementation use net.ParseCIDR
-	if !strings.Contains(network, "/") {
-		return fmt.Errorf("network must be in CIDR format (e.g., 192.168.1.0/24)")
-	}
-	return nil
-}
-
-func getNextRunTime(cronExpr string) time.Time {
+func getNextRunTime(_ string) time.Time {
 	// Simple implementation - in real code you'd use the cron library
 	// to calculate the actual next run time
 	return time.Now().Add(time.Hour) // Placeholder

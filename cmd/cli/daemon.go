@@ -1,3 +1,6 @@
+// Package cli provides command-line interface commands for the Scanorama network scanner.
+// This package implements the Cobra-based CLI structure with commands for scanning,
+// discovery, host management, scheduling, and daemon operations.
 package cli
 
 import (
@@ -16,6 +19,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	// Daemon operation constants.
+	daemonStartupDelay     = 500 // milliseconds to wait for daemon startup
+	daemonStopProgressStep = 5   // show progress every N seconds
+	daemonStopTimeout      = 30  // seconds to wait before force kill
+	statusLineLength       = 30  // characters for status separator line
+)
+
 var (
 	daemonPidFile    string
 	daemonLogFile    string
@@ -23,7 +34,7 @@ var (
 	daemonPort       int
 )
 
-// daemonCmd represents the daemon command
+// daemonCmd represents the daemon command.
 var daemonCmd = &cobra.Command{
 	Use:   "daemon",
 	Short: "Run scanorama as a background daemon",
@@ -36,7 +47,7 @@ The daemon can be started, stopped, and monitored using subcommands.`,
   scanorama daemon restart`,
 }
 
-// daemonStartCmd represents the daemon start command
+// daemonStartCmd represents the daemon start command.
 var daemonStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the scanorama daemon",
@@ -48,7 +59,7 @@ The daemon will process scheduled jobs and provide API endpoints.`,
 	Run: runDaemonStart,
 }
 
-// daemonStopCmd represents the daemon stop command
+// daemonStopCmd represents the daemon stop command.
 var daemonStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the running scanorama daemon",
@@ -59,7 +70,7 @@ This will gracefully shut down the daemon and stop all background jobs.`,
 	Run: runDaemonStop,
 }
 
-// daemonStatusCmd represents the daemon status command
+// daemonStatusCmd represents the daemon status command.
 var daemonStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Check the status of the scanorama daemon",
@@ -70,7 +81,7 @@ and display information about its status and configuration.`,
 	Run: runDaemonStatus,
 }
 
-// daemonRestartCmd represents the daemon restart command
+// daemonRestartCmd represents the daemon restart command.
 var daemonRestartCmd = &cobra.Command{
 	Use:   "restart",
 	Short: "Restart the scanorama daemon",
@@ -129,12 +140,18 @@ func runDaemonStart(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
 		os.Exit(1)
 	}
-	defer database.Close()
-
 	// Ping database to ensure it's working
 	if err := database.Ping(context.Background()); err != nil {
 		fmt.Fprintf(os.Stderr, "Database connection test failed: %v\n", err)
+		if closeErr := database.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close database connection: %v\n", closeErr)
+		}
 		os.Exit(1)
+	}
+
+	// Close database connection after testing - daemon will create its own connections
+	if closeErr := database.Close(); closeErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to close database connection: %v\n", closeErr)
 	}
 
 	if verbose {
@@ -164,7 +181,7 @@ func runDaemonStart(cmd *cobra.Command, args []string) {
 		fmt.Println("Daemon started successfully (running in foreground)")
 	} else {
 		// Give it a moment to start up
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(daemonStartupDelay * time.Millisecond)
 		if isDaemonRunning() {
 			fmt.Println("Daemon started successfully")
 		} else {
@@ -203,15 +220,15 @@ func runDaemonStop(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Wait for daemon to stop (up to 30 seconds)
+	// Wait for daemon to stop (up to configured timeout)
 	fmt.Printf("Stopping daemon (PID %d)...\n", pid)
-	for i := 0; i < 30; i++ {
+	for i := 0; i < daemonStopTimeout; i++ {
 		if !isDaemonRunning() {
 			fmt.Println("Daemon stopped successfully")
 			return
 		}
 		time.Sleep(1 * time.Second)
-		if i%5 == 4 {
+		if i%daemonStopProgressStep == (daemonStopProgressStep - 1) {
 			fmt.Printf("Waiting for daemon to stop... (%d seconds)\n", i+1)
 		}
 	}
@@ -236,7 +253,7 @@ func runDaemonStop(cmd *cobra.Command, args []string) {
 
 func runDaemonStatus(cmd *cobra.Command, args []string) {
 	fmt.Printf("Scanorama Daemon Status\n")
-	fmt.Println(strings.Repeat("=", 30))
+	fmt.Println(strings.Repeat("=", statusLineLength))
 
 	if !isDaemonRunning() {
 		fmt.Printf("Status: Not running\n")
@@ -321,6 +338,7 @@ func isDaemonRunning() bool {
 }
 
 func readPIDFile() (int, error) {
+	// #nosec G304 - daemonPidFile is a controlled path from command line flags
 	data, err := os.ReadFile(daemonPidFile)
 	if err != nil {
 		return 0, err
