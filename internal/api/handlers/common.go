@@ -51,11 +51,11 @@ type ErrorResponse struct {
 // BaseHandler provides common functionality for all handlers.
 type BaseHandler struct {
 	logger  *slog.Logger
-	metrics *metrics.Registry
+	metrics metrics.MetricsRegistry
 }
 
 // NewBaseHandler creates a new base handler.
-func NewBaseHandler(logger *slog.Logger, metricsRegistry *metrics.Registry) *BaseHandler {
+func NewBaseHandler(logger *slog.Logger, metricsRegistry metrics.MetricsRegistry) *BaseHandler {
 	return &BaseHandler{
 		logger:  logger,
 		metrics: metricsRegistry,
@@ -220,7 +220,7 @@ type CRUDMetrics struct {
 }
 
 // recordCRUDMetric records a CRUD operation metric.
-func recordCRUDMetric(metricsRegistry *metrics.Registry, metricName string, labels map[string]string) {
+func recordCRUDMetric(metricsRegistry metrics.MetricsRegistry, metricName string, labels map[string]string) {
 	if metricsRegistry != nil {
 		metricsRegistry.Counter(metricName, labels)
 	}
@@ -260,7 +260,7 @@ type ListOperation[T any, F any] struct {
 	EntityType string
 	MetricName string
 	Logger     *slog.Logger
-	Metrics    *metrics.Registry
+	Metrics    metrics.MetricsRegistry
 	GetFilters func(*http.Request) F
 	ListFromDB func(context.Context, F, int, int) ([]T, int64, error)
 	ToResponse func(T) interface{}
@@ -307,7 +307,7 @@ func (op *ListOperation[T, F]) Execute(w http.ResponseWriter, r *http.Request) {
 type CRUDOperation[T any] struct {
 	EntityType string
 	Logger     *slog.Logger
-	Metrics    *metrics.Registry
+	Metrics    metrics.MetricsRegistry
 }
 
 // ExecuteGet performs a generic get operation.
@@ -420,7 +420,7 @@ func UpdateEntity[T any, R any](
 	r *http.Request,
 	entityType string,
 	logger *slog.Logger,
-	metricsRegistry *metrics.Registry,
+	metricsRegistry metrics.MetricsRegistry,
 	parseAndConvert func(*http.Request) (interface{}, error),
 	updateInDB func(context.Context, uuid.UUID, interface{}) (*T, error),
 	toResponse func(*T) interface{},
@@ -455,7 +455,7 @@ func CreateEntity[T any, R any](
 	r *http.Request,
 	entityType string,
 	logger *slog.Logger,
-	metricsRegistry *metrics.Registry,
+	metricsRegistry metrics.MetricsRegistry,
 	parseAndConvert func(*http.Request) (interface{}, error),
 	createInDB func(context.Context, interface{}) (*T, error),
 	toResponse func(*T) interface{},
@@ -493,7 +493,7 @@ func CreateEntity[T any, R any](
 type JobControlOperation struct {
 	EntityType string
 	Logger     *slog.Logger
-	Metrics    *metrics.Registry
+	Metrics    metrics.MetricsRegistry
 }
 
 // ExecuteStart performs a generic start operation.
