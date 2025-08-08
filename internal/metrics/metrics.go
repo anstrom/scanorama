@@ -4,6 +4,7 @@
 package metrics
 
 import (
+	"sort"
 	"sync"
 	"time"
 )
@@ -159,9 +160,16 @@ func (r *Registry) makeKey(name string, labels Labels) string {
 		return name
 	}
 
+	// Sort label keys to ensure consistent ordering
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	key := name
-	for k, v := range labels {
-		key += ":" + k + "=" + v
+	for _, k := range keys {
+		key += ":" + k + "=" + labels[k]
 	}
 	return key
 }
