@@ -13,6 +13,7 @@ import (
 	"github.com/anstrom/scanorama/internal"
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -82,9 +83,9 @@ func init() {
 func runScan(cmd *cobra.Command, args []string) {
 	// Validate arguments
 	if !scanLiveHosts && scanTargets == "" {
-		fmt.Fprintf(os.Stderr, "Error: either --targets or --live-hosts must be specified\n\n")
+		logging.Error("Either --targets or --live-hosts must be specified")
 		if helpErr := cmd.Help(); helpErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to display help: %v\n", helpErr)
+			logging.Warn("Failed to display help", "error", helpErr)
 		}
 		os.Exit(1)
 	}
@@ -99,32 +100,31 @@ func runScan(cmd *cobra.Command, args []string) {
 		"stealth":       true,
 	}
 	if !validTypes[scanType] {
-		fmt.Fprintf(os.Stderr, "Error: invalid scan type '%s'\n", scanType)
-		fmt.Fprintf(os.Stderr, "Valid types: connect, syn, version, aggressive, stealth\n")
+		logging.Error("Invalid scan type specified", "scan_type", scanType, "valid_types", "connect, syn, version, comprehensive, aggressive, stealth")
 		os.Exit(1)
 	}
 
 	// Validate ports
 	if err := validatePorts(scanPorts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: invalid port specification '%s': %v\n", scanPorts, err)
+		logging.Error("Invalid port specification", "ports", scanPorts, "error", err)
 		os.Exit(1)
 	}
 
 	// Setup database connection
 	cfg, err := config.Load("config.yaml")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		logging.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
 	}
 
 	database, err := db.Connect(context.Background(), &cfg.Database)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
+		logging.ErrorDatabase("Failed to connect to database", err)
 		os.Exit(1)
 	}
 	defer func() {
 		if closeErr := database.Close(); closeErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to close database connection: %v\n", closeErr)
+			logging.Warn("Failed to close database connection", "error", closeErr)
 		}
 	}()
 
@@ -136,17 +136,22 @@ func runScan(cmd *cobra.Command, args []string) {
 		TimeoutSec: scanTimeout,
 	}
 
-	if verbose {
-		fmt.Printf("Scan configuration: %+v\n", scanConfig)
-	}
+	// Log scan configuration
+	logging.Info("Starting scan operation",
+		"scan_type", scanType,
+		"ports", scanPorts,
+		"timeout", scanTimeout,
+		"live_hosts", scanLiveHosts)
 
 	// Create scanner - using internal scan functionality
 	// Note: This will need to be adapted to match the actual internal API
 
 	// Run scan based on mode
 	if scanLiveHosts {
+		logging.Info("Scanning all live hosts")
 		runLiveHostsScan(database, &scanConfig)
 	} else {
+		logging.InfoScan("Scanning specific targets", scanTargets)
 		runTargetsScan(database, &scanConfig, scanTargets)
 	}
 }

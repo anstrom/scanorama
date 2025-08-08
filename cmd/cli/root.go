@@ -9,6 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/anstrom/scanorama/internal/config"
+	"github.com/anstrom/scanorama/internal/logging"
 )
 
 const (
@@ -89,6 +92,9 @@ func initConfig() {
 			fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		}
 	}
+
+	// Initialize structured logging after config is loaded
+	initLogging()
 }
 
 // setConfigDefaults sets default values for configuration.
@@ -110,6 +116,8 @@ func setConfigDefaults() {
 	viper.SetDefault("logging.level", "info")
 	viper.SetDefault("logging.format", "text")
 	viper.SetDefault("logging.output", "stdout")
+	viper.SetDefault("logging.structured", false)
+	viper.SetDefault("logging.request_logging", true)
 }
 
 // getVersion returns the version string.
@@ -126,4 +134,40 @@ func SetVersion(v, c, bt string) {
 	commit = c
 	buildTime = bt
 	rootCmd.Version = getVersion()
+}
+
+// initLogging initializes structured logging based on configuration.
+func initLogging() {
+	// Try to load full config for logging settings
+	cfg, err := config.Load(viper.ConfigFileUsed())
+	if err != nil {
+		// If config loading fails, use default logging
+		logger := logging.NewDefault()
+		logging.SetDefault(logger)
+		return
+	}
+
+	// Convert config logging to our logging config
+	logConfig := logging.Config{
+		Level:     logging.LogLevel(cfg.Logging.Level),
+		Format:    logging.LogFormat(cfg.Logging.Format),
+		Output:    cfg.Logging.Output,
+		AddSource: cfg.Logging.Level == "debug",
+	}
+
+	// Create logger
+	logger, err := logging.New(logConfig)
+	if err != nil {
+		// Fall back to default if creation fails
+		logger = logging.NewDefault()
+		fmt.Fprintf(os.Stderr, "Warning: failed to initialize logging: %v\n", err)
+	}
+
+	// Set as default logger
+	logging.SetDefault(logger)
+
+	// Log initialization if verbose
+	if verbose {
+		logging.Info("Structured logging initialized", "level", cfg.Logging.Level, "format", cfg.Logging.Format)
+	}
 }
