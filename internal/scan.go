@@ -124,7 +124,7 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 			nmap.WithServiceInfo(),
 			nmap.WithVersionAll(),
 		)
-	case "intense":
+	case "aggressive":
 		options = append(options,
 			nmap.WithConnectScan(),
 			nmap.WithServiceInfo(),
@@ -399,7 +399,7 @@ func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetReposit
 	// Map scan types to database-compatible values
 	dbScanType := config.ScanType
 	switch config.ScanType {
-	case "comprehensive", "intense":
+	case "comprehensive", "aggressive":
 		dbScanType = "version" // Map complex scan types to version detection
 	case "stealth":
 		dbScanType = "connect" // Map stealth to basic connect scan

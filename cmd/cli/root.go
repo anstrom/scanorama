@@ -35,9 +35,7 @@ var rootCmd = &cobra.Command{
 	Short: "Advanced Network Scanner",
 	Long: `Scanorama is an advanced network scanning and discovery tool designed for
 continuous network monitoring with OS-aware scanning capabilities, automated
-scheduling, and robust database persistence.
-
-A network scanner that finds hosts and open ports.`,
+scheduling, and robust database persistence.`,
 	Version: getVersion(),
 	// Uncomment the following line if your bare application
 	// has an action associated with it:

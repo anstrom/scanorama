@@ -64,7 +64,7 @@ func (c *ScanConfig) Validate() error {
 		"connect":       true,
 		"syn":           true,
 		"version":       true,
-		"intense":       true,
+		"aggressive":    true,
 		"stealth":       true,
 		"comprehensive": true,
 	}
