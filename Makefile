@@ -29,7 +29,14 @@ export PATH := $(GOBIN):$(PATH)
 DOCKER_COMPOSE := docker compose
 COMPOSE_FILE := ./test/docker/docker-compose.yml
 
-.PHONY: help build clean test coverage quality lint format security ci setup-dev-db setup-hooks
+# Docker configuration
+DOCKER_IMAGE := scanorama
+DOCKER_TAG := $(VERSION)
+DOCKER_REGISTRY ?=
+DOCKER_FULL_IMAGE := $(if $(DOCKER_REGISTRY),$(DOCKER_REGISTRY)/,)$(DOCKER_IMAGE):$(DOCKER_TAG)
+DOCKERFILE := Dockerfile
+
+.PHONY: help build clean test coverage quality lint format security ci setup-dev-db setup-hooks docker-build docker-run docker-push docker-dev docker-prod docker-clean
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -41,9 +48,17 @@ help: ## Show this help message
 	@echo '  make test         # Run tests with database'
 	@echo '  make build        # Build binary'
 	@echo ''
+	@echo 'Docker:'
+	@echo '  make docker-build # Build Docker image'
+	@echo '  make docker-dev   # Start development environment'
+	@echo '  make docker-prod  # Start production environment'
+	@echo '  make docker-push  # Push image to registry'
+	@echo ''
 	@echo 'Environment Variables:'
 	@echo '  DEBUG=true make test    # Run tests with debug output'
 	@echo '  POSTGRES_PORT=5433      # Use custom PostgreSQL port'
+	@echo '  DOCKER_REGISTRY=registry.example.com  # Set Docker registry'
+	@echo '  VERSION=v1.0.0          # Set version for Docker builds'
 	@echo ''
 	@echo 'All Targets:'
 	@awk '/^[a-zA-Z_-]+:.*?## / { \
@@ -252,6 +267,7 @@ security: ## Run security vulnerability scans
 	@echo "🔒 Running security vulnerability scans..."
 	@echo "Installing security tools..."
 	@go install golang.org/x/vuln/cmd/govulncheck@latest
+	@$(GO) install github.com/sonatypecommunity/nancy@latest
 	@echo "✓ Security tools installed"
 	@echo ""
 	@echo "Running security linters via golangci-lint (includes gosec)..."
@@ -259,6 +275,90 @@ security: ## Run security vulnerability scans
 	@echo "✓ Security linters completed"
 	@echo ""
 	@echo "Running govulncheck for known vulnerabilities..."
-	@$(GOBIN)/govulncheck ./... && echo "✅ No known vulnerabilities found" || echo "⚠️ Vulnerabilities found - review output above"
+	@govulncheck ./... && echo "✅ No known vulnerabilities found" || echo "⚠️ Vulnerabilities found - review output above"
+	@echo ""
+	@echo "Running dependency security audit..."
+	@$(GO) list -json -deps ./... | nancy sleuth
+	@echo "✅ Security scan completed"
+
+# Docker targets
+docker-build: ## Build Docker image
+	@echo "Building Docker image $(DOCKER_FULL_IMAGE)..."
+	@docker build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg BUILD_TIME=$(BUILD_TIME) \
+		-t $(DOCKER_FULL_IMAGE) \
+		-t $(DOCKER_IMAGE):latest \
+		-f $(DOCKERFILE) .
+	@echo "✅ Docker image built: $(DOCKER_FULL_IMAGE)"
+
+docker-run: docker-build ## Build and run Docker container locally
+	@echo "Running Docker container..."
+	@docker run --rm -it \
+		-p 8080:8080 \
+		-e SCANORAMA_LOG_LEVEL=info \
+		--name scanorama-test \
+		$(DOCKER_FULL_IMAGE)
+
+docker-push: docker-build ## Push Docker image to registry
+	@echo "Pushing Docker image to registry..."
+	@if [ -z "$(DOCKER_REGISTRY)" ]; then \
+		echo "Error: DOCKER_REGISTRY not set"; \
+		exit 1; \
+	fi
+	@docker push $(DOCKER_FULL_IMAGE)
+	@echo "✅ Docker image pushed: $(DOCKER_FULL_IMAGE)"
+
+docker-dev: ## Start development environment with docker-compose
+	@echo "Starting development environment..."
+	@docker-compose -f docker-compose.yml up -d
+	@echo "✅ Development environment started"
+	@echo "  Application: http://localhost:8080"
+	@echo "  Database: localhost:5432"
+	@echo "  Redis: localhost:6379"
+
+docker-dev-logs: ## Show logs from development environment
+	@docker-compose -f docker-compose.yml logs -f
+
+docker-dev-stop: ## Stop development environment
+	@echo "Stopping development environment..."
+	@docker-compose -f docker-compose.yml down
+	@echo "✅ Development environment stopped"
+
+docker-prod: ## Start production environment with docker-compose
+	@echo "Starting production environment..."
+	@if [ ! -f ./secrets/db_password.txt ]; then \
+		echo "Error: Database password file not found at ./secrets/db_password.txt"; \
+		exit 1; \
+	fi
+	@if [ ! -f ./secrets/redis_password.txt ]; then \
+		echo "Error: Redis password file not found at ./secrets/redis_password.txt"; \
+		exit 1; \
+	fi
+	@docker-compose -f docker-compose.prod.yml up -d
+	@echo "✅ Production environment started"
+
+docker-prod-logs: ## Show logs from production environment
+	@docker-compose -f docker-compose.prod.yml logs -f
+
+docker-prod-stop: ## Stop production environment
+	@echo "Stopping production environment..."
+	@docker-compose -f docker-compose.prod.yml down
+	@echo "✅ Production environment stopped"
+
+docker-clean: ## Clean up Docker images and containers
+	@echo "Cleaning up Docker resources..."
+	@docker-compose -f docker-compose.yml down --volumes --remove-orphans 2>/dev/null || true
+	@docker-compose -f docker-compose.prod.yml down --volumes --remove-orphans 2>/dev/null || true
+	@docker system prune -f
+	@echo "✅ Docker cleanup completed"
+
+docker-shell: ## Get shell access to running container
+	@docker exec -it scanorama-app /bin/sh
+
+docker-inspect: ## Show detailed information about Docker image
+	@echo "Docker image information:"
+	@docker inspect $(DOCKER_FULL_IMAGE) 2>/dev/null || echo "Image not found. Run 'make docker-build' first."
 
 .DEFAULT_GOAL := help

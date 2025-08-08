@@ -905,6 +905,50 @@ git rebase -i --autosquash  # Before push
 # Results in single focused commit
 ```
 
+## Lessons Learned from Development
+
+### Integration Test Environment Requirements
+- **Always use `make test`** instead of direct `go test` commands
+- Integration tests require Docker containers (postgres, redis, nginx, ssh)
+- Test failures often indicate missing test environment, not code issues
+- Container orchestration through Makefile ensures consistent test results
+- Database connectivity issues in tests usually mean containers aren't running
+
+### Git History Management
+- **Clean commit history > incremental commits**
+- Use interactive rebase or reset+recommit for clean history before PR
+- Force push with `--force-with-lease` is acceptable for feature branches
+- Each commit should have focused scope (api, metrics, test, ci, docs)
+- Combine related changes into single commits rather than scattered fixes
+
+### Debugging Workflow Priority
+1. Start with `make test` to ensure proper test environment
+2. Use `make lint` to catch code quality issues early
+3. Fix linting issues systematically, not randomly
+4. Test environment problems often mask real code issues
+5. Always verify CI passes before assuming code is correct
+
+### Test Coverage Strategy
+- Add tests incrementally by component (core → api → middleware)
+- Focus on high-impact, low-complexity tests first
+- Mock dependencies for unit tests, use real services for integration
+- Test error paths and edge cases, not just happy paths
+- Coverage reports are useful but passing tests in CI environment matter more
+
+### Code Quality Anti-Patterns to Avoid
+- Never use lazy adjectives in commit messages (comprehensive, extensive, etc.)
+- Don't fix symptoms, find and fix root causes
+- Avoid "fix commit noise" - use proper git history management
+- Don't skip test environment setup and blame flaky tests
+- Don't assume local test success means CI will pass
+
+### Emergency Debugging Checklist
+1. Are containers running? (`make test` vs `go test`)
+2. Is database accessible? (check container logs)
+3. Are environment variables set correctly?
+4. Did recent changes break test setup/cleanup?
+5. Is the issue reproducible in clean environment?
+
 ## Quick Reference: Scanorama-Specific Patterns
 
 ### API Handler Patterns

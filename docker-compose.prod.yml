@@ -1,0 +1,306 @@
+version: '3.8'
+
+services:
+  # Scanorama application
+  scanorama:
+    image: scanorama:${VERSION:-latest}
+    container_name: scanorama-app-prod
+    restart: always
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - SCANORAMA_DATABASE_HOST=postgres
+      - SCANORAMA_DATABASE_PORT=5432
+      - SCANORAMA_DATABASE_DATABASE=scanorama
+      - SCANORAMA_DATABASE_USERNAME=scanorama
+      - SCANORAMA_DATABASE_PASSWORD_FILE=/run/secrets/db_password
+      - SCANORAMA_DATABASE_SSL_MODE=require
+      - SCANORAMA_LOG_LEVEL=warn
+      - SCANORAMA_LOG_FORMAT=json
+      - SCANORAMA_SCANNING_WORKER_POOL_SIZE=20
+      - SCANORAMA_API_PORT=8080
+      - SCANORAMA_METRICS_ENABLED=true
+    volumes:
+      - ./config/prod.yaml:/app/config/config.yaml:ro
+      - scanorama_logs:/app/logs
+      - scanorama_data:/app/data
+      - static_assets:/app/static:ro
+    secrets:
+      - db_password
+      - redis_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - scanorama-backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW  # Required for nmap ICMP scans
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    container_name: scanorama-postgres-prod
+    restart: always
+    environment:
+      - POSTGRES_DB=scanorama
+      - POSTGRES_USER=scanorama
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - postgres_backups:/backups
+    secrets:
+      - db_password
+    networks:
+      - scanorama-backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scanorama -d scanorama"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: scanorama-redis-prod
+    restart: always
+    command: redis-server /etc/redis/redis.conf
+    volumes:
+      - redis_data:/data
+      - ./config/redis.conf:/etc/redis/redis.conf:ro
+    secrets:
+      - redis_password
+    networks:
+      - scanorama-backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: scanorama-nginx-prod
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - static_assets:/usr/share/nginx/html/static:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - scanorama
+    networks:
+      - scanorama-frontend
+      - scanorama-backend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # Log aggregator
+  fluentd:
+    image: fluentd:v1.16-debian-1
+    container_name: scanorama-fluentd-prod
+    restart: always
+    volumes:
+      - ./logging/fluent.conf:/fluentd/etc/fluent.conf:ro
+      - scanorama_logs:/app/logs:ro
+      - nginx_logs:/var/log/nginx:ro
+    networks:
+      - scanorama-backend
+    depends_on:
+      - scanorama
+      - nginx
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # Metrics and monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: scanorama-prometheus-prod
+    restart: always
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - scanorama-backend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  redis_password:
+    file: ./secrets/redis_password.txt
+
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/scanorama/data/postgres
+  postgres_backups:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/scanorama/backups/postgres
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/scanorama/data/redis
+  scanorama_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/scanorama/logs
+  scanorama_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/scanorama/data/app
+  nginx_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/scanorama/logs/nginx
+  static_assets:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/scanorama/static
+  prometheus_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/scanorama/data/prometheus
+
+networks:
+  scanorama-frontend:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
+  scanorama-backend:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.22.0.0/24

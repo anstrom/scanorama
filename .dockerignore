@@ -1,0 +1,94 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+.githooks
+
+# Documentation
+*.md
+docs/
+CHANGELOG.md
+LICENSE
+
+# Test files and directories
+*_test.go
+test/
+coverage.out
+coverage.out.html
+api_coverage.html
+api_coverage.out
+handlers_coverage.out
+**/*_test.go
+
+# Build artifacts and temporary files
+build/
+dist/
+*.tmp
+*.log
+*.out
+
+# Development tools and configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker files (not needed in container)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD files
+.github/
+.gitlab-ci.yml
+renovate.json
+
+# Development scripts
+scripts/
+Makefile
+
+# Environment and config files (use mounted configs instead)
+.env
+.env.*
+config.yaml
+config.dev.yaml
+config.example.yaml
+
+# Cache and temporary directories
+.cache/
+tmp/
+temp/
+
+# IDE and editor files
+.DS_Store
+Thumbs.db
+*.sublime-*
+*.code-workspace
+
+# Go specific
+vendor/
+*.sum.backup
+
+# Local development files
+*.local
+.local
+
+# Nginx configuration (handled by compose)
+nginx/
+
+# Secrets (should be mounted, not built in)
+secrets/
+*.key
+*.pem
+*.crt
+
+# Monitoring and logging configs (environment specific)
+monitoring/
+logging/
+
+# Static assets (will be mounted in development)
+static/
+
+# SSL certificates
+ssl/

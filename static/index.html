@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanorama - Network Scanner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+        }
+
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+            padding: 3rem;
+            text-align: center;
+            max-width: 600px;
+            width: 90%;
+        }
+
+        .logo {
+            font-size: 3rem;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .logo::before {
+            content: "🔍";
+            font-size: 2.5rem;
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            color: #666;
+            margin-bottom: 2rem;
+            font-weight: 300;
+        }
+
+        .status {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 2rem;
+            margin: 2rem 0;
+            border-left: 4px solid #667eea;
+        }
+
+        .status h3 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            font-size: 1.1rem;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .status-item:last-child {
+            border-bottom: none;
+        }
+
+        .badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .badge.running {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .api-test {
+            margin: 2rem 0;
+        }
+
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: #5a6fd8;
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .api-result {
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: 6px;
+            text-align: left;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            display: none;
+        }
+
+        .api-result.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .api-result.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .footer {
+            margin-top: 2rem;
+            color: #999;
+            font-size: 0.875rem;
+        }
+
+        .version {
+            font-family: 'Courier New', monospace;
+            background: #f8f9fa;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            display: inline-block;
+            margin: 1rem 0;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="logo">Scanorama</h1>
+        <p class="subtitle">Advanced Network Scanner & Discovery Tool</p>
+
+        <div class="status">
+            <h3>System Status</h3>
+            <div class="status-item">
+                <span>Backend Service</span>
+                <span class="badge running">Running</span>
+            </div>
+            <div class="status-item">
+                <span>Frontend Interface</span>
+                <span class="badge pending">Coming Soon</span>
+            </div>
+            <div class="status-item">
+                <span>API Endpoints</span>
+                <span class="badge running">Available</span>
+            </div>
+        </div>
+
+        <div class="api-test">
+            <button class="btn" onclick="testAPI()">Test API Connection</button>
+            <div id="api-result" class="api-result"></div>
+        </div>
+
+        <div class="version" id="version">Loading version...</div>
+
+        <div class="footer">
+            <p>This is a placeholder page. The full web interface is coming soon.</p>
+            <p>For now, you can interact with the API directly at <code>/api/*</code> endpoints.</p>
+        </div>
+    </div>
+
+    <script>
+        // Test API connectivity
+        async function testAPI() {
+            const button = document.querySelector('.btn');
+            const result = document.getElementById('api-result');
+
+            button.disabled = true;
+            button.textContent = 'Testing...';
+            result.style.display = 'none';
+
+            try {
+                const response = await fetch('/health');
+                const data = await response.text();
+
+                result.className = 'api-result success';
+                result.textContent = `✅ API Response (${response.status}): ${data}`;
+                result.style.display = 'block';
+            } catch (error) {
+                result.className = 'api-result error';
+                result.textContent = `❌ API Error: ${error.message}`;
+                result.style.display = 'block';
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Test API Connection';
+            }
+        }
+
+        // Load version information
+        async function loadVersion() {
+            try {
+                const response = await fetch('/api/version');
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('version').textContent =
+                        `Version: ${data.version || 'unknown'} (${data.commit || 'unknown'})`;
+                } else {
+                    document.getElementById('version').textContent = 'Version: unknown';
+                }
+            } catch (error) {
+                document.getElementById('version').textContent = 'Version: unknown';
+            }
+        }
+
+        // Load version on page load
+        window.addEventListener('load', loadVersion);
+
+        // Auto-test API on page load
+        window.addEventListener('load', () => {
+            setTimeout(testAPI, 1000);
+        });
+    </script>
+</body>
+</html>

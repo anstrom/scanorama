@@ -1,0 +1,257 @@
+name: Docker Build and Push
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: 'Push image to registry'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tags: ${{ steps.meta.outputs.tags }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Get version information
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            VERSION=$(git describe --tags --always --dirty)
+          fi
+          COMMIT=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "commit=${COMMIT}" >> $GITHUB_OUTPUT
+          echo "build-time=${BUILD_TIME}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' || github.event.inputs.push_image == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            COMMIT=${{ steps.version.outputs.commit }}
+            BUILD_TIME=${{ steps.version.outputs.build-time }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Run Trivy vulnerability scanner
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  test-image:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: scanorama_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get image tags
+        id: tags
+        run: |
+          TAGS="${{ needs.build.outputs.image-tags }}"
+          FIRST_TAG=$(echo "$TAGS" | head -n1)
+          echo "test-image=${FIRST_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Test Docker image health
+        run: |
+          docker run --rm -d \
+            --name scanorama-test \
+            -p 8080:8080 \
+            -e SCANORAMA_DATABASE_HOST=host.docker.internal \
+            -e SCANORAMA_DATABASE_PORT=5432 \
+            -e SCANORAMA_DATABASE_DATABASE=scanorama_test \
+            -e SCANORAMA_DATABASE_USERNAME=test_user \
+            -e SCANORAMA_DATABASE_PASSWORD=test_password \
+            -e SCANORAMA_DATABASE_SSL_MODE=disable \
+            ${{ steps.tags.outputs.test-image }}
+
+          # Wait for container to start
+          sleep 10
+
+          # Test health endpoint
+          for i in {1..30}; do
+            if curl -f http://localhost:8080/health; then
+              echo "Health check passed"
+              break
+            fi
+            echo "Waiting for health check... ($i/30)"
+            sleep 2
+          done
+
+          # Test API endpoints
+          curl -f http://localhost:8080/api/version || exit 1
+
+          # Clean up
+          docker stop scanorama-test
+
+      - name: Test container security
+        run: |
+          # Test that container runs as non-root
+          USER_ID=$(docker run --rm ${{ steps.tags.outputs.test-image }} id -u)
+          if [ "$USER_ID" = "0" ]; then
+            echo "Error: Container running as root"
+            exit 1
+          fi
+          echo "✅ Container runs as non-root user (UID: $USER_ID)"
+
+          # Test read-only filesystem
+          docker run --rm --read-only ${{ steps.tags.outputs.test-image }} echo "Read-only test passed"
+
+  sign-image:
+    runs-on: ubuntu-latest
+    needs: [build, test-image]
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sign container image
+        run: |
+          TAGS="${{ needs.build.outputs.image-tags }}"
+          DIGEST="${{ needs.build.outputs.image-digest }}"
+
+          # Sign with keyless signing
+          for tag in $TAGS; do
+            echo "Signing $tag"
+            cosign sign --yes "$tag@$DIGEST"
+          done
+
+  update-deployment:
+    runs-on: ubuntu-latest
+    needs: [build, test-image, sign-image]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Deploy to staging
+        run: |
+          echo "🚀 Deploying to staging environment"
+          echo "Image: ${{ needs.build.outputs.image-tags }}"
+          echo "Digest: ${{ needs.build.outputs.image-digest }}"
+          # Add actual deployment logic here
+
+      - name: Update deployment status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Deployment successful"
+          else
+            echo "❌ Deployment failed"
+          fi
