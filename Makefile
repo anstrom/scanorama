@@ -7,9 +7,9 @@ DB_DEBUG ?= false
 # Use default PostgreSQL port for simplicity
 POSTGRES_PORT ?= 5432
 
-# Version information - use git tag if available, otherwise default to v0.1.0-dev
-GIT_TAG := $(shell git describe --tags --exact-match 2>/dev/null)
-VERSION ?= $(if $(GIT_TAG),$(GIT_TAG),v0.1.0-dev)
+# Version information - use git describe for accurate version string
+GIT_VERSION := $(shell git describe --tags --always 2>/dev/null)
+VERSION ?= $(if $(GIT_VERSION),$(GIT_VERSION),dev)
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT)' -X 'main.buildTime=$(BUILD_TIME)'
