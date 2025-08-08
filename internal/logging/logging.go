@@ -12,6 +12,12 @@ import (
 	"strings"
 )
 
+const (
+	// File permissions for directories and log files.
+	logDirPerm  = 0750
+	logFilePerm = 0600
+)
+
 // LogLevel represents the available log levels.
 type LogLevel string
 
@@ -80,10 +86,10 @@ func New(cfg Config) (*Logger, error) {
 		writer = os.Stderr
 	default:
 		// Assume it's a file path
-		if err := os.MkdirAll(filepath.Dir(cfg.Output), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(cfg.Output), logDirPerm); err != nil {
 			return nil, err
 		}
-		file, err := os.OpenFile(cfg.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		file, err := os.OpenFile(cfg.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, logFilePerm)
 		if err != nil {
 			return nil, err
 		}
@@ -120,7 +126,7 @@ func NewDefault() *Logger {
 // WithContext adds context to the logger for structured logging.
 func (l *Logger) WithContext(ctx context.Context) *Logger {
 	return &Logger{
-		Logger: l.Logger.With(),
+		Logger: l.With(),
 		config: l.config,
 	}
 }
@@ -128,7 +134,7 @@ func (l *Logger) WithContext(ctx context.Context) *Logger {
 // WithFields adds structured fields to the logger.
 func (l *Logger) WithFields(fields ...any) *Logger {
 	return &Logger{
-		Logger: l.Logger.With(fields...),
+		Logger: l.With(fields...),
 		config: l.config,
 	}
 }
@@ -154,25 +160,25 @@ func (l *Logger) WithError(err error) *Logger {
 }
 
 // InfoScan logs scan-related information.
-func (l *Logger) InfoScan(msg string, target string, fields ...any) {
+func (l *Logger) InfoScan(msg, target string, fields ...any) {
 	allFields := append([]any{"target", target}, fields...)
 	l.Info(msg, allFields...)
 }
 
 // ErrorScan logs scan-related errors.
-func (l *Logger) ErrorScan(msg string, target string, err error, fields ...any) {
+func (l *Logger) ErrorScan(msg, target string, err error, fields ...any) {
 	allFields := append([]any{"target", target, "error", err}, fields...)
 	l.Error(msg, allFields...)
 }
 
 // InfoDiscovery logs discovery-related information.
-func (l *Logger) InfoDiscovery(msg string, network string, fields ...any) {
+func (l *Logger) InfoDiscovery(msg, network string, fields ...any) {
 	allFields := append([]any{"network", network}, fields...)
 	l.Info(msg, allFields...)
 }
 
 // ErrorDiscovery logs discovery-related errors.
-func (l *Logger) ErrorDiscovery(msg string, network string, err error, fields ...any) {
+func (l *Logger) ErrorDiscovery(msg, network string, err error, fields ...any) {
 	allFields := append([]any{"network", network, "error", err}, fields...)
 	l.Error(msg, allFields...)
 }
@@ -201,7 +207,7 @@ func (l *Logger) ErrorDaemon(msg string, err error, fields ...any) {
 	l.Error(msg, allFields...)
 }
 
-// Global logger instance - can be replaced for testing
+// Global logger instance - can be replaced for testing.
 var defaultLogger = NewDefault()
 
 // SetDefault sets the default logger instance.
@@ -235,22 +241,22 @@ func Error(msg string, fields ...any) {
 }
 
 // InfoScan logs scan-related information using the default logger.
-func InfoScan(msg string, target string, fields ...any) {
+func InfoScan(msg, target string, fields ...any) {
 	defaultLogger.InfoScan(msg, target, fields...)
 }
 
 // ErrorScan logs scan-related errors using the default logger.
-func ErrorScan(msg string, target string, err error, fields ...any) {
+func ErrorScan(msg, target string, err error, fields ...any) {
 	defaultLogger.ErrorScan(msg, target, err, fields...)
 }
 
 // InfoDiscovery logs discovery-related information using the default logger.
-func InfoDiscovery(msg string, network string, fields ...any) {
+func InfoDiscovery(msg, network string, fields ...any) {
 	defaultLogger.InfoDiscovery(msg, network, fields...)
 }
 
 // ErrorDiscovery logs discovery-related errors using the default logger.
-func ErrorDiscovery(msg string, network string, err error, fields ...any) {
+func ErrorDiscovery(msg, network string, err error, fields ...any) {
 	defaultLogger.ErrorDiscovery(msg, network, err, fields...)
 }
 
