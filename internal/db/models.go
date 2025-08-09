@@ -427,6 +427,36 @@ type ActiveHost struct {
 	TotalPortsScanned int       `db:"total_ports_scanned" json:"total_ports_scanned"`
 }
 
+// Network represents a network configured for discovery and scanning.
+type Network struct {
+	ID              uuid.UUID   `db:"id" json:"id"`
+	Name            string      `db:"name" json:"name"`
+	CIDR            NetworkAddr `db:"cidr" json:"cidr"`
+	Description     *string     `db:"description" json:"description,omitempty"`
+	DiscoveryMethod string      `db:"discovery_method" json:"discovery_method"`
+	IsActive        bool        `db:"is_active" json:"is_active"`
+	ScanEnabled     bool        `db:"scan_enabled" json:"scan_enabled"`
+	LastDiscovery   *time.Time  `db:"last_discovery" json:"last_discovery,omitempty"`
+	LastScan        *time.Time  `db:"last_scan" json:"last_scan,omitempty"`
+	HostCount       int         `db:"host_count" json:"host_count"`
+	ActiveHostCount int         `db:"active_host_count" json:"active_host_count"`
+	CreatedAt       time.Time   `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time   `db:"updated_at" json:"updated_at"`
+	CreatedBy       *string     `db:"created_by" json:"created_by,omitempty"`
+}
+
+// NetworkExclusion represents an IP exclusion rule for networks.
+type NetworkExclusion struct {
+	ID           uuid.UUID  `db:"id" json:"id"`
+	NetworkID    *uuid.UUID `db:"network_id" json:"network_id,omitempty"` // NULL for global exclusions
+	ExcludedCIDR string     `db:"excluded_cidr" json:"excluded_cidr"`
+	Reason       *string    `db:"reason" json:"reason,omitempty"`
+	Enabled      bool       `db:"enabled" json:"enabled"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
+	CreatedBy    *string    `db:"created_by" json:"created_by,omitempty"`
+}
+
 // NetworkSummary represents the network_summary view.
 type NetworkSummary struct {
 	TargetName  string      `db:"target_name" json:"target_name"`
