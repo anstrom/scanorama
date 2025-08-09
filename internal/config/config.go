@@ -67,6 +67,9 @@ type Config struct {
 	// API configuration
 	API APIConfig `yaml:"api" json:"api"`
 
+	// Discovery configuration
+	Discovery DiscoveryConfig `yaml:"discovery" json:"discovery"`
+
 	// Logging configuration
 	Logging LoggingConfig `yaml:"logging" json:"logging"`
 }
@@ -260,15 +263,73 @@ type RotationConfig struct {
 	Compress bool `yaml:"compress" json:"compress"`
 }
 
+// DiscoveryConfig contains discovery engine configuration.
+type DiscoveryConfig struct {
+	// Predefined networks to discover
+	Networks []NetworkConfig `yaml:"networks" json:"networks"`
+
+	// Global exclusions applied to all networks
+	GlobalExclusions []string `yaml:"global_exclusions" json:"global_exclusions"`
+
+	// Default discovery settings
+	Defaults DiscoveryDefaults `yaml:"defaults" json:"defaults"`
+
+	// Enable automatic network seeding from config
+	AutoSeed bool `yaml:"auto_seed" json:"auto_seed"`
+}
+
+// NetworkConfig defines a network to be discovered.
+type NetworkConfig struct {
+	// Network name (must be unique)
+	Name string `yaml:"name" json:"name"`
+
+	// CIDR notation (e.g., "192.168.1.0/24")
+	CIDR string `yaml:"cidr" json:"cidr"`
+
+	// Discovery method (ping, tcp, arp)
+	Method string `yaml:"method" json:"method"`
+
+	// Cron schedule for automatic discovery (optional)
+	Schedule string `yaml:"schedule" json:"schedule"`
+
+	// Description of the network
+	Description string `yaml:"description" json:"description"`
+
+	// Network-specific exclusions
+	Exclusions []string `yaml:"exclusions" json:"exclusions"`
+
+	// Enable/disable this network
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// Custom ports for TCP discovery
+	Ports string `yaml:"ports" json:"ports"`
+}
+
+// DiscoveryDefaults contains default discovery settings.
+type DiscoveryDefaults struct {
+	// Default discovery method
+	Method string `yaml:"method" json:"method"`
+
+	// Default timeout for discovery operations
+	Timeout string `yaml:"timeout" json:"timeout"`
+
+	// Default schedule for networks without explicit schedule
+	Schedule string `yaml:"schedule" json:"schedule"`
+
+	// Default ports for TCP discovery
+	Ports string `yaml:"ports" json:"ports"`
+}
+
 // Default returns the default configuration with database credentials
 // loaded from environment variables if available.
 func Default() *Config {
 	return &Config{
-		Daemon:   defaultDaemonConfig(),
-		Database: getDatabaseConfigFromEnv(),
-		Scanning: defaultScanningConfig(),
-		API:      defaultAPIConfig(),
-		Logging:  defaultLoggingConfig(),
+		Daemon:    defaultDaemonConfig(),
+		Database:  getDatabaseConfigFromEnv(),
+		Scanning:  defaultScanningConfig(),
+		API:       defaultAPIConfig(),
+		Discovery: defaultDiscoveryConfig(),
+		Logging:   defaultLoggingConfig(),
 	}
 }
 
@@ -333,6 +394,21 @@ func defaultAPIConfig() APIConfig {
 		RateLimitWindow:   time.Minute,
 		RequestTimeout:    defaultRequestTimeoutSec * time.Second,
 		MaxRequestSize:    defaultMaxRequestSizeMB * bytesPerMB, // 1MB
+	}
+}
+
+// defaultDiscoveryConfig returns the default discovery configuration.
+func defaultDiscoveryConfig() DiscoveryConfig {
+	return DiscoveryConfig{
+		Networks:         []NetworkConfig{},
+		GlobalExclusions: []string{},
+		Defaults: DiscoveryDefaults{
+			Method:   "ping",
+			Timeout:  "30s",
+			Schedule: "0 */12 * * *", // Twice daily
+			Ports:    "22,80,443,8080,8443,3389,5432,6379",
+		},
+		AutoSeed: true,
 	}
 }
 
