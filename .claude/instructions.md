@@ -1005,4 +1005,93 @@ h.metrics.Histogram("scan_duration_seconds", duration.Seconds(), map[string]stri
 })
 
 // ✅ Gauge metrics
-h.metrics.Gauge("active
+h.metrics.Gauge("active_connections", float64(activeConns), map[string]string{
+    "database": "postgres",
+})
+```
+
+### SQL Query Formatting Patterns
+
+#### Multi-line SELECT Statements
+```go
+// ✅ Well-formatted multi-line SELECT
+query := `
+    SELECT
+        id, name, cidr, description, discovery_method,
+        is_active, scan_enabled, last_discovery, last_scan,
+        host_count, active_host_count, created_at, updated_at, created_by
+    FROM networks
+    WHERE is_active = true
+    ORDER BY name`
+
+// ❌ Poorly formatted query
+query := `SELECT id, name, cidr, description, discovery_method, is_active, scan_enabled, last_discovery, last_scan, host_count, active_host_count, created_at, updated_at, created_by FROM networks WHERE is_active = true ORDER BY name`
+```
+
+#### Multi-line INSERT Statements
+```go
+// ✅ Well-formatted multi-line INSERT
+query := `
+    INSERT INTO network_exclusions (
+        network_id,
+        excluded_cidr,
+        reason,
+        enabled
+    ) VALUES (
+        $1, $2, $3, true
+    )
+    RETURNING
+        id, network_id, excluded_cidr::text, reason, enabled,
+        created_at, updated_at, created_by`
+
+// ❌ Hard to read single-line INSERT
+query := `INSERT INTO network_exclusions (network_id, excluded_cidr, reason, enabled) VALUES ($1, $2, $3, true) RETURNING id, network_id, excluded_cidr::text, reason, enabled, created_at, updated_at, created_by`
+```
+
+#### Complex UPDATE Statements
+```go
+// ✅ Well-formatted UPDATE
+query := `
+    UPDATE networks
+    SET
+        name = $2,
+        cidr = $3,
+        description = $4,
+        discovery_method = $5,
+        is_active = $6,
+        updated_at = NOW()
+    WHERE id = $1
+    RETURNING
+        id, name, cidr, description, discovery_method,
+        is_active, scan_enabled, last_discovery, last_scan,
+        host_count, active_host_count, created_at, updated_at, created_by`
+```
+
+#### SQL Function Calls
+```go
+// ✅ Clear function call formatting
+query := `
+    SELECT ip_address::text
+    FROM generate_host_ips_with_exclusions($1::CIDR, $2, $3)
+    ORDER BY ip_address`
+
+// ✅ Complex query with joins
+query := `
+    SELECT
+        n.id, n.name, n.cidr,
+        COUNT(h.id) as host_count,
+        COUNT(h.id) FILTER (WHERE h.status = 'up') as active_hosts
+    FROM networks n
+    LEFT JOIN hosts h ON h.ip_address << n.cidr
+    WHERE n.is_active = true
+    GROUP BY n.id, n.name, n.cidr
+    ORDER BY n.name`
+```
+
+#### SQL Formatting Rules
+1. **Indent nested clauses**: Use 4 spaces for indentation
+2. **Align keywords**: Place SQL keywords (SELECT, FROM, WHERE, etc.) at consistent positions
+3. **Break long column lists**: Split across multiple lines with proper alignment
+4. **Group related columns**: Keep logically related columns together
+5. **Use consistent casing**: Uppercase for SQL keywords, lowercase for identifiers
+6. **Add line breaks before major clauses**: WHERE, ORDER BY, GROUP BY, etc.
