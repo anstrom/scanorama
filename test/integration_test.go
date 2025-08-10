@@ -118,7 +118,7 @@ func TestDiscoveryFunctionality(t *testing.T) {
 	}
 
 	// Execute discovery
-	job, err := discoveryEngine.Discover(suite.ctx, discoveryConfig)
+	job, err := discoveryEngine.Discover(suite.ctx, &discoveryConfig)
 	require.NoError(t, err, "Discovery should start successfully")
 	require.NotEqual(t, uuid.Nil, job.ID, "Discovery job should have valid ID")
 
@@ -163,7 +163,7 @@ func TestScanDiscoveredHost(t *testing.T) {
 		Concurrency: 1,
 	}
 
-	job, err := discoveryEngine.Discover(suite.ctx, discoveryConfig)
+	job, err := discoveryEngine.Discover(suite.ctx, &discoveryConfig)
 	require.NoError(t, err, "Discovery should succeed")
 
 	err = discoveryEngine.WaitForCompletion(suite.ctx, job.ID, 15*time.Second)

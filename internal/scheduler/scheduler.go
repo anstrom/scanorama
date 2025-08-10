@@ -365,7 +365,7 @@ func (s *Scheduler) executeDiscoveryJob(jobID uuid.UUID, config DiscoveryJobConf
 
 	// Execute discovery
 	ctx := context.Background()
-	discoveryJob, err := s.discovery.Discover(ctx, discoveryConfig)
+	discoveryJob, err := s.discovery.Discover(ctx, &discoveryConfig)
 	if err != nil {
 		log.Printf("Discovery job '%s' failed: %v", job.Config.Name, err)
 		return

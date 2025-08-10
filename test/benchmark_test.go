@@ -128,7 +128,7 @@ func BenchmarkDiscoveryWithDatabase(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		job, err := discoveryEngine.Discover(suite.ctx, discoveryConfig)
+		job, err := discoveryEngine.Discover(suite.ctx, &discoveryConfig)
 		if err != nil {
 			b.Fatalf("Discovery failed: %v", err)
 		}
