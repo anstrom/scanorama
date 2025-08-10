@@ -29,7 +29,7 @@ export PATH := $(GOBIN):$(PATH)
 DOCKER_COMPOSE := docker compose
 COMPOSE_FILE := ./test/docker/docker-compose.yml
 
-.PHONY: help build clean test coverage quality lint format security ci setup-dev-db setup-hooks
+.PHONY: help build clean test coverage quality lint format security ci setup-dev-db setup-hooks docker-build docker-up docker-down docker-logs
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -260,5 +260,27 @@ security: ## Run security vulnerability scans
 	@echo ""
 	@echo "Running govulncheck for known vulnerabilities..."
 	@$(GOBIN)/govulncheck ./... && echo "✅ No known vulnerabilities found" || echo "⚠️ Vulnerabilities found - review output above"
+
+# Docker targets
+docker-build: ## Build Docker image for local platform
+	@echo "Building Docker image for local platform..."
+	@docker buildx build --platform=local -t scanorama:dev .
+	@echo "✅ Docker image built: scanorama:dev"
+
+docker-up: ## Start development environment with Docker Compose
+	@echo "Starting development environment..."
+	@docker compose up -d
+	@echo "✅ Development environment started"
+	@echo "  Application: http://localhost:8080"
+	@echo "  PostgreSQL: localhost:5432"
+	@echo "  Redis: localhost:6379"
+
+docker-down: ## Stop development environment
+	@echo "Stopping development environment..."
+	@docker compose down --volumes
+	@echo "✅ Development environment stopped"
+
+docker-logs: ## Show logs from development environment
+	@docker compose logs -f
 
 .DEFAULT_GOAL := help

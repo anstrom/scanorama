@@ -1,0 +1,61 @@
+version: "3.8"
+
+services:
+  # Scanorama application
+  scanorama:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scanorama-dev
+    ports:
+      - "8080:8080"
+    environment:
+      - SCANORAMA_DATABASE_HOST=postgres
+      - SCANORAMA_DATABASE_PORT=5432
+      - SCANORAMA_DATABASE_DATABASE=scanorama
+      - SCANORAMA_DATABASE_USERNAME=scanorama
+      - SCANORAMA_DATABASE_PASSWORD=scanorama_dev
+      - SCANORAMA_DATABASE_SSL_MODE=disable
+      - SCANORAMA_LOG_LEVEL=debug
+    volumes:
+      - ./config.yaml:/app/config/config.yaml:ro
+    depends_on:
+      - postgres
+      - redis
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    container_name: scanorama-postgres-dev
+    environment:
+      - POSTGRES_DB=scanorama
+      - POSTGRES_USER=scanorama
+      - POSTGRES_PASSWORD=scanorama_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scanorama -d scanorama"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: scanorama-redis-dev
+    command: redis-server --requirepass scanorama_dev
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
