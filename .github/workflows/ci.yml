@@ -302,7 +302,7 @@ jobs:
                   log.Fatalf("Failed to query migrations: %v", err)
               }
 
-              expectedMigrations := []string{"001_initial_schema", "002_performance_improvements"}
+              expectedMigrations := []string{"001_initial_schema", "002_performance_improvements", "003_networks_table", "004_network_exclusions"}
               if len(migrations) != len(expectedMigrations) {
                   log.Fatalf("Expected %d migrations, got %d: %v", len(expectedMigrations), len(migrations), migrations)
               }
