@@ -181,7 +181,7 @@ func TestBuildNmapOptionsForTargets(t *testing.T) {
 		{
 			name:           "tcp method",
 			config:         Config{Method: "tcp"},
-			expectedMethod: "-PS22,80,443,8080",
+			expectedMethod: "-PS22,80,443,8080,8022,8379",
 		},
 		{
 			name:           "ping method",

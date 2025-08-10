@@ -318,7 +318,7 @@ func (e *Engine) buildNmapOptionsForTargets(targets []string, config *Config, ti
 	// Add method-specific options
 	switch config.Method {
 	case "tcp":
-		args = append(args, "-PS22,80,443,8080") // TCP SYN ping
+		args = append(args, "-PS22,80,443,8080,8022,8379") // TCP SYN ping (includes CI service ports)
 	case "ping":
 		args = append(args, "-PE") // ICMP echo ping
 	case "arp":
