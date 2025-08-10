@@ -110,6 +110,20 @@ go test ./internal -run "Scan"
 
 See `docs/` for technical documentation and contribution guidelines.
 
+## Releases
+
+To create a release:
+
+1. Create and push a git tag:
+   ```bash
+   git tag v0.5.0
+   git push origin v0.5.0
+   ```
+
+2. GitHub Actions will automatically build and create the release with cross-platform binaries
+
+Release artifacts include Linux and macOS binaries built with GoReleaser.
+
 ## License
 
 MIT License - see LICENSE file for details.
