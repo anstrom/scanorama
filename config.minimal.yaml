@@ -1,0 +1,87 @@
+# Scanorama Minimal Configuration
+# ==============================
+# This is a minimal configuration to get Scanorama running quickly.
+# For all available options, see config.full.yaml
+
+# Database Configuration (REQUIRED)
+# PostgreSQL database for storing scan results
+database:
+  host: "localhost"
+  port: 5432
+  database: "scanorama"
+  username: "scanorama"
+  password: "scanorama_password"
+  ssl_mode: "disable"  # Use "require" in production
+
+# Basic Scanning Configuration
+scanning:
+  # Number of concurrent scan workers
+  worker_pool_size: 10
+
+  # Default ports to scan
+  default_ports: "22,80,443,8080,8443"
+
+  # Scan type: connect (no root needed) or syn (requires root)
+  default_scan_type: "connect"
+
+# Network Discovery Configuration
+discovery:
+  # Define your networks here
+  networks:
+    # Example home network
+    - name: "home_network"
+      cidr: "192.168.1.0/24"
+      description: "Home LAN"
+      discovery_method: "tcp_connect"
+      is_active: true
+      scan_enabled: true
+      exclusions:
+        - "192.168.1.1/32"  # Router
+
+    # Example local development network
+    - name: "local_dev"
+      cidr: "127.0.0.0/24"
+      description: "Local development"
+      discovery_method: "tcp_connect"
+      is_active: true
+      scan_enabled: false
+
+  # IPs to exclude from all scans
+  global_exclusions:
+    - "127.0.0.1/32"      # Localhost
+    - "169.254.0.0/16"    # Link-local
+
+  # Default settings
+  defaults:
+    method: "tcp_connect"
+    timeout: "30s"
+    ports: "22,80,443,8080,8443"
+
+  # Automatically create networks from this config
+  auto_seed: true
+
+# API Server Configuration
+api:
+  enabled: true
+  listen_addr: "127.0.0.1"
+  port: 8080
+
+  # Disable auth for simple setup (enable in production)
+  api_key: ""
+
+  # CORS for web frontend
+  cors:
+    enabled: true
+    allowed_origins: ["http://localhost:3000"]
+
+# Logging Configuration
+logging:
+  level: "info"
+  format: "text"
+  output: "stdout"
+
+# Monitoring
+monitoring:
+  enabled: true
+  endpoint: "/metrics"
+  port: 0  # Use main API port
