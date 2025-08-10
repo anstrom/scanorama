@@ -43,7 +43,7 @@ services:
 
   # Redis for caching
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: scanorama-redis-dev
     command: redis-server --requirepass scanorama_dev
     volumes:
