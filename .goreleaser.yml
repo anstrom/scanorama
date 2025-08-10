@@ -23,13 +23,13 @@ builds:
       - -X 'main.buildTime={{.Date}}'
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     files:
       - README.md
       - LICENSE
       - CHANGELOG.md
 
-checksums:
+checksum:
   name_template: "checksums.txt"
 
 changelog:
