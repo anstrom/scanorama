@@ -1,4 +1,4 @@
-FROM ubuntu:22.04-slim
+FROM ubuntu:22.04
 
 # Multi-platform build support
 ARG TARGETPLATFORM
