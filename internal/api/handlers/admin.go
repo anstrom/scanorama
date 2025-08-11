@@ -5,14 +5,18 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
 )
 
@@ -21,19 +25,41 @@ const (
 	workerStopDelay = 100 * time.Millisecond
 )
 
+// Configuration section constants.
+const (
+	configSectionAPI      = "api"
+	configSectionDatabase = "database"
+	configSectionScanning = "scanning"
+	configSectionLogging  = "logging"
+	configSectionDaemon   = "daemon"
+)
+
+// Validation limit constants.
+const (
+	maxDatabaseNameLength     = 63          // PostgreSQL maximum database name length
+	maxUsernameLength         = 63          // PostgreSQL maximum username length
+	maxAdminPortsStringLength = 1000        // Maximum length for admin ports configuration string
+	maxDurationStringLength   = 50          // Maximum length for duration strings
+	maxPathLength             = 4096        // Maximum file path length
+	maxConfigSize             = 1024 * 1024 // Maximum configuration size (1MB)
+	maxAdminHostnameLength    = 255         // Maximum hostname length for admin config
+)
+
 // AdminHandler handles administrative API endpoints.
 type AdminHandler struct {
-	database *db.DB
-	logger   *slog.Logger
-	metrics  *metrics.Registry
+	database  *db.DB
+	logger    *slog.Logger
+	metrics   *metrics.Registry
+	validator *validator.Validate
 }
 
 // NewAdminHandler creates a new admin handler.
 func NewAdminHandler(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry) *AdminHandler {
 	return &AdminHandler{
-		database: database,
-		logger:   logger.With("handler", "admin"),
-		metrics:  metricsManager,
+		database:  database,
+		logger:    logger.With("handler", "admin"),
+		metrics:   metricsManager,
+		validator: validator.New(),
 	}
 }
 
@@ -87,9 +113,82 @@ type ConfigResponse struct {
 }
 
 // ConfigUpdateRequest represents a configuration update request.
+// ConfigUpdateRequest represents a request to update configuration
 type ConfigUpdateRequest struct {
-	Section string      `json:"section" validate:"required,oneof=api database scanning logging daemon"`
-	Config  interface{} `json:"config" validate:"required"`
+	Section string           `json:"section" validate:"required,oneof=api database scanning logging daemon"`
+	Config  ConfigUpdateData `json:"config" validate:"required"`
+}
+
+// ConfigUpdateData represents the configuration data for updates
+type ConfigUpdateData struct {
+	API      *APIConfigUpdate      `json:"api,omitempty"`
+	Database *DatabaseConfigUpdate `json:"database,omitempty"`
+	Scanning *ScanningConfigUpdate `json:"scanning,omitempty"`
+	Logging  *LoggingConfigUpdate  `json:"logging,omitempty"`
+	Daemon   *DaemonConfigUpdate   `json:"daemon,omitempty"`
+}
+
+// APIConfigUpdate represents updatable API configuration fields
+type APIConfigUpdate struct {
+	Enabled           *bool    `json:"enabled,omitempty"`
+	Host              *string  `json:"host,omitempty"`
+	Port              *int     `json:"port,omitempty" validate:"omitempty,min=1,max=65535"`
+	ReadTimeout       *string  `json:"read_timeout,omitempty"`
+	WriteTimeout      *string  `json:"write_timeout,omitempty"`
+	IdleTimeout       *string  `json:"idle_timeout,omitempty"`
+	MaxHeaderBytes    *int     `json:"max_header_bytes,omitempty" validate:"omitempty,min=1024,max=1048576"`
+	EnableCORS        *bool    `json:"enable_cors,omitempty"`
+	CORSOrigins       []string `json:"cors_origins,omitempty"`
+	AuthEnabled       *bool    `json:"auth_enabled,omitempty"`
+	RateLimitEnabled  *bool    `json:"rate_limit_enabled,omitempty"`
+	RateLimitRequests *int     `json:"rate_limit_requests,omitempty" validate:"omitempty,min=1,max=10000"`
+	RateLimitWindow   *string  `json:"rate_limit_window,omitempty"`
+	RequestTimeout    *string  `json:"request_timeout,omitempty"`
+	MaxRequestSize    *int     `json:"max_request_size,omitempty" validate:"omitempty,min=1,max=104857600"`
+}
+
+// DatabaseConfigUpdate represents updatable database configuration fields
+type DatabaseConfigUpdate struct {
+	Host            *string `json:"host,omitempty"`
+	Port            *int    `json:"port,omitempty" validate:"omitempty,min=1,max=65535"`
+	Database        *string `json:"database,omitempty" validate:"omitempty,min=1,max=63"`
+	Username        *string `json:"username,omitempty" validate:"omitempty,min=1,max=63"`
+	SSLMode         *string `json:"ssl_mode,omitempty" validate:"omitempty,oneof=disable require verify-ca verify-full"`
+	MaxOpenConns    *int    `json:"max_open_conns,omitempty" validate:"omitempty,min=1,max=100"`
+	MaxIdleConns    *int    `json:"max_idle_conns,omitempty" validate:"omitempty,min=1,max=100"`
+	ConnMaxLifetime *string `json:"conn_max_lifetime,omitempty"`
+	ConnMaxIdleTime *string `json:"conn_max_idle_time,omitempty"`
+}
+
+// ScanningConfigUpdate represents updatable scanning configuration fields
+type ScanningConfigUpdate struct {
+	WorkerPoolSize         *int    `json:"worker_pool_size,omitempty" validate:"omitempty,min=1,max=1000"`
+	DefaultInterval        *string `json:"default_interval,omitempty"`
+	MaxScanTimeout         *string `json:"max_scan_timeout,omitempty"`
+	DefaultPorts           *string `json:"default_ports,omitempty" validate:"omitempty,max=1000"`
+	DefaultScanType        *string `json:"default_scan_type,omitempty" validate:"omitempty,oneof=connect syn ack window fin null xmas maimon"` //nolint:lll
+	MaxConcurrentTargets   *int    `json:"max_concurrent_targets,omitempty" validate:"omitempty,min=1,max=10000"`
+	EnableServiceDetection *bool   `json:"enable_service_detection,omitempty"`
+	EnableOSDetection      *bool   `json:"enable_os_detection,omitempty"`
+}
+
+// LoggingConfigUpdate represents updatable logging configuration fields
+type LoggingConfigUpdate struct {
+	Level          *string `json:"level,omitempty" validate:"omitempty,oneof=debug info warn error"`
+	Format         *string `json:"format,omitempty" validate:"omitempty,oneof=text json"`
+	Output         *string `json:"output,omitempty" validate:"omitempty,min=1,max=255"`
+	Structured     *bool   `json:"structured,omitempty"`
+	RequestLogging *bool   `json:"request_logging,omitempty"`
+}
+
+// DaemonConfigUpdate represents updatable daemon configuration fields
+type DaemonConfigUpdate struct {
+	PIDFile         *string `json:"pid_file,omitempty" validate:"omitempty,min=1,max=255"`
+	WorkDir         *string `json:"work_dir,omitempty" validate:"omitempty,min=1,max=255"`
+	User            *string `json:"user,omitempty" validate:"omitempty,min=1,max=32"`
+	Group           *string `json:"group,omitempty" validate:"omitempty,min=1,max=32"`
+	Daemonize       *bool   `json:"daemonize,omitempty"`
+	ShutdownTimeout *string `json:"shutdown_timeout,omitempty"`
 }
 
 // LogsResponse represents log retrieval response.
@@ -255,26 +354,28 @@ func (h *AdminHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	requestID := getRequestIDFromContext(r.Context())
 	h.logger.Info("Updating configuration", "request_id", requestID)
 
-	// Parse request body
+	// Parse request body with size limit validation
 	var req ConfigUpdateRequest
-	if err := parseJSON(r, &req); err != nil {
+	if err := parseConfigJSON(r, &req); err != nil {
 		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
-	// Validate request
+	// Validate request structure and content
 	if err := h.validateConfigUpdate(&req); err != nil {
 		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
-	// Update configuration
-	configMap, ok := req.Config.(map[string]interface{})
-	if !ok {
-		writeError(w, r, http.StatusBadRequest, fmt.Errorf("invalid config format: expected map"))
+	// Extract and validate the specific configuration section
+	configData, err := h.extractConfigSection(&req)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("invalid config format: %w", err))
 		return
 	}
-	updatedConfig := h.updateConfig(r.Context(), req.Section, configMap)
+
+	// Update configuration with validated data
+	updatedConfig := h.updateConfig(r.Context(), req.Section, configData)
 
 	response := map[string]interface{}{
 		"section":          req.Section,
@@ -388,24 +489,537 @@ func (h *AdminHandler) extractWorkerID(r *http.Request) (string, error) {
 
 // validateConfigUpdate validates a configuration update request.
 func (h *AdminHandler) validateConfigUpdate(req *ConfigUpdateRequest) error {
+	// First validate the request structure using validator
+	if err := h.validator.Struct(req); err != nil {
+		return fmt.Errorf("request validation failed: %w", err)
+	}
+
 	if req.Section == "" {
 		return fmt.Errorf("configuration section is required")
 	}
 
 	validSections := map[string]bool{
-		"api":      true,
-		"database": true,
-		"scanning": true,
-		"logging":  true,
-		"daemon":   true,
+		configSectionAPI:      true,
+		configSectionDatabase: true,
+		configSectionScanning: true,
+		configSectionLogging:  true,
+		configSectionDaemon:   true,
 	}
 
 	if !validSections[req.Section] {
 		return fmt.Errorf("invalid configuration section: %s", req.Section)
 	}
 
-	if req.Config == nil {
-		return fmt.Errorf("configuration data is required")
+	// Validate that the appropriate configuration section is provided and validate its content
+	return h.validateConfigSection(req)
+}
+
+// extractConfigSection safely extracts the configuration data for the specified section
+func (h *AdminHandler) extractConfigSection(req *ConfigUpdateRequest) (map[string]interface{}, error) {
+	return h.extractConfigData(req)
+}
+
+// structToMap safely converts a struct to map[string]interface{} for processing
+func structToMap(v interface{}) (map[string]interface{}, error) {
+	// Use JSON marshaling/unmarshaling for safe conversion
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	// Remove nil values to avoid overwriting with empty values
+	cleaned := make(map[string]interface{})
+	for k, v := range result {
+		if v != nil {
+			cleaned[k] = v
+		}
+	}
+
+	return cleaned, nil
+}
+
+// validateStringField validates string configuration fields with security constraints
+func validateStringField(field, value string, maxLength int) error {
+	if len(value) > maxLength {
+		return fmt.Errorf("%s too long: %d characters (max %d)", field, len(value), maxLength)
+	}
+
+	// Check for null bytes
+	for i, char := range value {
+		if char == 0 {
+			return fmt.Errorf("%s contains null byte at position %d", field, i)
+		}
+	}
+
+	// Check for control characters (except tabs and newlines)
+	for i, char := range value {
+		if char < 32 && char != 9 && char != 10 && char != 13 {
+			return fmt.Errorf("%s contains control character at position %d", field, i)
+		}
+	}
+
+	return nil
+}
+
+// validateConfigSection validates configuration sections (extracted to reduce complexity)
+func (h *AdminHandler) validateConfigSection(req *ConfigUpdateRequest) error {
+	switch req.Section {
+	case configSectionAPI:
+		return h.validateAPISection(req.Config.API)
+	case configSectionDatabase:
+		return h.validateDatabaseSection(req.Config.Database)
+	case configSectionScanning:
+		return h.validateScanningSection(req.Config.Scanning)
+	case configSectionLogging:
+		return h.validateLoggingSection(req.Config.Logging)
+	case configSectionDaemon:
+		return h.validateDaemonSection(req.Config.Daemon)
+	default:
+		return fmt.Errorf("unsupported configuration section: %s", req.Section)
+	}
+}
+
+// validateAPISection validates API configuration section
+func (h *AdminHandler) validateAPISection(config *APIConfigUpdate) error {
+	if config == nil {
+		return fmt.Errorf("api configuration data is required for api section")
+	}
+	if err := h.validator.Struct(config); err != nil {
+		return fmt.Errorf("api configuration validation failed: %w", err)
+	}
+	if err := h.validateAPIConfig(config); err != nil {
+		return fmt.Errorf("api configuration security validation failed: %w", err)
+	}
+	return nil
+}
+
+// validateDatabaseSection validates database configuration section
+func (h *AdminHandler) validateDatabaseSection(config *DatabaseConfigUpdate) error {
+	if config == nil {
+		return fmt.Errorf("database configuration data is required for database section")
+	}
+	if err := h.validator.Struct(config); err != nil {
+		return fmt.Errorf("database configuration validation failed: %w", err)
+	}
+	if err := h.validateDatabaseConfig(config); err != nil {
+		return fmt.Errorf("database configuration security validation failed: %w", err)
+	}
+	return nil
+}
+
+// validateScanningSection validates scanning configuration section
+func (h *AdminHandler) validateScanningSection(config *ScanningConfigUpdate) error {
+	if config == nil {
+		return fmt.Errorf("scanning configuration data is required for scanning section")
+	}
+	if err := h.validator.Struct(config); err != nil {
+		return fmt.Errorf("scanning configuration validation failed: %w", err)
+	}
+	if err := h.validateScanningConfig(config); err != nil {
+		return fmt.Errorf("scanning configuration security validation failed: %w", err)
+	}
+	return nil
+}
+
+// validateLoggingSection validates logging configuration section
+func (h *AdminHandler) validateLoggingSection(config *LoggingConfigUpdate) error {
+	if config == nil {
+		return fmt.Errorf("logging configuration data is required for logging section")
+	}
+	if err := h.validator.Struct(config); err != nil {
+		return fmt.Errorf("logging configuration validation failed: %w", err)
+	}
+	if err := h.validateLoggingConfig(config); err != nil {
+		return fmt.Errorf("logging configuration security validation failed: %w", err)
+	}
+	return nil
+}
+
+// validateDaemonSection validates daemon configuration section
+func (h *AdminHandler) validateDaemonSection(config *DaemonConfigUpdate) error {
+	if config == nil {
+		return fmt.Errorf("daemon configuration data is required for daemon section")
+	}
+	if err := h.validator.Struct(config); err != nil {
+		return fmt.Errorf("daemon configuration validation failed: %w", err)
+	}
+	if err := h.validateDaemonConfig(config); err != nil {
+		return fmt.Errorf("daemon configuration security validation failed: %w", err)
+	}
+	return nil
+}
+
+// extractConfigData extracts configuration data by section (extracted to reduce complexity)
+func (h *AdminHandler) extractConfigData(req *ConfigUpdateRequest) (map[string]interface{}, error) {
+	switch req.Section {
+	case configSectionAPI:
+		return h.extractAPIConfigData(req.Config.API)
+	case configSectionDatabase:
+		return h.extractDatabaseConfigData(req.Config.Database)
+	case configSectionScanning:
+		return h.extractScanningConfigData(req.Config.Scanning)
+	case configSectionLogging:
+		return h.extractLoggingConfigData(req.Config.Logging)
+	case configSectionDaemon:
+		return h.extractDaemonConfigData(req.Config.Daemon)
+	default:
+		return nil, fmt.Errorf("unsupported configuration section: %s", req.Section)
+	}
+}
+
+// extractAPIConfigData safely extracts API configuration data
+func (h *AdminHandler) extractAPIConfigData(config *APIConfigUpdate) (map[string]interface{}, error) {
+	if config == nil {
+		return nil, fmt.Errorf("api configuration is required")
+	}
+	data, err := structToMap(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process api config: %w", err)
+	}
+	return data, nil
+}
+
+// extractDatabaseConfigData safely extracts database configuration data
+func (h *AdminHandler) extractDatabaseConfigData(config *DatabaseConfigUpdate) (map[string]interface{}, error) {
+	if config == nil {
+		return nil, fmt.Errorf("database configuration is required")
+	}
+	data, err := structToMap(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process database config: %w", err)
+	}
+	return data, nil
+}
+
+// extractScanningConfigData safely extracts scanning configuration data
+func (h *AdminHandler) extractScanningConfigData(config *ScanningConfigUpdate) (map[string]interface{}, error) {
+	if config == nil {
+		return nil, fmt.Errorf("scanning configuration is required")
+	}
+	data, err := structToMap(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process scanning config: %w", err)
+	}
+	return data, nil
+}
+
+// extractLoggingConfigData safely extracts logging configuration data
+func (h *AdminHandler) extractLoggingConfigData(config *LoggingConfigUpdate) (map[string]interface{}, error) {
+	if config == nil {
+		return nil, fmt.Errorf("logging configuration is required")
+	}
+	data, err := structToMap(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process logging config: %w", err)
+	}
+	return data, nil
+}
+
+// extractDaemonConfigData safely extracts daemon configuration data
+func (h *AdminHandler) extractDaemonConfigData(config *DaemonConfigUpdate) (map[string]interface{}, error) {
+	if config == nil {
+		return nil, fmt.Errorf("daemon configuration is required")
+	}
+	data, err := structToMap(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process daemon config: %w", err)
+	}
+	return data, nil
+}
+
+// Additional validation for configuration fields with custom security checks
+func (h *AdminHandler) validateAPIConfig(config *APIConfigUpdate) error {
+	if err := h.validateAPINetworkSettings(config); err != nil {
+		return err
+	}
+
+	if err := h.validateAPITimeoutSettings(config); err != nil {
+		return err
+	}
+
+	if err := h.validateAPICORSSettings(config); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateAPINetworkSettings validates API network-related configuration
+func (h *AdminHandler) validateAPINetworkSettings(config *APIConfigUpdate) error {
+	if config.Host != nil {
+		if err := validateHostField("host", *config.Host); err != nil {
+			return err
+		}
+	}
+
+	if config.Port != nil {
+		if err := validatePortField("port", *config.Port); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateAPITimeoutSettings validates API timeout-related configuration
+func (h *AdminHandler) validateAPITimeoutSettings(config *APIConfigUpdate) error {
+	if config.ReadTimeout != nil {
+		if err := validateDurationField("read_timeout", *config.ReadTimeout); err != nil {
+			return err
+		}
+	}
+
+	if config.WriteTimeout != nil {
+		if err := validateDurationField("write_timeout", *config.WriteTimeout); err != nil {
+			return err
+		}
+	}
+
+	if config.IdleTimeout != nil {
+		if err := validateDurationField("idle_timeout", *config.IdleTimeout); err != nil {
+			return err
+		}
+	}
+
+	if config.RequestTimeout != nil {
+		if err := validateDurationField("request_timeout", *config.RequestTimeout); err != nil {
+			return err
+		}
+	}
+
+	if config.RateLimitWindow != nil {
+		if err := validateDurationField("rate_limit_window", *config.RateLimitWindow); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateAPICORSSettings validates API CORS-related configuration
+func (h *AdminHandler) validateAPICORSSettings(config *APIConfigUpdate) error {
+	if config.CORSOrigins != nil {
+		for i, origin := range config.CORSOrigins {
+			fieldName := fmt.Sprintf("cors_origins[%d]", i)
+			if err := validateStringField(fieldName, origin, maxAdminHostnameLength); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (h *AdminHandler) validateDatabaseConfig(config *DatabaseConfigUpdate) error {
+	if config.Host != nil {
+		if err := validateHostField("host", *config.Host); err != nil {
+			return err
+		}
+	}
+
+	if config.Port != nil {
+		if err := validatePortField("port", *config.Port); err != nil {
+			return err
+		}
+	}
+
+	if config.Database != nil {
+		if err := validateStringField("database", *config.Database, maxDatabaseNameLength); err != nil {
+			return err
+		}
+	}
+
+	if config.Username != nil {
+		if err := validateStringField("username", *config.Username, maxUsernameLength); err != nil {
+			return err
+		}
+	}
+
+	if config.ConnMaxLifetime != nil {
+		if err := validateDurationField("conn_max_lifetime", *config.ConnMaxLifetime); err != nil {
+			return err
+		}
+	}
+
+	if config.ConnMaxIdleTime != nil {
+		if err := validateDurationField("conn_max_idle_time", *config.ConnMaxIdleTime); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (h *AdminHandler) validateScanningConfig(config *ScanningConfigUpdate) error {
+	if config.DefaultInterval != nil {
+		if err := validateDurationField("default_interval", *config.DefaultInterval); err != nil {
+			return err
+		}
+	}
+
+	if config.MaxScanTimeout != nil {
+		if err := validateDurationField("max_scan_timeout", *config.MaxScanTimeout); err != nil {
+			return err
+		}
+	}
+
+	if config.DefaultPorts != nil {
+		if err := validateStringField("default_ports", *config.DefaultPorts, maxAdminPortsStringLength); err != nil {
+			return err
+		}
+		// Additional validation for port ranges could be added here
+	}
+
+	return nil
+}
+
+func (h *AdminHandler) validateLoggingConfig(config *LoggingConfigUpdate) error {
+	if config.Output != nil {
+		if err := validatePathField("output", *config.Output); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (h *AdminHandler) validateDaemonConfig(config *DaemonConfigUpdate) error {
+	if config.PIDFile != nil {
+		if err := validatePathField("pid_file", *config.PIDFile); err != nil {
+			return err
+		}
+	}
+
+	if config.WorkDir != nil {
+		if err := validatePathField("work_dir", *config.WorkDir); err != nil {
+			return err
+		}
+	}
+
+	if config.User != nil {
+		if err := validateStringField("user", *config.User, 32); err != nil {
+			return err
+		}
+	}
+
+	if config.Group != nil {
+		if err := validateStringField("group", *config.Group, 32); err != nil {
+			return err
+		}
+	}
+
+	if config.ShutdownTimeout != nil {
+		if err := validateDurationField("shutdown_timeout", *config.ShutdownTimeout); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateHostField validates hostname or IP address fields
+func validateHostField(field, value string) error {
+	if err := validateStringField(field, value, maxAdminHostnameLength); err != nil { // Max hostname length
+		return err
+	}
+
+	// Basic hostname validation - allow empty for "listen on all interfaces"
+	if value == "" {
+		return nil
+	}
+
+	// Check for valid characters (basic validation)
+	for i, char := range value {
+		if (char < 'a' || char > 'z') &&
+			(char < 'A' || char > 'Z') &&
+			(char < '0' || char > '9') &&
+			char != '.' && char != '-' && char != ':' {
+			return fmt.Errorf("%s contains invalid character at position %d", field, i)
+		}
+	}
+
+	return nil
+}
+
+// validatePortField validates port number fields
+func validatePortField(field string, value int) error {
+	if value < 1 || value > 65535 {
+		return fmt.Errorf("%s out of range: %d (must be 1-65535)", field, value)
+	}
+
+	// Privileged ports (< 1024) are allowed but noted for security awareness
+
+	return nil
+}
+
+// validateDurationField validates duration string fields
+func validateDurationField(field, value string) error {
+	if err := validateStringField(field, value, maxDurationStringLength); err != nil {
+		return err
+	}
+
+	if value == "" {
+		return nil
+	}
+
+	// Try to parse as duration
+	_, err := time.ParseDuration(value)
+	if err != nil {
+		return fmt.Errorf("%s is not a valid duration: %w", field, err)
+	}
+
+	return nil
+}
+
+// validatePathField validates file path fields
+func validatePathField(field, value string) error {
+	if err := validateStringField(field, value, maxPathLength); err != nil {
+		return err
+	}
+
+	if value == "" {
+		return nil
+	}
+
+	// Check for directory traversal patterns
+	if strings.Contains(value, "..") {
+		return fmt.Errorf("%s contains directory traversal: %s", field, value)
+	}
+
+	// Additional check for cleaned path differences
+	cleanPath := filepath.Clean(value)
+	if cleanPath != value && strings.Contains(cleanPath, "..") {
+		return fmt.Errorf("%s contains directory traversal: %s", field, value)
+	}
+
+	return nil
+}
+
+// parseConfigJSON safely parses JSON with size limits and security constraints</text>
+func parseConfigJSON(r *http.Request, dest interface{}) error {
+	if r.Body == nil {
+		return fmt.Errorf("request body is empty")
+	}
+
+	// Enforce maximum request size
+	r.Body = http.MaxBytesReader(nil, r.Body, maxConfigSize)
+
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	// Use strict number handling to prevent precision issues
+	decoder.UseNumber()
+
+	if err := decoder.Decode(dest); err != nil {
+		if err.Error() == "http: request body too large" {
+			return fmt.Errorf("configuration data too large (max 1MB)")
+		}
+		return fmt.Errorf("invalid JSON: %w", err)
 	}
 
 	return nil

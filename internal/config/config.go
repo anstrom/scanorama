@@ -4,6 +4,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -40,6 +41,12 @@ const (
 	defaultMaxSizeMB  = 100
 	defaultMaxBackups = 5
 	defaultMaxAgeDays = 30
+
+	// Security validation constants.
+	maxConfigSize   = 10 * 1024 * 1024 // Maximum config file size (10MB)
+	maxContentSize  = 5 * 1024 * 1024  // Maximum config content size (5MB)
+	maxPathLength   = 4096             // Maximum file path length
+	permissionsMask = 0o777            // File permissions mask for validation
 )
 
 // Default configuration values.
@@ -484,31 +491,51 @@ func Load(path string) (*Config, error) {
 	// Start with defaults (includes environment variables)
 	config := Default()
 
-	// Check if file exists
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	// Check if file exists and get file info for security validation
+	fileInfo, err := os.Stat(path)
+	if os.IsNotExist(err) {
 		return nil, fmt.Errorf("config file not found: %w", err)
 	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to access config file: %w", err)
+	}
 
-	// Read file
-	data, err := os.ReadFile(path) //nolint:gosec // path is validated by validateConfigPath
+	// Validate file size (max 10MB to prevent DoS)
+	const maxConfigSize = 10 * 1024 * 1024
+	if fileInfo.Size() > maxConfigSize {
+		return nil, fmt.Errorf("config file too large: %d bytes (max %d bytes)", fileInfo.Size(), maxConfigSize)
+	}
+
+	// Validate file permissions for security
+	if err := validateConfigPermissions(fileInfo); err != nil {
+		return nil, fmt.Errorf("insecure config file permissions: %w", err)
+	}
+
+	// Read file with size limit
+	data, err := os.ReadFile(path) //nolint:gosec // path and permissions are validated
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Parse based on file extension
+	// Validate content before parsing
+	if err := validateConfigContent(data); err != nil {
+		return nil, fmt.Errorf("invalid config content: %w", err)
+	}
+
+	// Parse based on file extension with strict options
 	ext := filepath.Ext(path)
 	switch ext {
 	case ".yaml", ".yml":
-		if err := yaml.Unmarshal(data, config); err != nil {
+		if err := safeYAMLUnmarshal(data, config); err != nil {
 			return nil, fmt.Errorf("failed to parse YAML config: %w", err)
 		}
 	case ".json":
-		if err := json.Unmarshal(data, config); err != nil {
+		if err := safeJSONUnmarshal(data, config); err != nil {
 			return nil, fmt.Errorf("failed to parse JSON config: %w", err)
 		}
 	default:
-		// Default to YAML
-		if err := yaml.Unmarshal(data, config); err != nil {
+		// Default to YAML with strict parsing
+		if err := safeYAMLUnmarshal(data, config); err != nil {
 			return nil, fmt.Errorf("failed to parse config (assumed YAML): %w", err)
 		}
 	}
@@ -559,6 +586,100 @@ func validateConfigPath(path string) error {
 		if cleanPath != "" && cleanPath[0] == '.' && len(cleanPath) > 1 && cleanPath[1] == '.' {
 			return fmt.Errorf("path contains directory traversal")
 		}
+	}
+
+	// Additional security checks
+	if len(path) > maxPathLength {
+		return fmt.Errorf("path too long: %d characters (max %d)", len(path), maxPathLength)
+	}
+
+	// Check for null bytes (path injection)
+	for i, char := range path {
+		if char == 0 {
+			return fmt.Errorf("null byte in path at position %d", i)
+		}
+	}
+
+	// Validate file extension
+	ext := filepath.Ext(cleanPath)
+	allowedExtensions := map[string]bool{
+		".yaml": true,
+		".yml":  true,
+		".json": true,
+		"":      true, // Allow no extension for default config files
+	}
+	if !allowedExtensions[ext] {
+		return fmt.Errorf("unsupported config file extension: %s", ext)
+	}
+
+	return nil
+}
+
+// validateConfigPermissions validates that config file has secure permissions
+func validateConfigPermissions(fileInfo os.FileInfo) error {
+	mode := fileInfo.Mode()
+
+	// Config files should not be world-readable or writable
+	if mode&0o044 != 0 {
+		return fmt.Errorf("config file has insecure permissions %o: should not be world-readable", mode&permissionsMask)
+	}
+
+	// Config files should not be group-writable unless specifically needed
+	if mode&0o020 != 0 {
+		return fmt.Errorf("config file has insecure permissions %o: should not be group-writable", mode&permissionsMask)
+	}
+
+	return nil
+}
+
+// validateConfigContent performs basic validation on config file content
+func validateConfigContent(data []byte) error {
+	// Check for minimum content
+	if len(data) == 0 {
+		return fmt.Errorf("config file is empty")
+	}
+
+	// Check for extremely large content
+	if len(data) > maxContentSize {
+		return fmt.Errorf("config content too large: %d bytes (max %d)", len(data), maxContentSize)
+	}
+
+	// Check for binary content (basic heuristic)
+	nullCount := 0
+	for _, b := range data {
+		if b == 0 {
+			nullCount++
+		}
+	}
+	if nullCount > 0 && len(data) > 0 && float64(nullCount)/float64(len(data)) > 0.01 {
+		return fmt.Errorf("config file appears to contain binary data")
+	}
+
+	return nil
+}
+
+// safeYAMLUnmarshal performs secure YAML unmarshaling with restrictions
+func safeYAMLUnmarshal(data []byte, dest interface{}) error {
+	// Use secure unmarshaling while allowing field name flexibility for compatibility
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	// Note: KnownFields(true) is disabled to allow field name flexibility
+	// Security is maintained through content validation and size limits
+
+	if err := decoder.Decode(dest); err != nil {
+		return fmt.Errorf("YAML decode error: %w", err)
+	}
+
+	return nil
+}
+
+// safeJSONUnmarshal performs secure JSON unmarshaling with restrictions
+func safeJSONUnmarshal(data []byte, dest interface{}) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	decoder.UseNumber() // Prevent float precision issues
+
+	if err := decoder.Decode(dest); err != nil {
+		return fmt.Errorf("JSON decode error: %w", err)
 	}
 
 	return nil

@@ -190,16 +190,26 @@ func writePaginatedResponse(
 
 // Request parsing utilities
 
-// parseJSON parses JSON request body into the provided destination.
+// parseJSON parses JSON request body into the provided destination with security constraints.
 func parseJSON(r *http.Request, dest interface{}) error {
 	if r.Body == nil {
 		return fmt.Errorf("request body is empty")
 	}
 
+	// Enforce maximum request size (10MB) to prevent DoS attacks
+	const maxRequestSize = 10 * 1024 * 1024
+	r.Body = http.MaxBytesReader(nil, r.Body, maxRequestSize)
+
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
+	// Use strict number handling to prevent precision issues
+	decoder.UseNumber()
+
 	if err := decoder.Decode(dest); err != nil {
+		if err.Error() == "http: request body too large" {
+			return fmt.Errorf("request body too large (max 10MB)")
+		}
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
 
