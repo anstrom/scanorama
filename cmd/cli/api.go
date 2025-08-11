@@ -151,6 +151,7 @@ func printStartupInfo(cfg *config.Config) {
 func printAPIEndpoints() {
 	if verbose {
 		fmt.Printf("Available endpoints:\n")
+		fmt.Printf("  GET  /api/v1/liveness     - Liveness check\n")
 		fmt.Printf("  GET  /api/v1/health       - Health check\n")
 		fmt.Printf("  GET  /api/v1/status       - System status\n")
 		fmt.Printf("  GET  /api/v1/scans        - List scans\n")

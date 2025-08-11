@@ -252,7 +252,7 @@ func Authentication(apiKeys []string, logger *slog.Logger) func(http.Handler) ht
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Skip authentication for health checks
-			if r.URL.Path == "/api/v1/health" || r.URL.Path == "/api/v1/version" {
+			if r.URL.Path == "/api/v1/health" || r.URL.Path == "/api/v1/version" || r.URL.Path == "/api/v1/liveness" {
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -312,3 +312,144 @@ func TestHealthHandler_LargeResponse(t *testing.T) {
 	assert.Greater(t, len(w.Body.String()), 100) // Should be substantial response
 	assert.Less(t, duration, 5*time.Second)      // Should complete in reasonable time
 }
+
+func TestHealthHandler_Liveness(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	t.Run("liveness check with metrics", func(t *testing.T) {
+		logger := createTestLogger()
+		mockMetrics := mocks.NewMockMetricsRegistry(ctrl)
+		mockMetrics.EXPECT().Counter("api_liveness_checks_total", nil).Times(1)
+
+		handler := NewHealthHandler(nil, logger, mockMetrics)
+
+		req := httptest.NewRequest("GET", "/liveness", http.NoBody)
+		w := httptest.NewRecorder()
+
+		handler.Liveness(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response map[string]interface{}
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		require.NoError(t, err)
+
+		assert.Contains(t, response, "status")
+		assert.Contains(t, response, "timestamp")
+		assert.Contains(t, response, "uptime")
+		assert.Equal(t, "alive", response["status"])
+	})
+
+	t.Run("liveness check without metrics", func(t *testing.T) {
+		logger := createTestLogger()
+
+		handler := NewHealthHandler(nil, logger, nil)
+
+		req := httptest.NewRequest("GET", "/liveness", http.NoBody)
+		w := httptest.NewRecorder()
+
+		handler.Liveness(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response map[string]interface{}
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		require.NoError(t, err)
+
+		assert.Contains(t, response, "status")
+		assert.Contains(t, response, "timestamp")
+		assert.Contains(t, response, "uptime")
+		assert.Equal(t, "alive", response["status"])
+	})
+}
+
+func TestHealthHandler_LivenessResponse(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewHealthHandler(nil, logger, nil)
+
+	req := httptest.NewRequest("GET", "/liveness", http.NoBody)
+	w := httptest.NewRecorder()
+
+	handler.Liveness(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var response LivenessResponse
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	assert.Equal(t, "alive", response.Status)
+	assert.NotZero(t, response.Timestamp)
+	assert.NotEmpty(t, response.Uptime)
+
+	// Verify timestamp is recent
+	assert.True(t, time.Since(response.Timestamp) < time.Minute)
+}
+
+func TestHealthHandler_LivenessPerformance(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewHealthHandler(nil, logger, nil)
+
+	// Test multiple concurrent liveness requests
+	const numRequests = 100
+	start := time.Now()
+
+	for i := 0; i < numRequests; i++ {
+		req := httptest.NewRequest("GET", "/liveness", http.NoBody)
+		w := httptest.NewRecorder()
+		handler.Liveness(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	}
+
+	duration := time.Since(start)
+
+	// Liveness should be faster than health checks since it has no dependencies
+	assert.Less(t, duration, 2*time.Second, "Liveness checks should be very fast")
+
+	// Verify average response time per request
+	avgDuration := duration / numRequests
+	assert.Less(t, avgDuration, 20*time.Millisecond, "Individual liveness checks should be under 20ms")
+}
+
+func TestHealthHandler_LivenessVsHealthPerformance(t *testing.T) {
+	logger := createTestLogger()
+
+	// Test with a mock database that has some latency
+	mockDB := &MockDB{}
+	mockDB.On("Ping", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		time.Sleep(5 * time.Millisecond) // Simulate database latency
+	})
+
+	handler := NewHealthHandler(mockDB, logger, nil)
+
+	const numRequests = 10
+
+	// Measure liveness performance
+	livenessStart := time.Now()
+	for i := 0; i < numRequests; i++ {
+		req := httptest.NewRequest("GET", "/liveness", http.NoBody)
+		w := httptest.NewRecorder()
+		handler.Liveness(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	}
+	livenessDuration := time.Since(livenessStart)
+
+	// Measure health performance
+	healthStart := time.Now()
+	for i := 0; i < numRequests; i++ {
+		req := httptest.NewRequest("GET", "/health", http.NoBody)
+		w := httptest.NewRecorder()
+		handler.Health(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	}
+	healthDuration := time.Since(healthStart)
+
+	// Liveness should be significantly faster than health
+	assert.Less(t, livenessDuration, healthDuration,
+		"Liveness checks should be faster than health checks")
+
+	t.Logf("Liveness duration: %v, Health duration: %v",
+		livenessDuration, healthDuration)
+}

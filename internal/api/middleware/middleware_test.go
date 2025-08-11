@@ -428,6 +428,13 @@ func TestAuthenticationMiddleware(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			shouldCallNext: true,
 		},
+		{
+			name:           "liveness endpoint bypass",
+			path:           "/api/v1/liveness",
+			headers:        map[string]string{},
+			expectedStatus: http.StatusOK,
+			shouldCallNext: true,
+		},
 	}
 
 	for _, tt := range tests {
