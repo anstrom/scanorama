@@ -320,7 +320,7 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, statusCode i
 	}
 }
 
-// Basic handler implementations
+// Basic handler implementations.
 
 // healthHandler provides basic health check endpoint.
 // healthHandler godoc
@@ -501,7 +501,7 @@ func getRequestID(r *http.Request) string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 
-// Middleware functions
+// Middleware functions.
 
 // recoveryMiddleware recovers from panics and returns a 500 error.
 func (s *Server) recoveryMiddleware(next http.Handler) http.Handler {
