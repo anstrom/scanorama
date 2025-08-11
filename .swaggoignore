@@ -1,0 +1,14 @@
+# Swagger ignore file - excludes files from swagger documentation scanning
+# Only includes files that would interfere with Swagger/API documentation generation
+
+# Test files - don't include test code in API documentation
+*_test.go
+**/*_test.go
+
+# Generated files that might conflict with API documentation
+*.pb.go
+*_generated.go
+*.gen.go
+
+# Vendor and third-party dependencies
+vendor/

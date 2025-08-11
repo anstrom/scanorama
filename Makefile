@@ -29,7 +29,7 @@ export PATH := $(GOBIN):$(PATH)
 DOCKER_COMPOSE := docker compose
 COMPOSE_FILE := ./test/docker/docker-compose.yml
 
-.PHONY: help build clean test coverage quality lint format security ci setup-dev-db setup-hooks docker-build docker-up docker-down docker-logs
+.PHONY: help build clean test coverage quality lint format security ci setup-dev-db setup-hooks docker-build docker-up docker-down docker-logs docs-install docs-generate docs-serve docs-clean docs
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -282,5 +282,28 @@ docker-down: ## Stop development environment
 
 docker-logs: ## Show logs from development environment
 	@docker compose logs -f
+
+# Documentation targets
+docs-install: ## Install swagger documentation tools
+	@echo "Installing swagger documentation tools..."
+	@go install github.com/swaggo/swag/cmd/swag@latest
+	@echo "✅ Swagger tools installed"
+
+docs-generate: docs-install ## Generate API documentation from code annotations
+	@echo "Generating API documentation..."
+	@cd docs && swag init -g swagger_docs.go -o ./swagger --parseDependency --parseInternal
+	@echo "✅ API documentation generated in docs/swagger/"
+
+docs-serve: docs-generate ## Generate and serve API documentation locally
+	@echo "Starting documentation server on http://localhost:8081..."
+	@echo "API documentation will be available at http://localhost:8081/swagger/index.html"
+	@cd docs/swagger && python3 -m http.server 8081 2>/dev/null || python -m SimpleHTTPServer 8081
+
+docs-clean: ## Clean generated documentation files
+	@echo "Cleaning generated documentation..."
+	@rm -rf docs/swagger/docs.go docs/swagger/swagger.json docs/swagger/swagger.yaml
+	@echo "✅ Documentation files cleaned"
+
+docs: docs-generate ## Alias for docs-generate
 
 .DEFAULT_GOAL := help

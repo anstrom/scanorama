@@ -1,0 +1,597 @@
+basePath: /api/v1
+definitions:
+  docs.AdminStatusResponse:
+    properties:
+      admin_status:
+        example: active
+        type: string
+      server_info:
+        additionalProperties: true
+        type: object
+      timestamp:
+        type: string
+    type: object
+  docs.CreateScanRequest:
+    properties:
+      description:
+        example: Regular security assessment
+        type: string
+      name:
+        example: Weekly security scan
+        type: string
+      profile_id:
+        example: 550e8400-e29b-41d4-a716-446655440001
+        type: string
+      scan_options:
+        additionalProperties: true
+        type: object
+      targets:
+        example:
+        - 192.168.1.0/24
+        items:
+          type: string
+        type: array
+    type: object
+  docs.ErrorResponse:
+    properties:
+      error:
+        example: Invalid request
+        type: string
+      request_id:
+        example: req-123
+        type: string
+      timestamp:
+        type: string
+    type: object
+  docs.HealthResponse:
+    properties:
+      checks:
+        additionalProperties:
+          type: string
+        type: object
+      status:
+        example: healthy
+        type: string
+      timestamp:
+        type: string
+      uptime:
+        example: 2h30m45s
+        type: string
+    type: object
+  docs.HostResponse:
+    properties:
+      first_seen:
+        type: string
+      hostname:
+        example: server01.local
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440002
+        type: string
+      ip_address:
+        example: 192.168.1.100
+        type: string
+      last_seen:
+        type: string
+      mac_address:
+        example: 00:1B:44:11:3A:B7
+        type: string
+      open_ports:
+        example:
+        - 22
+        - 80
+        - 443
+        items:
+          type: integer
+        type: array
+      scan_count:
+        example: 5
+        type: integer
+      status:
+        enum:
+        - up
+        - down
+        - unknown
+        example: up
+        type: string
+    type: object
+  docs.PaginatedHostsResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/docs.HostResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/docs.PaginationInfo'
+    type: object
+  docs.PaginatedScansResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/docs.ScanResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/docs.PaginationInfo'
+    type: object
+  docs.PaginationInfo:
+    properties:
+      page:
+        example: 1
+        type: integer
+      page_size:
+        example: 20
+        type: integer
+      total_items:
+        example: 150
+        type: integer
+      total_pages:
+        example: 8
+        type: integer
+    type: object
+  docs.ScanResponse:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      duration:
+        example: 14m30s
+        type: string
+      error_message:
+        type: string
+      hosts_discovered:
+        example: 25
+        type: integer
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      ports_scanned:
+        example: 2500
+        type: integer
+      profile_id:
+        example: 550e8400-e29b-41d4-a716-446655440001
+        type: string
+      progress:
+        example: 65.5
+        type: number
+      started_at:
+        type: string
+      status:
+        enum:
+        - pending
+        - running
+        - completed
+        - failed
+        - cancelled
+        example: running
+        type: string
+      targets:
+        example:
+        - 192.168.1.0/24
+        items:
+          type: string
+        type: array
+    type: object
+  docs.StatusResponse:
+    properties:
+      service:
+        example: scanorama-api
+        type: string
+      timestamp:
+        type: string
+      uptime:
+        example: 2h30m45s
+        type: string
+      version:
+        example: 0.2.0
+        type: string
+    type: object
+  docs.VersionResponse:
+    properties:
+      service:
+        example: scanorama
+        type: string
+      timestamp:
+        type: string
+      version:
+        example: 0.2.0
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: Scanorama Support
+    url: https://github.com/anstrom/scanorama
+  description: |-
+    Network scanning and discovery service with automated reconnaissance capabilities
+
+    ## Features
+    - Network host discovery and enumeration
+    - Port scanning and service detection
+    - Scan scheduling and automation
+    - Real-time progress updates via WebSocket
+    - Administrative monitoring and controls
+
+    ## Authentication
+    API key authentication can be enabled. Include your API key in the `X-API-Key` header when required.
+  license:
+    name: MIT
+    url: https://github.com/anstrom/scanorama/blob/main/LICENSE
+  title: Scanorama API
+  version: 1.0.0
+paths:
+  /admin/status:
+    get:
+      description: Returns admin status info
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.AdminStatusResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Admin status
+      tags:
+      - Admin
+  /discovery:
+    get:
+      description: Endpoint not yet implemented
+      produces:
+      - application/json
+      responses:
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      summary: Not implemented
+      tags:
+      - System
+    post:
+      description: Endpoint not yet implemented
+      produces:
+      - application/json
+      responses:
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      summary: Not implemented
+      tags:
+      - System
+  /health:
+    get:
+      description: Returns service health status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.HealthResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/docs.HealthResponse'
+      summary: Health check
+      tags:
+      - System
+  /hosts:
+    get:
+      description: Get discovered hosts
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by IP
+        in: query
+        name: ip_address
+        type: string
+      - description: Filter by hostname
+        in: query
+        name: hostname
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.PaginatedHostsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List hosts
+      tags:
+      - Hosts
+  /hosts/{hostId}:
+    get:
+      description: Get host details by ID
+      parameters:
+      - description: Host ID
+        format: uuid
+        in: path
+        name: hostId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.HostResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get host
+      tags:
+      - Hosts
+  /metrics:
+    get:
+      description: Returns Prometheus metrics
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      summary: Application metrics
+      tags:
+      - System
+  /profiles:
+    get:
+      description: Endpoint not yet implemented
+      produces:
+      - application/json
+      responses:
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      summary: Not implemented
+      tags:
+      - System
+    post:
+      description: Endpoint not yet implemented
+      produces:
+      - application/json
+      responses:
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      summary: Not implemented
+      tags:
+      - System
+  /scans:
+    get:
+      description: Get paginated list of scans
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by status
+        enum:
+        - pending
+        - running
+        - completed
+        - failed
+        - cancelled
+        in: query
+        name: status
+        type: string
+      - description: Filter by target
+        in: query
+        name: target
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.PaginatedScansResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List scans
+      tags:
+      - Scans
+    post:
+      consumes:
+      - application/json
+      description: Create new network scan
+      parameters:
+      - description: Scan config
+        in: body
+        name: scan
+        required: true
+        schema:
+          $ref: '#/definitions/docs.CreateScanRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/docs.ScanResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create scan
+      tags:
+      - Scans
+  /scans/{scanId}:
+    delete:
+      description: Cancel or delete scan
+      parameters:
+      - description: Scan ID
+        format: uuid
+        in: path
+        name: scanId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete scan
+      tags:
+      - Scans
+    get:
+      description: Get scan details by ID
+      parameters:
+      - description: Scan ID
+        format: uuid
+        in: path
+        name: scanId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.ScanResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get scan
+      tags:
+      - Scans
+  /schedules:
+    get:
+      description: Endpoint not yet implemented
+      produces:
+      - application/json
+      responses:
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      summary: Not implemented
+      tags:
+      - System
+    post:
+      description: Endpoint not yet implemented
+      produces:
+      - application/json
+      responses:
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      summary: Not implemented
+      tags:
+      - System
+  /status:
+    get:
+      description: Returns detailed system status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.StatusResponse'
+      summary: System status
+      tags:
+      - System
+  /version:
+    get:
+      description: Returns version and build info
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.VersionResponse'
+      summary: Version information
+      tags:
+      - System
+securityDefinitions:
+  ApiKeyAuth:
+    description: API key for authentication
+    in: header
+    name: X-API-Key
+    type: apiKey
+swagger: "2.0"
