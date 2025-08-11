@@ -14,7 +14,9 @@ import (
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	httpSwagger "github.com/swaggo/http-swagger"
 
+	_ "github.com/anstrom/scanorama/docs/swagger" // Import generated swagger docs
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/logging"
@@ -175,10 +177,19 @@ func (s *Server) setupRoutes() {
 	// Admin endpoints
 	api.HandleFunc("/admin/status", s.adminStatusHandler).Methods("GET")
 
-	// Static documentation (if needed)
-	s.router.PathPrefix("/docs/").Handler(http.StripPrefix("/docs/", http.FileServer(http.Dir("./docs/api/"))))
+	// Swagger documentation endpoints
+	s.router.PathPrefix("/swagger/").Handler(httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+		httpSwagger.DeepLinking(true),
+		httpSwagger.DocExpansion("none"),
+	))
 
-	// Root redirect
+	// Documentation aliases
+	s.router.HandleFunc("/docs", s.redirectToSwagger).Methods("GET")
+	s.router.HandleFunc("/docs/", s.redirectToSwagger).Methods("GET")
+	s.router.HandleFunc("/api-docs", s.redirectToSwagger).Methods("GET")
+
+	// Root redirect - send browsers to docs, API clients to health
 	s.router.HandleFunc("/", s.redirectToAPI).Methods("GET")
 }
 
@@ -210,7 +221,7 @@ func (s *Server) redirectToAPI(w http.ResponseWriter, r *http.Request) {
 		"endpoints": map[string]string{
 			"health": "/api/v1/health",
 			"status": "/api/v1/status",
-			"docs":   "/docs/",
+			"docs":   "/swagger/",
 		},
 		"timestamp": time.Now().UTC(),
 	}
@@ -221,6 +232,11 @@ func (s *Server) redirectToAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+}
+
+// redirectToSwagger redirects to the Swagger UI.
+func (s *Server) redirectToSwagger(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/swagger/index.html", http.StatusMovedPermanently)
 }
 
 // GetRouter returns the configured router.
@@ -307,6 +323,14 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, statusCode i
 // Basic handler implementations
 
 // healthHandler provides basic health check endpoint.
+// healthHandler godoc
+// @Summary Health check
+// @Description Returns service health status
+// @Tags System
+// @Produce json
+// @Success 200 {object} handlers.HealthResponse
+// @Success 503 {object} handlers.HealthResponse
+// @Router /health [get]
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), healthCheckTimeout)
 	defer cancel()
@@ -343,6 +367,13 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // statusHandler provides detailed status information.
+// statusHandler godoc
+// @Summary System status
+// @Description Returns detailed system status
+// @Tags System
+// @Produce json
+// @Success 200 {object} handlers.StatusResponse
+// @Router /status [get]
 func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"service":   "scanorama-api",
@@ -356,6 +387,13 @@ func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // versionHandler provides version information.
+// versionHandler godoc
+// @Summary Version information
+// @Description Returns version and build info
+// @Tags System
+// @Produce json
+// @Success 200 {object} handlers.VersionResponse
+// @Router /version [get]
 func (s *Server) versionHandler(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"version":   "0.2.0",
@@ -367,6 +405,14 @@ func (s *Server) versionHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // metricsHandler provides Prometheus-style metrics.
+// metricsHandler godoc
+// @Summary Application metrics
+// @Description Returns Prometheus metrics
+// @Tags System
+// @Produce text/plain
+// @Success 200 {string} string
+// @Failure 404 {object} handlers.ErrorResponse
+// @Router /metrics [get]
 func (s *Server) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	metricsData := s.metrics.GetMetrics()
 
@@ -379,6 +425,21 @@ func (s *Server) metricsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // notImplementedHandler returns a not implemented response.
+// notImplementedHandler godoc
+// @Summary Not implemented
+// @Description Endpoint not yet implemented
+// @Tags System
+// @Produce json
+// @Success 501 {object} handlers.ErrorResponse
+// @Router /scans [get]
+// @Router /scans [post]
+// @Router /hosts [get]
+// @Router /discovery [get]
+// @Router /discovery [post]
+// @Router /profiles [get]
+// @Router /profiles [post]
+// @Router /schedules [get]
+// @Router /schedules [post]
 func (s *Server) notImplementedHandler(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"error":     "endpoint not implemented",
@@ -391,6 +452,16 @@ func (s *Server) notImplementedHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // adminStatusHandler provides administrative status information.
+// adminStatusHandler godoc
+// @Summary Admin status
+// @Description Returns admin status info
+// @Tags Admin
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} handlers.AdminStatusResponse
+// @Failure 401 {object} handlers.ErrorResponse
+// @Failure 403 {object} handlers.ErrorResponse
+// @Router /admin/status [get]
 func (s *Server) adminStatusHandler(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"admin_status": "active",
