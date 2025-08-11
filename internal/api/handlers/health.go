@@ -65,6 +65,13 @@ type HealthResponse struct {
 	Checks    map[string]string `json:"checks"`
 }
 
+// LivenessResponse represents a simple liveness check response.
+type LivenessResponse struct {
+	Status    string    `json:"status"`
+	Timestamp time.Time `json:"timestamp"`
+	Uptime    string    `json:"uptime"`
+}
+
 // StatusResponse represents a detailed status response.
 type StatusResponse struct {
 	Service   ServiceInfo    `json:"service"`
@@ -188,6 +195,30 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 		h.metrics.Counter("api_health_checks_total", metrics.Labels{
 			"status": response.Status,
 		})
+	}
+}
+
+// Liveness performs a simple liveness check without dependencies.
+func (h *HealthHandler) Liveness(w http.ResponseWriter, r *http.Request) {
+	h.logger.Debug("Liveness check requested", "remote_addr", r.RemoteAddr)
+
+	response := LivenessResponse{
+		Status:    "alive",
+		Timestamp: time.Now().UTC(),
+		Uptime:    time.Since(h.startTime).String(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		h.logger.Error("Failed to encode liveness response", "error", err)
+		return
+	}
+
+	// Record metrics
+	if h.metrics != nil {
+		h.metrics.Counter("api_liveness_checks_total", nil)
 	}
 }
 

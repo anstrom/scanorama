@@ -37,6 +37,7 @@ type Server struct {
 	database   *db.DB
 	logger     *slog.Logger
 	metrics    *metrics.Registry
+	startTime  time.Time
 }
 
 // Config holds API server configuration.
@@ -89,11 +90,12 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 	apiConfig := getAPIConfigFromConfig(cfg)
 
 	server := &Server{
-		router:   router,
-		config:   cfg,
-		database: database,
-		logger:   logger,
-		metrics:  metricsManager,
+		router:    router,
+		config:    cfg,
+		database:  database,
+		logger:    logger,
+		metrics:   metricsManager,
+		startTime: time.Now(),
 	}
 
 	// Setup routes
@@ -161,6 +163,7 @@ func (s *Server) setupRoutes() {
 	api := s.router.PathPrefix("/api/v1").Subrouter()
 
 	// Health and status endpoints
+	api.HandleFunc("/liveness", s.livenessHandler).Methods("GET")
 	api.HandleFunc("/health", s.healthHandler).Methods("GET")
 	api.HandleFunc("/status", s.statusHandler).Methods("GET")
 	api.HandleFunc("/version", s.versionHandler).Methods("GET")
@@ -219,9 +222,10 @@ func (s *Server) redirectToAPI(w http.ResponseWriter, r *http.Request) {
 		"service": "Scanorama API",
 		"version": "v1",
 		"endpoints": map[string]string{
-			"health": "/api/v1/health",
-			"status": "/api/v1/status",
-			"docs":   "/swagger/",
+			"liveness": "/api/v1/liveness",
+			"health":   "/api/v1/health",
+			"status":   "/api/v1/status",
+			"docs":     "/swagger/",
 		},
 		"timestamp": time.Now().UTC(),
 	}
@@ -321,6 +325,26 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, statusCode i
 }
 
 // Basic handler implementations.
+
+// livenessHandler provides a simple liveness check endpoint.
+// livenessHandler godoc
+// @Summary Liveness check
+// @Description Returns simple liveness status without dependency checks
+// @Tags System
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /liveness [get]
+func (s *Server) livenessHandler(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"status":    "alive",
+		"timestamp": time.Now().UTC(),
+		"uptime":    time.Since(s.startTime).String(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
 
 // healthHandler provides basic health check endpoint.
 // healthHandler godoc
