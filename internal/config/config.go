@@ -189,6 +189,17 @@ type APIConfig struct {
 	EnableCORS  bool     `yaml:"enable_cors" json:"enable_cors"`
 	CORSOrigins []string `yaml:"cors_origins" json:"cors_origins"`
 
+	// WebSocket settings
+	WebSocketEnabled    bool     `yaml:"websocket_enabled" json:"websocket_enabled"`
+	WebSocketOrigins    []string `yaml:"websocket_origins" json:"websocket_origins"`
+	WebSocketMaxConns   int      `yaml:"websocket_max_connections" json:"websocket_max_connections"`
+	WebSocketBufferSize int      `yaml:"websocket_buffer_size" json:"websocket_buffer_size"`
+
+	// WebSocket authentication
+	WebSocketAuthEnabled bool     `yaml:"websocket_auth_enabled" json:"websocket_auth_enabled"`
+	WebSocketAuthMethod  string   `yaml:"websocket_auth_method" json:"websocket_auth_method"` // "api_key", "jwt", "none"
+	WebSocketAPIKeys     []string `yaml:"websocket_api_keys" json:"websocket_api_keys"`
+
 	// Rate limiting
 	RateLimitEnabled  bool          `yaml:"rate_limit_enabled" json:"rate_limit_enabled"`
 	RateLimitRequests int           `yaml:"rate_limit_requests" json:"rate_limit_requests"`
@@ -473,7 +484,7 @@ func getDatabaseConfigFromEnv() db.Config {
 		Database:        getEnvString("SCANORAMA_DB_NAME", ""),
 		Username:        getEnvString("SCANORAMA_DB_USER", ""),
 		Password:        getEnvString("SCANORAMA_DB_PASSWORD", ""),
-		SSLMode:         getEnvString("SCANORAMA_DB_SSLMODE", "prefer"),
+		SSLMode:         getEnvString("SCANORAMA_DB_SSLMODE", "disable"),
 		MaxOpenConns:    getEnvInt("SCANORAMA_DB_MAX_OPEN_CONNS", DefaultMaxOpenConns),
 		MaxIdleConns:    getEnvInt("SCANORAMA_DB_MAX_IDLE_CONNS", DefaultMaxIdleConns),
 		ConnMaxLifetime: getEnvDuration("SCANORAMA_DB_CONN_MAX_LIFETIME", DefaultConnMaxLifetime),

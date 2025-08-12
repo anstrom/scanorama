@@ -29,7 +29,7 @@ export PATH := $(GOBIN):$(PATH)
 DOCKER_COMPOSE := docker compose
 COMPOSE_FILE := ./test/docker/docker-compose.yml
 
-.PHONY: help build clean test coverage quality lint format security ci setup-dev-db setup-hooks docker-build docker-up docker-down docker-logs docs-install docs-generate docs-serve docs-clean docs
+.PHONY: help build clean test coverage quality lint format security ci setup-dev-db setup-hooks lint-frontend format-frontend lint-go format-go docker-build docker-up docker-down docker-logs docs-install docs-generate docs-serve docs-clean docs
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -40,6 +40,14 @@ help: ## Show this help message
 	@echo '  make ci           # Run full CI pipeline locally before pushing'
 	@echo '  make test         # Run tests with database'
 	@echo '  make build        # Build binary'
+	@echo ''
+	@echo 'Code Quality:'
+	@echo '  make lint         # Run linting for both Go and frontend'
+	@echo '  make format       # Format code for both Go and frontend'
+	@echo '  make lint-go      # Run Go linting only'
+	@echo '  make lint-frontend # Run frontend linting only'
+	@echo '  make format-go    # Format Go code only'
+	@echo '  make format-frontend # Format frontend code only'
 	@echo ''
 	@echo 'Environment Variables:'
 	@echo '  DEBUG=true make test    # Run tests with debug output'
@@ -118,11 +126,26 @@ quality: ## Run comprehensive code quality checks (lint + format + security)
 	@$(MAKE) security
 	@echo "✅ All quality checks passed!"
 
-lint: ## Run golangci-lint to check code quality
+lint: ## Run linting for both Go and frontend code
+	@echo "=== Running Go linting ==="
 	@echo "Installing latest golangci-lint..."
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) latest
 	@echo "Running golangci-lint..."
 	@$(GOBIN)/golangci-lint run --config .golangci.yml
+	@echo "✅ Go linting completed"
+	@echo ""
+	@echo "=== Running Frontend linting ==="
+	@if [ -d "web/frontend" ]; then \
+		echo "Running ESLint on TypeScript/React code..."; \
+		(cd web/frontend && npm run lint); \
+		echo "Running TypeScript type checking..."; \
+		(cd web/frontend && npm run type-check); \
+		echo "✅ Frontend linting completed"; \
+	else \
+		echo "⚠️ Frontend directory not found, skipping frontend linting"; \
+	fi
+	@echo ""
+	@echo "✅ All linting checks completed!"
 
 coverage: ## Generate test coverage report
 	@echo "Generating coverage report..."
@@ -148,13 +171,72 @@ coverage: ## Generate test coverage report
 		echo "No coverage data generated - all tests may have failed"; \
 	fi
 
-format: ## Format code and fix linting issues automatically
+format: ## Format code and fix linting issues automatically for both Go and frontend
+	@echo "=== Formatting Go code ==="
 	@echo "Installing latest golangci-lint..."
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) latest
-	@echo "Formatting code and fixing issues..."
+	@echo "Formatting Go code and fixing issues..."
 	@$(GOBIN)/golangci-lint run --config .golangci.yml --fix
+	@echo "✅ Go formatting completed"
+	@echo ""
+	@echo "=== Formatting Frontend code ==="
+	@if [ -d "web/frontend" ]; then \
+		echo "Running Prettier on TypeScript/React code..."; \
+		(cd web/frontend && npx prettier --write "src/**/*.{ts,tsx,js,jsx,json,css,scss,md}"); \
+		echo "Running ESLint auto-fix..."; \
+		(cd web/frontend && npm run lint:fix); \
+		echo "✅ Frontend formatting completed"; \
+	else \
+		echo "⚠️ Frontend directory not found, skipping frontend formatting"; \
+	fi
+	@echo ""
+	@echo "✅ All formatting completed!"
 
 lint-fix: format ## Alias for format - auto-fix linting issues
+
+# Frontend-specific targets
+lint-frontend: ## Run ESLint and TypeScript checking on frontend code only
+	@echo "=== Running Frontend linting ==="
+	@if [ -d "web/frontend" ]; then \
+		echo "Running ESLint on TypeScript/React code..."; \
+		(cd web/frontend && npm run lint); \
+		echo "Running TypeScript type checking..."; \
+		(cd web/frontend && npm run type-check); \
+		echo "✅ Frontend linting completed"; \
+	else \
+		echo "❌ Frontend directory not found"; \
+		exit 1; \
+	fi
+
+format-frontend: ## Run Prettier and ESLint fix on frontend code only
+	@echo "=== Formatting Frontend code ==="
+	@if [ -d "web/frontend" ]; then \
+		echo "Running Prettier on TypeScript/React code..."; \
+		(cd web/frontend && npx prettier --write "src/**/*.{ts,tsx,js,jsx,json,css,scss,md}"); \
+		echo "Running ESLint auto-fix..."; \
+		(cd web/frontend && npm run lint:fix); \
+		echo "✅ Frontend formatting completed"; \
+	else \
+		echo "❌ Frontend directory not found"; \
+		exit 1; \
+	fi
+
+lint-go: ## Run golangci-lint on Go code only
+	@echo "=== Running Go linting ==="
+	@echo "Installing latest golangci-lint..."
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) latest
+	@echo "Running golangci-lint..."
+	@$(GOBIN)/golangci-lint run --config .golangci.yml
+	@echo "✅ Go linting completed"
+
+format-go: ## Run Go formatting and auto-fix issues only
+	@echo "=== Formatting Go code ==="
+	@echo "Installing latest golangci-lint..."
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) latest
+	@echo "Formatting Go code and fixing issues..."
+	@$(GOBIN)/golangci-lint run --config .golangci.yml --fix
+	@echo "✅ Go formatting completed"
+
 
 
 

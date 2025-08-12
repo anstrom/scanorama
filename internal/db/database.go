@@ -54,7 +54,7 @@ func DefaultConfig() Config {
 		Database:        "", // Must be configured
 		Username:        "", // Must be configured
 		Password:        "", // Must be configured
-		SSLMode:         "prefer",
+		SSLMode:         "disable",
 		MaxOpenConns:    defaultMaxOpenConns,
 		MaxIdleConns:    defaultMaxIdleConns,
 		ConnMaxLifetime: defaultConnMaxLifetime * time.Minute,
