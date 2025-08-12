@@ -473,7 +473,7 @@ func getDatabaseConfigFromEnv() db.Config {
 		Database:        getEnvString("SCANORAMA_DB_NAME", ""),
 		Username:        getEnvString("SCANORAMA_DB_USER", ""),
 		Password:        getEnvString("SCANORAMA_DB_PASSWORD", ""),
-		SSLMode:         getEnvString("SCANORAMA_DB_SSLMODE", "prefer"),
+		SSLMode:         getEnvString("SCANORAMA_DB_SSLMODE", "disable"),
 		MaxOpenConns:    getEnvInt("SCANORAMA_DB_MAX_OPEN_CONNS", DefaultMaxOpenConns),
 		MaxIdleConns:    getEnvInt("SCANORAMA_DB_MAX_IDLE_CONNS", DefaultMaxIdleConns),
 		ConnMaxLifetime: getEnvDuration("SCANORAMA_DB_CONN_MAX_LIFETIME", DefaultConnMaxLifetime),
