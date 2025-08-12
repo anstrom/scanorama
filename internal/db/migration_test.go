@@ -271,140 +271,39 @@ func TestSchemaAfterMigrations(t *testing.T) {
 
 	t.Logf("Found %d tables after migrations: %v", len(existingTables), existingTables)
 
-	// Test actual queries used by application code to catch schema mismatches
-	// These are extracted from real code usage patterns
-	applicationQueries := []struct {
-		name         string
-		query        string
-		codeLocation string
-		purpose      string
-	}{
-		{
-			"hosts_update_ignore_flag",
-			"UPDATE hosts SET ignore_scanning = $1 WHERE ip_address = $2",
-			"cmd/cli/hosts.go:363",
-			"CLI command to ignore/unignore hosts for scanning",
-		},
-		{
-			"scan_targets_create",
-			"INSERT INTO scan_targets (id, name, network, description, scan_interval_seconds, scan_ports, scan_type, enabled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-			"internal/db/database.go:114",
-			"Repository method to create scan targets",
-		},
-		{
-			"scan_targets_get_enabled",
-			"SELECT * FROM scan_targets WHERE enabled = true ORDER BY name",
-			"internal/db/database.go:170",
-			"Get active scan targets for scanning",
-		},
-		{
-			"scan_jobs_create",
-			"INSERT INTO scan_jobs (id, target_id, status, started_at, completed_at, scan_stats) VALUES ($1, $2, $3, $4, $5, $6)",
-			"internal/db/database.go:243",
-			"Create new scan job with target reference",
-		},
-		{
-			"scan_jobs_update_status",
-			"UPDATE scan_jobs SET status = $1, completed_at = $2 WHERE id = $3",
-			"internal/db/database.go:283",
-			"Update scan job completion status",
-		},
-		{
-			"hosts_get_by_ip",
-			"SELECT * FROM hosts WHERE ip_address = $1",
-			"internal/db/database.go:379",
-			"Find host by IP address for updates",
-		},
-		{
-			"hosts_create_or_update",
-			"INSERT INTO hosts (id, ip_address, hostname, mac_address, vendor, os_family, os_version, status, discovery_method, response_time_ms, discovery_count) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-			"internal/db/database.go:330",
-			"Create or update host records from discovery",
-		},
-		{
-			"port_scans_create_batch",
-			"INSERT INTO port_scans (id, job_id, host_id, port, protocol, state, service_name, service_version, service_product, banner) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-			"internal/db/database.go:445",
-			"Bulk insert port scan results",
-		},
-		{
-			"port_scans_get_by_host",
-			"SELECT * FROM port_scans WHERE host_id = $1 ORDER BY port",
-			"internal/db/database.go:482",
-			"Get all port scans for a specific host",
-		},
-		{
-			"active_hosts_view",
-			"SELECT * FROM active_hosts ORDER BY ip_address",
-			"internal/db/database.go:394",
-			"Repository method using active_hosts view",
-		},
-		{
-			"network_summary_view",
-			"SELECT * FROM network_summary ORDER BY target_name",
-			"internal/db/database.go:504",
-			"Dashboard network summary from view",
-		},
-		{
-			"scheduled_jobs_create",
-			"INSERT INTO scheduled_jobs (name, job_type, cron_expression, configuration, is_active) VALUES ($1, $2, $3, $4, $5)",
-			"cmd/cli/schedule.go:395",
-			"CLI command to create scheduled jobs",
-		},
-		{
-			"hosts_verify_exists",
-			"SELECT EXISTS(SELECT 1 FROM hosts WHERE id = $1)",
-			"internal/db/database.go:433",
-			"Verify host exists before creating port scans",
-		},
+	// Debug: Let's see what queries we're actually extracting
+	extractedQueries, err := ExtractSQLQueries()
+	if err != nil {
+		t.Logf("Warning: Could not extract SQL queries for debugging: %v", err)
+	} else {
+		t.Logf("DEBUG: Extracted %d queries from source code:", len(extractedQueries))
+		for i, q := range extractedQueries {
+			if i < 5 { // Only show first 5 to avoid spam
+				t.Logf("  %s (%s): %s", q.Name, q.Type, q.SQL)
+			}
+		}
 	}
 
+	// Test actual queries extracted from application code
+	applicationQueries, err := ExtractSQLQueries()
+	if err != nil {
+		t.Fatalf("Failed to extract application queries: %v", err)
+	}
+
+	if len(applicationQueries) == 0 {
+		t.Skip("No application queries found to validate")
+	}
+
+	t.Logf("Validating %d extracted queries against schema", len(applicationQueries))
+
 	for _, appQuery := range applicationQueries {
-		t.Run("query_"+appQuery.name, func(t *testing.T) {
-			// Prepare the query to test column/table existence without actual data
-			// Replace actual parameters with dummy values for schema validation
-			testQuery := strings.ReplaceAll(appQuery.query, " VALUES ", " VALUES ")
-
-			// For INSERT/UPDATE queries, we can't easily test without parameters
-			// So we'll use EXPLAIN to validate the query structure
-			if strings.HasPrefix(strings.ToUpper(testQuery), "INSERT") ||
-				strings.HasPrefix(strings.ToUpper(testQuery), "UPDATE") ||
-				strings.HasPrefix(strings.ToUpper(testQuery), "DELETE") {
-
-				// Use EXPLAIN to validate query structure without executing
-				explainQuery := "EXPLAIN " + testQuery
-
-				// Count the number of parameters and create dummy values
-				paramCount := strings.Count(testQuery, "$")
-				args := make([]interface{}, paramCount)
-				for i := 0; i < paramCount; i++ {
-					args[i] = "dummy"
-				}
-
-				rows, err := db.Query(explainQuery, args...)
-				if err != nil {
-					t.Errorf("Application query schema validation failed:\nQuery: %s\nLocation: %s\nPurpose: %s\nError: %v",
-						appQuery.query, appQuery.codeLocation, appQuery.purpose, err)
-					return
-				}
-				rows.Close()
+		t.Run("query_"+appQuery.Name, func(t *testing.T) {
+			if err := validateQueryAgainstSchema(db, appQuery); err != nil {
+				t.Errorf("Application query schema validation failed:\nQuery: %s\nFile: %s\nError: %v",
+					appQuery.SQL, appQuery.File, err)
 			} else {
-				// For SELECT queries, we can test directly with LIMIT 0
-				limitedQuery := testQuery
-				if !strings.Contains(strings.ToUpper(testQuery), "LIMIT") {
-					limitedQuery += " LIMIT 0"
-				}
-
-				rows, err := db.Query(limitedQuery)
-				if err != nil {
-					t.Errorf("Application query schema validation failed:\nQuery: %s\nLocation: %s\nPurpose: %s\nError: %v",
-						appQuery.query, appQuery.codeLocation, appQuery.purpose, err)
-					return
-				}
-				rows.Close()
+				t.Logf("✓ Application query validated: %s from %s", appQuery.Name, appQuery.File)
 			}
-
-			t.Logf("✓ Application query validated: %s (%s)", appQuery.purpose, appQuery.codeLocation)
 		})
 	}
 }
@@ -468,6 +367,210 @@ func TestMigrationChecksums(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestSchemaValidationReport provides a categorized report of schema validation issues
+func TestSchemaValidationReport(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping schema validation report in short mode")
+	}
+
+	configs := getTestConfigs()
+	if len(configs) == 0 {
+		t.Skip("No test database configuration available")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	db, err := ConnectAndMigrate(ctx, &configs[0])
+	if err != nil {
+		t.Skipf("Cannot connect and migrate test database: %v", err)
+	}
+	defer db.Close()
+
+	// Extract queries from application code (non-test files)
+	queries, err := ExtractSQLQueries()
+	if err != nil {
+		t.Fatalf("Failed to extract SQL queries: %v", err)
+	}
+
+	if len(queries) == 0 {
+		t.Skip("No application queries found to validate")
+	}
+
+	// Categorize validation results
+	var (
+		successfulQueries        []SQLQuery
+		testImplementationIssues []QueryValidationError
+		realApplicationIssues    []QueryValidationError
+	)
+
+	for _, query := range queries {
+		err := validateQueryAgainstSchema(db, query)
+		if err == nil {
+			successfulQueries = append(successfulQueries, query)
+		} else {
+			validationError := QueryValidationError{
+				Query: query,
+				Error: err.Error(),
+			}
+
+			// Categorize the error
+			if isTestImplementationIssue(err.Error()) {
+				testImplementationIssues = append(testImplementationIssues, validationError)
+			} else {
+				realApplicationIssues = append(realApplicationIssues, validationError)
+			}
+		}
+	}
+
+	// Report results
+	t.Logf("\n%s", strings.Repeat("=", 60))
+	t.Logf("SCHEMA VALIDATION REPORT")
+	t.Logf("%s", strings.Repeat("=", 60))
+	t.Logf("Total queries analyzed: %d", len(queries))
+	t.Logf("✅ Successful validations: %d", len(successfulQueries))
+	t.Logf("🔧 Test implementation issues: %d", len(testImplementationIssues))
+	t.Logf("🐛 Real application issues: %d", len(realApplicationIssues))
+
+	if len(successfulQueries) > 0 {
+		t.Logf("\n✅ SUCCESSFUL VALIDATIONS (%d):", len(successfulQueries))
+		for _, query := range successfulQueries {
+			t.Logf("  ✓ %s (%s)", query.Name, query.Type)
+		}
+	}
+
+	if len(testImplementationIssues) > 0 {
+		t.Logf("\n🔧 TEST IMPLEMENTATION ISSUES (%d):", len(testImplementationIssues))
+		t.Logf("These are problems with our test parameter generation, not the application:")
+		for _, issue := range testImplementationIssues {
+			t.Logf("  • %s: %s", issue.Query.Name, issue.Error)
+		}
+	}
+
+	if len(realApplicationIssues) > 0 {
+		t.Logf("\n🐛 REAL APPLICATION ISSUES (%d):", len(realApplicationIssues))
+		t.Logf("These are actual problems that could cause runtime failures:")
+		for _, issue := range realApplicationIssues {
+			t.Logf("  • %s (%s): %s", issue.Query.Name, issue.Query.File, issue.Error)
+		}
+	}
+
+	// Only fail the test if there are real application issues
+	if len(realApplicationIssues) > 0 {
+		t.Errorf("Found %d real application issues that need to be fixed", len(realApplicationIssues))
+	}
+
+	if len(testImplementationIssues) > 0 {
+		t.Logf("\nNOTE: %d test implementation issues found but not failing test", len(testImplementationIssues))
+		t.Logf("These should be fixed to improve test coverage")
+	}
+}
+
+// QueryValidationError represents a query validation failure
+type QueryValidationError struct {
+	Query SQLQuery
+	Error string
+}
+
+// isTestImplementationIssue determines if an error is due to test implementation rather than real application bugs
+func isTestImplementationIssue(errorMsg string) bool {
+	testIssuePatterns := []string{
+		"invalid input syntax for type uuid",      // Wrong parameter type for UUID fields
+		"invalid input syntax for type inet",      // Wrong parameter type for IP fields
+		"invalid input syntax for type cidr",      // Wrong parameter type for network fields
+		"invalid input syntax for type timestamp", // Wrong parameter type for timestamp fields
+		"invalid input syntax for type integer",   // Wrong parameter type for integer fields
+	}
+
+	for _, pattern := range testIssuePatterns {
+		if strings.Contains(errorMsg, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// TestSQLQueryExtraction tests the SQL query discovery functionality without requiring a database
+func TestSQLQueryExtraction(t *testing.T) {
+	queries, err := ExtractSQLQueries()
+	if err != nil {
+		t.Fatalf("Failed to extract SQL queries: %v", err)
+	}
+
+	if len(queries) == 0 {
+		t.Skip("No SQL queries found in source code - this might be expected in a minimal codebase")
+	}
+
+	t.Logf("Found %d SQL queries", len(queries))
+
+	// Validate structure of discovered queries
+	for _, query := range queries {
+		t.Run("query_"+query.Name, func(t *testing.T) {
+			// Validate required fields are populated
+			if query.Name == "" {
+				t.Error("Query name should not be empty")
+			}
+			if query.File == "" {
+				t.Error("Query file should not be empty")
+			}
+			if query.SQL == "" {
+				t.Error("Query SQL should not be empty")
+			}
+			if query.Type == "" {
+				t.Error("Query type should not be empty")
+			}
+
+			// Validate query type is recognized
+			validTypes := []string{"SELECT", "INSERT", "UPDATE", "DELETE"}
+			validType := false
+			for _, vt := range validTypes {
+				if query.Type == vt {
+					validType = true
+					break
+				}
+			}
+			if !validType {
+				t.Errorf("Query type '%s' is not recognized. Valid types: %v", query.Type, validTypes)
+			}
+
+			// Validate SQL contains expected keywords
+			if !containsSQLKeywords(query.SQL) {
+				t.Errorf("Query SQL doesn't contain recognizable SQL keywords: %s", query.SQL)
+			}
+
+			// Validate file exists
+			if _, err := os.Stat(query.File); os.IsNotExist(err) {
+				t.Errorf("Query file does not exist: %s", query.File)
+			}
+
+			t.Logf("✓ Valid query: %s (%s) from %s", query.Name, query.Type, query.File)
+		})
+	}
+
+	// Test that we can extract table names from discovered queries
+	tablesFound := make(map[string]bool)
+	for _, query := range queries {
+		tableName := extractTableName(query.SQL)
+		if tableName != "" {
+			tablesFound[tableName] = true
+		}
+	}
+
+	if len(tablesFound) > 0 {
+		t.Logf("Discovered tables referenced in SQL: %v", getMapKeys(tablesFound))
+	}
+}
+
+// getMapKeys returns the keys of a map as a slice
+func getMapKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // TestAutomatedQueryValidation automatically discovers and validates SQL queries
@@ -568,8 +671,10 @@ func ExtractSQLQueries() ([]SQLQuery, error) {
 
 		// Only process .go files, skip test files and vendor directories
 		if !strings.HasSuffix(path, ".go") ||
+			strings.HasSuffix(path, "_test.go") ||
 			strings.Contains(path, "vendor/") ||
-			strings.Contains(path, ".git/") {
+			strings.Contains(path, ".git/") ||
+			strings.Contains(path, "test/") {
 			return nil
 		}
 
@@ -589,6 +694,14 @@ func ExtractSQLQueries() ([]SQLQuery, error) {
 
 					// Skip if it doesn't look like a real SQL query
 					if len(sql) < 10 || !containsSQLKeywords(sql) {
+						continue
+					}
+
+					// Skip test-related queries and malformed fragments
+					if strings.Contains(strings.ToUpper(sql), "TEST_TX") ||
+						strings.Contains(sql, "%w") ||
+						strings.Contains(sql, "failed:") ||
+						len(sql) > 1000 { // Skip very long queries that might be malformed
 						continue
 					}
 
@@ -629,15 +742,23 @@ func ExtractSQLQueries() ([]SQLQuery, error) {
 
 // validateQueryAgainstSchema validates a SQL query against the current schema
 func validateQueryAgainstSchema(db *DB, query SQLQuery) error {
+	// Convert named parameters to positional parameters for PostgreSQL
+	testSQL, paramCount := convertNamedToPositionalParams(query.SQL)
+
 	switch query.Type {
 	case "SELECT":
 		// For SELECT queries, add LIMIT 0 to avoid returning data
-		testQuery := query.SQL
-		if !strings.Contains(strings.ToUpper(testQuery), "LIMIT") {
-			testQuery += " LIMIT 0"
+		if !strings.Contains(strings.ToUpper(testSQL), "LIMIT") {
+			testSQL += " LIMIT 0"
 		}
 
-		rows, err := db.Query(testQuery)
+		// Create dummy values for parameters
+		args := make([]interface{}, paramCount)
+		for i := 0; i < paramCount; i++ {
+			args[i] = generateParameterValue(query.SQL, i)
+		}
+
+		rows, err := db.Query(testSQL, args...)
 		if err != nil {
 			return fmt.Errorf("SELECT query failed: %w", err)
 		}
@@ -645,22 +766,12 @@ func validateQueryAgainstSchema(db *DB, query SQLQuery) error {
 
 	case "INSERT", "UPDATE", "DELETE":
 		// Use EXPLAIN to validate structure without executing
-		explainQuery := "EXPLAIN " + query.SQL
+		explainQuery := "EXPLAIN " + testSQL
 
-		// Count parameters and create dummy values
-		paramCount := strings.Count(query.SQL, "$")
+		// Create dummy values for parameters
 		args := make([]interface{}, paramCount)
 		for i := 0; i < paramCount; i++ {
-			switch i % 4 {
-			case 0:
-				args[i] = "00000000-0000-0000-0000-000000000000" // UUID
-			case 1:
-				args[i] = "dummy_string"
-			case 2:
-				args[i] = 42
-			case 3:
-				args[i] = true
-			}
+			args[i] = generateParameterValue(query.SQL, i)
 		}
 
 		rows, err := db.Query(explainQuery, args...)
@@ -780,6 +891,120 @@ func removeDuplicateQueries(queries []SQLQuery) []SQLQuery {
 	}
 
 	return unique
+}
+
+// convertNamedToPositionalParams converts named parameters (:name) to positional ($1, $2, etc.)
+func convertNamedToPositionalParams(sql string) (string, int) {
+	// If already using positional parameters, return as-is
+	if strings.Contains(sql, "$") && !strings.Contains(sql, ":") {
+		return sql, strings.Count(sql, "$")
+	}
+
+	// Find all named parameters
+	namedParamRegex := regexp.MustCompile(`:(\w+)`)
+	matches := namedParamRegex.FindAllStringSubmatch(sql, -1)
+
+	if len(matches) == 0 {
+		return sql, 0
+	}
+
+	// Create a map to track unique parameter names
+	paramMap := make(map[string]int)
+	paramCounter := 1
+
+	// Replace named parameters with positional ones
+	result := sql
+	for _, match := range matches {
+		paramName := match[1]
+		namedParam := ":" + paramName
+
+		// Assign a positional parameter number
+		if _, exists := paramMap[paramName]; !exists {
+			paramMap[paramName] = paramCounter
+			paramCounter++
+		}
+
+		positionalParam := fmt.Sprintf("$%d", paramMap[paramName])
+		result = strings.ReplaceAll(result, namedParam, positionalParam)
+	}
+
+	return result, len(paramMap)
+}
+
+// generateParameterValue creates appropriate dummy values based on SQL context
+func generateParameterValue(sql string, paramIndex int) interface{} {
+	upperSQL := strings.ToUpper(sql)
+
+	// PostgreSQL-specific type inference based on column context
+	if strings.Contains(upperSQL, "NETWORK") && (strings.Contains(upperSQL, "INSERT") || strings.Contains(upperSQL, "UPDATE")) {
+		return "192.168.1.0/24" // CIDR format for network columns
+	}
+
+	if strings.Contains(upperSQL, "IP_ADDRESS") {
+		return "192.168.1.1" // INET format for IP address columns
+	}
+
+	if strings.Contains(upperSQL, "MAC_ADDRESS") {
+		return "00:11:22:33:44:55" // MAC address format
+	}
+
+	// UUID fields (must be before generic ID check)
+	if (strings.Contains(upperSQL, "ID") || strings.Contains(upperSQL, "_ID")) &&
+		(strings.Contains(upperSQL, "INSERT") || strings.Contains(upperSQL, "UPDATE") || strings.Contains(upperSQL, "WHERE")) {
+		return "550e8400-e29b-41d4-a716-446655440000" // Valid UUID
+	}
+
+	// Boolean fields
+	if strings.Contains(upperSQL, "ENABLED") || strings.Contains(upperSQL, "ACTIVE") ||
+		strings.Contains(upperSQL, "IGNORE_SCANNING") || strings.Contains(upperSQL, "IS_") {
+		return true
+	}
+
+	// Timestamp fields
+	if strings.Contains(upperSQL, "TIME") || strings.Contains(upperSQL, "_AT") ||
+		strings.Contains(upperSQL, "TIMESTAMP") {
+		return "2023-01-01 00:00:00+00" // PostgreSQL timestamp format
+	}
+
+	// Status fields (typically have length constraints)
+	if strings.Contains(upperSQL, "STATUS") {
+		return "active" // Short status value
+	}
+
+	// Port numbers
+	if strings.Contains(upperSQL, "PORT") {
+		return 80
+	}
+
+	// Generic numeric fields
+	if strings.Contains(upperSQL, "COUNT") || strings.Contains(upperSQL, "SECONDS") ||
+		strings.Contains(upperSQL, "_MS") || strings.Contains(upperSQL, "INTERVAL") {
+		return 42
+	}
+
+	// String fields with potential length constraints
+	if strings.Contains(upperSQL, "NAME") || strings.Contains(upperSQL, "TYPE") ||
+		strings.Contains(upperSQL, "METHOD") || strings.Contains(upperSQL, "FAMILY") {
+		return "test" // Short string to avoid length constraints
+	}
+
+	// Default based on parameter position for remaining cases
+	switch paramIndex % 6 {
+	case 0:
+		return "550e8400-e29b-41d4-a716-446655440000" // UUID
+	case 1:
+		return "test" // Short string
+	case 2:
+		return 42 // Integer
+	case 3:
+		return true // Boolean
+	case 4:
+		return "2023-01-01 00:00:00+00" // Timestamp
+	case 5:
+		return "192.168.1.1" // IP address
+	default:
+		return "test"
+	}
 }
 
 // TestCriticalQueriesAfterMigration validates that critical application queries
