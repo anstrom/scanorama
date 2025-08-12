@@ -224,13 +224,13 @@ func queryHosts(database *db.DB, filters HostFilters) ([]Host, error) {
 			COALESCE(h.os_name, 'Unknown') as os_name,
 			h.last_seen,
 			h.first_seen,
-			COALESCE(h.is_ignored, false) as is_ignored,
+			COALESCE(h.ignore_scanning, false) as ignore_scanning,
 			h.discovery_method,
 			COUNT(DISTINCT ps.id) as open_ports,
 			COUNT(DISTINCT sj.id) as total_scans
 		FROM hosts h
 		LEFT JOIN port_scans ps ON h.id = ps.host_id AND ps.state = 'open'
-		LEFT JOIN scan_jobs sj ON h.id = sj.scan_target_id
+		LEFT JOIN scan_jobs sj ON h.id = sj.target_id
 		WHERE 1=1`
 
 	args := []interface{}{}
@@ -258,12 +258,12 @@ func queryHosts(database *db.DB, filters HostFilters) ([]Host, error) {
 
 	// Add ignored filter
 	if !filters.ShowIgnored {
-		query += " AND (h.is_ignored IS NULL OR h.is_ignored = false)"
+		query += " AND (h.ignore_scanning IS NULL OR h.ignore_scanning = false)"
 	}
 
 	query += `
 		GROUP BY h.id, h.ip_address, h.status, h.os_family, h.os_name, h.last_seen, h.first_seen,
-			h.is_ignored, h.discovery_method
+			h.ignore_scanning, h.discovery_method
 		ORDER BY h.last_seen DESC, h.ip_address`
 
 	rows, err := database.Query(query, args...)
@@ -361,7 +361,7 @@ func displayHosts(hosts []Host) {
 }
 
 func setHostIgnoreFlag(database *db.DB, ip string, ignored bool) error {
-	query := `UPDATE hosts SET is_ignored = $1 WHERE ip_address = $2`
+	query := `UPDATE hosts SET ignore_scanning = $1 WHERE ip_address = $2`
 	result, err := database.Exec(query, ignored, ip)
 	if err != nil {
 		return fmt.Errorf("update failed: %w", err)
