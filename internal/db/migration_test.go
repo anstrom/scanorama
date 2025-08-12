@@ -3,7 +3,9 @@ package db
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -490,7 +492,7 @@ func TestAutomatedQueryValidation(t *testing.T) {
 	defer db.Close()
 
 	// Extract SQL queries from Go source files
-	queries, err := extractSQLQueries()
+	queries, err := ExtractSQLQueries()
 	if err != nil {
 		t.Fatalf("Failed to extract SQL queries from source: %v", err)
 	}
@@ -521,51 +523,108 @@ type SQLQuery struct {
 	Type string // SELECT, INSERT, UPDATE, DELETE
 }
 
-// extractSQLQueries scans Go source files for SQL queries
-func extractSQLQueries() ([]SQLQuery, error) {
-	// For now, return a curated set of known queries
-	// TODO: In a full implementation, this would scan source files using regex patterns
-	// to automatically discover SQL queries from the codebase
-	knownQueries := []SQLQuery{
+// ExtractSQLQueries scans Go source files for SQL queries
+func ExtractSQLQueries() ([]SQLQuery, error) {
+	var queries []SQLQuery
+
+	// SQL query patterns to search for in Go code
+	patterns := []struct {
+		name    string
+		regex   *regexp.Regexp
+		capture int // which capture group contains the SQL
+	}{
 		{
-			Name: "hosts_update_ignore",
-			File: "cmd/cli/hosts.go",
-			SQL:  "UPDATE hosts SET ignore_scanning = $1 WHERE ip_address = $2",
-			Type: "UPDATE",
+			"query_backtick",
+			regexp.MustCompile(`query\s*:?=\s*` + "`([^`]+)`"),
+			1,
 		},
 		{
-			Name: "scan_targets_select_enabled",
-			File: "internal/db/database.go",
-			SQL:  "SELECT * FROM scan_targets WHERE enabled = true ORDER BY name",
-			Type: "SELECT",
+			"query_string",
+			regexp.MustCompile(`query\s*:?=\s*"([^"]+)"`),
+			1,
 		},
 		{
-			Name: "hosts_select_by_ip",
-			File: "internal/db/database.go",
-			SQL:  "SELECT * FROM hosts WHERE ip_address = $1",
-			Type: "SELECT",
+			"db_query_direct",
+			regexp.MustCompile(`\.Query[^(]*\([^"]*"([^"]+)"`),
+			1,
 		},
 		{
-			Name: "port_scans_select_by_host",
-			File: "internal/db/database.go",
-			SQL:  "SELECT * FROM port_scans WHERE host_id = $1 ORDER BY port",
-			Type: "SELECT",
+			"db_exec_direct",
+			regexp.MustCompile(`\.Exec[^(]*\([^"]*"([^"]+)"`),
+			1,
 		},
 		{
-			Name: "active_hosts_view_select",
-			File: "internal/db/database.go",
-			SQL:  "SELECT * FROM active_hosts ORDER BY ip_address",
-			Type: "SELECT",
-		},
-		{
-			Name: "network_summary_view_select",
-			File: "internal/db/database.go",
-			SQL:  "SELECT * FROM network_summary ORDER BY target_name",
-			Type: "SELECT",
+			"multiline_query",
+			regexp.MustCompile(`query\s*:?=\s*` + "`([^`]*(?:SELECT|INSERT|UPDATE|DELETE)[^`]*)`"),
+			1,
 		},
 	}
 
-	return knownQueries, nil
+	// Walk through Go source files
+	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Only process .go files, skip test files and vendor directories
+		if !strings.HasSuffix(path, ".go") ||
+			strings.Contains(path, "vendor/") ||
+			strings.Contains(path, ".git/") {
+			return nil
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read file %s: %w", path, err)
+		}
+
+		fileContent := string(content)
+
+		// Apply each pattern to find SQL queries
+		for _, pattern := range patterns {
+			matches := pattern.regex.FindAllStringSubmatch(fileContent, -1)
+			for _, match := range matches {
+				if len(match) > pattern.capture {
+					sql := strings.TrimSpace(match[pattern.capture])
+
+					// Skip if it doesn't look like a real SQL query
+					if len(sql) < 10 || !containsSQLKeywords(sql) {
+						continue
+					}
+
+					// Clean up the SQL
+					sql = cleanSQL(sql)
+
+					// Determine query type
+					queryType := getQueryType(sql)
+					if queryType == "" {
+						continue
+					}
+
+					// Generate a unique name
+					name := generateQueryName(path, sql, queryType)
+
+					queries = append(queries, SQLQuery{
+						Name: name,
+						File: path,
+						SQL:  sql,
+						Type: queryType,
+					})
+				}
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk source files: %w", err)
+	}
+
+	// Remove duplicates
+	queries = removeDuplicateQueries(queries)
+
+	return queries, nil
 }
 
 // validateQueryAgainstSchema validates a SQL query against the current schema
@@ -615,6 +674,112 @@ func validateQueryAgainstSchema(db *DB, query SQLQuery) error {
 	}
 
 	return nil
+}
+
+// containsSQLKeywords checks if a string contains SQL keywords
+func containsSQLKeywords(s string) bool {
+	upper := strings.ToUpper(s)
+	keywords := []string{"SELECT", "INSERT", "UPDATE", "DELETE", "FROM", "WHERE", "SET"}
+	for _, keyword := range keywords {
+		if strings.Contains(upper, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// cleanSQL removes extra whitespace and normalizes SQL
+func cleanSQL(sql string) string {
+	// Remove extra whitespace
+	sql = regexp.MustCompile(`\s+`).ReplaceAllString(sql, " ")
+	// Remove leading/trailing whitespace
+	sql = strings.TrimSpace(sql)
+	// Remove newline escapes
+	sql = strings.ReplaceAll(sql, "\\n", " ")
+	sql = strings.ReplaceAll(sql, "\\t", " ")
+	return sql
+}
+
+// getQueryType determines the type of SQL query
+func getQueryType(sql string) string {
+	upper := strings.ToUpper(strings.TrimSpace(sql))
+	switch {
+	case strings.HasPrefix(upper, "SELECT"):
+		return "SELECT"
+	case strings.HasPrefix(upper, "INSERT"):
+		return "INSERT"
+	case strings.HasPrefix(upper, "UPDATE"):
+		return "UPDATE"
+	case strings.HasPrefix(upper, "DELETE"):
+		return "DELETE"
+	default:
+		return ""
+	}
+}
+
+// generateQueryName creates a unique name for a query
+func generateQueryName(file, sql, queryType string) string {
+	// Extract table name from SQL
+	tableName := extractTableName(sql)
+
+	// Create base name from file and query type
+	baseName := strings.ToLower(queryType)
+	if tableName != "" {
+		baseName += "_" + tableName
+	}
+
+	// Add file context
+	fileBase := filepath.Base(file)
+	fileBase = strings.TrimSuffix(fileBase, ".go")
+
+	return fmt.Sprintf("%s_%s", fileBase, baseName)
+}
+
+// extractTableName attempts to extract the main table name from SQL
+func extractTableName(sql string) string {
+	upper := strings.ToUpper(sql)
+
+	// Pattern for FROM clause
+	fromPattern := regexp.MustCompile(`FROM\s+(\w+)`)
+	if matches := fromPattern.FindStringSubmatch(upper); len(matches) > 1 {
+		return strings.ToLower(matches[1])
+	}
+
+	// Pattern for INSERT INTO
+	insertPattern := regexp.MustCompile(`INSERT\s+INTO\s+(\w+)`)
+	if matches := insertPattern.FindStringSubmatch(upper); len(matches) > 1 {
+		return strings.ToLower(matches[1])
+	}
+
+	// Pattern for UPDATE
+	updatePattern := regexp.MustCompile(`UPDATE\s+(\w+)`)
+	if matches := updatePattern.FindStringSubmatch(upper); len(matches) > 1 {
+		return strings.ToLower(matches[1])
+	}
+
+	// Pattern for DELETE FROM
+	deletePattern := regexp.MustCompile(`DELETE\s+FROM\s+(\w+)`)
+	if matches := deletePattern.FindStringSubmatch(upper); len(matches) > 1 {
+		return strings.ToLower(matches[1])
+	}
+
+	return ""
+}
+
+// removeDuplicateQueries removes duplicate queries based on SQL content
+func removeDuplicateQueries(queries []SQLQuery) []SQLQuery {
+	seen := make(map[string]bool)
+	var unique []SQLQuery
+
+	for _, query := range queries {
+		key := query.SQL
+		if !seen[key] {
+			seen[key] = true
+			unique = append(unique, query)
+		}
+	}
+
+	return unique
 }
 
 // TestCriticalQueriesAfterMigration validates that critical application queries
