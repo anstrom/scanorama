@@ -20,18 +20,9 @@ const (
 	trueString = "true"
 )
 
-// test tables in order of dependency (children first, parents last).
-var testTables = []string{
-	"host_history",
-	"services",
-	"port_scans",
-	"hosts",
-	"discovery_jobs",
-	"scheduled_jobs",
-	"scan_jobs",
-	"scan_profiles",
-	"scan_targets",
-}
+// testTables is deprecated - use dynamic table discovery instead
+// Keeping for backward compatibility but should not be used for new code
+var testTables = []string{}
 
 // It prioritizes environment variables, then tries config files, then defaults.
 func getTestConfigs() []Config {
@@ -260,26 +251,38 @@ func initializeSchema(db *DB) error {
 	return nil
 }
 
-// cleanupDB truncates all test tables in the correct order.
+// cleanupDB truncates all user tables dynamically.
 func cleanupDB(db *DB) error {
 	ctx := context.Background()
-	for _, table := range testTables {
-		// Check if table exists before attempting to truncate
-		var exists bool
-		err := db.QueryRowContext(ctx,
-			"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1)",
-			table).Scan(&exists)
-		if err != nil {
-			return fmt.Errorf("failed to check if table %s exists: %w", table, err)
-		}
 
-		if exists {
-			_, err := db.ExecContext(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table))
-			if err != nil {
-				return fmt.Errorf("failed to truncate table %s: %w", table, err)
-			}
+	// Dynamically discover all user tables
+	var tables []string
+	query := `SELECT table_name FROM information_schema.tables
+	          WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+	          ORDER BY table_name`
+
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to query existing tables: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			return fmt.Errorf("failed to scan table name: %w", err)
+		}
+		tables = append(tables, tableName)
+	}
+
+	// Truncate all found tables with CASCADE to handle dependencies
+	for _, table := range tables {
+		_, err := db.ExecContext(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table))
+		if err != nil {
+			return fmt.Errorf("failed to truncate table %s: %w", table, err)
 		}
 	}
+
 	return nil
 }
 
