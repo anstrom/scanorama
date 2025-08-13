@@ -485,11 +485,4 @@ func TestNetworkRangeDiscovery(t *testing.T) {
 	t.Logf("Network range discovery completed: status=%s, hosts_discovered=%d", jobStatus, hostsDiscovered)
 }
 
-// TestDatabaseConnectionFailure tests that tests fail properly when database is unavailable.
-func TestDatabaseConnectionFailure(t *testing.T) {
-	// This test is mainly for documentation - the actual failure testing
-	// is done by running tests with invalid database config
-	t.Skip("This test documents that connection failures cause test failures, not skips")
-}
-
 // Helper functions
