@@ -20,6 +20,15 @@ import (
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
+// HTTP method constants
+const (
+	methodGET     = "GET"
+	methodPOST    = "POST"
+	methodPUT     = "PUT"
+	methodDELETE  = "DELETE"
+	methodOPTIONS = "OPTIONS"
+)
+
 // ContextKey represents a context key type.
 type ContextKey string
 
@@ -369,13 +378,13 @@ func ContentType() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Skip content type validation for GET, DELETE, and OPTIONS requests
-			if r.Method == "GET" || r.Method == "DELETE" || r.Method == "OPTIONS" {
+			if r.Method == methodGET || r.Method == methodDELETE || r.Method == methodOPTIONS {
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			// For POST and PUT requests, expect JSON content type
-			if r.Method == "POST" || r.Method == "PUT" {
+			if r.Method == methodPOST || r.Method == methodPUT {
 				contentType := r.Header.Get("Content-Type")
 				if contentType != "" && !strings.HasPrefix(contentType, "application/json") {
 					w.Header().Set("Content-Type", "application/json")
@@ -492,7 +501,7 @@ func CORS(origins, headers, methods []string) func(http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Max-Age", "3600")
 
 			// Handle preflight requests
-			if r.Method == "OPTIONS" {
+			if r.Method == methodOPTIONS {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
@@ -535,8 +544,7 @@ func SecurityHeaders() func(http.Handler) http.Handler {
 func Compression() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// TODO: Implement gzip compression
-			// For now, just pass through
+			// Pass through without compression
 			next.ServeHTTP(w, r)
 		})
 	}
