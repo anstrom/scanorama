@@ -25,16 +25,7 @@ check_port_available() {
     fi
 }
 
-# Set POSTGRES_PORT with conflict detection
-if [ -z "$POSTGRES_PORT" ]; then
-    if check_port_available 5432; then
-        export POSTGRES_PORT="5432"
-        echo "Using default PostgreSQL port: 5432"
-    else
-        export POSTGRES_PORT="5433"
-        echo "Port 5432 is busy, using alternative port: 5433"
-    fi
-fi
+# POSTGRES_PORT will be set during startup if not already set
 
 # Create fixtures directory if it doesn't exist
 FIXTURES_DIR="${PROJECT_ROOT}/test/fixtures"
@@ -112,6 +103,17 @@ docker_compose() {
 }
 
 up() {
+    # Set POSTGRES_PORT with conflict detection (only during startup)
+    if [ -z "$POSTGRES_PORT" ]; then
+        if check_port_available 5432; then
+            export POSTGRES_PORT="5432"
+            echo "Using default PostgreSQL port: 5432"
+        else
+            export POSTGRES_PORT="5433"
+            echo "Port 5432 is busy, using alternative port: 5433"
+        fi
+    fi
+
     echo "Starting test environment..."
 
     # Print CI status
