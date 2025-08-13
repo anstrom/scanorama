@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gorilla/handlers"
@@ -38,6 +39,10 @@ type Server struct {
 	logger     *slog.Logger
 	metrics    *metrics.Registry
 	startTime  time.Time
+
+	// State management
+	mu      sync.RWMutex
+	running bool
 }
 
 // Config holds API server configuration.
@@ -119,6 +124,14 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 
 // Start starts the API server.
 func (s *Server) Start(ctx context.Context) error {
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return fmt.Errorf("server is already running")
+	}
+	s.running = true
+	s.mu.Unlock()
+
 	s.logger.Info("Starting API server",
 		"address", s.httpServer.Addr,
 		"read_timeout", s.httpServer.ReadTimeout,
@@ -127,8 +140,20 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start server in goroutine
 	errChan := make(chan error, 1)
 	go func() {
-		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errChan <- fmt.Errorf("API server failed: %w", err)
+		err := s.httpServer.ListenAndServe()
+		// Mark as not running when server stops for any reason
+		s.mu.Lock()
+		s.running = false
+		s.mu.Unlock()
+
+		if err != nil {
+			if err == http.ErrServerClosed {
+				// Normal shutdown
+				errChan <- err
+			} else {
+				// Actual error
+				errChan <- fmt.Errorf("API server failed: %w", err)
+			}
 		}
 	}()
 
@@ -143,6 +168,14 @@ func (s *Server) Start(ctx context.Context) error {
 
 // Stop gracefully stops the API server.
 func (s *Server) Stop() error {
+	s.mu.Lock()
+	if !s.running {
+		s.mu.Unlock()
+		return nil // Already stopped
+	}
+	s.running = false
+	s.mu.Unlock()
+
 	s.logger.Info("Stopping API server")
 
 	ctx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
@@ -255,17 +288,9 @@ func (s *Server) GetAddress() string {
 
 // IsRunning checks if the server is running.
 func (s *Server) IsRunning() bool {
-	if s.httpServer == nil {
-		return false
-	}
-
-	// Try to connect to the server
-	conn, err := net.DialTimeout("tcp", s.httpServer.Addr, time.Second)
-	if err != nil {
-		return false
-	}
-	_ = conn.Close()
-	return true
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.running
 }
 
 // getAPIConfigFromConfig extracts API configuration from main config.
