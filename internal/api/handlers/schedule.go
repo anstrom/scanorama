@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/robfig/cron/v3"
+
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/metrics"
@@ -411,18 +413,16 @@ func (h *ScheduleHandler) validateScheduleTags(tags []string) error {
 
 // validateCronExpression performs basic cron expression validation.
 func (h *ScheduleHandler) validateCronExpression(cronExpr string) error {
-	// Basic validation - should be 5 or 6 fields separated by spaces
-	fields := strings.Fields(cronExpr)
-	if len(fields) != 5 && len(fields) != 6 {
-		return fmt.Errorf("cron expression must have 5 or 6 fields, got %d", len(fields))
+	// Empty expression is invalid
+	if strings.TrimSpace(cronExpr) == "" {
+		return fmt.Errorf("cron expression cannot be empty")
 	}
 
-	// TODO: Add more sophisticated cron validation using a cron library
-	// For now, just check that each field is not empty
-	for i, field := range fields {
-		if field == "" {
-			return fmt.Errorf("cron field %d is empty", i+1)
-		}
+	// Use the robfig/cron parser to validate the expression
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	_, err := parser.Parse(cronExpr)
+	if err != nil {
+		return fmt.Errorf("invalid cron expression: %w", err)
 	}
 
 	return nil
