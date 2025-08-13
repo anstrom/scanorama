@@ -1113,31 +1113,8 @@ func generateValueByContext(upperSQL string, paramIndex int) interface{} {
 	}
 
 	// Special handling for scan_jobs UPDATE queries
-	if strings.Contains(upperSQL, "UPDATE SCAN_JOBS") {
-		if strings.Contains(upperSQL, "STATUS = $1") {
-			// Check if this query has timestamp fields
-			hasTimestamp := strings.Contains(upperSQL, "_AT = $2")
-
-			switch paramIndex {
-			case 0: // status
-				return "pending"
-			case 1:
-				if hasTimestamp {
-					// started_at or completed_at
-					return "2023-01-01T00:00:00Z"
-				} else {
-					// Simple status update: id comes second
-					return "550e8400-e29b-41d4-a716-446655440000"
-				}
-			case 2: // id or error_message
-				if strings.Contains(upperSQL, "ERROR_MESSAGE = $3") {
-					return "test error message"
-				}
-				return "550e8400-e29b-41d4-a716-446655440000" // id
-			case 3: // id when error_message is present
-				return "550e8400-e29b-41d4-a716-446655440000"
-			}
-		}
+	if strings.Contains(upperSQL, "UPDATE SCAN_JOBS") && strings.Contains(upperSQL, "STATUS = $1") {
+		return generateScanJobsUpdateParameter(upperSQL, paramIndex)
 	}
 
 	// Default based on parameter position
@@ -1161,6 +1138,31 @@ func generateValueByContext(upperSQL string, paramIndex int) interface{} {
 		return true // Boolean
 	case 7:
 		return "2023-01-01T00:00:00Z" // Timestamp
+	default:
+		return "test"
+	}
+}
+
+// generateScanJobsUpdateParameter handles parameter generation for scan_jobs UPDATE queries
+func generateScanJobsUpdateParameter(upperSQL string, paramIndex int) interface{} {
+	hasTimestamp := strings.Contains(upperSQL, "_AT = $2")
+	hasErrorMessage := strings.Contains(upperSQL, "ERROR_MESSAGE = $3")
+
+	switch paramIndex {
+	case 0: // status
+		return "pending"
+	case 1:
+		if hasTimestamp {
+			return "2023-01-01T00:00:00Z" // started_at or completed_at
+		}
+		return "550e8400-e29b-41d4-a716-446655440000" // id for simple status update
+	case 2:
+		if hasErrorMessage {
+			return "test error message"
+		}
+		return "550e8400-e29b-41d4-a716-446655440000" // id
+	case 3:
+		return "550e8400-e29b-41d4-a716-446655440000" // id when error_message is present
 	default:
 		return "test"
 	}
