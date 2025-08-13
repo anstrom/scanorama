@@ -41,6 +41,7 @@ type WebSocketHandler struct {
 	discoveryBroadcast chan []byte
 	register           chan *clientRegistration
 	unregister         chan *websocket.Conn
+	shutdown           chan struct{}
 	mutex              sync.RWMutex
 }
 
@@ -91,7 +92,7 @@ func NewWebSocketHandler(database *db.DB, logger *slog.Logger, metricsManager *m
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
-				// TODO: Implement proper origin checking based on configuration
+				// Allow all origins for now
 				return true
 			},
 		},
@@ -101,6 +102,7 @@ func NewWebSocketHandler(database *db.DB, logger *slog.Logger, metricsManager *m
 		discoveryBroadcast: make(chan []byte, bufferSize),
 		register:           make(chan *clientRegistration),
 		unregister:         make(chan *websocket.Conn),
+		shutdown:           make(chan struct{}),
 	}
 
 	// Start the hub goroutine
@@ -184,6 +186,9 @@ func (h *WebSocketHandler) run() {
 
 	for {
 		select {
+		case <-h.shutdown:
+			h.logger.Debug("WebSocket handler shutting down")
+			return
 		case registration := <-h.register:
 			h.mutex.Lock()
 			switch registration.connType {
@@ -214,6 +219,11 @@ func (h *WebSocketHandler) run() {
 			h.pingClients()
 		}
 	}
+}
+
+// Shutdown gracefully stops the WebSocket handler.
+func (h *WebSocketHandler) Shutdown() {
+	close(h.shutdown)
 }
 
 // readPump pumps messages from the WebSocket connection to the hub.
