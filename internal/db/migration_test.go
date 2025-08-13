@@ -973,80 +973,194 @@ func convertNamedToPositionalParams(sql string) (convertedSQL string, paramCount
 	return result, len(paramMap)
 }
 
-// generateParameterValue creates appropriate dummy values based on SQL context
+// generateParameterValue creates appropriate dummy values based on SQL context and parameter names
 func generateParameterValue(sql string, paramIndex int) interface{} {
 	upperSQL := strings.ToUpper(sql)
 
-	// PostgreSQL-specific type inference based on column context
-	hasNetwork := strings.Contains(upperSQL, "NETWORK")
-	hasInsertOrUpdate := strings.Contains(upperSQL, "INSERT") || strings.Contains(upperSQL, "UPDATE")
-	if hasNetwork && hasInsertOrUpdate {
-		return "192.168.1.0/24" // CIDR format for network columns
+	// Extract parameter names from named parameters (:name format)
+	var parameterName string
+	if strings.Contains(sql, ":") {
+		// Find all named parameters
+		paramNames := extractParameterNames(sql)
+		if paramIndex < len(paramNames) {
+			parameterName = strings.ToUpper(paramNames[paramIndex])
+		}
 	}
 
-	if strings.Contains(upperSQL, "IP_ADDRESS") {
-		return "192.168.1.1" // INET format for IP address columns
+	// Use parameter name for precise matching when available
+	if parameterName != "" {
+		value := generateValueByParameterName(parameterName)
+		return value
 	}
 
-	if strings.Contains(upperSQL, "MAC_ADDRESS") {
-		return "00:11:22:33:44:55" // MAC address format
-	}
+	// Fallback to SQL context analysis for positional parameters
+	return generateValueByContext(upperSQL, paramIndex)
+}
 
-	// UUID fields (must be before generic ID check)
-	if (strings.Contains(upperSQL, "ID") || strings.Contains(upperSQL, "_ID")) &&
-		(strings.Contains(upperSQL, "INSERT") || strings.Contains(upperSQL, "UPDATE") ||
-			strings.Contains(upperSQL, "WHERE")) {
-		return "550e8400-e29b-41d4-a716-446655440000" // Valid UUID
-	}
+// extractParameterNames extracts named parameters from SQL in order
+func extractParameterNames(sql string) []string {
+	var names []string
+	// Use regex to find all :parameter_name patterns
+	re := regexp.MustCompile(`:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	matches := re.FindAllStringSubmatch(sql, -1)
 
-	// Boolean fields
-	if strings.Contains(upperSQL, "ENABLED") || strings.Contains(upperSQL, "ACTIVE") ||
-		strings.Contains(upperSQL, "IGNORE_SCANNING") || strings.Contains(upperSQL, "IS_") {
-		return true
+	seen := make(map[string]bool)
+	for _, match := range matches {
+		if len(match) > 1 {
+			paramName := match[1]
+			// Only add each parameter once (for the first occurrence)
+			if !seen[paramName] {
+				names = append(names, paramName)
+				seen[paramName] = true
+			}
+		}
 	}
+	return names
+}
+
+// generateValueByParameterName generates values based on parameter names
+func generateValueByParameterName(paramName string) interface{} {
+	switch paramName {
+	// UUID fields
+	case "ID", "TARGET_ID", "JOB_ID", "HOST_ID", "PROFILE_ID", "PORT_SCAN_ID":
+		return "550e8400-e29b-41d4-a716-446655440000"
+
+	// Network/IP fields
+	case "NETWORK":
+		return "192.168.1.0/24"
+	case "IP_ADDRESS":
+		return "192.168.1.1"
+	case "MAC_ADDRESS":
+		return "00:11:22:33:44:55"
 
 	// Timestamp fields
-	if strings.Contains(upperSQL, "TIME") || strings.Contains(upperSQL, "_AT") ||
-		strings.Contains(upperSQL, "TIMESTAMP") {
-		return "2023-01-01 00:00:00+00" // PostgreSQL timestamp format
-	}
+	case "STARTED_AT", "COMPLETED_AT", "CREATED_AT", "UPDATED_AT", "SCANNED_AT",
+		"FIRST_SEEN", "LAST_SEEN", "OS_DETECTED_AT", "DETECTED_AT", "LAST_RUN", "NEXT_RUN":
+		return "2023-01-01T00:00:00Z"
 
-	// Status fields (typically have length constraints)
-	if strings.Contains(upperSQL, "STATUS") {
-		return "active" // Short status value
-	}
+	// String fields with length constraints
+	case "STATUS":
+		return "pending" // 7 chars, well under the 20 char limit
+	case "SCAN_TYPE":
+		return "connect" // 7 chars, under 20 char limit
+	case "TYPE":
+		return "scan" // 4 chars
+	case "METHOD", "DISCOVERY_METHOD":
+		return "ping" // 4 chars
+	case "PROTOCOL":
+		return "tcp" // 3 chars
+	case "STATE":
+		return "open" // 4 chars
+	case "OS_FAMILY":
+		return "linux" // 5 chars
+	case "CRON_EXPRESSION":
+		return "0 0 * * *" // 9 chars
 
-	// Port numbers
-	if strings.Contains(upperSQL, "PORT") {
-		return 80
-	}
+	// Regular string fields
+	case "NAME", "HOSTNAME", "SERVICE_NAME", "SERVICE_VERSION", "SERVICE_PRODUCT", "OS_NAME", "OS_VERSION", "VENDOR":
+		return "test"
+	case "DESCRIPTION", "ERROR_MESSAGE", "BANNER":
+		return "test description"
 
-	// Generic numeric fields
-	if strings.Contains(upperSQL, "COUNT") || strings.Contains(upperSQL, "SECONDS") ||
-		strings.Contains(upperSQL, "_MS") || strings.Contains(upperSQL, "INTERVAL") {
+	// Numeric fields
+	case "SCAN_INTERVAL_SECONDS", "RESPONSE_TIME_MS", "OS_CONFIDENCE", "CONFIDENCE",
+		"DISCOVERY_COUNT", "HOSTS_DISCOVERED", "HOSTS_RESPONSIVE", "PRIORITY":
 		return 42
+	case "PORT":
+		return 80
+
+	// Boolean fields
+	case "ENABLED", "ACTIVE", "IGNORE_SCANNING", "BUILT_IN":
+		return true
+
+	// JSON fields
+	case "SCAN_STATS", "OS_DETAILS", "DETAILS", "OPTIONS", "CONFIG", "OLD_VALUE", "NEW_VALUE":
+		return "{}"
+
+	// Text array fields
+	case "OS_PATTERN", "SCRIPTS", "SCAN_PORTS":
+		return "22,80,443"
+
+	default:
+		// Fallback based on common patterns in name
+		if strings.Contains(paramName, "ID") {
+			return "550e8400-e29b-41d4-a716-446655440000"
+		}
+		if strings.Contains(paramName, "AT") || strings.Contains(paramName, "TIME") {
+			return "2023-01-01T00:00:00Z"
+		}
+		if strings.Contains(paramName, "PORT") {
+			return 80
+		}
+		if strings.Contains(paramName, "COUNT") || strings.Contains(paramName, "SECONDS") {
+			return 42
+		}
+		if strings.Contains(paramName, "ENABLED") || strings.Contains(paramName, "ACTIVE") {
+			return true
+		}
+		return "test"
+	}
+}
+
+// generateValueByContext generates values based on SQL context for positional parameters
+func generateValueByContext(upperSQL string, paramIndex int) interface{} {
+	// Specific field detection for positional parameters
+	if strings.Contains(upperSQL, "IP_ADDRESS") {
+		return "192.168.1.1"
+	}
+	if strings.Contains(upperSQL, "MAC_ADDRESS") {
+		return "00:11:22:33:44:55"
 	}
 
-	// String fields with potential length constraints
-	if strings.Contains(upperSQL, "NAME") || strings.Contains(upperSQL, "TYPE") ||
-		strings.Contains(upperSQL, "METHOD") || strings.Contains(upperSQL, "FAMILY") {
-		return "test" // Short string to avoid length constraints
+	// Special handling for scan_jobs UPDATE queries
+	if strings.Contains(upperSQL, "UPDATE SCAN_JOBS") {
+		if strings.Contains(upperSQL, "STATUS = $1") {
+			// Check if this query has timestamp fields
+			hasTimestamp := strings.Contains(upperSQL, "_AT = $2")
+
+			switch paramIndex {
+			case 0: // status
+				return "pending"
+			case 1:
+				if hasTimestamp {
+					// started_at or completed_at
+					return "2023-01-01T00:00:00Z"
+				} else {
+					// Simple status update: id comes second
+					return "550e8400-e29b-41d4-a716-446655440000"
+				}
+			case 2: // id or error_message
+				if strings.Contains(upperSQL, "ERROR_MESSAGE = $3") {
+					return "test error message"
+				}
+				return "550e8400-e29b-41d4-a716-446655440000" // id
+			case 3: // id when error_message is present
+				return "550e8400-e29b-41d4-a716-446655440000"
+			}
+		}
 	}
 
-	// Default based on parameter position for remaining cases
-	switch paramIndex % 6 {
+	// Default based on parameter position
+	switch paramIndex % 8 {
 	case 0:
 		return "550e8400-e29b-41d4-a716-446655440000" // UUID
 	case 1:
 		return "test" // Short string
 	case 2:
-		return 42 // Integer
+		if strings.Contains(upperSQL, "NETWORK") {
+			return "192.168.1.0/24" // CIDR for network fields
+		}
+		return "test" // String
 	case 3:
-		return true // Boolean
+		return "test description" // Text/description
 	case 4:
-		return "2023-01-01 00:00:00+00" // Timestamp
+		return 42 // Integer
 	case 5:
-		return "192.168.1.1" // IP address
+		return "connect" // String with constraints
+	case 6:
+		return true // Boolean
+	case 7:
+		return "2023-01-01T00:00:00Z" // Timestamp
 	default:
 		return "test"
 	}
