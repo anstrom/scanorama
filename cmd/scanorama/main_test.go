@@ -29,6 +29,13 @@ func TestBuildVariables(t *testing.T) {
 		origCommit := commit
 		origBuildTime := buildTime
 
+		// Ensure cleanup happens even if test panics
+		defer func() {
+			version = origVersion
+			commit = origCommit
+			buildTime = origBuildTime
+		}()
+
 		// Modify values
 		version = "1.0.0"
 		commit = "abc123"
@@ -38,11 +45,6 @@ func TestBuildVariables(t *testing.T) {
 		assert.Equal(t, "1.0.0", version)
 		assert.Equal(t, "abc123", commit)
 		assert.Equal(t, "2024-01-01T00:00:00Z", buildTime)
-
-		// Restore original values
-		version = origVersion
-		commit = origCommit
-		buildTime = origBuildTime
 	})
 }
 
@@ -61,6 +63,13 @@ func TestMainFunctionIntegration(t *testing.T) {
 			origVersion := version
 			origCommit := commit
 			origBuildTime := buildTime
+
+			// Ensure cleanup happens even if test panics
+			defer func() {
+				version = origVersion
+				commit = origCommit
+				buildTime = origBuildTime
+			}()
 
 			// Set test values
 			version = testVersion

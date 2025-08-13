@@ -21,6 +21,11 @@ import (
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
+const (
+	testPayloadSize1MB = 1024 * 1024     // 1MB test payload size
+	testPayloadSize2MB = 2 * 1024 * 1024 // 2MB test payload size
+)
+
 func TestAdminHandler_ConfigSecurity(t *testing.T) {
 	// Setup test dependencies
 	mockDB := &db.DB{} // Mock database
@@ -165,7 +170,7 @@ func TestAdminHandler_ConfigSecurity(t *testing.T) {
 		// Test that oversized requests are rejected
 
 		// Create a large configuration that exceeds the 1MB limit
-		largeString := strings.Repeat("a", 2*1024*1024) // 2MB string
+		largeString := strings.Repeat("a", testPayloadSize2MB) // 2MB string
 		largeConfig := map[string]interface{}{
 			"section": "api",
 			"config": map[string]interface{}{
@@ -177,7 +182,7 @@ func TestAdminHandler_ConfigSecurity(t *testing.T) {
 
 		body, err := json.Marshal(largeConfig)
 		require.NoError(t, err)
-		require.Greater(t, len(body), 1024*1024) // Ensure it's actually > 1MB
+		require.Greater(t, len(body), testPayloadSize1MB) // Ensure it's actually > 1MB
 
 		req := httptest.NewRequest("PUT", "/api/v1/admin/config", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -435,7 +440,7 @@ func TestAdminHandler_ConfigSecurity(t *testing.T) {
 			"section": "api",
 			"config": map[string]interface{}{
 				"api": map[string]interface{}{
-					"large_field": strings.Repeat("a", 2*1024*1024), // 2MB string
+					"large_field": strings.Repeat("a", testPayloadSize2MB), // 2MB string
 				},
 			},
 		}

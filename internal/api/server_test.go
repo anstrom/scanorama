@@ -19,6 +19,10 @@ import (
 	"github.com/anstrom/scanorama/internal/config"
 )
 
+const (
+	testPayloadSize1MB = 1024 * 1024 // 1MB test payload size
+)
+
 // MockDB provides a mock database for testing
 type MockDB struct {
 	mock.Mock
@@ -714,7 +718,7 @@ func TestServerEdgeCases(t *testing.T) {
 
 		// Create a large JSON payload (near the limit)
 		largeData := map[string]interface{}{
-			"data": strings.Repeat("x", 1024*1024), // 1MB string
+			"data": strings.Repeat("x", testPayloadSize1MB), // 1MB string
 		}
 		jsonData, _ := json.Marshal(largeData)
 

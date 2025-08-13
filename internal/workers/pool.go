@@ -63,19 +63,20 @@ func DefaultConfig() Config {
 
 // Pool manages a pool of worker goroutines for concurrent job execution.
 type Pool struct {
-	config      Config
-	jobs        chan Job
-	results     chan Result
-	workers     []*worker
-	wg          sync.WaitGroup
-	ctx         context.Context
-	cancel      context.CancelFunc
-	shutdown    chan struct{}
-	done        chan struct{}
-	rateLimiter *time.Ticker
-	startOnce   sync.Once
-	closeOnce   sync.Once
-	shutdown32  int32 // atomic shutdown flag
+	config          Config
+	jobs            chan Job
+	results         chan Result
+	externalResults chan Result
+	workers         []*worker
+	wg              sync.WaitGroup
+	ctx             context.Context
+	cancel          context.CancelFunc
+	shutdown        chan struct{}
+	done            chan struct{}
+	rateLimiter     *time.Ticker
+	startOnce       sync.Once
+	closeOnce       sync.Once
+	shutdown32      int32 // atomic shutdown flag
 }
 
 // worker represents a single worker goroutine.
@@ -89,14 +90,15 @@ func New(config Config) *Pool {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	pool := &Pool{
-		config:   config,
-		jobs:     make(chan Job, config.QueueSize),
-		results:  make(chan Result, config.QueueSize),
-		workers:  make([]*worker, config.Size),
-		ctx:      ctx,
-		cancel:   cancel,
-		shutdown: make(chan struct{}),
-		done:     make(chan struct{}),
+		config:          config,
+		jobs:            make(chan Job, config.QueueSize),
+		results:         make(chan Result, config.QueueSize),
+		externalResults: make(chan Result, config.QueueSize),
+		workers:         make([]*worker, config.Size),
+		ctx:             ctx,
+		cancel:          cancel,
+		shutdown:        make(chan struct{}),
+		done:            make(chan struct{}),
 	}
 
 	// Set up rate limiter if configured
@@ -164,7 +166,7 @@ func (p *Pool) Submit(job Job) error {
 
 // Results returns a channel for receiving job results.
 func (p *Pool) Results() <-chan Result {
-	return p.results
+	return p.externalResults
 }
 
 // Shutdown gracefully shuts down the worker pool.
@@ -201,11 +203,9 @@ func (p *Pool) Shutdown() error {
 		<-done
 	}
 
-	// Close results channel
+	// Close results channels
 	close(p.results)
-	p.closeOnce.Do(func() {
-		close(p.done)
-	})
+	close(p.externalResults)
 
 	// Stop rate limiter
 	if p.rateLimiter != nil {
@@ -354,6 +354,15 @@ func (p *Pool) processResults() {
 		case result, ok := <-p.results:
 			if !ok {
 				return
+			}
+
+			// Fan out result to external consumers
+			select {
+			case p.externalResults <- result:
+			case <-p.ctx.Done():
+				return
+			default:
+				// External consumer not reading, continue with metrics
 			}
 
 			// Update metrics based on result
