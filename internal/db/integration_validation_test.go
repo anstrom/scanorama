@@ -157,7 +157,11 @@ func TestQueryColumnConsistency(t *testing.T) {
 					query.description, err, query.query)
 				return
 			}
-			rows.Close()
+			defer rows.Close()
+			if err := rows.Err(); err != nil {
+				t.Errorf("Rows iteration error: %v", err)
+				return
+			}
 			t.Logf("✓ Query '%s' executed successfully", query.description)
 		})
 	}

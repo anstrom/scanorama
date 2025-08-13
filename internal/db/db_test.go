@@ -20,10 +20,6 @@ const (
 	trueString = "true"
 )
 
-// testTables is deprecated - use dynamic table discovery instead
-// Keeping for backward compatibility but should not be used for new code
-var testTables = []string{}
-
 // It prioritizes environment variables, then tries config files, then defaults.
 func getTestConfigs() []Config {
 	// Check if running in CI environment or debug mode
@@ -266,6 +262,10 @@ func cleanupDB(db *DB) error {
 		return fmt.Errorf("failed to query existing tables: %w", err)
 	}
 	defer rows.Close()
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("rows iteration error: %w", err)
+	}
 
 	for rows.Next() {
 		var tableName string
