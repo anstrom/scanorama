@@ -25,15 +25,13 @@ func TestMigrationSystem(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Connect without migrations first
-	db, err := Connect(ctx, &configs[0])
+	// Create a clean database specifically for migration testing
+	db, cleanup, err := setupCleanMigrationDatabase(ctx, &configs[0], t)
 	if err != nil {
-		t.Skipf("Cannot connect to test database: %v", err)
+		t.Skipf("Cannot setup clean migration database: %v", err)
 	}
+	defer cleanup()
 	defer db.Close()
-
-	// Clean slate - drop all tables
-	cleanupTables(t, db)
 
 	// Test migration system
 	migrator := &Migrator{db: db.DB}
@@ -46,7 +44,8 @@ func TestMigrationSystem(t *testing.T) {
 
 		// Verify migrations table exists with correct schema
 		var tableName string
-		err = db.QueryRow("SELECT table_name FROM information_schema.tables WHERE table_name = 'schema_migrations'").Scan(&tableName)
+		query := "SELECT table_name FROM information_schema.tables WHERE table_name = 'schema_migrations'"
+		err = db.QueryRow(query).Scan(&tableName)
 		if err != nil {
 			t.Fatalf("Migrations table was not created: %v", err)
 		}
@@ -55,7 +54,9 @@ func TestMigrationSystem(t *testing.T) {
 		requiredColumns := []string{"id", "name", "applied_at", "checksum"}
 		for _, col := range requiredColumns {
 			var columnName string
-			err = db.QueryRow("SELECT column_name FROM information_schema.columns WHERE table_name = 'schema_migrations' AND column_name = $1", col).Scan(&columnName)
+			query := `SELECT column_name FROM information_schema.columns
+					  WHERE table_name = 'schema_migrations' AND column_name = $1`
+			err = db.QueryRow(query, col).Scan(&columnName)
 			if err != nil {
 				t.Errorf("Required column '%s' missing from schema_migrations table", col)
 			}
@@ -163,7 +164,7 @@ func TestMigrationSystem(t *testing.T) {
 // matches the expectations of the application code.
 func TestSchemaAfterMigrations(t *testing.T) {
 	if testing.Short() {
-		t.Skip("Skipping schema validation test in short mode")
+		t.Skip("Skipping migration test in short mode")
 	}
 
 	configs := getTestConfigs()
@@ -174,12 +175,20 @@ func TestSchemaAfterMigrations(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Use ConnectAndMigrate to ensure schema is up to date
-	db, err := ConnectAndMigrate(ctx, &configs[0])
+	// Create a clean database and apply migrations
+	db, cleanup, err := setupCleanMigrationDatabase(ctx, &configs[0], t)
 	if err != nil {
-		t.Skipf("Cannot connect and migrate test database: %v", err)
+		t.Skipf("Cannot setup clean migration database: %v", err)
 	}
+	defer cleanup()
 	defer db.Close()
+
+	// Apply migrations to the clean database
+	migrator := &Migrator{db: db.DB}
+	err = migrator.Up(ctx)
+	if err != nil {
+		t.Fatalf("Failed to apply migrations: %v", err)
+	}
 
 	// Query all user tables that exist after migrations
 	// This is dynamic and will adapt as the schema grows
@@ -193,6 +202,10 @@ func TestSchemaAfterMigrations(t *testing.T) {
 		t.Fatalf("Failed to query existing tables: %v", err)
 	}
 	defer rows.Close()
+
+	if err := rows.Err(); err != nil {
+		t.Fatalf("Rows iteration error: %v", err)
+	}
 
 	for rows.Next() {
 		var tableName string
@@ -263,7 +276,11 @@ func TestSchemaAfterMigrations(t *testing.T) {
 						assumption.description, assumption.query, err)
 					return
 				}
-				rows.Close()
+				defer rows.Close()
+				if err := rows.Err(); err != nil {
+					t.Errorf("Rows iteration error: %v", err)
+					return
+				}
 				t.Logf("✓ Schema assumption validated: %s", assumption.description)
 			})
 		}
@@ -383,11 +400,20 @@ func TestSchemaValidationReport(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	db, err := ConnectAndMigrate(ctx, &configs[0])
+	// Create clean database and apply migrations
+	db, cleanup, err := setupCleanMigrationDatabase(ctx, &configs[0], t)
 	if err != nil {
-		t.Skipf("Cannot connect and migrate test database: %v", err)
+		t.Skipf("Cannot setup clean migration database: %v", err)
 	}
+	defer cleanup()
 	defer db.Close()
+
+	// Apply migrations to the clean database
+	migrator := &Migrator{db: db.DB}
+	err = migrator.Up(ctx)
+	if err != nil {
+		t.Fatalf("Failed to apply migrations: %v", err)
+	}
 
 	// Extract queries from application code (non-test files)
 	queries, err := ExtractSQLQueries()
@@ -577,7 +603,7 @@ func getMapKeys(m map[string]bool) []string {
 // from the codebase against the migrated schema.
 func TestAutomatedQueryValidation(t *testing.T) {
 	if testing.Short() {
-		t.Skip("Skipping automated query validation test in short mode")
+		t.Skip("Skipping database integration test in short mode")
 	}
 
 	configs := getTestConfigs()
@@ -588,11 +614,20 @@ func TestAutomatedQueryValidation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	db, err := ConnectAndMigrate(ctx, &configs[0])
+	// Create clean database and apply migrations
+	db, cleanup, err := setupCleanMigrationDatabase(ctx, &configs[0], t)
 	if err != nil {
-		t.Skipf("Cannot connect and migrate test database: %v", err)
+		t.Skipf("Cannot setup clean migration database: %v", err)
 	}
+	defer cleanup()
 	defer db.Close()
+
+	// Apply migrations to the clean database
+	migrator := &Migrator{db: db.DB}
+	err = migrator.Up(ctx)
+	if err != nil {
+		t.Fatalf("Failed to apply migrations: %v", err)
+	}
 
 	// Extract SQL queries from Go source files
 	queries, err := ExtractSQLQueries()
@@ -689,41 +724,42 @@ func ExtractSQLQueries() ([]SQLQuery, error) {
 		for _, pattern := range patterns {
 			matches := pattern.regex.FindAllStringSubmatch(fileContent, -1)
 			for _, match := range matches {
-				if len(match) > pattern.capture {
-					sql := strings.TrimSpace(match[pattern.capture])
-
-					// Skip if it doesn't look like a real SQL query
-					if len(sql) < 10 || !containsSQLKeywords(sql) {
-						continue
-					}
-
-					// Skip test-related queries and malformed fragments
-					if strings.Contains(strings.ToUpper(sql), "TEST_TX") ||
-						strings.Contains(sql, "%w") ||
-						strings.Contains(sql, "failed:") ||
-						len(sql) > 1000 { // Skip very long queries that might be malformed
-						continue
-					}
-
-					// Clean up the SQL
-					sql = cleanSQL(sql)
-
-					// Determine query type
-					queryType := getQueryType(sql)
-					if queryType == "" {
-						continue
-					}
-
-					// Generate a unique name
-					name := generateQueryName(path, sql, queryType)
-
-					queries = append(queries, SQLQuery{
-						Name: name,
-						File: path,
-						SQL:  sql,
-						Type: queryType,
-					})
+				if len(match) <= pattern.capture {
+					continue
 				}
+				sql := strings.TrimSpace(match[pattern.capture])
+
+				// Skip if it doesn't look like a real SQL query
+				if len(sql) < 10 || !containsSQLKeywords(sql) {
+					continue
+				}
+
+				// Skip test-related queries and malformed fragments
+				if strings.Contains(strings.ToUpper(sql), "TEST_TX") ||
+					strings.Contains(sql, "%w") ||
+					strings.Contains(sql, "failed:") ||
+					len(sql) > 1000 { // Skip very long queries that might be malformed
+					continue
+				}
+
+				// Clean up the SQL
+				sql = cleanSQL(sql)
+
+				// Determine query type
+				queryType := getQueryType(sql)
+				if queryType == "" {
+					continue
+				}
+
+				// Generate a unique name
+				name := generateQueryName(path, sql, queryType)
+
+				queries = append(queries, SQLQuery{
+					Name: name,
+					File: path,
+					SQL:  sql,
+					Type: queryType,
+				})
 			}
 		}
 
@@ -762,7 +798,10 @@ func validateQueryAgainstSchema(db *DB, query SQLQuery) error {
 		if err != nil {
 			return fmt.Errorf("SELECT query failed: %w", err)
 		}
-		rows.Close()
+		defer rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("rows iteration error: %w", err)
+		}
 
 	case "INSERT", "UPDATE", "DELETE":
 		// Use EXPLAIN to validate structure without executing
@@ -778,7 +817,10 @@ func validateQueryAgainstSchema(db *DB, query SQLQuery) error {
 		if err != nil {
 			return fmt.Errorf("EXPLAIN query failed: %w", err)
 		}
-		rows.Close()
+		defer rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("rows iteration error: %w", err)
+		}
 
 	default:
 		return fmt.Errorf("unsupported query type: %s", query.Type)
@@ -894,7 +936,7 @@ func removeDuplicateQueries(queries []SQLQuery) []SQLQuery {
 }
 
 // convertNamedToPositionalParams converts named parameters (:name) to positional ($1, $2, etc.)
-func convertNamedToPositionalParams(sql string) (string, int) {
+func convertNamedToPositionalParams(sql string) (convertedSQL string, paramCount int) {
 	// If already using positional parameters, return as-is
 	if strings.Contains(sql, "$") && !strings.Contains(sql, ":") {
 		return sql, strings.Count(sql, "$")
@@ -936,7 +978,9 @@ func generateParameterValue(sql string, paramIndex int) interface{} {
 	upperSQL := strings.ToUpper(sql)
 
 	// PostgreSQL-specific type inference based on column context
-	if strings.Contains(upperSQL, "NETWORK") && (strings.Contains(upperSQL, "INSERT") || strings.Contains(upperSQL, "UPDATE")) {
+	hasNetwork := strings.Contains(upperSQL, "NETWORK")
+	hasInsertOrUpdate := strings.Contains(upperSQL, "INSERT") || strings.Contains(upperSQL, "UPDATE")
+	if hasNetwork && hasInsertOrUpdate {
 		return "192.168.1.0/24" // CIDR format for network columns
 	}
 
@@ -950,7 +994,8 @@ func generateParameterValue(sql string, paramIndex int) interface{} {
 
 	// UUID fields (must be before generic ID check)
 	if (strings.Contains(upperSQL, "ID") || strings.Contains(upperSQL, "_ID")) &&
-		(strings.Contains(upperSQL, "INSERT") || strings.Contains(upperSQL, "UPDATE") || strings.Contains(upperSQL, "WHERE")) {
+		(strings.Contains(upperSQL, "INSERT") || strings.Contains(upperSQL, "UPDATE") ||
+			strings.Contains(upperSQL, "WHERE")) {
 		return "550e8400-e29b-41d4-a716-446655440000" // Valid UUID
 	}
 
@@ -1087,6 +1132,10 @@ func TestCriticalQueriesAfterMigration(t *testing.T) {
 				return
 			}
 			defer rows.Close()
+			if err := rows.Err(); err != nil {
+				t.Errorf("Rows iteration error: %v", err)
+				return
+			}
 			t.Logf("✓ Query '%s' executed successfully", query.description)
 		})
 	}
@@ -1164,56 +1213,61 @@ func TestMigrationRollbackSafety(t *testing.T) {
 	})
 }
 
-// cleanupTables removes all tables to ensure clean migration testing
-func cleanupTables(t *testing.T, db *DB) {
-	// Dynamically find all user tables to drop
-	var tables []string
-	query := `SELECT table_name FROM information_schema.tables
-	          WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-	          ORDER BY table_name`
+// setupCleanMigrationDatabase creates a completely clean database for migration testing
+func setupCleanMigrationDatabase(ctx context.Context, baseConfig *Config, t *testing.T) (*DB, func(), error) {
+	// Generate unique database name for this test
+	cleanDBName := fmt.Sprintf("scanorama_migration_test_%d", time.Now().UnixNano())
 
-	rows, err := db.Query(query)
+	// Create config for connecting to the main database to create our test database
+	adminConfig := *baseConfig
+	if adminConfig.Database == "scanorama_test" {
+		// Connect to the default postgres database to create our test database
+		adminConfig.Database = "postgres"
+	}
+
+	// Connect to admin database to create clean test database
+	adminDB, err := Connect(ctx, &adminConfig)
 	if err != nil {
-		t.Logf("Warning: Could not query tables for cleanup: %v", err)
-		return
+		return nil, nil, fmt.Errorf("cannot connect to admin database: %w", err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var tableName string
-		if err := rows.Scan(&tableName); err != nil {
-			t.Logf("Warning: Could not scan table name: %v", err)
-			continue
+	// Create the clean test database
+	_, err = adminDB.Exec(fmt.Sprintf("CREATE DATABASE %s", cleanDBName))
+	if err != nil {
+		adminDB.Close()
+		return nil, nil, fmt.Errorf("cannot create clean test database: %w", err)
+	}
+	adminDB.Close()
+
+	// Create config for the clean test database
+	cleanConfig := *baseConfig
+	cleanConfig.Database = cleanDBName
+
+	// Connect to the clean database
+	cleanDB, err := Connect(ctx, &cleanConfig)
+	if err != nil {
+		// If connection fails, try to clean up the database
+		adminDB, _ := Connect(ctx, &adminConfig)
+		if adminDB != nil {
+			adminDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", cleanDBName))
+			adminDB.Close()
 		}
-		tables = append(tables, tableName)
+		return nil, nil, fmt.Errorf("cannot connect to clean test database: %w", err)
 	}
 
-	// Drop all found tables with CASCADE to handle dependencies
-	for _, table := range tables {
-		_, err := db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", table))
-		if err != nil {
-			t.Logf("Warning: Could not drop table %s: %v", table, err)
-		}
-	}
-
-	// Also drop any views or other objects that might exist
-	cleanupQueries := []string{
-		"DROP MATERIALIZED VIEW IF EXISTS host_summary CASCADE",
-		"DROP MATERIALIZED VIEW IF EXISTS network_summary_mv CASCADE",
-		"DROP VIEW IF EXISTS scan_performance_stats CASCADE",
-		"DROP VIEW IF EXISTS network_summary CASCADE",
-		"DROP VIEW IF EXISTS active_hosts CASCADE",
-		"DROP FUNCTION IF EXISTS refresh_summary_views() CASCADE",
-		"DROP FUNCTION IF EXISTS cleanup_old_scan_data() CASCADE",
-		"DROP FUNCTION IF EXISTS update_modified_by() CASCADE",
-		"DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE",
-		"DROP FUNCTION IF EXISTS update_host_last_seen() CASCADE",
-	}
-
-	for _, query := range cleanupQueries {
-		_, err := db.Exec(query)
-		if err != nil {
-			t.Logf("Warning: Could not execute cleanup query '%s': %v", query, err)
+	// Create cleanup function
+	cleanup := func() {
+		cleanDB.Close()
+		// Connect to admin database to drop the test database
+		if adminDB, err := Connect(ctx, &adminConfig); err == nil {
+			_, err := adminDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", cleanDBName))
+			if err != nil {
+				t.Logf("Warning: Could not clean up test database %s: %v", cleanDBName, err)
+			}
+			adminDB.Close()
 		}
 	}
+
+	t.Logf("Created clean migration test database: %s", cleanDBName)
+	return cleanDB, cleanup, nil
 }
