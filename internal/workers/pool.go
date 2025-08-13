@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anstrom/scanorama/internal/logging"
@@ -72,6 +73,9 @@ type Pool struct {
 	shutdown    chan struct{}
 	done        chan struct{}
 	rateLimiter *time.Ticker
+	startOnce   sync.Once
+	closeOnce   sync.Once
+	shutdown32  int32 // atomic shutdown flag
 }
 
 // worker represents a single worker goroutine.
@@ -114,27 +118,34 @@ func New(config Config) *Pool {
 
 // Start begins the worker pool operations.
 func (p *Pool) Start() {
-	logging.Info("Starting worker pool",
-		"worker_count", p.config.Size,
-		"queue_size", p.config.QueueSize,
-		"rate_limit", p.config.RateLimit)
+	p.startOnce.Do(func() {
+		logging.Info("Starting worker pool",
+			"worker_count", p.config.Size,
+			"queue_size", p.config.QueueSize,
+			"rate_limit", p.config.RateLimit)
 
-	// Start workers
-	for _, w := range p.workers {
-		p.wg.Add(1)
-		go w.run()
-	}
+		// Start workers
+		for _, w := range p.workers {
+			p.wg.Add(1)
+			go w.run()
+		}
 
-	// Start result processor
-	go p.processResults()
+		// Start result processor
+		go p.processResults()
 
-	metrics.Gauge("worker_pool_size", float64(p.config.Size), metrics.Labels{
-		"component": "workers",
+		metrics.Gauge("worker_pool_size", float64(p.config.Size), metrics.Labels{
+			"component": "workers",
+		})
 	})
 }
 
 // Submit adds a job to the worker pool queue.
 func (p *Pool) Submit(job Job) error {
+	// Check if pool is shut down
+	if atomic.LoadInt32(&p.shutdown32) == 1 {
+		return fmt.Errorf("worker pool is shut down")
+	}
+
 	select {
 	case p.jobs <- job:
 		logging.Debug("Job submitted to worker pool",
@@ -158,7 +169,16 @@ func (p *Pool) Results() <-chan Result {
 
 // Shutdown gracefully shuts down the worker pool.
 func (p *Pool) Shutdown() error {
+	// Set shutdown flag atomically
+	if !atomic.CompareAndSwapInt32(&p.shutdown32, 0, 1) {
+		// Already shut down
+		return nil
+	}
+
 	logging.Info("Shutting down worker pool")
+
+	// Cancel context first to prevent new submissions
+	p.cancel()
 
 	// Signal shutdown
 	close(p.shutdown)
@@ -178,13 +198,14 @@ func (p *Pool) Shutdown() error {
 		logging.Info("Worker pool shutdown completed")
 	case <-time.After(p.config.ShutdownTimeout):
 		logging.Warn("Worker pool shutdown timeout, forcing termination")
-		p.cancel()
 		<-done
 	}
 
 	// Close results channel
 	close(p.results)
-	close(p.done)
+	p.closeOnce.Do(func() {
+		close(p.done)
+	})
 
 	// Stop rate limiter
 	if p.rateLimiter != nil {
@@ -324,7 +345,9 @@ func (w *worker) executeJob(job Job) {
 
 // processResults processes job results from workers.
 func (p *Pool) processResults() {
-	defer close(p.done)
+	defer p.closeOnce.Do(func() {
+		close(p.done)
+	})
 
 	for {
 		select {
