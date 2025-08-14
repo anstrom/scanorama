@@ -69,6 +69,7 @@ type Pool struct {
 	externalResults chan Result
 	workers         []*worker
 	wg              sync.WaitGroup
+	processWG       sync.WaitGroup
 	ctx             context.Context
 	cancel          context.CancelFunc
 	shutdown        chan struct{}
@@ -133,6 +134,7 @@ func (p *Pool) Start() {
 		}
 
 		// Start result processor
+		p.processWG.Add(1)
 		go p.processResults()
 
 		metrics.Gauge("worker_pool_size", float64(p.config.Size), metrics.Labels{
@@ -206,10 +208,10 @@ func (p *Pool) Shutdown() error {
 	// Cancel context to signal processResults to exit
 	p.cancel()
 
-	// Give processResults a moment to exit cleanly
-	time.Sleep(10 * time.Millisecond)
+	// Wait for processResults to actually exit
+	p.processWG.Wait()
 
-	// Close results channels
+	// Now safely close results channels
 	close(p.results)
 	close(p.externalResults)
 
@@ -351,12 +353,15 @@ func (w *worker) executeJob(job Job) {
 
 // processResults processes job results from workers.
 func (p *Pool) processResults() {
+	defer p.processWG.Done()
 	defer p.closeOnce.Do(func() {
 		close(p.done)
 	})
 
 	for {
 		select {
+		case <-p.ctx.Done():
+			return
 		case result, ok := <-p.results:
 			if !ok {
 				return
@@ -376,14 +381,15 @@ func (p *Pool) processResults() {
 				metrics.Counter("job_errors_total", metrics.Labels{
 					"job_type": result.JobType,
 				})
+			} else {
+				metrics.Counter("jobs_completed_total", metrics.Labels{
+					"job_type": result.JobType,
+				})
 			}
 
 			metrics.Histogram("job_retry_count", float64(result.Retries), metrics.Labels{
 				"job_type": result.JobType,
 			})
-
-		case <-p.ctx.Done():
-			return
 		}
 	}
 }
