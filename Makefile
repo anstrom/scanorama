@@ -38,7 +38,7 @@ help: ## Show this help message
 	@echo '  make setup-hooks  # Set up Git hooks for code quality'
 	@echo '  make setup-dev-db # Set up development database'
 	@echo '  make ci           # Run full CI pipeline locally before pushing'
-	@echo '  make test         # Run tests with database'
+	@echo '  make test         # Run all tests (core + integration) with database'
 	@echo '  make build        # Build binary'
 	@echo ''
 	@echo 'Environment Variables:'
@@ -70,17 +70,18 @@ clean: ## Remove build artifacts and clean up test files
 	@find . -name "test_*.xml" -type f -delete
 	@find . -name "*.tmp" -type f -delete
 
-test: ## Run all tests (checks for existing DB first)
-	@echo "Running tests..."
+test: ## Run all tests including integration tests (checks for existing DB first)
+	@echo "Running all tests (core + integration)..."
 	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
 		echo "Database available, using existing database..."; \
 		echo "Using database on localhost:5432"; \
 		echo "Starting test service containers..."; \
 		$(TEST_ENV_SCRIPT) up; \
 		if [ "$(DEBUG)" = "true" ]; then \
-			echo "Running with debug output..."; \
+			echo "Running all tests with debug output (core + integration)..."; \
 			POSTGRES_PORT=5432 DB_DEBUG=true $(GOTEST) -v -p 1 ./...; \
 		else \
+			echo "Running all tests (core + integration)..."; \
 			POSTGRES_PORT=5432 $(GOTEST) -v -p 1 ./...; \
 		fi; \
 		ret=$$?; \
@@ -90,9 +91,10 @@ test: ## Run all tests (checks for existing DB first)
 		echo "No database found, starting test containers..."; \
 		$(TEST_ENV_SCRIPT) up; \
 		if [ "$(DEBUG)" = "true" ]; then \
-			echo "Running with debug output..."; \
+			echo "Running all tests with debug output (core + integration)..."; \
 			POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v -p 1 ./...; \
 		else \
+			echo "Running all tests (core + integration)..."; \
 			POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v -p 1 ./...; \
 		fi; \
 		ret=$$?; \
@@ -241,11 +243,11 @@ ci: ## Run full CI pipeline locally (quality + test + build + coverage + securit
 	@echo "=== Step 7: Binary Functionality Test ==="
 	@./$(BUILD_DIR)/$(BINARY_NAME) --version
 	@echo ""
-	@echo "=== Step 8: Integration Tests (Optional) ==="
-	@echo "Running integration tests (failures won't block CI)..."
-	@$(MAKE) test || echo "⚠️ Some integration tests failed - this is informational only"
+	@echo "=== Step 8: Full Test Suite ==="
+	@echo "Running complete test suite (core + integration)..."
+	@$(MAKE) test
 	@echo ""
-	@echo "✅ All critical CI pipeline steps passed successfully!"
+	@echo "✅ All CI pipeline steps passed successfully!"
 	@echo "📊 Core packages (errors, logging, metrics) have excellent test coverage"
 	@echo "🔒 No security vulnerabilities found"
 	@echo "🏗️ Build verification completed"
