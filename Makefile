@@ -177,6 +177,8 @@ test-core: ## Run tests for core packages (errors, logging, metrics)
 		exit $$ret; \
 	fi
 
+
+
 coverage-core: ## Generate coverage report for core packages
 	@echo "Generating core package coverage report..."
 	@if ./scripts/check-db.sh >/dev/null 2>&1; then \

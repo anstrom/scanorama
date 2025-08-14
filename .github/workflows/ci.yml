@@ -166,7 +166,7 @@ jobs:
           database-user: test_user
           database-password: test_password
 
-      - name: Run integration tests
+      - name: Run tests and generate coverage
         env:
           POSTGRES_PORT: 5432
           TEST_DB_HOST: localhost
@@ -175,19 +175,8 @@ jobs:
           TEST_DB_USER: test_user
           TEST_DB_PASSWORD: test_password
         run: |
-          # Run all tests but allow integration test failures
-          go test -v -race -p 1 ./... || echo "⚠️ Some integration tests failed - this is informational only"
-
-      - name: Generate coverage
-        env:
-          POSTGRES_PORT: 5432
-          TEST_DB_HOST: localhost
-          TEST_DB_PORT: 5432
-          TEST_DB_NAME: scanorama_test
-          TEST_DB_USER: test_user
-          TEST_DB_PASSWORD: test_password
-        run: |
-          go test -race -p 1 -coverprofile=coverage.out -covermode=atomic ./...
+          # Run all tests with coverage generation
+          go test -v -race -p 1 -coverprofile=coverage.out -covermode=atomic ./...
           go tool cover -html=coverage.out -o coverage.html
 
       - name: Upload coverage to Codecov
