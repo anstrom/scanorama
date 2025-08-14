@@ -186,8 +186,10 @@ func TestJobExecution(t *testing.T) {
 		err := pool.Submit(job)
 		require.NoError(t, err)
 
-		// Wait for job to complete
-		time.Sleep(100 * time.Millisecond)
+		// Wait for job to complete with timeout
+		require.Eventually(t, func() bool {
+			return job.ExecutedCount() == 1
+		}, time.Second, 10*time.Millisecond, "Job should execute exactly once")
 
 		assert.Equal(t, int32(1), job.ExecutedCount())
 	})
@@ -197,10 +199,13 @@ func TestJobExecution(t *testing.T) {
 		err := pool.Submit(failingJob)
 		require.NoError(t, err)
 
-		// Wait for job and retries to complete
-		time.Sleep(200 * time.Millisecond)
+		// Wait for job and retries to complete with timeout
+		require.Eventually(t, func() bool {
+			executed := failingJob.ExecutedCount()
+			return executed > 1 && executed <= int32(config.MaxRetries+1)
+		}, 2*time.Second, 20*time.Millisecond, "Job should be retried but not exceed max retries")
 
-		// Should be executed multiple times due to retries
+		// Check final state after all retries are done
 		executed := failingJob.ExecutedCount()
 		assert.Greater(t, executed, int32(1), "Job should be retried")
 		assert.LessOrEqual(t, executed, int32(config.MaxRetries+1), "Job should not exceed max retries")
@@ -457,8 +462,16 @@ func TestRateLimiting(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		// Wait for all jobs to complete
-		time.Sleep(3 * time.Second)
+		// Wait for all jobs to complete with proper synchronization
+		require.Eventually(t, func() bool {
+			for _, job := range jobs {
+				if job.ExecutedCount() != 1 {
+					return false
+				}
+			}
+			return true
+		}, 5*time.Second, 50*time.Millisecond, "All jobs should complete within timeout")
+
 		duration := time.Since(start)
 
 		// With rate limiting of 5/sec, 10 jobs should take at least 2 seconds
@@ -468,7 +481,7 @@ func TestRateLimiting(t *testing.T) {
 				"Rate limiting should slow down job processing")
 		}
 
-		// All jobs should eventually complete
+		// Verify all jobs completed exactly once
 		for i, job := range jobs {
 			assert.Equal(t, int32(1), job.ExecutedCount(), "Job %d should complete", i)
 		}
@@ -515,10 +528,17 @@ func TestConcurrentSubmission(t *testing.T) {
 
 		wg.Wait()
 
-		// Wait for all jobs to complete
-		time.Sleep(time.Second)
+		// Wait for all jobs to complete with proper synchronization
+		require.Eventually(t, func() bool {
+			for _, job := range jobs {
+				if job != nil && job.ExecutedCount() != 1 {
+					return false
+				}
+			}
+			return true
+		}, 3*time.Second, 50*time.Millisecond, "All jobs should complete within timeout")
 
-		// Verify all jobs were executed
+		// Verify all jobs were executed exactly once
 		for i, job := range jobs {
 			if job != nil {
 				assert.Equal(t, int32(1), job.ExecutedCount(), "Job %d should be executed", i)
