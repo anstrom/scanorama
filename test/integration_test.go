@@ -30,6 +30,51 @@ type TestSuite struct {
 	cancel   context.CancelFunc
 }
 
+// cleanupIntegrationDatabase removes all database objects to ensure clean state for migrations
+func cleanupIntegrationDatabase(ctx context.Context, testConfig *helpers.DatabaseConfig) {
+	dbConfig := &db.Config{
+		Host:            testConfig.Host,
+		Port:            testConfig.Port,
+		Database:        testConfig.Database,
+		Username:        testConfig.Username,
+		Password:        testConfig.Password,
+		SSLMode:         testConfig.SSLMode,
+		MaxOpenConns:    1,
+		MaxIdleConns:    1,
+		ConnMaxLifetime: 5 * time.Minute,
+		ConnMaxIdleTime: 2 * time.Minute,
+	}
+
+	database, err := db.Connect(ctx, dbConfig)
+	if err != nil {
+		// If we can't connect, just skip cleanup - tests will handle conflicts
+		return
+	}
+	defer database.Close()
+
+	// Drop all tables (including schema_migrations to ensure fresh migration state)
+	var tables []string
+	database.Select(&tables, `
+		SELECT schemaname||'.'||tablename
+		FROM pg_tables
+		WHERE schemaname = 'public'`)
+	for _, table := range tables {
+		database.Exec("DROP TABLE IF EXISTS " + table + " CASCADE")
+	}
+
+	// Drop all functions that aren't extension-related
+	var functions []string
+	database.Select(&functions, `
+		SELECT n.nspname||'.'||p.proname||'('||pg_get_function_identity_arguments(p.oid)||')'
+		FROM pg_proc p
+		JOIN pg_namespace n ON p.pronamespace = n.oid
+		LEFT JOIN pg_depend d ON d.objid = p.oid AND d.deptype = 'e'
+		WHERE n.nspname = 'public' AND p.prokind = 'f' AND d.objid IS NULL`)
+	for _, function := range functions {
+		database.Exec("DROP FUNCTION IF EXISTS " + function + " CASCADE")
+	}
+}
+
 // setupTestSuite creates a new test suite with database connection.
 func setupTestSuite(t *testing.T) *TestSuite {
 	if testing.Short() {
@@ -43,15 +88,33 @@ func setupTestSuite(t *testing.T) *TestSuite {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Connect to test database - this will fail the test if unavailable
-	database, config, err := helpers.ConnectToTestDatabase(ctx)
-	require.NoError(t, err, "Failed to connect to test database")
+	// Get available test database configuration
+	testConfig, err := helpers.GetAvailableDatabase()
+	require.NoError(t, err, "Failed to get available test database")
 
-	t.Logf("Connected to database: %s@%s:%d/%s", config.Username, config.Host, config.Port, config.Database)
+	// Create database configuration for db.ConnectAndMigrate
+	dbConfig := &db.Config{
+		Host:            testConfig.Host,
+		Port:            testConfig.Port,
+		Database:        testConfig.Database,
+		Username:        testConfig.Username,
+		Password:        testConfig.Password,
+		SSLMode:         testConfig.SSLMode,
+		MaxOpenConns:    5,
+		MaxIdleConns:    2,
+		ConnMaxLifetime: 5 * time.Minute,
+		ConnMaxIdleTime: 2 * time.Minute,
+	}
 
-	// Ensure schema is available
-	err = helpers.EnsureTestSchema(ctx, database)
-	require.NoError(t, err, "Database schema is not available")
+	// Clean up any existing database objects before migrations
+	cleanupIntegrationDatabase(ctx, testConfig)
+
+	// Connect to database and run migrations
+	database, err := db.ConnectAndMigrate(ctx, dbConfig)
+	require.NoError(t, err, "Failed to connect to test database and run migrations")
+
+	t.Logf("Connected to database: %s@%s:%d/%s",
+		testConfig.Username, testConfig.Host, testConfig.Port, testConfig.Database)
 
 	return &TestSuite{
 		database: database,
