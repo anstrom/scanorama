@@ -4,14 +4,52 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
+
+// Duration is a custom type that can unmarshal duration strings from JSON
+type Duration time.Duration
+
+// UnmarshalJSON implements json.Unmarshaler for Duration
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	if s == "" {
+		*d = Duration(0)
+		return nil
+	}
+	duration, err := time.ParseDuration(s)
+	if err != nil {
+		return fmt.Errorf("invalid duration format: %s", s)
+	}
+	*d = Duration(duration)
+	return nil
+}
+
+// MarshalJSON implements json.Marshaler for Duration
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Duration(d).String())
+}
+
+// ToDuration converts custom Duration to time.Duration
+func (d Duration) ToDuration() time.Duration {
+	return time.Duration(d)
+}
+
+// NewDuration creates a Duration from time.Duration
+func NewDuration(d time.Duration) Duration {
+	return Duration(d)
+}
 
 // Profile validation constants.
 const (
@@ -22,6 +60,11 @@ const (
 	maxProfileRetries     = 10
 	maxProfileRatePPS     = 10000
 	maxProfileTagLength   = 50
+
+	// Scan type constants
+	scanTypeComprehensive = "comprehensive"
+	scanTypeVersion       = "version"
+	scanTypeAggressive    = "aggressive"
 )
 
 // ProfileHandler handles profile-related API endpoints.
@@ -54,8 +97,8 @@ type ProfileRequest struct {
 	ScriptScan       bool              `json:"script_scan"`
 	UDPScan          bool              `json:"udp_scan"`
 	MaxRetries       int               `json:"max_retries,omitempty"`
-	HostTimeout      time.Duration     `json:"host_timeout,omitempty"`
-	ScanDelay        time.Duration     `json:"scan_delay,omitempty"`
+	HostTimeout      Duration          `json:"host_timeout,omitempty"`
+	ScanDelay        Duration          `json:"scan_delay,omitempty"`
 	MaxRatePPS       int               `json:"max_rate_pps,omitempty"`
 	MaxHostGroupSize int               `json:"max_host_group_size,omitempty"`
 	MinHostGroupSize int               `json:"min_host_group_size,omitempty"`
@@ -65,19 +108,19 @@ type ProfileRequest struct {
 
 // TimingProfile represents timing configuration for scans.
 type TimingProfile struct {
-	Template          string        `json:"template,omitempty"` // paranoid, sneaky, polite, normal, aggressive, insane
-	MinRTTTimeout     time.Duration `json:"min_rtt_timeout,omitempty"`
-	MaxRTTTimeout     time.Duration `json:"max_rtt_timeout,omitempty"`
-	InitialRTTTimeout time.Duration `json:"initial_rtt_timeout,omitempty"`
-	MaxRetries        int           `json:"max_retries,omitempty"`
-	HostTimeout       time.Duration `json:"host_timeout,omitempty"`
-	ScanDelay         time.Duration `json:"scan_delay,omitempty"`
-	MaxScanDelay      time.Duration `json:"max_scan_delay,omitempty"`
+	Template          string   `json:"template,omitempty"` // paranoid, sneaky, polite, normal, aggressive, insane
+	MinRTTTimeout     Duration `json:"min_rtt_timeout,omitempty"`
+	MaxRTTTimeout     Duration `json:"max_rtt_timeout,omitempty"`
+	InitialRTTTimeout Duration `json:"initial_rtt_timeout,omitempty"`
+	MaxRetries        int      `json:"max_retries,omitempty"`
+	HostTimeout       Duration `json:"host_timeout,omitempty"`
+	ScanDelay         Duration `json:"scan_delay,omitempty"`
+	MaxScanDelay      Duration `json:"max_scan_delay,omitempty"`
 }
 
 // ProfileResponse represents a profile response.
 type ProfileResponse struct {
-	ID               int64             `json:"id"`
+	ID               string            `json:"id"`
 	Name             string            `json:"name"`
 	Description      string            `json:"description,omitempty"`
 	ScanType         string            `json:"scan_type"`
@@ -105,14 +148,14 @@ type ProfileResponse struct {
 
 // ListProfiles handles GET /api/v1/profiles - list all profiles with pagination.
 func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
-	listOp := &ListOperation[*db.Profile, db.ProfileFilters]{
+	listOp := &ListOperation[*db.ScanProfile, db.ProfileFilters]{
 		EntityType: "profiles",
 		MetricName: "api_profiles_listed_total",
 		Logger:     h.logger,
 		Metrics:    h.metrics,
 		GetFilters: h.getProfileFilters,
 		ListFromDB: h.database.ListProfiles,
-		ToResponse: func(profile *db.Profile) interface{} {
+		ToResponse: func(profile *db.ScanProfile) interface{} {
 			return h.profileToResponse(profile)
 		},
 	}
@@ -121,7 +164,7 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 
 // CreateProfile handles POST /api/v1/profiles - create a new profile.
 func (h *ProfileHandler) CreateProfile(w http.ResponseWriter, r *http.Request) {
-	CreateEntity[db.Profile, ProfileRequest](
+	CreateEntity[db.ScanProfile, ProfileRequest](
 		w, r,
 		"profile",
 		h.logger,
@@ -137,7 +180,7 @@ func (h *ProfileHandler) CreateProfile(w http.ResponseWriter, r *http.Request) {
 			return h.requestToDBProfile(&req), nil
 		},
 		h.database.CreateProfile,
-		func(profile *db.Profile) interface{} {
+		func(profile *db.ScanProfile) interface{} {
 			return h.profileToResponse(profile)
 		},
 		"api_profiles_created_total")
@@ -145,65 +188,104 @@ func (h *ProfileHandler) CreateProfile(w http.ResponseWriter, r *http.Request) {
 
 // GetProfile handles GET /api/v1/profiles/{id} - get a specific profile.
 func (h *ProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
-	profileID, err := extractUUIDFromPath(r)
+	profileID, err := extractStringFromPath(r)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
-	crudOp := &CRUDOperation[db.Profile]{
-		EntityType: "profile",
-		Logger:     h.logger,
-		Metrics:    h.metrics,
+	requestID := getRequestIDFromContext(r.Context())
+	h.logger.Info("Getting profile", "request_id", requestID, "profile_id", profileID)
+
+	// Get profile from database
+	profile, err := h.database.GetProfile(r.Context(), profileID)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, fmt.Errorf("profile not found"))
+			return
+		}
+		h.logger.Error("Failed to get profile", "request_id", requestID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get profile: %w", err))
+		return
 	}
 
-	crudOp.ExecuteGet(w, r, profileID,
-		h.database.GetProfile,
-		func(profile *db.Profile) interface{} {
-			return h.profileToResponse(profile)
-		},
-		"api_profiles_retrieved_total")
+	response := h.profileToResponse(profile)
+	writeJSON(w, r, http.StatusOK, response)
+
+	// Record metrics
+	if h.metrics != nil {
+		h.metrics.Counter("api_profiles_retrieved_total", nil)
+	}
 }
 
 // UpdateProfile handles PUT /api/v1/profiles/{id} - update a profile.
 func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
-	UpdateEntity[db.Profile, ProfileRequest](
-		w, r,
-		"profile",
-		h.logger,
-		h.metrics,
-		func(r *http.Request) (interface{}, error) {
-			var req ProfileRequest
-			if err := parseJSON(r, &req); err != nil {
-				return nil, err
-			}
-			if err := h.validateProfileRequest(&req); err != nil {
-				return nil, err
-			}
-			return h.requestToDBProfile(&req), nil
-		},
-		h.database.UpdateProfile,
-		func(profile *db.Profile) interface{} {
-			return h.profileToResponse(profile)
-		},
-		"api_profiles_updated_total")
-}
-
-// DeleteProfile handles DELETE /api/v1/profiles/{id} - delete a profile.
-func (h *ProfileHandler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
-	profileID, err := extractUUIDFromPath(r)
+	profileID, err := extractStringFromPath(r)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
-	crudOp := &CRUDOperation[db.Profile]{
-		EntityType: "profile",
-		Logger:     h.logger,
-		Metrics:    h.metrics,
+	requestID := getRequestIDFromContext(r.Context())
+	h.logger.Info("Updating profile", "request_id", requestID, "profile_id", profileID)
+
+	// Parse request body
+	var req ProfileRequest
+	if err := parseJSON(r, &req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
 	}
 
-	crudOp.ExecuteDelete(w, r, profileID, h.database.DeleteProfile, "api_profiles_deleted_total")
+	// Update profile in database
+	profile, err := h.database.UpdateProfile(r.Context(), profileID, h.requestToDBProfile(&req))
+	if err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, fmt.Errorf("profile not found"))
+			return
+		}
+		h.logger.Error("Failed to update profile", "request_id", requestID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to update profile: %w", err))
+		return
+	}
+
+	response := h.profileToResponse(profile)
+	writeJSON(w, r, http.StatusOK, response)
+
+	// Record metrics
+	if h.metrics != nil {
+		h.metrics.Counter("api_profiles_updated_total", nil)
+	}
+}
+
+// DeleteProfile handles DELETE /api/v1/profiles/{id} - delete a profile.
+func (h *ProfileHandler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
+	profileID, err := extractStringFromPath(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	requestID := getRequestIDFromContext(r.Context())
+	h.logger.Info("Deleting profile", "request_id", requestID, "profile_id", profileID)
+
+	// Delete profile from database
+	err = h.database.DeleteProfile(r.Context(), profileID)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, fmt.Errorf("profile not found"))
+			return
+		}
+		h.logger.Error("Failed to delete profile", "request_id", requestID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to delete profile: %w", err))
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+
+	// Record metrics
+	if h.metrics != nil {
+		h.metrics.Counter("api_profiles_deleted_total", nil)
+	}
 }
 
 // Helper methods
@@ -277,25 +359,31 @@ func (h *ProfileHandler) validateTimingTemplate(template string) error {
 }
 
 func (h *ProfileHandler) validateProfileTimeouts(req *ProfileRequest) error {
-	if req.HostTimeout < 0 {
+	hostTimeout := req.HostTimeout.ToDuration()
+	if hostTimeout < 0 {
 		return fmt.Errorf("host timeout cannot be negative")
 	}
-	if req.HostTimeout > maxProfileHostTimeout {
-		return fmt.Errorf("host timeout too long (max %v)", maxProfileHostTimeout)
+	if hostTimeout > maxProfileHostTimeout {
+		return fmt.Errorf("host timeout too large (max %s)", maxProfileHostTimeout)
 	}
-	if req.ScanDelay < 0 {
+	scanDelay := req.ScanDelay.ToDuration()
+	if scanDelay < 0 {
 		return fmt.Errorf("scan delay cannot be negative")
 	}
-	if req.ScanDelay > maxProfileScanDelay {
-		return fmt.Errorf("scan delay too long (max %v)", maxProfileScanDelay)
+	if scanDelay > maxProfileScanDelay {
+		return fmt.Errorf("scan delay too large (max %s)", maxProfileScanDelay)
 	}
-	if req.Timing.MinRTTTimeout < 0 {
+
+	// Validate timing profile durations
+	if req.Timing.MinRTTTimeout.ToDuration() < 0 {
 		return fmt.Errorf("min RTT timeout cannot be negative")
 	}
-	if req.Timing.MaxRTTTimeout < 0 {
+	if req.Timing.MaxRTTTimeout.ToDuration() < 0 {
 		return fmt.Errorf("max RTT timeout cannot be negative")
 	}
-	if req.Timing.MinRTTTimeout > req.Timing.MaxRTTTimeout && req.Timing.MaxRTTTimeout > 0 {
+	minRTT := req.Timing.MinRTTTimeout.ToDuration()
+	maxRTT := req.Timing.MaxRTTTimeout.ToDuration()
+	if minRTT > maxRTT && maxRTT > 0 {
 		return fmt.Errorf("min RTT timeout cannot be greater than max RTT timeout")
 	}
 	return nil
@@ -355,50 +443,149 @@ func (h *ProfileHandler) getProfileFilters(r *http.Request) db.ProfileFilters {
 
 // requestToDBProfile converts a profile request to database profile object.
 func (h *ProfileHandler) requestToDBProfile(req *ProfileRequest) interface{} {
-	// This should return the appropriate database profile type
-	// The exact structure would depend on the database package implementation
+	// Store boolean scan options in the options field since they're not in the database schema
+	options := make(map[string]interface{})
+	if req.Options != nil {
+		for k, v := range req.Options {
+			options[k] = v
+		}
+	}
+
+	// Add boolean flags to options
+	options["service_detection"] = req.ServiceDetection
+	options["os_detection"] = req.OSDetection
+	options["script_scan"] = req.ScriptScan
+	options["udp_scan"] = req.UDPScan
+	options["max_retries"] = req.MaxRetries
+	options["host_timeout"] = req.HostTimeout.ToDuration()
+	options["scan_delay"] = req.ScanDelay.ToDuration()
+	options["max_rate_pps"] = req.MaxRatePPS
+	options["max_host_group_size"] = req.MaxHostGroupSize
+	options["min_host_group_size"] = req.MinHostGroupSize
+	options["default"] = req.Default
+
 	return map[string]interface{}{
-		"name":                req.Name,
-		"description":         req.Description,
-		"scan_type":           req.ScanType,
-		"ports":               req.Ports,
-		"options":             req.Options,
-		"timing":              req.Timing,
-		"service_detection":   req.ServiceDetection,
-		"os_detection":        req.OSDetection,
-		"script_scan":         req.ScriptScan,
-		"udp_scan":            req.UDPScan,
-		"max_retries":         req.MaxRetries,
-		"host_timeout":        req.HostTimeout,
-		"scan_delay":          req.ScanDelay,
-		"max_rate_pps":        req.MaxRatePPS,
-		"max_host_group_size": req.MaxHostGroupSize,
-		"min_host_group_size": req.MinHostGroupSize,
-		"tags":                req.Tags,
-		"default":             req.Default,
-		"usage_count":         0,
-		"created_at":          time.Now().UTC(),
-		"updated_at":          time.Now().UTC(),
+		"name":        req.Name,
+		"description": req.Description,
+		"scan_type":   req.ScanType,
+		"ports":       req.Ports,
+		"options":     options,
+		"timing":      req.Timing.Template, // Just store the template string
+		"tags":        req.Tags,
+		"usage_count": 0,
+		"created_at":  time.Now().UTC(),
+		"updated_at":  time.Now().UTC(),
 	}
 }
 
-// profileToResponse converts a database profile to response format.
-func (h *ProfileHandler) profileToResponse(_ interface{}) ProfileResponse {
-	// This would convert from the actual database profile type
-	// For now, return a placeholder structure
-	return ProfileResponse{
-		ID:               1,                // profile.ID
-		Name:             "",               // profile.Name
-		Description:      "",               // profile.Description
-		ScanType:         "connect",        // profile.ScanType
-		ServiceDetection: false,            // profile.ServiceDetection
-		OSDetection:      false,            // profile.OSDetection
-		ScriptScan:       false,            // profile.ScriptScan
-		UDPScan:          false,            // profile.UDPScan
-		Tags:             []string{},       // profile.Tags
-		Default:          false,            // profile.Default
-		UsageCount:       0,                // profile.UsageCount
-		CreatedAt:        time.Now().UTC(), // profile.CreatedAt
-		UpdatedAt:        time.Now().UTC(), // profile.UpdatedAt
+// parseProfileOptions parses JSON options and converts to string map
+func parseProfileOptions(optionsJSON string) (stringOptions map[string]string, parsedOptions map[string]interface{}) {
+	stringOptions = make(map[string]string)
+
+	if optionsJSON == "" {
+		parsedOptions = make(map[string]interface{})
+	} else if err := json.Unmarshal([]byte(optionsJSON), &parsedOptions); err != nil {
+		parsedOptions = make(map[string]interface{})
+	} else {
+		// Convert to map[string]string for response
+		for k, v := range parsedOptions {
+			if str, ok := v.(string); ok {
+				stringOptions[k] = str
+			}
+		}
 	}
+
+	return stringOptions, parsedOptions
+}
+
+// extractScanFlags extracts boolean scan flags from options with fallbacks
+func extractScanFlags(parsedOptions map[string]interface{}, profile *db.ScanProfile) (service, os, script, udp bool) {
+	if val, ok := parsedOptions["service_detection"].(bool); ok {
+		service = val
+	} else {
+		service = profile.ScanType == scanTypeVersion || profile.ScanType == scanTypeComprehensive
+	}
+
+	if val, ok := parsedOptions["os_detection"].(bool); ok {
+		os = val
+	} else {
+		os = profile.ScanType == scanTypeAggressive || profile.ScanType == scanTypeComprehensive
+	}
+
+	if val, ok := parsedOptions["script_scan"].(bool); ok {
+		script = val
+	} else {
+		script = len(profile.Scripts) > 0 || profile.ScanType == scanTypeComprehensive
+	}
+
+	if val, ok := parsedOptions["udp_scan"].(bool); ok {
+		udp = val
+	} else {
+		udp = profile.ScanType == scanTypeComprehensive
+	}
+
+	return service, os, script, udp
+}
+
+// extractAdditionalOptions extracts numeric and duration options
+func extractAdditionalOptions(parsedOptions map[string]interface{}) (
+	maxRetries, maxRatePPS int, hostTimeout, scanDelay time.Duration) {
+	if val, ok := parsedOptions["max_retries"].(float64); ok {
+		maxRetries = int(val)
+	}
+	if val, ok := parsedOptions["max_rate_pps"].(float64); ok {
+		maxRatePPS = int(val)
+	}
+	if val, ok := parsedOptions["host_timeout"].(string); ok {
+		if duration, err := time.ParseDuration(val); err == nil {
+			hostTimeout = duration
+		}
+	}
+	if val, ok := parsedOptions["scan_delay"].(string); ok {
+		if duration, err := time.ParseDuration(val); err == nil {
+			scanDelay = duration
+		}
+	}
+	return maxRetries, maxRatePPS, hostTimeout, scanDelay
+}
+
+// profileToResponse converts a database profile to response format.
+func (h *ProfileHandler) profileToResponse(profile *db.ScanProfile) ProfileResponse {
+	response := ProfileResponse{
+		ID:          profile.ID,
+		Name:        profile.Name,
+		Description: profile.Description,
+		ScanType:    profile.ScanType,
+		Ports:       profile.Ports,
+		Default:     profile.BuiltIn,
+		CreatedAt:   profile.CreatedAt,
+		UpdatedAt:   profile.UpdatedAt,
+	}
+
+	// Parse options using helper function
+	stringOptions, parsedOptions := parseProfileOptions(string(profile.Options))
+	response.Options = stringOptions
+
+	// Parse timing information
+	if profile.Timing != "" {
+		response.Timing = TimingProfile{
+			Template: profile.Timing,
+		}
+	}
+
+	// Extract scan flags using helper function
+	response.ServiceDetection, response.OSDetection, response.ScriptScan, response.UDPScan =
+		extractScanFlags(parsedOptions, profile)
+
+	// Extract additional options using helper function
+	response.MaxRetries, response.MaxRatePPS, response.HostTimeout, response.ScanDelay =
+		extractAdditionalOptions(parsedOptions)
+
+	// Convert scripts array to tags (as placeholder)
+	response.Tags = []string(profile.Scripts)
+
+	// Set usage count (not stored in database yet)
+	response.UsageCount = 0
+
+	return response
 }

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -94,6 +95,21 @@ func extractUUIDFromPath(r *http.Request) (uuid.UUID, error) {
 	}
 
 	return id, nil
+}
+
+// extractStringFromPath extracts string ID from URL path parameter.
+func extractStringFromPath(r *http.Request) (string, error) {
+	vars := mux.Vars(r)
+	idStr, exists := vars["id"]
+	if !exists {
+		return "", fmt.Errorf("id not provided")
+	}
+
+	if strings.TrimSpace(idStr) == "" {
+		return "", fmt.Errorf("id cannot be empty")
+	}
+
+	return idStr, nil
 }
 
 // Pagination utilities

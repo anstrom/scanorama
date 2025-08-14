@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -226,8 +225,8 @@ func TestProfileHandler_RequestToDBProfile(t *testing.T) {
 		Timing: TimingProfile{
 			Template: "normal",
 		},
-		HostTimeout:      30 * time.Second,
-		ScanDelay:        5 * time.Second,
+		HostTimeout:      NewDuration(30 * time.Second),
+		ScanDelay:        NewDuration(5 * time.Second),
 		MaxRetries:       3,
 		MaxRatePPS:       1000,
 		MinHostGroupSize: 10,
@@ -244,14 +243,28 @@ func TestProfileHandler_RequestToDBProfile(t *testing.T) {
 	assert.Equal(t, request.Description, data["description"])
 	assert.Equal(t, request.ScanType, data["scan_type"])
 	assert.Equal(t, request.Ports, data["ports"])
-	assert.Equal(t, request.Timing, data["timing"])
-	assert.Equal(t, request.HostTimeout, data["host_timeout"])
-	assert.Equal(t, request.ScanDelay, data["scan_delay"])
-	assert.Equal(t, request.MaxRetries, data["max_retries"])
-	assert.Equal(t, request.MaxRatePPS, data["max_rate_pps"])
-	assert.Equal(t, request.MinHostGroupSize, data["min_host_group_size"])
-	assert.Equal(t, request.MaxHostGroupSize, data["max_host_group_size"])
-	assert.Equal(t, request.Options, data["options"])
+	assert.Equal(t, request.Timing.Template, data["timing"])
+	// Check that options contains both the original options and the merged scan configuration
+	options, ok := data["options"].(map[string]interface{})
+	require.True(t, ok, "options should be a map[string]interface{}")
+
+	// Check original options are included
+	for k, v := range request.Options {
+		assert.Equal(t, v, options[k], "option %s should match", k)
+	}
+
+	// Check that scan configuration is merged into options
+	assert.Equal(t, request.ServiceDetection, options["service_detection"])
+	assert.Equal(t, request.OSDetection, options["os_detection"])
+	assert.Equal(t, request.ScriptScan, options["script_scan"])
+	assert.Equal(t, request.UDPScan, options["udp_scan"])
+	assert.Equal(t, request.MaxRetries, options["max_retries"])
+	assert.Equal(t, request.HostTimeout.ToDuration(), options["host_timeout"])
+	assert.Equal(t, request.ScanDelay.ToDuration(), options["scan_delay"])
+	assert.Equal(t, request.MaxRatePPS, options["max_rate_pps"])
+	assert.Equal(t, request.MaxHostGroupSize, options["max_host_group_size"])
+	assert.Equal(t, request.MinHostGroupSize, options["min_host_group_size"])
+	assert.Equal(t, request.Default, options["default"])
 	assert.Equal(t, request.Tags, data["tags"])
 }
 
@@ -259,8 +272,8 @@ func TestProfileHandler_ProfileToResponse(t *testing.T) {
 	logger := createTestLogger()
 	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
 
-	testProfile := &db.Profile{
-		ID:          uuid.New(),
+	testProfile := &db.ScanProfile{
+		ID:          "test-profile",
 		Name:        "Test Profile",
 		Description: "Test profile description",
 		ScanType:    "comprehensive",
@@ -274,7 +287,7 @@ func TestProfileHandler_ProfileToResponse(t *testing.T) {
 	// Note: The current profileToResponse returns placeholder data
 	// These assertions test the function call works, not actual mapping
 	assert.NotNil(t, response)
-	assert.Equal(t, int64(1), response.ID) // placeholder value
+	assert.Equal(t, testProfile.ID, response.ID) // Use actual profile ID
 }
 
 func TestProfileHandler_CreateProfile_ValidationErrors(t *testing.T) {
@@ -476,8 +489,8 @@ func TestProfileHandler_ValidateProfileTimeouts(t *testing.T) {
 			request: &ProfileRequest{
 				Name:        "Test",
 				ScanType:    "connect",
-				HostTimeout: 30 * time.Second,
-				ScanDelay:   5 * time.Second,
+				HostTimeout: NewDuration(30 * time.Second),
+				ScanDelay:   NewDuration(5 * time.Second),
 			},
 			expectError: false,
 		},
@@ -495,8 +508,8 @@ func TestProfileHandler_ValidateProfileTimeouts(t *testing.T) {
 			request: &ProfileRequest{
 				Name:        "Test",
 				ScanType:    "connect",
-				HostTimeout: 30 * time.Minute,
-				ScanDelay:   60 * time.Second,
+				HostTimeout: NewDuration(30 * time.Minute),
+				ScanDelay:   NewDuration(60 * time.Second),
 			},
 			expectError: false,
 		},
@@ -652,8 +665,8 @@ func TestProfileHandler_EdgeCases(t *testing.T) {
 			Timing: TimingProfile{
 				Template: "normal",
 			},
-			HostTimeout:      5 * time.Minute,
-			ScanDelay:        10 * time.Second,
+			HostTimeout:      NewDuration(5 * time.Minute),
+			ScanDelay:        NewDuration(10 * time.Second),
 			MaxRetries:       5,
 			MaxRatePPS:       500,
 			MinHostGroupSize: 5,
@@ -679,10 +692,10 @@ func TestProfileHandler_RequestValidation_Comprehensive(t *testing.T) {
 			Timing: TimingProfile{
 				Template: "aggressive",
 			},
-			HostTimeout:      30 * time.Minute, // max timeout
-			ScanDelay:        60 * time.Second, // max delay
-			MaxRetries:       10,               // max retries
-			MaxRatePPS:       10000,            // max rate
+			HostTimeout:      NewDuration(30 * time.Minute), // max timeout
+			ScanDelay:        NewDuration(60 * time.Second), // max delay
+			MaxRetries:       10,                            // max retries
+			MaxRatePPS:       10000,                         // max rate
 			MinHostGroupSize: 1,
 			MaxHostGroupSize: 1000,
 			Options:          map[string]string{"key1": "value1", "key2": "value2"},
@@ -728,8 +741,8 @@ func BenchmarkProfileHandler_ValidateProfileRequest(b *testing.B) {
 		Timing: TimingProfile{
 			Template: "normal",
 		},
-		HostTimeout:      30 * time.Second,
-		ScanDelay:        5 * time.Second,
+		HostTimeout:      NewDuration(30 * time.Minute),
+		ScanDelay:        NewDuration(60 * time.Second),
 		MaxRetries:       3,
 		MaxRatePPS:       1000,
 		MinHostGroupSize: 10,
