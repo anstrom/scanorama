@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -340,13 +341,20 @@ func TestMigrationChecksums(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	db, err := ConnectAndMigrate(ctx, &configs[0])
+	// Create clean database and apply migrations
+	db, cleanup, err := setupCleanMigrationDatabase(ctx, &configs[0], t)
 	if err != nil {
-		t.Skipf("Cannot connect and migrate test database: %v", err)
+		t.Skipf("Cannot setup clean migration database: %v", err)
 	}
+	defer cleanup()
 	defer db.Close()
 
+	// Apply migrations to the clean database
 	migrator := &Migrator{db: db.DB}
+	err = migrator.Up(ctx)
+	if err != nil {
+		t.Fatalf("Failed to apply migrations: %v", err)
+	}
 
 	// Get applied migrations
 	applied, err := migrator.getAppliedMigrations(ctx)
@@ -937,14 +945,30 @@ func removeDuplicateQueries(queries []SQLQuery) []SQLQuery {
 
 // convertNamedToPositionalParams converts named parameters (:name) to positional ($1, $2, etc.)
 func convertNamedToPositionalParams(sql string) (convertedSQL string, paramCount int) {
-	// If already using positional parameters, return as-is
-	if strings.Contains(sql, "$") && !strings.Contains(sql, ":") {
-		return sql, strings.Count(sql, "$")
+	// Check if already using positional parameters ($1, $2, etc.)
+	positionalParamRegex := regexp.MustCompile(`\$(\d+)`)
+	positionalMatches := positionalParamRegex.FindAllStringSubmatch(sql, -1)
+
+	if len(positionalMatches) > 0 {
+		// Already using positional parameters, find the highest parameter number
+		maxParam := 0
+		for _, match := range positionalMatches {
+			if len(match) > 1 {
+				if paramNum, err := strconv.Atoi(match[1]); err == nil && paramNum > maxParam {
+					maxParam = paramNum
+				}
+			}
+		}
+		return sql, maxParam
 	}
 
-	// Find all named parameters
+	// Find all named parameters, but exclude PostgreSQL type casts (::type)
+	// First, temporarily replace :: with a placeholder to avoid confusion
+	tempSQL := strings.ReplaceAll(sql, "::", "§§")
+
+	// Find named parameters in the modified string
 	namedParamRegex := regexp.MustCompile(`:(\w+)`)
-	matches := namedParamRegex.FindAllStringSubmatch(sql, -1)
+	matches := namedParamRegex.FindAllStringSubmatch(tempSQL, -1)
 
 	if len(matches) == 0 {
 		return sql, 0
@@ -970,6 +994,9 @@ func convertNamedToPositionalParams(sql string) (convertedSQL string, paramCount
 		result = strings.ReplaceAll(result, namedParam, positionalParam)
 	}
 
+	// Restore the :: placeholders
+	result = strings.ReplaceAll(result, "§§", "::")
+
 	return result, len(paramMap)
 }
 
@@ -979,7 +1006,7 @@ func generateParameterValue(sql string, paramIndex int) interface{} {
 
 	// Extract parameter names from named parameters (:name format)
 	var parameterName string
-	if strings.Contains(sql, ":") {
+	if strings.Contains(sql, ":") && !strings.Contains(sql, "::") {
 		// Find all named parameters
 		paramNames := extractParameterNames(sql)
 		if paramIndex < len(paramNames) {
@@ -993,7 +1020,7 @@ func generateParameterValue(sql string, paramIndex int) interface{} {
 		return value
 	}
 
-	// Fallback to SQL context analysis for positional parameters
+	// For positional parameters, use context-based generation
 	return generateValueByContext(upperSQL, paramIndex)
 }
 
@@ -1064,7 +1091,8 @@ func generateValueByParameterName(paramName string) interface{} {
 
 	// Numeric fields
 	case "SCAN_INTERVAL_SECONDS", "RESPONSE_TIME_MS", "OS_CONFIDENCE", "CONFIDENCE",
-		"DISCOVERY_COUNT", "HOSTS_DISCOVERED", "HOSTS_RESPONSIVE", "PRIORITY":
+		"DISCOVERY_COUNT", "HOSTS_DISCOVERED", "HOSTS_RESPONSIVE", "PRIORITY",
+		"LIMIT", "OFFSET":
 		return 42
 	case "PORT":
 		return 80
@@ -1073,7 +1101,7 @@ func generateValueByParameterName(paramName string) interface{} {
 	case "ENABLED", "ACTIVE", "IGNORE_SCANNING", "BUILT_IN":
 		return true
 
-	// JSON fields
+	// JSON fields - return valid JSON as string
 	case "SCAN_STATS", "OS_DETAILS", "DETAILS", "OPTIONS", "CONFIG", "OLD_VALUE", "NEW_VALUE":
 		return "{}"
 
@@ -1092,11 +1120,16 @@ func generateValueByParameterName(paramName string) interface{} {
 		if strings.Contains(paramName, "PORT") {
 			return 80
 		}
-		if strings.Contains(paramName, "COUNT") || strings.Contains(paramName, "SECONDS") {
+		if strings.Contains(paramName, "COUNT") || strings.Contains(paramName, "SECONDS") ||
+			strings.Contains(paramName, "MS") {
 			return 42
 		}
 		if strings.Contains(paramName, "ENABLED") || strings.Contains(paramName, "ACTIVE") {
 			return true
+		}
+		if strings.Contains(paramName, "JSON") || strings.Contains(paramName, "STATS") ||
+			strings.Contains(paramName, "CONFIG") {
+			return "{}"
 		}
 		return "test"
 	}
@@ -1104,7 +1137,34 @@ func generateValueByParameterName(paramName string) interface{} {
 
 // generateValueByContext generates values based on SQL context for positional parameters
 func generateValueByContext(upperSQL string, paramIndex int) interface{} {
-	// Specific field detection for positional parameters
+	// Handle UPDATE scan_jobs queries
+	if strings.Contains(upperSQL, "UPDATE SCAN_JOBS") {
+		return handleUpdateScanJobsQuery(upperSQL, paramIndex)
+	}
+
+	// Handle INSERT queries
+	if value := handleInsertQueries(upperSQL, paramIndex); value != nil {
+		return value
+	}
+
+	// Handle SELECT queries
+	if strings.Contains(upperSQL, "SELECT") {
+		return handleSelectQueries(upperSQL, paramIndex)
+	}
+
+	// Handle network/CIDR fields - these need proper CIDR format
+	if strings.Contains(upperSQL, "NETWORK") &&
+		(strings.Contains(upperSQL, "INSERT") || strings.Contains(upperSQL, "VALUES")) {
+		return "192.168.1.0/24"
+	}
+
+	// Handle JSON fields - look for JSON column types or options fields
+	if strings.Contains(upperSQL, "OPTIONS") || strings.Contains(upperSQL, "CONFIG") ||
+		strings.Contains(upperSQL, "JSON") || strings.Contains(upperSQL, "DETAILS") {
+		return "{}"
+	}
+
+	// Handle specific IP address fields
 	if strings.Contains(upperSQL, "IP_ADDRESS") {
 		return "192.168.1.1"
 	}
@@ -1112,35 +1172,46 @@ func generateValueByContext(upperSQL string, paramIndex int) interface{} {
 		return "00:11:22:33:44:55"
 	}
 
-	// Special handling for scan_jobs UPDATE queries
-	if strings.Contains(upperSQL, "UPDATE SCAN_JOBS") && strings.Contains(upperSQL, "STATUS = $1") {
-		return generateScanJobsUpdateParameter(upperSQL, paramIndex)
+	// Handle timestamp fields
+	if strings.Contains(upperSQL, "CREATED_AT") || strings.Contains(upperSQL, "UPDATED_AT") ||
+		strings.Contains(upperSQL, "STARTED_AT") || strings.Contains(upperSQL, "COMPLETED_AT") ||
+		strings.Contains(upperSQL, "SCANNED_AT") || strings.Contains(upperSQL, "FIRST_SEEN") ||
+		strings.Contains(upperSQL, "LAST_SEEN") {
+		return "2023-01-01T00:00:00Z"
 	}
 
-	// Default based on parameter position
-	switch paramIndex % 8 {
-	case 0:
-		return "550e8400-e29b-41d4-a716-446655440000" // UUID
-	case 1:
-		return "test" // Short string
-	case 2:
-		if strings.Contains(upperSQL, "NETWORK") {
-			return "192.168.1.0/24" // CIDR for network fields
-		}
-		return "test" // String
-	case 3:
-		return "test description" // Text/description
-	case 4:
-		return 42 // Integer
-	case 5:
-		return "connect" // String with constraints
-	case 6:
-		return true // Boolean
-	case 7:
-		return "2023-01-01T00:00:00Z" // Timestamp
-	default:
-		return "test"
+	// Handle numeric fields
+	if strings.Contains(upperSQL, "PORT") && !strings.Contains(upperSQL, "PORT_SCANS") {
+		return 80
 	}
+	if strings.Contains(upperSQL, "PRIORITY") || strings.Contains(upperSQL, "CONFIDENCE") {
+		return 42
+	}
+
+	// Handle status and enum fields
+	if strings.Contains(upperSQL, "STATUS") {
+		return "pending"
+	}
+	if strings.Contains(upperSQL, "SCAN_TYPE") {
+		return "connect"
+	}
+	if strings.Contains(upperSQL, "PROTOCOL") {
+		return "tcp"
+	}
+	if strings.Contains(upperSQL, "STATE") {
+		return "open"
+	}
+	if strings.Contains(upperSQL, "METHOD") {
+		return "ping"
+	}
+
+	// Default UUID for most WHERE clause parameters
+	if strings.Contains(upperSQL, "WHERE") {
+		return "550e8400-e29b-41d4-a716-446655440000"
+	}
+
+	// Default fallback
+	return "test"
 }
 
 // generateScanJobsUpdateParameter handles parameter generation for scan_jobs UPDATE queries
@@ -1168,6 +1239,132 @@ func generateScanJobsUpdateParameter(upperSQL string, paramIndex int) interface{
 	}
 }
 
+// handleUpdateScanJobsQuery handles UPDATE scan_jobs query parameter generation
+func handleUpdateScanJobsQuery(upperSQL string, paramIndex int) interface{} {
+	if strings.Contains(upperSQL, "STATUS = $1, STARTED_AT = $2 WHERE ID = $3") {
+		switch paramIndex {
+		case 0:
+			return "pending"
+		case 1:
+			return "2023-01-01T00:00:00Z"
+		case 2:
+			return "550e8400-e29b-41d4-a716-446655440000"
+		}
+	}
+	if strings.Contains(upperSQL, "STATUS = $1, COMPLETED_AT = $2, ERROR_MESSAGE = $3 WHERE ID = $4") {
+		switch paramIndex {
+		case 0:
+			return "completed"
+		case 1:
+			return "2023-01-01T00:00:00Z"
+		case 2:
+			return "test error"
+		case 3:
+			return "550e8400-e29b-41d4-a716-446655440000"
+		}
+	}
+	if strings.Contains(upperSQL, "STATUS = $1, COMPLETED_AT = $2 WHERE ID = $3") {
+		switch paramIndex {
+		case 0:
+			return "completed"
+		case 1:
+			return "2023-01-01T00:00:00Z"
+		case 2:
+			return "550e8400-e29b-41d4-a716-446655440000"
+		}
+	}
+	if strings.Contains(upperSQL, "STATUS = $1 WHERE ID = $2") {
+		switch paramIndex {
+		case 0:
+			return "pending"
+		case 1:
+			return "550e8400-e29b-41d4-a716-446655440000"
+		}
+	}
+	if strings.Contains(upperSQL, "SET STATUS = 'RUNNING'") &&
+		strings.Contains(upperSQL, "WHERE ID = $1") {
+		return "550e8400-e29b-41d4-a716-446655440000"
+	}
+	if strings.Contains(upperSQL, "SET STATUS = 'FAILED'") &&
+		strings.Contains(upperSQL, "WHERE ID = $1") {
+		return "550e8400-e29b-41d4-a716-446655440000"
+	}
+	return generateScanJobsUpdateParameter(upperSQL, paramIndex)
+}
+
+// handleInsertQueries handles INSERT query parameter generation
+func handleInsertQueries(upperSQL string, paramIndex int) interface{} {
+	if strings.Contains(upperSQL, "INSERT INTO DISCOVERY_JOBS") {
+		switch paramIndex {
+		case 0:
+			return "550e8400-e29b-41d4-a716-446655440000"
+		case 1:
+			return "192.168.1.0/24"
+		case 2:
+			return "ping"
+		case 3:
+			return "2023-01-01T00:00:00Z"
+		}
+	}
+
+	if strings.Contains(upperSQL, "INSERT INTO SCAN_PROFILES") {
+		switch paramIndex {
+		case 0:
+			return "550e8400-e29b-41d4-a716-446655440000"
+		case 1:
+			return "test profile"
+		case 2:
+			return "test description"
+		case 3:
+			return "22,80,443"
+		case 4:
+			return "connect"
+		case 5:
+			return "{}"
+		case 6:
+			return "{}"
+		case 7:
+			return "2023-01-01T00:00:00Z"
+		case 8:
+			return "2023-01-01T00:00:00Z"
+		}
+	}
+	return nil
+}
+
+// handleSelectQueries handles SELECT query parameter generation
+func handleSelectQueries(upperSQL string, paramIndex int) interface{} {
+	limitMatch := regexp.MustCompile(`LIMIT \$(\d+)`).FindStringSubmatch(upperSQL)
+	offsetMatch := regexp.MustCompile(`OFFSET \$(\d+)`).FindStringSubmatch(upperSQL)
+
+	var limitParamNum, offsetParamNum int
+	if len(limitMatch) > 1 {
+		limitParamNum, _ = strconv.Atoi(limitMatch[1])
+	}
+	if len(offsetMatch) > 1 {
+		offsetParamNum, _ = strconv.Atoi(offsetMatch[1])
+	}
+
+	currentParamNum := paramIndex + 1
+	if currentParamNum == limitParamNum {
+		return 100
+	}
+	if currentParamNum == offsetParamNum {
+		return 0
+	}
+
+	// Handle IP address fields
+	if strings.Contains(upperSQL, "IP_ADDRESS =") {
+		return "192.168.1.1"
+	}
+
+	if strings.Contains(upperSQL, "WHERE") &&
+		(strings.Contains(upperSQL, ".ID =") || strings.Contains(upperSQL, "ID =")) {
+		return "550e8400-e29b-41d4-a716-446655440000"
+	}
+	return "550e8400-e29b-41d4-a716-446655440000"
+}
+
 // TestCriticalQueriesAfterMigration validates that critical application queries
 // work correctly after all migrations are applied.
 func TestCriticalQueriesAfterMigration(t *testing.T) {
@@ -1183,11 +1380,20 @@ func TestCriticalQueriesAfterMigration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	db, err := ConnectAndMigrate(ctx, &configs[0])
+	// Create clean database and apply migrations
+	db, cleanup, err := setupCleanMigrationDatabase(ctx, &configs[0], t)
 	if err != nil {
-		t.Skipf("Cannot connect and migrate test database: %v", err)
+		t.Skipf("Cannot setup clean migration database: %v", err)
 	}
+	defer cleanup()
 	defer db.Close()
+
+	// Apply migrations to the clean database
+	migrator := &Migrator{db: db.DB}
+	err = migrator.Up(ctx)
+	if err != nil {
+		t.Fatalf("Failed to apply migrations: %v", err)
+	}
 
 	// Test the exact queries used by the application
 	applicationQueries := []struct {
@@ -1272,11 +1478,20 @@ func TestMigrationRollbackSafety(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	db, err := ConnectAndMigrate(ctx, &configs[0])
+	// Create clean database and apply migrations
+	db, cleanup, err := setupCleanMigrationDatabase(ctx, &configs[0], t)
 	if err != nil {
-		t.Skipf("Cannot connect and migrate test database: %v", err)
+		t.Skipf("Cannot setup clean migration database: %v", err)
 	}
+	defer cleanup()
 	defer db.Close()
+
+	// Apply migrations to the clean database
+	migrator := &Migrator{db: db.DB}
+	err = migrator.Up(ctx)
+	if err != nil {
+		t.Fatalf("Failed to apply migrations: %v", err)
+	}
 
 	// Verify migrations table is protected
 	t.Run("migrations_table_protection", func(t *testing.T) {
