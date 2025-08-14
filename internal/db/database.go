@@ -6,13 +6,17 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq" // postgres driver
+	"github.com/lib/pq"
 
 	"github.com/anstrom/scanorama/internal/errors"
 )
@@ -541,13 +545,14 @@ type ScanFilters struct {
 
 // ScanResult represents a scan result entry.
 type ScanResult struct {
-	ID       uuid.UUID `json:"id" db:"id"`
-	ScanID   uuid.UUID `json:"scan_id" db:"scan_id"`
-	HostID   uuid.UUID `json:"host_id" db:"host_id"`
-	Port     int       `json:"port" db:"port"`
-	Protocol string    `json:"protocol" db:"protocol"`
-	State    string    `json:"state" db:"state"`
-	Service  string    `json:"service" db:"service"`
+	ID        uuid.UUID `json:"id" db:"id"`
+	ScanID    uuid.UUID `json:"scan_id" db:"scan_id"`
+	HostID    uuid.UUID `json:"host_id" db:"host_id"`
+	Port      int       `json:"port" db:"port"`
+	Protocol  string    `json:"protocol" db:"protocol"`
+	State     string    `json:"state" db:"state"`
+	Service   string    `json:"service" db:"service"`
+	ScannedAt time.Time `json:"scanned_at" db:"scanned_at"`
 }
 
 // ScanSummary represents aggregated scan statistics.
@@ -561,85 +566,695 @@ type ScanSummary struct {
 }
 
 // ListScans retrieves scans with filtering and pagination.
+// filterCondition represents a single filter condition
+type filterCondition struct {
+	column string
+	value  interface{}
+}
+
+// buildWhereClause creates WHERE clause and args from conditions map
+func buildWhereClause(conditions []filterCondition) (whereClause string, args []interface{}) {
+	if len(conditions) == 0 {
+		return "", nil
+	}
+
+	clauses := make([]string, 0, len(conditions))
+	for i, condition := range conditions {
+		clauses = append(clauses, fmt.Sprintf("%s = $%d", condition.column, i+1))
+		args = append(args, condition.value)
+	}
+
+	return "WHERE " + strings.Join(clauses, " AND "), args
+}
+
+// buildScanFilters creates WHERE clause and args for scan filtering
+func buildScanFilters(filters ScanFilters) (whereClause string, args []interface{}) {
+	var conditions []filterCondition
+
+	if filters.Status != "" {
+		conditions = append(conditions, filterCondition{"sj.status", filters.Status})
+	}
+	if filters.ScanType != "" {
+		conditions = append(conditions, filterCondition{"COALESCE(sp.scan_type, 'connect')", filters.ScanType})
+	}
+	if filters.ProfileID != nil {
+		conditions = append(conditions, filterCondition{"sj.profile_id", *filters.ProfileID})
+	}
+
+	return buildWhereClause(conditions)
+}
+
+// getScanCount gets total count of scans matching filters
+func (db *DB) getScanCount(ctx context.Context, whereClause string, args []interface{}) (int64, error) {
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM scan_jobs sj
+		JOIN scan_targets st ON sj.target_id = st.id
+		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id %s`, whereClause)
+
+	var total int64
+	err := db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get scan count: %w", err)
+	}
+	return total, nil
+}
+
+// processScanRow processes a single scan row from query results
+func processScanRow(rows *sql.Rows) (*Scan, error) {
+	scan := &Scan{}
+	var targetsStr string
+	var profileID *string
+
+	err := rows.Scan(
+		&scan.ID,
+		&scan.Name,
+		&scan.Description,
+		&targetsStr,
+		&scan.ScanType,
+		&scan.Ports,
+		&profileID,
+		&scan.Status,
+		&scan.CreatedAt,
+		&scan.StartedAt,
+		&scan.CompletedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan row: %w", err)
+	}
+
+	// Parse targets from CIDR string
+	scan.Targets = []string{targetsStr}
+
+	// Set ProfileID if not null
+	if profileID != nil {
+		if id, err := strconv.ParseInt(*profileID, 10, 64); err == nil {
+			scan.ProfileID = &id
+		}
+	}
+
+	// Set UpdatedAt (use CompletedAt if available, otherwise CreatedAt)
+	if scan.CompletedAt != nil {
+		scan.UpdatedAt = *scan.CompletedAt
+	} else if scan.StartedAt != nil {
+		scan.UpdatedAt = *scan.StartedAt
+	} else {
+		scan.UpdatedAt = scan.CreatedAt
+	}
+
+	return scan, nil
+}
+
 func (db *DB) ListScans(ctx context.Context, filters ScanFilters, offset, limit int) ([]*Scan, int64, error) {
-	// For now, return empty results - this would normally query scan_jobs table
-	// with appropriate joins and filtering
-	scans := []*Scan{}
-	total := int64(0)
+	// Build the base query with joins
+	baseQuery := `
+		SELECT
+			sj.id,
+			st.name,
+			st.description,
+			st.network::text as targets,
+			COALESCE(sp.scan_type, 'connect') as scan_type,
+			st.scan_ports as ports,
+			sj.profile_id,
+			sj.status,
+			sj.created_at,
+			sj.started_at,
+			sj.completed_at
+		FROM scan_jobs sj
+		JOIN scan_targets st ON sj.target_id = st.id
+		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id
+	`
+
+	// Build WHERE clause and arguments
+	whereClause, args := buildScanFilters(filters)
+
+	// Get total count
+	total, err := db.getScanCount(ctx, whereClause, args)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get paginated results
+	argIndex := len(args)
+	listQuery := fmt.Sprintf("%s %s ORDER BY sj.created_at DESC LIMIT $%d OFFSET $%d",
+		baseQuery, whereClause, argIndex+1, argIndex+2)
+	args = append(args, limit, offset)
+
+	rows, err := db.QueryContext(ctx, listQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query scans: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Error closing rows: %v", err)
+		}
+	}()
+
+	var scans []*Scan
+	for rows.Next() {
+		scan, err := processScanRow(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		scans = append(scans, scan)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate scan rows: %w", err)
+	}
+
 	return scans, total, nil
 }
 
+// scanData holds extracted scan parameters
+type scanData struct {
+	name        string
+	description string
+	scanType    string
+	ports       string
+	targets     []string
+	profileID   *string
+}
+
+// extractScanData extracts and validates scan data from interface
+func extractScanData(input interface{}) (*scanData, error) {
+	data, ok := input.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid scan data format")
+	}
+
+	targets, ok := data["targets"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("targets must be a string array")
+	}
+
+	result := &scanData{
+		name:     data["name"].(string),
+		scanType: data["scan_type"].(string),
+		targets:  targets,
+	}
+
+	// Use map-based extraction for optional fields
+	optionalFields := map[string]interface{}{
+		"description": &result.description,
+		"ports":       &result.ports,
+	}
+
+	for key, dest := range optionalFields {
+		if value, exists := data[key].(string); exists {
+			*dest.(*string) = value
+		}
+	}
+
+	if pid, ok := data["profile_id"].(*int64); ok && pid != nil {
+		pidStr := strconv.FormatInt(*pid, 10)
+		result.profileID = &pidStr
+	}
+
+	return result, nil
+}
+
+// createScanTarget creates a scan target in the database
+func (db *DB) createScanTarget(ctx context.Context, tx *sql.Tx, targetID uuid.UUID,
+	name, target, description, ports, scanType string, index, totalTargets int) error {
+	var targetName string
+	if totalTargets == 1 {
+		targetName = name
+	} else {
+		targetName = fmt.Sprintf("%s-target-%d", name, index+1)
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO scan_targets (id, name, network, description, scan_ports, scan_type, enabled)
+		VALUES ($1, $2, $3, $4, $5, $6, true)
+	`, targetID, targetName, target, description, ports, scanType)
+	if err != nil {
+		return fmt.Errorf("failed to create scan target: %w", err)
+	}
+	return nil
+}
+
+// createScanJob creates a scan job in the database
+func (db *DB) createScanJob(ctx context.Context, tx *sql.Tx, jobID, targetID uuid.UUID,
+	profileID *string, now time.Time) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO scan_jobs (id, target_id, profile_id, status, created_at)
+		VALUES ($1, $2, $3, 'pending', $4)
+	`, jobID, targetID, profileID, now)
+	if err != nil {
+		return fmt.Errorf("failed to create scan job: %w", err)
+	}
+	return nil
+}
+
+// buildScanResponse builds the scan response object
+func buildScanResponse(jobID uuid.UUID, name, description string, targets []string,
+	scanType, ports string, profileID *string, now time.Time) *Scan {
+	scan := &Scan{
+		ID:          jobID,
+		Name:        name,
+		Description: description,
+		Targets:     targets,
+		ScanType:    scanType,
+		Ports:       ports,
+		Status:      "pending",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	if profileID != nil {
+		if id, err := strconv.ParseInt(*profileID, 10, 64); err == nil {
+			scan.ProfileID = &id
+		}
+	}
+
+	return scan
+}
+
 // CreateScan creates a new scan record.
-func (db *DB) CreateScan(ctx context.Context, scanData interface{}) (*Scan, error) {
+func (db *DB) CreateScan(ctx context.Context, input interface{}) (*Scan, error) {
+	// Extract and validate data
+	data, err := extractScanData(input)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start a transaction
+	tx, err := db.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			log.Printf("Error rolling back transaction: %v", err)
+		}
+	}()
+
+	now := time.Now().UTC()
+	var firstJobID uuid.UUID
+
+	// Create scan targets and jobs
+	for i, target := range data.targets {
+		targetID := uuid.New()
+		jobID := uuid.New()
+
+		if i == 0 {
+			firstJobID = jobID
+		}
+
+		// Create scan target
+		if err := db.createScanTarget(ctx, tx, targetID, data.name, target,
+			data.description, data.ports, data.scanType, i, len(data.targets)); err != nil {
+			return nil, err
+		}
+
+		// Create scan job
+		if err := db.createScanJob(ctx, tx, jobID, targetID, data.profileID, now); err != nil {
+			return nil, err
+		}
+	}
+
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Build and return response
+	return buildScanResponse(firstJobID, data.name, data.description, data.targets,
+		data.scanType, data.ports, data.profileID, now), nil
+}
+
+// GetScan retrieves a scan by ID.
+func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
+	query := `
+		SELECT
+			sj.id,
+			st.name,
+			st.description,
+			st.network::text as targets,
+			COALESCE(sp.scan_type, st.scan_type) as scan_type,
+			st.scan_ports as ports,
+			sj.profile_id,
+			sj.status,
+			sj.created_at,
+			sj.started_at,
+			sj.completed_at
+		FROM scan_jobs sj
+		JOIN scan_targets st ON sj.target_id = st.id
+		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id
+		WHERE sj.id = $1
+	`
+
+	scan := &Scan{}
+	var targetsStr string
+	var profileID *string
+
+	err := db.DB.QueryRowContext(ctx, query, id).Scan(
+		&scan.ID,
+		&scan.Name,
+		&scan.Description,
+		&targetsStr,
+		&scan.ScanType,
+		&scan.Ports,
+		&profileID,
+		&scan.Status,
+		&scan.CreatedAt,
+		&scan.StartedAt,
+		&scan.CompletedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.ErrNotFoundWithID("scan", id.String())
+		}
+		return nil, fmt.Errorf("failed to get scan: %w", err)
+	}
+
+	// Parse targets from CIDR string
+	scan.Targets = []string{targetsStr}
+
+	// Set ProfileID if not null
+	if profileID != nil {
+		if pid, err := strconv.ParseInt(*profileID, 10, 64); err == nil {
+			scan.ProfileID = &pid
+		}
+	}
+
+	// Set UpdatedAt (use CompletedAt if available, otherwise StartedAt, otherwise CreatedAt)
+	if scan.CompletedAt != nil {
+		scan.UpdatedAt = *scan.CompletedAt
+	} else if scan.StartedAt != nil {
+		scan.UpdatedAt = *scan.StartedAt
+	} else {
+		scan.UpdatedAt = scan.CreatedAt
+	}
+
+	return scan, nil
+}
+
+// UpdateScan updates an existing scan.
+func (db *DB) UpdateScan(ctx context.Context, id uuid.UUID, scanData interface{}) (*Scan, error) {
 	// Convert the interface{} to scan data
 	data, ok := scanData.(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("invalid scan data format")
 	}
 
-	scan := &Scan{
-		ID:          uuid.New(),
-		Name:        data["name"].(string),
-		Description: data["description"].(string),
-		Status:      "pending",
-		CreatedAt:   time.Now().UTC(),
-		UpdatedAt:   time.Now().UTC(),
+	// Start a transaction
+	tx, err := db.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			log.Printf("Error rolling back transaction: %v", err)
+		}
+	}()
+
+	// First, check if the scan exists
+	var exists bool
+	err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE id = $1)", id).Scan(&exists)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check scan existence: %w", err)
+	}
+	if !exists {
+		return nil, errors.ErrNotFoundWithID("scan", id.String())
 	}
 
-	// For now, just return the scan object - this would normally insert into database
-	return scan, nil
-}
+	// Build dynamic update for scan_targets using field mapping
+	targetFieldMappings := map[string]string{
+		"name":        "name",
+		"description": "description",
+		"scan_type":   "scan_type",
+		"ports":       "scan_ports",
+	}
 
-// GetScan retrieves a scan by ID.
-func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
-	// For now, return not found error - this would normally query the database
-	return nil, errors.ErrNotFoundWithID("scan", id.String())
-}
+	setParts, args := buildUpdateQuery(data, targetFieldMappings)
 
-// UpdateScan updates an existing scan.
-func (db *DB) UpdateScan(ctx context.Context, id uuid.UUID, scanData interface{}) (*Scan, error) {
-	// For now, return not found error - this would normally update the database
-	return nil, errors.ErrNotFoundWithID("scan", id.String())
+	// Update scan_targets if there are fields to update
+	if len(setParts) > 0 {
+		setParts = append(setParts, "updated_at = NOW()")
+		setClause := strings.Join(setParts, ", ")
+		paramNum := len(args) + 1
+
+		// Build query safely without string concatenation
+		var queryBuilder strings.Builder
+		queryBuilder.WriteString("UPDATE scan_targets SET ")
+		queryBuilder.WriteString(setClause)
+		queryBuilder.WriteString(" WHERE id = (SELECT target_id FROM scan_jobs WHERE id = $")
+		queryBuilder.WriteString(strconv.Itoa(paramNum))
+		queryBuilder.WriteString(")")
+		targetQuery := queryBuilder.String()
+
+		args = append(args, id)
+
+		_, err = tx.ExecContext(ctx, targetQuery, args...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update scan target: %w", err)
+		}
+	}
+
+	// Update profile_id in scan_jobs if provided
+	if profileID, ok := data["profile_id"].(*int64); ok && profileID != nil {
+		profileIDStr := strconv.FormatInt(*profileID, 10)
+		_, err = tx.ExecContext(ctx, `
+			UPDATE scan_jobs SET profile_id = $1 WHERE id = $2`,
+			profileIDStr, id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update profile ID: %w", err)
+		}
+	}
+
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Retrieve and return the updated scan
+	return db.GetScan(ctx, id)
 }
 
 // DeleteScan deletes a scan by ID.
 func (db *DB) DeleteScan(ctx context.Context, id uuid.UUID) error {
-	// For now, return not found error - this would normally delete from database
-	return errors.ErrNotFoundWithID("scan", id.String())
+	// Start a transaction
+	tx, err := db.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			log.Printf("Error rolling back transaction: %v", err)
+		}
+	}()
+
+	// Check if the scan exists
+	var exists bool
+	err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE id = $1)", id).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("failed to check scan existence: %w", err)
+	}
+	if !exists {
+		return errors.ErrNotFoundWithID("scan", id.String())
+	}
+
+	// Get the target_id before deleting the scan job
+	var targetID uuid.UUID
+	err = tx.QueryRowContext(ctx, "SELECT target_id FROM scan_jobs WHERE id = $1", id).Scan(&targetID)
+	if err != nil {
+		return fmt.Errorf("failed to get target ID: %w", err)
+	}
+
+	// Delete the scan job (this will cascade to related port_scans, services, etc.)
+	_, err = tx.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete scan job: %w", err)
+	}
+
+	// Check if the target is still referenced by other jobs
+	var otherJobsCount int
+	err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM scan_jobs WHERE target_id = $1", targetID).Scan(&otherJobsCount)
+	if err != nil {
+		return fmt.Errorf("failed to check remaining jobs for target: %w", err)
+	}
+
+	// If no other jobs reference this target, delete it too
+	if otherJobsCount == 0 {
+		_, err = tx.ExecContext(ctx, "DELETE FROM scan_targets WHERE id = $1", targetID)
+		if err != nil {
+			return fmt.Errorf("failed to delete scan target: %w", err)
+		}
+	}
+
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
 }
 
 // GetScanResults retrieves scan results with pagination.
 func (db *DB) GetScanResults(ctx context.Context, scanID uuid.UUID, offset, limit int) ([]*ScanResult, int64, error) {
-	// For now, return empty results - this would normally query scan results
-	results := []*ScanResult{}
-	total := int64(0)
+	// Get total count first
+	var total int64
+	countQuery := `
+		SELECT COUNT(*)
+		FROM port_scans ps
+		WHERE ps.job_id = $1
+	`
+	err := db.DB.QueryRowContext(ctx, countQuery, scanID).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get scan results count: %w", err)
+	}
+
+	// Get paginated results
+	query := `
+		SELECT
+			ps.id,
+			ps.job_id,
+			ps.host_id,
+			ps.port,
+			ps.protocol,
+			ps.state,
+			ps.service_name,
+			ps.scanned_at
+		FROM port_scans ps
+		WHERE ps.job_id = $1
+		ORDER BY ps.scanned_at DESC, ps.port ASC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := db.QueryContext(ctx, query, scanID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query scan results: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Error closing rows: %v", err)
+		}
+	}()
+
+	var results []*ScanResult
+	for rows.Next() {
+		result := &ScanResult{}
+		var serviceName *string
+
+		err := rows.Scan(
+			&result.ID,
+			&result.ScanID,
+			&result.HostID,
+			&result.Port,
+			&result.Protocol,
+			&result.State,
+			&serviceName,
+			&result.ScannedAt,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to scan result row: %w", err)
+		}
+
+		if serviceName != nil {
+			result.Service = *serviceName
+		}
+
+		results = append(results, result)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate scan result rows: %w", err)
+	}
+
 	return results, total, nil
 }
 
 // GetScanSummary retrieves aggregated scan statistics.
 func (db *DB) GetScanSummary(ctx context.Context, scanID uuid.UUID) (*ScanSummary, error) {
-	// For now, return empty summary - this would normally aggregate results
+	query := `
+		SELECT
+			COUNT(DISTINCT ps.host_id) as total_hosts,
+			COUNT(ps.id) as total_ports,
+			COUNT(ps.id) FILTER (WHERE ps.state = 'open') as open_ports,
+			COUNT(ps.id) FILTER (WHERE ps.state = 'closed') as closed_ports,
+			EXTRACT(EPOCH FROM (MAX(sj.completed_at) - MIN(sj.started_at)))::integer as duration_seconds
+		FROM port_scans ps
+		JOIN scan_jobs sj ON ps.job_id = sj.id
+		WHERE ps.job_id = $1
+		GROUP BY ps.job_id
+	`
+
 	summary := &ScanSummary{
-		ScanID:      scanID,
-		TotalHosts:  0,
-		TotalPorts:  0,
-		OpenPorts:   0,
-		ClosedPorts: 0,
-		Duration:    0,
+		ScanID: scanID,
 	}
+
+	var durationSeconds *int
+	err := db.DB.QueryRowContext(ctx, query, scanID).Scan(
+		&summary.TotalHosts,
+		&summary.TotalPorts,
+		&summary.OpenPorts,
+		&summary.ClosedPorts,
+		&durationSeconds,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No results for this scan, return zero summary
+			return summary, nil
+		}
+		return nil, fmt.Errorf("failed to get scan summary: %w", err)
+	}
+
+	if durationSeconds != nil {
+		summary.Duration = int64(*durationSeconds)
+	}
+
 	return summary, nil
 }
 
 // StartScan starts scan execution.
 func (db *DB) StartScan(ctx context.Context, id uuid.UUID) error {
-	// For now, return not found error - this would normally update scan status
-	return errors.ErrNotFoundWithID("scan", id.String())
+	// Update scan job status to running
+	query := `
+		UPDATE scan_jobs
+		SET status = 'running', started_at = NOW()
+		WHERE id = $1 AND status = 'pending'
+	`
+
+	result, err := db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to start scan: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.ErrNotFoundWithID("scan", id.String())
+	}
+
+	return nil
 }
 
 // StopScan stops scan execution.
 func (db *DB) StopScan(ctx context.Context, id uuid.UUID) error {
-	// For now, return not found error - this would normally update scan status
-	return errors.ErrNotFoundWithID("scan", id.String())
+	// Update scan job status to failed (stopped)
+	query := `
+		UPDATE scan_jobs
+		SET status = 'failed', completed_at = NOW()
+		WHERE id = $1 AND status = 'running'
+	`
+
+	result, err := db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to stop scan: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.ErrNotFoundWithID("scan", id.String())
+	}
+
+	return nil
 }
 
 // DiscoveryFilters represents filters for listing discovery jobs.
@@ -661,15 +1276,47 @@ func (db *DB) ListDiscoveryJobs(
 
 // CreateDiscoveryJob creates a new discovery job.
 func (db *DB) CreateDiscoveryJob(ctx context.Context, jobData interface{}) (*DiscoveryJob, error) {
-	_, ok := jobData.(map[string]interface{})
+	data, ok := jobData.(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery job data format")
 	}
 
+	// Extract data from request
+	networks, ok := data["networks"].([]string)
+	if !ok || len(networks) == 0 {
+		return nil, fmt.Errorf("networks are required and must be a string array")
+	}
+
+	method := data["method"].(string)
+	if method == "" {
+		method = DiscoveryMethodTCP
+	}
+
+	// For simplicity, create one discovery job for the first network
+	// In a production system, you might create multiple jobs or handle multiple networks differently
+	network := networks[0]
+
+	jobID := uuid.New()
+	now := time.Now().UTC()
+
+	query := `
+		INSERT INTO discovery_jobs (id, network, method, status, created_at, hosts_discovered, hosts_responsive)
+		VALUES ($1, $2, $3, 'pending', $4, 0, 0)
+	`
+
+	_, err := db.ExecContext(ctx, query, jobID, network, method, now)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create discovery job: %w", err)
+	}
+
 	job := &DiscoveryJob{
-		ID:        uuid.New(),
-		Status:    "pending",
-		CreatedAt: time.Now().UTC(),
+		ID:              jobID,
+		Network:         NetworkAddr{}, // Would need proper parsing
+		Method:          method,
+		Status:          "pending",
+		CreatedAt:       now,
+		HostsDiscovered: 0,
+		HostsResponsive: 0,
 	}
 
 	return job, nil
@@ -709,59 +1356,493 @@ type HostFilters struct {
 
 // ListHosts retrieves hosts with filtering and pagination.
 func (db *DB) ListHosts(ctx context.Context, filters HostFilters, offset, limit int) ([]*Host, int64, error) {
-	hosts := []*Host{}
-	total := int64(0)
+	// Build the base query with joins
+	baseQuery := `
+		SELECT
+			h.id,
+			h.ip_address,
+			h.hostname,
+			h.mac_address,
+			h.vendor,
+			h.os_family,
+			h.os_name,
+			h.os_version,
+			h.os_confidence,
+			h.discovery_method,
+			h.response_time_ms,
+			h.ignore_scanning,
+			h.first_seen,
+			h.last_seen,
+			h.status,
+			COUNT(DISTINCT ps.id) FILTER (WHERE ps.state = 'open') as open_ports,
+			COUNT(DISTINCT ps.id) as total_ports_scanned
+		FROM hosts h
+		LEFT JOIN port_scans ps ON h.id = ps.host_id
+	`
+
+	// Build WHERE clause and arguments
+	whereClause, args := buildHostFilters(filters)
+
+	// Get total count
+	total, err := db.getHostCount(ctx, whereClause, args)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Add GROUP BY clause
+	groupByClause := `
+		GROUP BY h.id, h.ip_address, h.hostname, h.mac_address, h.vendor, h.os_family,
+			h.os_name, h.os_version, h.os_confidence, h.discovery_method,
+			h.response_time_ms, h.ignore_scanning, h.first_seen, h.last_seen, h.status
+	`
+
+	// Combine query parts
+	fullQuery := baseQuery + whereClause + groupByClause + " ORDER BY h.last_seen DESC LIMIT $" +
+		fmt.Sprintf("%d", len(args)+1) + " OFFSET $" + fmt.Sprintf("%d", len(args)+2)
+
+	args = append(args, limit, offset)
+
+	// Execute query
+	rows, err := db.QueryContext(ctx, fullQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to execute hosts query: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Log the error but don't override the main function error
+			log.Printf("failed to close rows: %v", err)
+		}
+	}()
+
+	hosts, err := db.scanHostRows(rows)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	return hosts, total, nil
 }
 
 // CreateHost creates a new host record.
 func (db *DB) CreateHost(ctx context.Context, hostData interface{}) (*Host, error) {
-	_, ok := hostData.(map[string]interface{})
+	data, ok := hostData.(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("invalid host data format")
 	}
 
-	host := &Host{
-		ID:        uuid.New(),
-		FirstSeen: time.Now().UTC(),
-		LastSeen:  time.Now().UTC(),
+	// Extract required IP address
+	ipAddress, ok := data["ip_address"].(string)
+	if !ok {
+		return nil, fmt.Errorf("ip_address is required")
 	}
 
-	return host, nil
+	hostID := uuid.New()
+	now := time.Now().UTC()
+
+	// Field mappings for optional fields
+	fieldMappings := map[string]string{
+		"hostname":        "hostname",
+		"vendor":          "vendor",
+		"os_family":       "os_family",
+		"os_name":         "os_name",
+		"os_version":      "os_version",
+		"ignore_scanning": "ignore_scanning",
+		"status":          "status",
+	}
+
+	// Build dynamic insert with optional fields
+	columns := []string{"id", "ip_address", "first_seen", "last_seen"}
+	placeholders := []string{"$1", "$2", "$3", "$4"}
+	args := []interface{}{hostID, ipAddress, now, now}
+	argIndex := 5
+
+	for requestField, dbField := range fieldMappings {
+		if value, exists := data[requestField]; exists && value != nil {
+			columns = append(columns, dbField)
+			placeholders = append(placeholders, fmt.Sprintf("$%d", argIndex))
+			args = append(args, value)
+			argIndex++
+		}
+	}
+
+	query := fmt.Sprintf(
+		"INSERT INTO hosts (%s) VALUES (%s)",
+		strings.Join(columns, ", "),
+		strings.Join(placeholders, ", "))
+
+	_, err := db.ExecContext(ctx, query, args...)
+	if err != nil {
+		// Check for PostgreSQL constraint violations
+		if pqErr, ok := err.(*pq.Error); ok {
+			// Check for unique constraint violation (error code 23505)
+			if pqErr.Code == "23505" && pqErr.Constraint == "unique_ip_address" {
+				return nil, errors.ErrConflictWithReason("host", fmt.Sprintf("IP address %s already exists", ipAddress))
+			}
+		}
+		return nil, fmt.Errorf("failed to create host: %w", err)
+	}
+
+	// Return the created host
+	return db.GetHost(ctx, hostID)
 }
 
 // GetHost retrieves a host by ID.
 func (db *DB) GetHost(ctx context.Context, id uuid.UUID) (*Host, error) {
-	return nil, errors.ErrNotFoundWithID("host", id.String())
+	query := `
+		SELECT
+			h.id,
+			h.ip_address,
+			h.hostname,
+			h.mac_address,
+			h.vendor,
+			h.os_family,
+			h.os_name,
+			h.os_version,
+			h.os_confidence,
+			h.discovery_method,
+			h.response_time_ms,
+			h.ignore_scanning,
+			h.first_seen,
+			h.last_seen,
+			h.status
+		FROM hosts h
+		WHERE h.id = $1
+	`
+
+	host := &Host{}
+	var ipAddress string
+	var hostname, macAddressStr, vendor, osFamily, osName, osVersion *string
+	var osConfidence, responseTimeMS *int
+	var discoveryMethod *string
+	var ignoreScanning *bool
+
+	err := db.DB.QueryRowContext(ctx, query, id).Scan(
+		&host.ID,
+		&ipAddress,
+		&hostname,
+		&macAddressStr,
+		&vendor,
+		&osFamily,
+		&osName,
+		&osVersion,
+		&osConfidence,
+		&discoveryMethod,
+		&responseTimeMS,
+		&ignoreScanning,
+		&host.FirstSeen,
+		&host.LastSeen,
+		&host.Status,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.ErrNotFoundWithID("host", id.String())
+		}
+		return nil, fmt.Errorf("failed to get host: %w", err)
+	}
+
+	// Convert IP address
+	host.IPAddress = IPAddr{IP: net.ParseIP(ipAddress)}
+
+	// Handle nullable fields using helper functions
+	assignStringPtr(&host.Hostname, hostname)
+	assignMACAddress(&host.MACAddress, macAddressStr)
+	assignStringPtr(&host.Vendor, vendor)
+	assignStringPtr(&host.OSFamily, osFamily)
+	assignStringPtr(&host.OSName, osName)
+	assignStringPtr(&host.OSVersion, osVersion)
+	assignIntPtr(&host.OSConfidence, osConfidence)
+	assignStringPtr(&host.DiscoveryMethod, discoveryMethod)
+	assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
+	assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
+
+	return host, nil
+}
+
+// parsePostgreSQLArray converts PostgreSQL array interface{} to []string
+func parsePostgreSQLArray(arrayInterface interface{}) []string {
+	if arrayInterface == nil {
+		return nil
+	}
+
+	arr, ok := arrayInterface.([]interface{})
+	if !ok {
+		return nil
+	}
+
+	result := make([]string, len(arr))
+	for i, v := range arr {
+		if s, ok := v.(string); ok {
+			result[i] = s
+		}
+	}
+	return result
+}
+
+// buildUpdateQuery creates SQL SET clause and args from field mappings
+func buildUpdateQuery(data map[string]interface{}, fieldMappings map[string]string) (
+	setParts []string, args []interface{}) {
+	argIndex := 1
+
+	for requestField, dbField := range fieldMappings {
+		if value, exists := data[requestField]; exists && value != nil {
+			setParts = append(setParts, fmt.Sprintf("%s = $%d", dbField, argIndex))
+			args = append(args, value)
+			argIndex++
+		}
+	}
+
+	return setParts, args
 }
 
 // UpdateHost updates an existing host.
 func (db *DB) UpdateHost(ctx context.Context, id uuid.UUID, hostData interface{}) (*Host, error) {
-	return nil, errors.ErrNotFoundWithID("host", id.String())
+	// Convert the interface{} to host data
+	data, ok := hostData.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid host data format")
+	}
+
+	// Start a transaction
+	tx, err := db.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			log.Printf("Error rolling back transaction: %v", err)
+		}
+	}()
+
+	// Check if the host exists
+	var exists bool
+	err = tx.QueryRowContext(ctx,
+		"SELECT EXISTS(SELECT 1 FROM hosts WHERE id = $1)", id).Scan(&exists)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check host existence: %w", err)
+	}
+	if !exists {
+		return nil, errors.ErrNotFoundWithID("host", id.String())
+	}
+
+	// Build dynamic update query using field mapping
+	fieldMappings := map[string]string{
+		"hostname":        "hostname",
+		"vendor":          "vendor",
+		"os_family":       "os_family",
+		"os_name":         "os_name",
+		"os_version":      "os_version",
+		"ignore_scanning": "ignore_scanning",
+		"status":          "status",
+	}
+
+	setParts, args := buildUpdateQuery(data, fieldMappings)
+	argIndex := len(args) + 1
+
+	// If no fields to update, return error
+	if len(setParts) == 0 {
+		return nil, fmt.Errorf("no valid fields to update")
+	}
+
+	// Always update the updated_at timestamp
+	setParts = append(setParts, "last_seen = NOW()")
+
+	// Build and execute update query safely
+	setClause := strings.Join(setParts, ", ")
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE hosts SET ")
+	queryBuilder.WriteString(setClause)
+	queryBuilder.WriteString(" WHERE id = $")
+	queryBuilder.WriteString(strconv.Itoa(argIndex))
+	updateQuery := queryBuilder.String()
+
+	args = append(args, id)
+
+	_, err = tx.ExecContext(ctx, updateQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update host: %w", err)
+	}
+
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Retrieve and return the updated host
+	return db.GetHost(ctx, id)
 }
 
 // DeleteHost deletes a host by ID.
 func (db *DB) DeleteHost(ctx context.Context, id uuid.UUID) error {
-	return errors.ErrNotFoundWithID("host", id.String())
+	// Start a transaction
+	tx, err := db.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			log.Printf("Error rolling back transaction: %v", err)
+		}
+	}()
+
+	// Check if the host exists
+	var exists bool
+	err = tx.QueryRowContext(ctx,
+		"SELECT EXISTS(SELECT 1 FROM hosts WHERE id = $1)", id).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("failed to check host existence: %w", err)
+	}
+	if !exists {
+		return errors.ErrNotFoundWithID("host", id.String())
+	}
+
+	// Delete the host (CASCADE will handle related port_scans, services, etc.)
+	_, err = tx.ExecContext(ctx, "DELETE FROM hosts WHERE id = $1", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete host: %w", err)
+	}
+
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// getHostScansCount gets total count of scans for a specific host
+func (db *DB) getHostScansCount(ctx context.Context, hostID uuid.UUID) (int64, error) {
+	countQuery := `
+		SELECT COUNT(DISTINCT sj.id)
+		FROM scan_jobs sj
+		JOIN scan_targets st ON sj.target_id = st.id
+		WHERE st.network >>= (SELECT ip_address FROM hosts WHERE id = $1)
+		   OR sj.id IN (
+			   SELECT DISTINCT ps.job_id
+			   FROM port_scans ps
+			   WHERE ps.host_id = $1
+		   )
+	`
+
+	var total int64
+	err := db.QueryRowContext(ctx, countQuery, hostID).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get host scans count: %w", err)
+	}
+	return total, nil
+}
+
+// processHostScanRow processes a single host scan row from query results
+func processHostScanRow(rows *sql.Rows) (*Scan, error) {
+	scan := &Scan{}
+	var scheduleID sql.NullInt64
+	var profileID sql.NullInt64
+	var description sql.NullString
+	var startedAt sql.NullTime
+	var completedAt sql.NullTime
+	var options string
+
+	err := rows.Scan(
+		&scan.ID,
+		&scan.Name,
+		&description,
+		&scan.Targets,
+		&scan.ScanType,
+		&scan.Ports,
+		&profileID,
+		&scan.Status,
+		&startedAt,
+		&completedAt,
+		&scan.CreatedAt,
+		&scheduleID,
+		&scan.Tags,
+		&options,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan host scan row: %w", err)
+	}
+
+	// Handle nullable fields
+	if description.Valid {
+		scan.Description = description.String
+	}
+	if profileID.Valid {
+		scan.ProfileID = &profileID.Int64
+	}
+	if startedAt.Valid {
+		scan.StartedAt = &startedAt.Time
+	}
+	if completedAt.Valid {
+		scan.CompletedAt = &completedAt.Time
+	}
+	if scheduleID.Valid {
+		scan.ScheduleID = &scheduleID.Int64
+	}
+
+	return scan, nil
 }
 
 // GetHostScans retrieves scans for a specific host with pagination.
 func (db *DB) GetHostScans(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*Scan, int64, error) {
-	scans := []*Scan{}
-	total := int64(0)
-	return scans, total, nil
-}
+	// Get total count
+	total, err := db.getHostScansCount(ctx, hostID)
+	if err != nil {
+		return nil, 0, err
+	}
 
-// Profile represents a scan profile.
-type Profile struct {
-	ID          uuid.UUID              `json:"id" db:"id"`
-	Name        string                 `json:"name" db:"name"`
-	Description string                 `json:"description" db:"description"`
-	ScanType    string                 `json:"scan_type" db:"scan_type"`
-	Ports       string                 `json:"ports" db:"ports"`
-	Options     map[string]interface{} `json:"options" db:"options"`
-	CreatedAt   time.Time              `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at" db:"updated_at"`
+	// Get the actual scans with pagination
+	query := `
+		SELECT DISTINCT
+			sj.id,
+			st.name,
+			st.description,
+			st.network::text as targets,
+			COALESCE(sp.scan_type, st.scan_type, 'connect') as scan_type,
+			st.scan_ports as ports,
+			sj.profile_id,
+			sj.status,
+			sj.started_at,
+			sj.completed_at,
+			sj.created_at,
+			COALESCE(sch.id, NULL) as schedule_id,
+			'[]'::jsonb as tags,
+			'{}' as options
+		FROM scan_jobs sj
+		JOIN scan_targets st ON sj.target_id = st.id
+		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id
+		LEFT JOIN scheduled_jobs sch ON st.id::text = sch.config->>'target_id'
+		WHERE st.network >>= (SELECT ip_address FROM hosts WHERE id = $1)
+		   OR sj.id IN (
+			   SELECT DISTINCT ps.job_id
+			   FROM port_scans ps
+			   WHERE ps.host_id = $1
+		   )
+		ORDER BY sj.created_at DESC
+		OFFSET $2 LIMIT $3
+	`
+
+	rows, err := db.QueryContext(ctx, query, hostID, offset, limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get host scans: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Error closing rows: %v", err)
+		}
+	}()
+
+	var scans []*Scan
+	for rows.Next() {
+		scan, err := processHostScanRow(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		scans = append(scans, scan)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate host scan rows: %w", err)
+	}
+
+	return scans, total, nil
 }
 
 // ProfileFilters represents filters for listing profiles.
@@ -770,41 +1851,408 @@ type ProfileFilters struct {
 }
 
 // ListProfiles retrieves profiles with filtering and pagination.
-func (db *DB) ListProfiles(ctx context.Context, filters ProfileFilters, offset, limit int) ([]*Profile, int64, error) {
-	profiles := []*Profile{}
-	total := int64(0)
+func (db *DB) ListProfiles(ctx context.Context, filters ProfileFilters,
+	offset, limit int) ([]*ScanProfile, int64, error) {
+	// Build the base query
+	baseQuery := `
+		SELECT id, name, description, os_family, ports, scan_type,
+		       timing, scripts, options, priority, built_in,
+		       created_at, updated_at
+		FROM scan_profiles`
+
+	// Build WHERE clause based on filters
+	var whereClause string
+	var args []interface{}
+	argIndex := 0
+
+	if filters.ScanType != "" {
+		whereClause += fmt.Sprintf(" AND scan_type = $%d", argIndex+1)
+		args = append(args, filters.ScanType)
+		argIndex++
+	}
+
+	// Remove leading "AND" if we have where clauses
+	if whereClause != "" {
+		whereClause = "WHERE" + whereClause[4:]
+	}
+
+	// Get total count
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM scan_profiles %s", whereClause)
+
+	var total int64
+	err := db.DB.QueryRowContext(ctx, countQuery, args...).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get profile count: %w", err)
+	}
+
+	// Get paginated results
+	listQuery := fmt.Sprintf(
+		"%s %s ORDER BY priority DESC, name ASC LIMIT $%d OFFSET $%d",
+		baseQuery, whereClause, argIndex+1, argIndex+2)
+	args = append(args, limit, offset)
+
+	rows, err := db.QueryContext(ctx, listQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query profiles: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Error closing rows: %v", err)
+		}
+	}()
+
+	var profiles []*ScanProfile
+	for rows.Next() {
+		profile := &ScanProfile{}
+		var description *string
+		var timing *string
+		var options []byte
+		var osFamily, scripts interface{}
+
+		err := rows.Scan(
+			&profile.ID,
+			&profile.Name,
+			&description,
+			&osFamily,
+			&profile.Ports,
+			&profile.ScanType,
+			&timing,
+			&scripts,
+			&options,
+			&profile.Priority,
+			&profile.BuiltIn,
+			&profile.CreatedAt,
+			&profile.UpdatedAt,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to scan profile row: %w", err)
+		}
+
+		// Handle nullable fields
+		if description != nil {
+			profile.Description = *description
+		}
+		if timing != nil {
+			profile.Timing = *timing
+		}
+
+		// Handle PostgreSQL arrays
+		profile.OSFamily = parsePostgreSQLArray(osFamily)
+		profile.Scripts = parsePostgreSQLArray(scripts)
+
+		// Handle JSONB options
+		if len(options) > 0 {
+			profile.Options = JSONB(string(options))
+		}
+
+		profiles = append(profiles, profile)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate profile rows: %w", err)
+	}
+
 	return profiles, total, nil
 }
 
 // CreateProfile creates a new profile.
-func (db *DB) CreateProfile(ctx context.Context, profileData interface{}) (*Profile, error) {
-	_, ok := profileData.(map[string]interface{})
+func (db *DB) CreateProfile(ctx context.Context, profileData interface{}) (*ScanProfile, error) {
+	data, ok := profileData.(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("invalid profile data format")
 	}
 
-	profile := &Profile{
-		ID:        uuid.New(),
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
+	// Extract data from request
+	name, ok := data["name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("profile name is required")
+	}
+
+	description := ""
+	if desc, ok := data["description"].(string); ok {
+		description = desc
+	}
+
+	scanType, ok := data["scan_type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("scan_type is required")
+	}
+
+	ports, ok := data["ports"].(string)
+	if !ok {
+		return nil, fmt.Errorf("ports is required")
+	}
+
+	// Extract options and timing
+	var optionsJSON []byte
+	var timingStr string
+
+	if options, ok := data["options"].(map[string]interface{}); ok {
+		if optionsBytes, err := json.Marshal(options); err == nil {
+			optionsJSON = optionsBytes
+		}
+	}
+	if optionsJSON == nil {
+		optionsJSON = []byte("{}")
+	}
+
+	if timing, ok := data["timing"].(string); ok {
+		timingStr = timing
+	}
+
+	// Generate profile ID from name (sanitized)
+	profileID := strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+	now := time.Now().UTC()
+
+	query := `
+		INSERT INTO scan_profiles
+		       (id, name, description, ports, scan_type, options, timing, priority, built_in, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 0, false, $8, $9)`
+
+	_, err := db.ExecContext(ctx, query, profileID, name, description,
+		ports, scanType, optionsJSON, timingStr, now, now)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create profile: %w", err)
+	}
+
+	profile := &ScanProfile{
+		ID:          profileID,
+		Name:        name,
+		Description: description,
+		Ports:       ports,
+		ScanType:    scanType,
+		Options:     JSONB(optionsJSON),
+		Timing:      timingStr,
+		Priority:    0,
+		BuiltIn:     false,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
 	return profile, nil
 }
 
 // GetProfile retrieves a profile by ID.
-func (db *DB) GetProfile(ctx context.Context, id uuid.UUID) (*Profile, error) {
-	return nil, errors.ErrNotFoundWithID("profile", id.String())
+func (db *DB) GetProfile(ctx context.Context, id string) (*ScanProfile, error) {
+	query := `
+		SELECT id, name, description, os_family, ports, scan_type,
+		       timing, scripts, options, priority, built_in,
+		       created_at, updated_at
+		FROM scan_profiles
+		WHERE id = $1`
+
+	profile := &ScanProfile{}
+	var description sql.NullString
+	var timing sql.NullString
+	var options []byte
+	var osFamily, scripts interface{}
+
+	err := db.DB.QueryRowContext(ctx, query, id).Scan(
+		&profile.ID,
+		&profile.Name,
+		&description,
+		&osFamily,
+		&profile.Ports,
+		&profile.ScanType,
+		&timing,
+		&scripts,
+		&options,
+		&profile.Priority,
+		&profile.BuiltIn,
+		&profile.CreatedAt,
+		&profile.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.ErrNotFoundWithID("profile", id)
+		}
+		return nil, fmt.Errorf("failed to get profile: %w", err)
+	}
+
+	// Handle nullable fields
+	if description.Valid {
+		profile.Description = description.String
+	}
+	if timing.Valid {
+		profile.Timing = timing.String
+	}
+
+	// Handle PostgreSQL arrays
+	if osFamily != nil {
+		if arr, ok := osFamily.(pq.StringArray); ok {
+			profile.OSFamily = []string(arr)
+		}
+	}
+	if scripts != nil {
+		if arr, ok := scripts.(pq.StringArray); ok {
+			profile.Scripts = []string(arr)
+		}
+	}
+
+	// Handle JSONB options
+	if len(options) > 0 {
+		profile.Options = JSONB(string(options))
+	}
+
+	return profile, nil
 }
 
 // UpdateProfile updates an existing profile.
-func (db *DB) UpdateProfile(ctx context.Context, id uuid.UUID, profileData interface{}) (*Profile, error) {
-	return nil, errors.ErrNotFoundWithID("profile", id.String())
+func (db *DB) UpdateProfile(ctx context.Context, id string, profileData interface{}) (*ScanProfile, error) {
+	// Convert the interface{} to profile data
+	data, ok := profileData.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid profile data format")
+	}
+
+	// Start a transaction
+	tx, err := db.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			log.Printf("Error rolling back transaction: %v", err)
+		}
+	}()
+
+	// Check if the profile exists and is not built-in
+	var exists bool
+	var builtIn bool
+	err = tx.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM scan_profiles WHERE id = $1),
+		 COALESCE(built_in, false) FROM scan_profiles WHERE id = $1`,
+		id).Scan(&exists, &builtIn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check profile existence: %w", err)
+	}
+	if !exists {
+		return nil, errors.ErrNotFoundWithID("profile", id)
+	}
+	if builtIn {
+		return nil, fmt.Errorf("cannot update built-in profile")
+	}
+
+	// Build dynamic update query
+	fieldMappings := map[string]string{
+		"name":        "name",
+		"description": "description",
+		"scan_type":   "scan_type",
+		"ports":       "ports",
+		"timing":      "timing",
+		"scripts":     "scripts",
+		"options":     "options",
+		"priority":    "priority",
+	}
+
+	setParts := []string{}
+	args := []interface{}{}
+	argCount := 1
+
+	for dataField, dbField := range fieldMappings {
+		if value, exists := data[dataField]; exists {
+			setParts = append(setParts, fmt.Sprintf("%s = $%d", dbField, argCount))
+			args = append(args, value)
+			argCount++
+		}
+	}
+
+	if len(setParts) == 0 {
+		return nil, fmt.Errorf("no fields to update")
+	}
+
+	// Always update the updated_at timestamp
+	setParts = append(setParts, fmt.Sprintf("updated_at = $%d", argCount))
+	args = append(args, time.Now().UTC())
+	argCount++
+
+	// Add WHERE clause argument
+	args = append(args, id)
+
+	setClause := strings.Join(setParts, ", ")
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE scan_profiles SET ")
+	queryBuilder.WriteString(setClause)
+	queryBuilder.WriteString(" WHERE id = $")
+	queryBuilder.WriteString(strconv.Itoa(argCount))
+	updateQuery := queryBuilder.String()
+
+	_, err = tx.ExecContext(ctx, updateQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update profile: %w", err)
+	}
+
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Retrieve the updated profile
+	return db.GetProfile(ctx, id)
 }
 
 // DeleteProfile deletes a profile by ID.
-func (db *DB) DeleteProfile(ctx context.Context, id uuid.UUID) error {
-	return errors.ErrNotFoundWithID("profile", id.String())
+func (db *DB) DeleteProfile(ctx context.Context, id string) error {
+	// Start a transaction
+	tx, err := db.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			log.Printf("Error rolling back transaction: %v", err)
+		}
+	}()
+
+	// Check if the profile exists and is not built-in
+	var exists bool
+	var builtIn bool
+	err = tx.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM scan_profiles WHERE id = $1),
+		 COALESCE(built_in, false) FROM scan_profiles WHERE id = $1`,
+		id).Scan(&exists, &builtIn)
+	if err != nil {
+		return fmt.Errorf("failed to check profile existence: %w", err)
+	}
+	if !exists {
+		return errors.ErrNotFoundWithID("profile", id)
+	}
+	if builtIn {
+		return fmt.Errorf("cannot delete built-in profile")
+	}
+
+	// Check if profile is in use by any scan jobs
+	var inUse bool
+	err = tx.QueryRowContext(ctx,
+		"SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE profile_id = $1)",
+		id).Scan(&inUse)
+	if err != nil {
+		return fmt.Errorf("failed to check profile usage: %w", err)
+	}
+	if inUse {
+		return fmt.Errorf("cannot delete profile that is in use by scan jobs")
+	}
+
+	// Delete the profile
+	result, err := tx.ExecContext(ctx, "DELETE FROM scan_profiles WHERE id = $1", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete profile: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return errors.ErrNotFoundWithID("profile", id)
+	}
+
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
 }
 
 // Schedule represents a scheduled task.
@@ -884,6 +2332,133 @@ func (db *DB) DisableSchedule(ctx context.Context, id uuid.UUID) error {
 // Close closes the database connection.
 func (db *DB) Close() error {
 	return db.DB.Close()
+}
+
+// Helper functions for nullable field handling
+
+// assignStringPtr assigns a nullable string pointer to a target string pointer
+func assignStringPtr(target **string, source *string) {
+	if source != nil && *source != "" {
+		*target = source
+	}
+}
+
+// assignMACAddress assigns a nullable MAC address string to a target MACAddr
+func assignMACAddress(target **MACAddr, source *string) {
+	if source != nil && *source != "" {
+		if mac, err := net.ParseMAC(*source); err == nil {
+			macAddr := MACAddr{HardwareAddr: mac}
+			*target = &macAddr
+		}
+	}
+}
+
+// assignIntPtr assigns a nullable int pointer to a target int pointer
+func assignIntPtr(target **int, source *int) {
+	if source != nil {
+		*target = source
+	}
+}
+
+// assignBoolFromPtr assigns a nullable bool pointer to a target bool
+func assignBoolFromPtr(target, source *bool) {
+	if source != nil {
+		*target = *source
+	}
+}
+
+// buildHostFilters creates WHERE clause and args for host filtering
+func buildHostFilters(filters HostFilters) (whereClause string, args []interface{}) {
+	var conditions []filterCondition
+
+	if filters.Status != "" {
+		conditions = append(conditions, filterCondition{"h.status", filters.Status})
+	}
+	if filters.OSFamily != "" {
+		conditions = append(conditions, filterCondition{"h.os_family", filters.OSFamily})
+	}
+	if filters.Network != "" {
+		conditions = append(conditions, filterCondition{"h.ip_address <<", filters.Network})
+	}
+
+	return buildWhereClause(conditions)
+}
+
+// getHostCount gets total count of hosts matching filters
+func (db *DB) getHostCount(ctx context.Context, whereClause string, args []interface{}) (int64, error) {
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(DISTINCT h.id)
+		FROM hosts h
+		LEFT JOIN port_scans ps ON h.id = ps.host_id
+		%s
+	`, whereClause)
+
+	var total int64
+	err := db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get host count: %w", err)
+	}
+	return total, nil
+}
+
+// scanHostRows processes query result rows into Host structs
+func (db *DB) scanHostRows(rows *sql.Rows) ([]*Host, error) {
+	var hosts []*Host
+	for rows.Next() {
+		host := &Host{}
+		var ipAddress string
+		var hostname, macAddressStr, vendor, osFamily, osName, osVersion *string
+		var osConfidence, responseTimeMS *int
+		var discoveryMethod *string
+		var ignoreScanning *bool
+		var openPorts, totalPortsScanned int64
+
+		err := rows.Scan(
+			&host.ID,
+			&ipAddress,
+			&hostname,
+			&macAddressStr,
+			&vendor,
+			&osFamily,
+			&osName,
+			&osVersion,
+			&osConfidence,
+			&discoveryMethod,
+			&responseTimeMS,
+			&ignoreScanning,
+			&host.FirstSeen,
+			&host.LastSeen,
+			&host.Status,
+			&openPorts,
+			&totalPortsScanned,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan host row: %w", err)
+		}
+
+		// Convert IP address
+		host.IPAddress = IPAddr{IP: net.ParseIP(ipAddress)}
+
+		// Handle nullable fields using helper functions
+		assignStringPtr(&host.Hostname, hostname)
+		assignMACAddress(&host.MACAddress, macAddressStr)
+		assignStringPtr(&host.Vendor, vendor)
+		assignStringPtr(&host.OSFamily, osFamily)
+		assignStringPtr(&host.OSName, osName)
+		assignStringPtr(&host.OSVersion, osVersion)
+		assignIntPtr(&host.OSConfidence, osConfidence)
+		assignStringPtr(&host.DiscoveryMethod, discoveryMethod)
+		assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
+		assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
+
+		hosts = append(hosts, host)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate host rows: %w", err)
+	}
+
+	return hosts, nil
 }
 
 // Ping tests the database connection.
