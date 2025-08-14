@@ -57,7 +57,7 @@ type HostRequest struct {
 
 // HostResponse represents a host response.
 type HostResponse struct {
-	ID           int64             `json:"id"`
+	ID           string            `json:"id"`
 	IP           string            `json:"ip"`
 	Hostname     string            `json:"hostname,omitempty"`
 	Description  string            `json:"description,omitempty"`
@@ -355,54 +355,98 @@ func (h *HostHandler) getScanFilters(r *http.Request) map[string]interface{} {
 
 // requestToDBHost converts a host request to database host object.
 func (h *HostHandler) requestToDBHost(req *HostRequest) interface{} {
-	// This should return the appropriate database host type
-	// The exact structure would depend on the database package implementation
-	return map[string]interface{}{
-		"ip":          req.IP,
-		"hostname":    req.Hostname,
-		"description": req.Description,
-		"os":          req.OS,
-		"os_version":  req.OSVersion,
-		"tags":        req.Tags,
-		"metadata":    req.Metadata,
-		"active":      req.Active,
-		"created_at":  time.Now().UTC(),
-		"updated_at":  time.Now().UTC(),
+	data := map[string]interface{}{
+		"ip_address":      req.IP,
+		"status":          "up",
+		"ignore_scanning": !req.Active,
 	}
+
+	// Helper function to add non-empty string fields
+	addIfNotEmpty := func(key, value string) {
+		if value != "" {
+			data[key] = value
+		}
+	}
+
+	addIfNotEmpty("hostname", req.Hostname)
+	addIfNotEmpty("description", req.Description)
+	addIfNotEmpty("os_family", req.OS)
+	addIfNotEmpty("os_name", req.OSVersion)
+
+	if len(req.Tags) > 0 {
+		data["tags"] = req.Tags
+	}
+	if len(req.Metadata) > 0 {
+		data["metadata"] = req.Metadata
+	}
+
+	return data
 }
 
 // hostToResponse converts a database host to response format.
-func (h *HostHandler) hostToResponse(_ interface{}) HostResponse {
-	// This would convert from the actual database host type
-	// For now, return a placeholder structure
-	return HostResponse{
-		ID:          1,                   // host.ID
-		IP:          "127.0.0.1",         // host.IP
-		Hostname:    "",                  // host.Hostname
-		Description: "",                  // host.Description
-		OS:          "",                  // host.OS
-		OSVersion:   "",                  // host.OSVersion
-		Tags:        []string{},          // host.Tags
-		Metadata:    map[string]string{}, // host.Metadata
-		Active:      true,                // host.Active
-		ScanCount:   0,                   // host.ScanCount
-		OpenPorts:   0,                   // host.OpenPorts
-		TotalPorts:  0,                   // host.TotalPorts
-		CreatedAt:   time.Now().UTC(),    // host.CreatedAt
-		UpdatedAt:   time.Now().UTC(),    // host.UpdatedAt
+func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
+	response := HostResponse{
+		ID:        host.ID.String(), // Use UUID string for API consistency
+		IP:        host.IPAddress.String(),
+		Active:    host.Status == "up",
+		CreatedAt: host.FirstSeen,
+		UpdatedAt: host.LastSeen,
 	}
+
+	// Handle optional fields
+	if host.Hostname != nil {
+		response.Hostname = *host.Hostname
+	}
+
+	if host.OSFamily != nil {
+		response.OS = *host.OSFamily
+	}
+
+	if host.OSName != nil && host.OSVersion != nil {
+		response.OSVersion = fmt.Sprintf("%s %s", *host.OSName, *host.OSVersion)
+	} else if host.OSName != nil {
+		response.OSVersion = *host.OSName
+	} else if host.OSVersion != nil {
+		response.OSVersion = *host.OSVersion
+	}
+
+	// Set last seen time
+	response.LastSeen = &host.LastSeen
+
+	// Note: ScanCount, OpenPorts, TotalPorts would need additional queries
+	// or could be computed in the ListHosts query as we do in the CLI
+	response.ScanCount = 0
+	response.OpenPorts = 0
+	response.TotalPorts = 0
+	response.Tags = []string{}
+	response.Metadata = map[string]string{}
+
+	return response
 }
 
 // scanToHostScanResponse converts a scan to host scan response format.
-func (h *HostHandler) scanToHostScanResponse(_ interface{}) HostScanResponse {
-	// This would convert from the actual database scan type
-	// For now, return a placeholder structure
-	return HostScanResponse{
-		ID:        1,                // scan.ID
-		Name:      "",               // scan.Name
-		ScanType:  "",               // scan.ScanType
-		Status:    "pending",        // scan.Status
-		Progress:  0.0,              // scan.Progress
-		CreatedAt: time.Now().UTC(), // scan.CreatedAt
+func (h *HostHandler) scanToHostScanResponse(scan *db.Scan) HostScanResponse {
+	response := HostScanResponse{
+		ID:        int64(scan.ID.ID()), // Convert UUID to int64
+		Name:      scan.Name,
+		ScanType:  scan.ScanType,
+		Status:    scan.Status,
+		Progress:  0.0, // Would need to calculate from actual scan progress
+		CreatedAt: scan.CreatedAt,
 	}
+
+	if scan.StartedAt != nil {
+		response.StartTime = scan.StartedAt
+	}
+
+	if scan.CompletedAt != nil {
+		response.EndTime = scan.CompletedAt
+		if scan.StartedAt != nil {
+			duration := scan.CompletedAt.Sub(*scan.StartedAt)
+			durationStr := duration.String()
+			response.Duration = &durationStr
+		}
+	}
+
+	return response
 }

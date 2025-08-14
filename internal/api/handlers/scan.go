@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/anstrom/scanorama/internal"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/metrics"
@@ -296,28 +297,106 @@ func (h *ScanHandler) GetScanResults(w http.ResponseWriter, r *http.Request) {
 
 // StartScan handles POST /api/v1/scans/{id}/start - start scan execution.
 func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
 	scanID, err := extractUUIDFromPath(r)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
-	jobOp := &JobControlOperation{
-		EntityType: "scan",
-		Logger:     h.logger,
-		Metrics:    h.metrics,
+	h.logger.Info("Starting scan execution", "request_id", requestID, "scan_id", scanID)
+
+	// Get the scan from database
+	scan, err := h.database.GetScan(r.Context(), scanID)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, fmt.Errorf("scan not found"))
+			return
+		}
+		h.logger.Error("Failed to get scan", "request_id", requestID, "scan_id", scanID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get scan: %w", err))
+		return
 	}
 
-	jobOp.ExecuteStart(w, r, scanID, h.database.StartScan,
-		func(ctx context.Context, id uuid.UUID) (interface{}, error) {
-			return h.database.GetScan(ctx, id)
-		},
-		func(item interface{}) interface{} {
-			if scan, ok := item.(*db.Scan); ok {
-				return h.scanToResponse(scan)
-			}
-			return nil
-		}, "api_scans_started_total")
+	// Check if scan is already running
+	if scan.Status == "running" {
+		writeError(w, r, http.StatusConflict, fmt.Errorf("scan is already running"))
+		return
+	}
+
+	// Check if scan is already completed
+	if scan.Status == "completed" {
+		writeError(w, r, http.StatusConflict, fmt.Errorf("scan is already completed"))
+		return
+	}
+
+	// Update scan status to running
+	err = h.database.StartScan(r.Context(), scanID)
+	if err != nil {
+		h.logger.Error("Failed to update scan status", "request_id", requestID, "scan_id", scanID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to start scan: %w", err))
+		return
+	}
+
+	// Convert scan to ScanConfig and execute asynchronously
+	go h.executeScanAsync(scanID, scan)
+
+	// Return updated scan
+	updatedScan, err := h.database.GetScan(r.Context(), scanID)
+	if err != nil {
+		h.logger.Error("Failed to get updated scan", "request_id", requestID, "scan_id", scanID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get updated scan: %w", err))
+		return
+	}
+
+	response := h.scanToResponse(updatedScan)
+	writeJSON(w, r, http.StatusOK, response)
+
+	// Record metrics
+	if h.metrics != nil {
+		h.metrics.Counter("api_scans_started_total", map[string]string{
+			"scan_type": scan.ScanType,
+		})
+	}
+
+	h.logger.Info("Scan started successfully", "request_id", requestID, "scan_id", scanID)
+}
+
+// executeScanAsync executes a scan asynchronously and stores results
+func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
+	h.logger.Info("Starting async scan execution", "scan_id", scanID, "scan_name", scan.Name)
+
+	// Convert database scan to internal ScanConfig
+	scanConfig := &internal.ScanConfig{
+		Targets:    scan.Targets,
+		Ports:      scan.Ports,
+		ScanType:   scan.ScanType,
+		TimeoutSec: 300, // Default 5 minute timeout
+	}
+
+	// Execute the scan using the internal scan engine
+	ctx := context.Background()
+	result, err := internal.RunScanWithContext(ctx, scanConfig, h.database)
+
+	// Update scan status based on result
+	if err != nil {
+		h.logger.Error("Scan execution failed", "scan_id", scanID, "error", err)
+		// Update scan status to failed
+		query := `UPDATE scan_jobs SET status = 'failed', completed_at = NOW() WHERE id = $1`
+		_, updateErr := h.database.Exec(query, scanID)
+		if updateErr != nil {
+			h.logger.Error("Failed to update scan status to failed", "scan_id", scanID, "error", updateErr)
+		}
+	} else {
+		h.logger.Info("Scan execution completed successfully", "scan_id", scanID,
+			"hosts_scanned", len(result.Hosts), "duration", result.Duration)
+		// Update scan status to completed
+		query := `UPDATE scan_jobs SET status = 'completed', completed_at = NOW() WHERE id = $1`
+		_, updateErr := h.database.Exec(query, scanID)
+		if updateErr != nil {
+			h.logger.Error("Failed to update scan status to completed", "scan_id", scanID, "error", updateErr)
+		}
+	}
 }
 
 // StopScan handles POST /api/v1/scans/{id}/stop - stop scan execution.

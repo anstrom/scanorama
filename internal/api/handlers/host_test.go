@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -241,11 +242,11 @@ func TestHostHandler_RequestToDBHost(t *testing.T) {
 	data, ok := result.(map[string]interface{})
 	require.True(t, ok)
 
-	assert.Equal(t, request.IP, data["ip"])
+	assert.Equal(t, request.IP, data["ip_address"])
 	assert.Equal(t, request.Hostname, data["hostname"])
 	assert.Equal(t, request.Description, data["description"])
-	assert.Equal(t, request.OS, data["os"])
-	assert.Equal(t, request.OSVersion, data["os_version"])
+	assert.Equal(t, request.OS, data["os_family"])
+	assert.Equal(t, request.OSVersion, data["os_name"])
 	assert.Equal(t, request.Tags, data["tags"])
 	assert.Equal(t, request.Metadata, data["metadata"])
 }
@@ -260,7 +261,7 @@ func TestHostHandler_HostToResponse(t *testing.T) {
 	osVersion := "2019"
 	testHost := &db.Host{
 		ID:        testHostID,
-		IPAddress: db.IPAddr{},
+		IPAddress: db.IPAddr{IP: net.ParseIP("192.168.1.100")},
 		Hostname:  &hostname,
 		OSFamily:  &osFamily,
 		OSVersion: &osVersion,
@@ -274,7 +275,7 @@ func TestHostHandler_HostToResponse(t *testing.T) {
 	// Note: The current hostToResponse returns placeholder data
 	// These assertions test the function call works, not actual mapping
 	assert.NotEmpty(t, response.IP)
-	assert.Equal(t, int64(1), response.ID) // placeholder value
+	assert.Equal(t, testHostID.String(), response.ID) // UUID string
 	assert.NotNil(t, response)
 }
 

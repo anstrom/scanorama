@@ -18,6 +18,7 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger"
 
 	_ "github.com/anstrom/scanorama/docs/swagger" // Import generated swagger docs
+	apihandlers "github.com/anstrom/scanorama/internal/api/handlers"
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/logging"
@@ -202,13 +203,53 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/version", s.versionHandler).Methods("GET")
 	api.HandleFunc("/metrics", s.metricsHandler).Methods("GET")
 
-	// Placeholder endpoints for future implementation
-	// These will return "not implemented" responses for now
-	api.HandleFunc("/scans", s.notImplementedHandler).Methods("GET", "POST")
-	api.HandleFunc("/hosts", s.notImplementedHandler).Methods("GET", "POST")
-	api.HandleFunc("/discovery", s.notImplementedHandler).Methods("GET", "POST")
-	api.HandleFunc("/profiles", s.notImplementedHandler).Methods("GET", "POST")
-	api.HandleFunc("/schedules", s.notImplementedHandler).Methods("GET", "POST")
+	// Create handler instances
+	scanHandler := apihandlers.NewScanHandler(s.database, s.logger, s.metrics)
+	hostHandler := apihandlers.NewHostHandler(s.database, s.logger, s.metrics)
+	discoveryHandler := apihandlers.NewDiscoveryHandler(s.database, s.logger, s.metrics)
+	profileHandler := apihandlers.NewProfileHandler(s.database, s.logger, s.metrics)
+	scheduleHandler := apihandlers.NewScheduleHandler(s.database, s.logger, s.metrics)
+
+	// Scan endpoints
+	api.HandleFunc("/scans", scanHandler.ListScans).Methods("GET")
+	api.HandleFunc("/scans", scanHandler.CreateScan).Methods("POST")
+	api.HandleFunc("/scans/{id}", scanHandler.GetScan).Methods("GET")
+	api.HandleFunc("/scans/{id}", scanHandler.UpdateScan).Methods("PUT")
+	api.HandleFunc("/scans/{id}", scanHandler.DeleteScan).Methods("DELETE")
+	api.HandleFunc("/scans/{id}/results", scanHandler.GetScanResults).Methods("GET")
+	api.HandleFunc("/scans/{id}/start", scanHandler.StartScan).Methods("POST")
+	api.HandleFunc("/scans/{id}/stop", scanHandler.StopScan).Methods("POST")
+
+	// Host endpoints
+	api.HandleFunc("/hosts", hostHandler.ListHosts).Methods("GET")
+	api.HandleFunc("/hosts", hostHandler.CreateHost).Methods("POST")
+	api.HandleFunc("/hosts/{id}", hostHandler.GetHost).Methods("GET")
+	api.HandleFunc("/hosts/{id}", hostHandler.UpdateHost).Methods("PUT")
+	api.HandleFunc("/hosts/{id}", hostHandler.DeleteHost).Methods("DELETE")
+	api.HandleFunc("/hosts/{id}/scans", hostHandler.GetHostScans).Methods("GET")
+
+	// Discovery endpoints
+	api.HandleFunc("/discovery", discoveryHandler.ListDiscoveryJobs).Methods("GET")
+	api.HandleFunc("/discovery", discoveryHandler.CreateDiscoveryJob).Methods("POST")
+	api.HandleFunc("/discovery/{id}", discoveryHandler.GetDiscoveryJob).Methods("GET")
+	api.HandleFunc("/discovery/{id}/start", discoveryHandler.StartDiscovery).Methods("POST")
+	api.HandleFunc("/discovery/{id}/stop", discoveryHandler.StopDiscovery).Methods("POST")
+
+	// Profile endpoints
+	api.HandleFunc("/profiles", profileHandler.ListProfiles).Methods("GET")
+	api.HandleFunc("/profiles", profileHandler.CreateProfile).Methods("POST")
+	api.HandleFunc("/profiles/{id}", profileHandler.GetProfile).Methods("GET")
+	api.HandleFunc("/profiles/{id}", profileHandler.UpdateProfile).Methods("PUT")
+	api.HandleFunc("/profiles/{id}", profileHandler.DeleteProfile).Methods("DELETE")
+
+	// Schedule endpoints
+	api.HandleFunc("/schedules", scheduleHandler.ListSchedules).Methods("GET")
+	api.HandleFunc("/schedules", scheduleHandler.CreateSchedule).Methods("POST")
+	api.HandleFunc("/schedules/{id}", scheduleHandler.GetSchedule).Methods("GET")
+	api.HandleFunc("/schedules/{id}", scheduleHandler.UpdateSchedule).Methods("PUT")
+	api.HandleFunc("/schedules/{id}", scheduleHandler.DeleteSchedule).Methods("DELETE")
+	api.HandleFunc("/schedules/{id}/enable", scheduleHandler.EnableSchedule).Methods("POST")
+	api.HandleFunc("/schedules/{id}/disable", scheduleHandler.DisableSchedule).Methods("POST")
 
 	// Admin endpoints
 	api.HandleFunc("/admin/status", s.adminStatusHandler).Methods("GET")
@@ -489,16 +530,6 @@ func (s *Server) metricsHandler(w http.ResponseWriter, r *http.Request) {
 // @Router /profiles [post]
 // @Router /schedules [get]
 // @Router /schedules [post]
-func (s *Server) notImplementedHandler(w http.ResponseWriter, r *http.Request) {
-	response := map[string]interface{}{
-		"error":     "endpoint not implemented",
-		"timestamp": time.Now().UTC(),
-		"endpoint":  r.URL.Path,
-		"method":    r.Method,
-	}
-
-	s.WriteJSON(w, r, http.StatusNotImplemented, response)
-}
 
 // adminStatusHandler provides administrative status information.
 // adminStatusHandler godoc
