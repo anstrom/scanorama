@@ -310,4 +310,39 @@ docs-clean: ## Clean generated documentation files
 
 docs: docs-generate ## Alias for docs-generate
 
+docs-validate: docs-install ## Validate API documentation quality
+	@echo "Validating API documentation..."
+	@./scripts/docs-automation.sh validate
+	@echo "✅ Documentation validation completed"
+
+docs-check: docs-install ## Check documentation for common issues
+	@echo "Checking documentation quality..."
+	@./scripts/docs-automation.sh check-ids
+	@./scripts/docs-automation.sh check-security
+	@echo "✅ Documentation quality check completed"
+
+docs-test-clients: docs-install ## Test client generation from OpenAPI spec
+	@echo "Testing client generation..."
+	@./scripts/docs-automation.sh test-clients
+	@echo "✅ Client generation test completed"
+
+docs-report: docs-install ## Generate comprehensive documentation quality report
+	@echo "Generating documentation quality report..."
+	@./scripts/docs-automation.sh report docs/documentation-report.md
+	@echo "✅ Documentation report generated: docs/documentation-report.md"
+
+docs-fix: docs-install ## Attempt to fix common documentation issues
+	@echo "Fixing documentation issues..."
+	@./scripts/docs-automation.sh fix
+	@echo "✅ Documentation fixes applied"
+
+docs-full: docs-install ## Complete documentation analysis and validation
+	@echo "Running complete documentation analysis..."
+	@./scripts/docs-automation.sh full
+	@echo "✅ Complete documentation analysis finished"
+
+docs-ci: docs-install ## CI-friendly documentation validation (fails on issues)
+	@echo "Running CI documentation validation..."
+	@./scripts/docs-automation.sh ci
+
 .DEFAULT_GOAL := help
