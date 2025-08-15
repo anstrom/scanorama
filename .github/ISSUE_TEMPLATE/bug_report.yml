@@ -1,0 +1,169 @@
+name: Bug Report
+description: Report a bug to help us improve Scanorama
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to report a bug! Please fill out the form below to help us understand and reproduce the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: Describe the bug you encountered...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Go to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen
+      placeholder: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: A clear and concise description of what actually happened
+      placeholder: What actually happened?
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Scanorama Version
+      description: What version of Scanorama are you running?
+      placeholder: "e.g., v0.7.1, latest, commit hash"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      description: What operating system are you using?
+      options:
+        - Linux (Ubuntu)
+        - Linux (CentOS/RHEL)
+        - Linux (Debian)
+        - Linux (Arch)
+        - Linux (Other)
+        - macOS
+        - Windows
+        - Docker Container
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: go-version
+    attributes:
+      label: Go Version
+      description: What version of Go are you using? (run `go version`)
+      placeholder: "e.g., go1.21.0"
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment Method
+      description: How are you running Scanorama?
+      options:
+        - Binary (built from source)
+        - Binary (downloaded release)
+        - Docker
+        - Docker Compose
+        - Kubernetes
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Relevant configuration details (remove sensitive information)
+      placeholder: |
+        ```yaml
+        # Your configuration here (remove passwords/secrets)
+        ```
+      render: yaml
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs
+      description: Relevant log output or error messages (remove sensitive information)
+      placeholder: |
+        ```
+        # Paste your log output here
+        ```
+      render: shell
+
+  - type: textarea
+    id: network-info
+    attributes:
+      label: Network Environment
+      description: Details about your network environment (if relevant)
+      placeholder: |
+        - Network size: (e.g., /24, /16)
+        - Target type: (e.g., internal network, cloud infrastructure)
+        - Firewall/Security tools: (e.g., pfSense, Windows Defender)
+        - Network speed/latency: (if relevant)
+
+  - type: checkboxes
+    id: scan-type
+    attributes:
+      label: Scan Type (if applicable)
+      description: What type of scan were you running when the bug occurred?
+      options:
+        - label: Host discovery
+        - label: Port scanning
+        - label: Service detection
+        - label: API operations
+        - label: Database operations
+        - label: Web UI
+        - label: CLI operations
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here
+      placeholder: Screenshots, workarounds, related issues, etc.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      description: Please confirm the following
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
+        - label: I have removed any sensitive information from logs and configuration
+          required: true
+        - label: I have only scanned networks I own or have explicit permission to test
+          required: true
+        - label: I am willing to provide additional information if needed
+          required: true

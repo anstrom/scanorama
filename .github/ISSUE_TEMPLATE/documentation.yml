@@ -1,0 +1,251 @@
+name: Documentation Issue
+description: Report missing, unclear, or incorrect documentation
+title: "[Docs]: "
+labels: ["documentation", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve Scanorama's documentation! Please fill out the form below to help us understand what needs to be fixed or added.
+
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: Documentation Type
+      description: What type of documentation issue is this?
+      options:
+        - Missing documentation
+        - Incorrect/outdated information
+        - Unclear instructions
+        - Broken links
+        - Formatting issues
+        - Missing examples
+        - Translation issues
+        - API documentation
+        - Installation guide
+        - Configuration guide
+        - Tutorial/walkthrough
+        - Code comments
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: location
+    attributes:
+      label: Documentation Location
+      description: Where is the documentation issue located?
+      options:
+        - README.md
+        - API Documentation (Swagger/OpenAPI)
+        - Installation Guide
+        - Configuration Documentation
+        - User Manual/Wiki
+        - Code Comments
+        - CLI Help Text
+        - Error Messages
+        - Contributing Guidelines
+        - Security Policy
+        - Changelog
+        - Docker Documentation
+        - CI/CD Documentation
+        - Testing Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: specific-location
+    attributes:
+      label: Specific File/URL
+      description: Provide the specific file path, URL, or section where the issue is located
+      placeholder: "e.g., docs/api/README.md, https://github.com/anstrom/scanorama#installation, Line 45 in config.go"
+
+  - type: textarea
+    id: issue-description
+    attributes:
+      label: Issue Description
+      description: Clearly describe what's wrong, missing, or unclear
+      placeholder: |
+        The documentation is missing information about...
+        The instructions are unclear when...
+        The link to ... is broken...
+        The example doesn't work because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-content
+    attributes:
+      label: Current Content (if applicable)
+      description: Copy the current documentation content that needs to be fixed
+      placeholder: |
+        ```
+        Current text that needs improvement...
+        ```
+      render: markdown
+
+  - type: textarea
+    id: suggested-improvement
+    attributes:
+      label: Suggested Improvement
+      description: Describe how the documentation should be improved or provide suggested content
+      placeholder: |
+        The documentation should include...
+        A better explanation would be...
+        Here's suggested content:
+        ```
+        Improved documentation content...
+        ```
+    validations:
+      required: true
+
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Target Audience
+      description: Who is the primary audience for this documentation?
+      options:
+        - New users/beginners
+        - Experienced users
+        - Developers/contributors
+        - System administrators
+        - API consumers
+        - Security professionals
+        - DevOps engineers
+        - All users
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority Level
+      description: How important is this documentation fix?
+      options:
+        - Low (Minor improvement)
+        - Medium (Affects user experience)
+        - High (Prevents users from completing tasks)
+        - Critical (Causes security issues or data loss)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: impact-areas
+    attributes:
+      label: Impact Areas
+      description: Which areas does this documentation issue affect?
+      options:
+        - label: Installation/Setup
+        - label: Configuration
+        - label: Basic Usage
+        - label: Advanced Features
+        - label: API Integration
+        - label: Troubleshooting
+        - label: Security
+        - label: Performance
+        - label: Development/Contributing
+        - label: Deployment
+
+  - type: textarea
+    id: user-scenario
+    attributes:
+      label: User Scenario
+      description: Describe a specific scenario where this documentation issue causes problems
+      placeholder: |
+        When a user tries to...
+        They encounter this problem...
+        This prevents them from...
+
+  - type: textarea
+    id: additional-examples
+    attributes:
+      label: Examples/References
+      description: Provide examples, screenshots, or references to similar documentation in other projects
+      placeholder: |
+        Here's how [other project] documents this...
+        Screenshot showing the issue...
+        Link to good example: https://...
+
+  - type: input
+    id: version
+    attributes:
+      label: Scanorama Version
+      description: What version of Scanorama does this documentation relate to?
+      placeholder: "e.g., v0.7.1, latest, all versions"
+
+  - type: textarea
+    id: environment-context
+    attributes:
+      label: Environment Context
+      description: Is this documentation issue specific to certain environments or setups?
+      placeholder: |
+        Specific to: Linux/macOS/Windows
+        Docker-specific issue
+        Cloud deployment specific
+        Development environment only
+
+  - type: checkboxes
+    id: doc-format
+    attributes:
+      label: Documentation Format
+      description: What format should the improved documentation use?
+      options:
+        - label: Text/Markdown
+        - label: Code examples
+        - label: Screenshots/Images
+        - label: Video/GIF demonstrations
+        - label: Interactive tutorials
+        - label: API reference
+        - label: Configuration templates
+        - label: Troubleshooting guide
+
+  - type: textarea
+    id: related-issues
+    attributes:
+      label: Related Issues
+      description: Are there related issues, pull requests, or discussions?
+      placeholder: |
+        Related to issue #123
+        Discussed in PR #456
+        Similar to issue #789
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution Interest
+      description: Are you interested in helping improve this documentation?
+      options:
+        - label: I can write the improved documentation
+        - label: I can provide technical review
+        - label: I can provide user testing/feedback
+        - label: I can create examples/screenshots
+        - label: I can help with translation
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context about the documentation issue
+      placeholder: |
+        This affects multiple users because...
+        I noticed this while trying to...
+        Other tools handle this by...
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      description: Please confirm the following
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
+        - label: I have checked that this documentation doesn't already exist elsewhere
+          required: true
+        - label: I am willing to provide clarification or additional details if needed
+          required: true
+        - label: I understand that documentation improvements may take time to implement
+          required: true

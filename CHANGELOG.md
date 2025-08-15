@@ -16,6 +16,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - TBD
 
+## [0.7.1] - 2025-08-15
+
+### Added
+- Test helper utilities for better testing experience and database setup
+- Developer experience improvements with new Makefile targets (`dev`, `validate`, `test-unit`, `check`, `deps`, `quick`)
+- Comprehensive testing utilities in `test/helpers/testing.go` for database, HTTP, and network testing
+
+### Changed
+- Upgraded `github.com/swaggo/http-swagger` from v1.3.4 to v2.0.2 for improved API documentation
+- Updated `@redocly/cli` from v1.34.5 to v2.0.5 for better OpenAPI tooling
+- Updated `@quobix/vacuum` from v0.6.3 to v0.17.8 for enhanced API linting
+- Improved developer workflow with quick validation and testing commands
+
+### Fixed
+- Removed deprecated HTTP Swagger v1 dependency in favor of v2
+- Enhanced development experience with streamlined setup and validation commands
+
 ## [0.2.0] - 2025-08-08
 
 ### Added
