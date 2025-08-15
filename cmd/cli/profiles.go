@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/anstrom/scanorama/internal"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/spf13/cobra"
 )
@@ -139,7 +140,7 @@ func runProfilesTest(cmd *cobra.Command, args []string) {
 			displayTestConfiguration(profile, profileTestTarget)
 		} else {
 			// Actually run the test scan
-			runTestScan(profile, profileTestTarget)
+			runTestScan(database, profile, profileTestTarget)
 		}
 	})
 }
@@ -355,20 +356,58 @@ func displayTestConfiguration(profile *ScanProfile, target string) {
 	fmt.Printf("  scanorama profiles test %s --target %s\n", profile.Name, target)
 }
 
-func runTestScan(profile *ScanProfile, target string) {
+func runTestScan(database *db.DB, profile *ScanProfile, target string) {
 	fmt.Printf("Testing profile '%s' against target '%s'...\n", profile.Name, target)
 	fmt.Println(strings.Repeat("-", profileDetailSeparator))
 
-	// This would integrate with the actual scan engine
-	// For now, show what would happen
 	fmt.Printf("Scan configuration:\n")
 	fmt.Printf("  Target: %s\n", target)
 	fmt.Printf("  Profile: %s (%s)\n", profile.Name, profile.Description)
 	fmt.Printf("  Scan type: %s\n", profile.ScanType)
 	fmt.Printf("  Ports: %s\n", profile.Ports)
 	fmt.Printf("  Timing: T%d\n", profile.TimingLevel)
+	fmt.Println()
 
-	fmt.Println("\n⚠️  Profile testing not yet implemented in this version")
-	fmt.Println("Use the regular scan command with --profile flag:")
-	fmt.Printf("  scanorama scan --targets %s --profile %s\n", target, profile.Name)
+	// Create scan configuration from profile
+	scanConfig := &internal.ScanConfig{
+		Targets:    []string{target},
+		Ports:      profile.Ports,
+		ScanType:   profile.ScanType,
+		TimeoutSec: 300, // Default timeout
+	}
+
+	fmt.Printf("Starting profile test scan...\n")
+	result, err := internal.RunScanWithDB(scanConfig, database)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Profile test scan failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Calculate total ports
+	totalPorts := 0
+	for _, host := range result.Hosts {
+		totalPorts += len(host.Ports)
+	}
+
+	// Display results
+	fmt.Printf("\nProfile test completed successfully!\n")
+	fmt.Printf("Hosts scanned: %d\n", len(result.Hosts))
+	fmt.Printf("Total ports found: %d\n", totalPorts)
+
+	// Show summary of open ports found
+	openPorts := 0
+	for _, host := range result.Hosts {
+		for _, port := range host.Ports {
+			if port.State == "open" {
+				openPorts++
+				fmt.Printf("  %s:%d (%s) - %s\n", host.Address, port.Number, port.Protocol, port.Service)
+			}
+		}
+	}
+
+	if openPorts == 0 {
+		fmt.Printf("No open ports found on target %s\n", target)
+	} else {
+		fmt.Printf("Found %d open port(s)\n", openPorts)
+	}
 }

@@ -158,18 +158,87 @@ func runScan(cmd *cobra.Command, args []string) {
 	}
 }
 
-func runLiveHostsScan(_ *db.DB, _ *internal.ScanConfig) {
+func runLiveHostsScan(database *db.DB, scanConfig *internal.ScanConfig) {
 	fmt.Println("Scanning discovered live hosts...")
 
-	if scanOSFamily != "" {
-		fmt.Printf("Filtering by OS family: %s\n", scanOSFamily)
+	// Query for live hosts
+	var liveHosts []struct {
+		IPAddress string `db:"ip_address"`
+		OSFamily  string `db:"os_family"`
 	}
 
-	// TODO: Implement live hosts scanning using internal package
-	fmt.Println("Live hosts scanning not yet implemented with new CLI")
+	query := `SELECT ip_address, COALESCE(os_family, 'unknown') as os_family
+	          FROM hosts
+	          WHERE status = 'up' AND (ignore_scanning IS NULL OR ignore_scanning = false)`
+	args := []interface{}{}
+
+	// Add OS family filter if specified
+	if scanOSFamily != "" {
+		fmt.Printf("Filtering by OS family: %s\n", scanOSFamily)
+		query += " AND LOWER(COALESCE(os_family, '')) = LOWER($1)"
+		args = append(args, scanOSFamily)
+	}
+
+	query += " ORDER BY last_seen DESC"
+
+	err := database.SelectContext(context.Background(), &liveHosts, query, args...)
+	if err != nil {
+		logging.ErrorDatabase("Failed to query live hosts", err)
+		fmt.Printf("Error: Failed to query live hosts: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(liveHosts) == 0 {
+		if scanOSFamily != "" {
+			fmt.Printf("No live hosts found with OS family '%s'\n", scanOSFamily)
+		} else {
+			fmt.Println("No live hosts found to scan")
+		}
+		return
+	}
+
+	fmt.Printf("Found %d live host(s) to scan\n", len(liveHosts))
+
+	// Convert live hosts to target strings
+	targets := make([]string, len(liveHosts))
+	for i, host := range liveHosts {
+		targets[i] = host.IPAddress
+	}
+
+	// Set targets in scan config
+	scanConfig.Targets = targets
+
+	// Run the scan using internal package
+	result, err := internal.RunScanWithDB(scanConfig, database)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Scan failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Calculate total ports
+	totalPorts := 0
+	for _, host := range result.Hosts {
+		totalPorts += len(host.Ports)
+	}
+
+	// Display results
+	fmt.Printf("\nScan completed successfully!\n")
+	fmt.Printf("Hosts scanned: %d\n", len(result.Hosts))
+	fmt.Printf("Total ports found: %d\n", totalPorts)
+
+	// Show summary of open ports found
+	openPorts := 0
+	for _, host := range result.Hosts {
+		for _, port := range host.Ports {
+			if port.State == "open" {
+				openPorts++
+			}
+		}
+	}
+	fmt.Printf("Open ports found: %d\n", openPorts)
 }
 
-func runTargetsScan(_ *db.DB, _ *internal.ScanConfig, targets string) {
+func runTargetsScan(database *db.DB, scanConfig *internal.ScanConfig, targets string) {
 	fmt.Printf("Scanning targets: %s\n", targets)
 
 	// Parse targets
@@ -183,11 +252,38 @@ func runTargetsScan(_ *db.DB, _ *internal.ScanConfig, targets string) {
 		fmt.Printf("Parsed %d targets: %v\n", len(targetList), targetList)
 	}
 
-	// Note: targets are handled by the scan engine directly
-	_ = targetList // targets will be passed to scan engine
+	// Set targets in scan config
+	scanConfig.Targets = targetList
 
-	// TODO: Implement target scanning using internal package
-	fmt.Printf("Target scanning not yet fully implemented with new CLI for targets: %v\n", targetList)
+	// Run the scan using internal package
+	fmt.Printf("Starting scan of %d target(s)...\n", len(targetList))
+	result, err := internal.RunScanWithDB(scanConfig, database)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Scan failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Calculate total ports
+	totalPorts := 0
+	for _, host := range result.Hosts {
+		totalPorts += len(host.Ports)
+	}
+
+	// Display results
+	fmt.Printf("\nScan completed successfully!\n")
+	fmt.Printf("Targets scanned: %d\n", len(result.Hosts))
+	fmt.Printf("Total ports found: %d\n", totalPorts)
+
+	// Show summary of open ports found
+	openPorts := 0
+	for _, host := range result.Hosts {
+		for _, port := range host.Ports {
+			if port.State == "open" {
+				openPorts++
+			}
+		}
+	}
+	fmt.Printf("Open ports found: %d\n", openPorts)
 }
 
 func validatePorts(ports string) error {
