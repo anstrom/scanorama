@@ -279,20 +279,17 @@ ci: ## Run comprehensive CI pipeline using act (GitHub Actions locally)
 	@echo "=== Step 1: Validate All Workflows ==="
 	@$(MAKE) act-validate-all
 	@echo ""
-	@echo "=== Step 2: Local Documentation Pipeline ==="
-	@$(MAKE) act-local-docs
+	@echo "=== Step 2: Code Quality and Testing ==="
+	@$(MAKE) ci-quality
+	@$(MAKE) ci-test
 	@echo ""
-	@echo "=== Step 3: Workflow Structure Validation ==="
-	@$(MAKE) act-ci-core
+	@echo "=== Step 3: Build and Documentation ==="
+	@$(MAKE) ci-build
+	@$(MAKE) ci-docs
 	@echo ""
-	@echo "=== Step 4: Security Workflow Validation ==="
-	@$(MAKE) act-security
-	@echo ""
-	@echo "=== Step 5: Docker Workflow Validation ==="
-	@$(MAKE) act-docker
-	@echo ""
-	@echo "=== Step 6: Integration Structure Check ==="
-	@$(MAKE) act-ci-integration
+	@echo "=== Step 4: Security and Docker Validation ==="
+	@$(MAKE) ci-security
+	@$(MAKE) ci-docker
 	@echo ""
 	@echo "✅ Comprehensive CI pipeline completed successfully!"
 	@echo "🎯 All workflows validated and ready for GitHub Actions"
@@ -455,43 +452,7 @@ act-validate-all: ## Validate syntax of all GitHub Actions workflows
 	done
 	@echo "✅ All workflow validation completed"
 
-act-local-docs: ## Run documentation pipeline locally with act
-	@echo "📚 Running documentation pipeline locally..."
-	$(call check_tool,act)
-	$(call check_docker)
-	@act push -j validate-openapi -W .github/workflows/docs.yml --quiet || echo "⚠️ OpenAPI validation completed with issues"
-	@act push -j generate-docs -W .github/workflows/docs.yml --quiet || echo "⚠️ Documentation generation completed with issues"
-	@echo "✅ Local documentation pipeline completed"
 
-act-ci-core: ## Run core CI jobs locally with act
-	@echo "🎯 Running core CI jobs locally..."
-	$(call check_tool,act)
-	$(call check_docker)
-	@act push -j code-quality -W .github/workflows/main.yml --quiet || echo "⚠️ Code quality job completed with issues"
-	@act push -j unit-tests -W .github/workflows/main.yml --quiet || echo "⚠️ Unit tests job completed with issues"
-	@echo "✅ Core CI jobs completed"
-
-act-security: ## Run security workflow locally with act
-	@echo "🔒 Running security workflow locally..."
-	$(call check_tool,act)
-	$(call check_docker)
-	@act push -j vulnerability-scan -W .github/workflows/security.yml --quiet || echo "⚠️ Vulnerability scan completed with issues"
-	@act push -j security-hardening -W .github/workflows/security.yml --quiet || echo "⚠️ Security hardening completed with issues"
-	@echo "✅ Security workflow completed"
-
-act-docker: ## Run Docker workflow locally with act (dry-run)
-	@echo "🐳 Running Docker workflow validation..."
-	$(call check_tool,act)
-	$(call check_docker)
-	@act push -j build-and-test -W .github/workflows/docker.yml --dryrun --quiet >/dev/null 2>&1 && echo "✅ Docker workflow structure valid" || echo "⚠️ Docker workflow validation incomplete"
-	@echo "✅ Docker workflow validation completed"
-
-act-ci-integration: ## Run integration tests structure check with act
-	@echo "🔄 Running integration tests structure check..."
-	$(call check_tool,act)
-	$(call check_docker)
-	@act push -j integration-tests -W .github/workflows/main.yml --dryrun --quiet >/dev/null 2>&1 && echo "✅ Integration tests structure valid" || echo "⚠️ Integration tests validation incomplete"
-	@echo "✅ Integration tests structure check completed"
 
 # Streamlined CI Testing Targets
 ci-quality: ## Run code quality CI job locally with act
