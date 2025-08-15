@@ -131,7 +131,7 @@ func ListScans(w http.ResponseWriter, r *http.Request) {}
 ### Phase 2: Automation & Quality (Week 2)
 
 #### 2.1 Documentation Automation System
-**Created**: `scripts/docs-automation.sh`
+**Enhanced**: npm scripts and Makefile targets for simplified automation
 
 **Features:**
 - Automated OpenAPI generation and validation
@@ -143,10 +143,12 @@ func ListScans(w http.ResponseWriter, r *http.Request) {}
 **Usage:**
 ```bash
 # Full validation pipeline
-./scripts/docs-automation.sh full
+make docs-ci
 
-# CI integration
-./scripts/docs-automation.sh ci
+# Individual validation steps
+make docs-validate
+make docs-spectral
+make docs-test-clients
 ```
 
 #### 2.2 CI/CD Integration
@@ -163,13 +165,13 @@ func ListScans(w http.ResponseWriter, r *http.Request) {}
 #### 2.3 Enhanced Makefile Targets
 **New Targets:**
 ```bash
-make docs-validate      # Validate documentation quality
-make docs-check         # Check for common issues  
+make docs-validate      # Validate OpenAPI specification
+make docs-spectral      # Advanced linting with Spectral
 make docs-test-clients  # Test client generation
-make docs-report        # Generate quality report
-make docs-fix           # Auto-fix common issues
-make docs-full          # Complete analysis
-make docs-ci            # CI-friendly validation
+make docs-build         # Build HTML documentation
+make docs-lint          # Lint documentation with detailed output
+make docs-generate      # Generate docs from code annotations
+make docs-ci            # CI-friendly validation (fails on issues)
 ```
 
 ### Phase 3: Advanced Features (Week 3-4)
@@ -211,7 +213,7 @@ make docs-ci            # CI-friendly validation
 2. **Validate Improvements**
    ```bash
    # Run comprehensive validation
-   ./scripts/docs-automation.sh full
+   make docs-ci
    ```
 
 3. **Enable CI Validation**

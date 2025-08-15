@@ -46,6 +46,12 @@ config.yml
 *.local.yaml
 *.local.yml
 
+# Act (GitHub Actions local testing) files
+.secrets.local
+.env.local
+act-*
+.act-*
+
 # Secrets and sensitive data
 secrets/
 *.key
