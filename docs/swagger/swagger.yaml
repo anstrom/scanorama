@@ -655,6 +655,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/docs.HealthResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1764,6 +1768,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/docs.StatusResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1782,6 +1790,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/docs.VersionResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:

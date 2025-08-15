@@ -240,6 +240,7 @@ type PaginatedSchedulesResponse struct {
 // @Produce json
 // @Success 200 {object} HealthResponse
 // @Success 503 {object} HealthResponse
+// @Failure 429 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /health [get]
 // @ID getHealth
@@ -251,6 +252,7 @@ func Health(w http.ResponseWriter, r *http.Request) {}
 // @Tags System
 // @Produce json
 // @Success 200 {object} StatusResponse
+// @Failure 429 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /status [get]
 // @ID getStatus
@@ -262,6 +264,7 @@ func Status(w http.ResponseWriter, r *http.Request) {}
 // @Tags System
 // @Produce json
 // @Success 200 {object} VersionResponse
+// @Failure 429 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /version [get]
 // @ID getVersion
