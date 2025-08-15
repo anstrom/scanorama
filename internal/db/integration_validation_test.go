@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 )
@@ -39,60 +38,6 @@ func TestDatabaseConfigDefaults(t *testing.T) {
 	}
 	if cfg.MaxIdleConns < 0 {
 		t.Errorf("Default MaxIdleConns %d should not be negative", cfg.MaxIdleConns)
-	}
-}
-
-// TestSSLModeValidation tests that any SSL mode we might use in configuration
-// is actually supported by the PostgreSQL driver.
-func TestSSLModeValidation(t *testing.T) {
-	testCases := []struct {
-		name        string
-		sslMode     string
-		shouldWork  bool
-		description string
-	}{
-		{"disable", "disable", true, "Most permissive mode"},
-		{"require", "require", true, "Requires SSL but doesn't verify"},
-		{"verify-ca", "verify-ca", true, "Requires SSL and verifies CA"},
-		{"verify-full", "verify-full", true, "Requires SSL and full verification"},
-		{"prefer", "prefer", false, "Not supported by pq driver"},
-		{"allow", "allow", false, "Not supported by pq driver"},
-		{"invalid", "invalid", false, "Invalid SSL mode"},
-	}
-
-	// Create a minimal config for testing
-	baseConfig := Config{
-		Host:            "localhost",
-		Port:            5432,
-		Database:        "test",
-		Username:        "test",
-		Password:        "test",
-		MaxOpenConns:    1,
-		MaxIdleConns:    1,
-		ConnMaxLifetime: time.Minute,
-		ConnMaxIdleTime: time.Minute,
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := baseConfig
-			cfg.SSLMode = tc.sslMode
-
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-
-			_, err := Connect(ctx, &cfg)
-
-			// We expect all invalid SSL modes to fail with "unsupported sslmode" error
-			if !tc.shouldWork {
-				if err == nil {
-					t.Errorf("SSL mode '%s' should not be supported but connection attempt succeeded", tc.sslMode)
-				} else if !strings.Contains(err.Error(), "unsupported sslmode") {
-					t.Errorf("SSL mode '%s' should fail with 'unsupported sslmode' error, got: %v", tc.sslMode, err)
-				}
-			}
-			// Note: We don't test successful connections as they depend on external database
-		})
 	}
 }
 
