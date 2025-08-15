@@ -4,24 +4,24 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - 'docs/**'
-      - 'internal/api/**'
-      - 'cmd/**'
-      - '.github/workflows/docs-validation.yml'
-      - 'scripts/docs-automation.sh'
+      - "docs/**"
+      - "internal/api/**"
+      - "cmd/**"
+      - ".github/workflows/docs-validation.yml"
+      - "scripts/docs-automation.sh"
   pull_request:
     branches: [main]
     paths:
-      - 'docs/**'
-      - 'internal/api/**'
-      - 'cmd/**'
-      - '.github/workflows/docs-validation.yml'
-      - 'scripts/docs-automation.sh'
+      - "docs/**"
+      - "internal/api/**"
+      - "cmd/**"
+      - ".github/workflows/docs-validation.yml"
+      - "scripts/docs-automation.sh"
   workflow_dispatch:
 
 env:
   GO_VERSION: "1.24.6"
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
 
 jobs:
   docs-validation:
@@ -42,7 +42,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install system dependencies
         run: |
@@ -62,8 +62,8 @@ jobs:
           # Install swag for OpenAPI generation
           go install github.com/swaggo/swag/cmd/swag@latest
 
-          # Install redocly CLI for validation
-          npm install -g @redocly/cli
+          # Install Node.js dependencies from package.json
+          npm ci
 
       - name: Generate API documentation
         run: |
@@ -73,7 +73,7 @@ jobs:
       - name: Validate OpenAPI specification
         run: |
           echo "Validating OpenAPI specification..."
-          ./scripts/docs-automation.sh validate
+          npx redocly lint docs/swagger/swagger.yaml
 
       - name: Check operation IDs coverage
         run: |
@@ -88,7 +88,7 @@ jobs:
       - name: Test client generation
         run: |
           echo "Testing client generation capabilities..."
-          ./scripts/docs-automation.sh test-clients
+          npm run test:clients
 
       - name: Generate documentation quality report
         run: |
@@ -204,6 +204,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
 
       - name: Download documentation artifacts
         uses: actions/download-artifact@v4
@@ -212,8 +213,7 @@ jobs:
           path: docs-artifacts/
 
       - name: Install quality assessment tools
-        run: |
-          npm install -g @redocly/cli spectral-cli
+        run: npm ci
 
       - name: Run advanced OpenAPI linting
         if: always()
@@ -223,13 +223,13 @@ jobs:
           # Check with Spectral for additional validation rules
           if [ -f "docs-artifacts/swagger/swagger.yaml" ]; then
             echo "Running Spectral validation..."
-            spectral lint docs-artifacts/swagger/swagger.yaml --format github-actions || true
+            npx spectral lint docs-artifacts/swagger/swagger.yaml --format github-actions || true
           fi
 
           # Check with Redocly for best practices
           if [ -f "docs-artifacts/swagger/swagger.yaml" ]; then
             echo "Running Redocly best practices check..."
-            redocly lint docs-artifacts/swagger/swagger.yaml --format github-actions || true
+            npx redocly lint docs-artifacts/swagger/swagger.yaml --format github-actions || true
           fi
 
       - name: Calculate documentation completeness score
@@ -390,19 +390,11 @@ jobs:
         run: |
           echo "Generating and testing API client..."
 
-          # Generate JavaScript client
-          mkdir -p /tmp/test-client
-          docker run --rm \
-            -v $PWD:/workspace \
-            -v /tmp/test-client:/output \
-            openapitools/openapi-generator-cli generate \
-            -i /workspace/docs/swagger/swagger.yaml \
-            -g javascript \
-            -o /output/js-client \
-            --additional-properties=packageName=scanorama-test-client
+          # Generate JavaScript client using npm script
+          npm run openapi:generate-js
 
           # Basic client validation
-          if [ -f "/tmp/test-client/js-client/package.json" ]; then
+          if [ -f "dist/js-client/package.json" ]; then
             echo "✅ JavaScript client generated successfully"
           else
             echo "❌ JavaScript client generation failed"
