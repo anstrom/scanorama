@@ -300,6 +300,16 @@ func TestScanTimeout(t *testing.T) {
 func TestScanResults(t *testing.T) {
 	httpPort := testServices.HTTP
 
+	// Check if HTTP service is actually available
+	httpConn, err := net.DialTimeout("tcp", "localhost:"+httpPort, 2*time.Second)
+	if err != nil {
+		t.Skipf("HTTP service not available on port %s - skipping test", httpPort)
+		return
+	}
+	if httpConn != nil {
+		_ = httpConn.Close()
+	}
+
 	// Try to use the SSH port if available
 	sshAvailable := false
 	sshConn, err := net.DialTimeout("tcp", "localhost:"+testServices.SSH, 2*time.Second)
@@ -308,12 +318,11 @@ func TestScanResults(t *testing.T) {
 		sshAvailable = true
 	}
 
-	// Build port list based on available services
-	var portList string
+	portList := httpPort
 	if sshAvailable {
 		portList = fmt.Sprintf("%s,%s", httpPort, testServices.SSH)
 	} else {
-		portList = httpPort
+		t.Logf("SSH service not available on port %s", testServices.SSH)
 	}
 
 	config := ScanConfig{
@@ -457,8 +466,15 @@ func TestPrintResults(t *testing.T) {
 }
 
 func TestServiceDetection(t *testing.T) {
-	// Find which services are available
-	availablePorts := []string{testServices.HTTP} // HTTP is confirmed available
+	// Find which services are actually available
+	var availablePorts []string
+
+	// Check HTTP
+	httpConn, err := net.DialTimeout("tcp", "localhost:"+testServices.HTTP, 1*time.Second)
+	if err == nil && httpConn != nil {
+		_ = httpConn.Close()
+		availablePorts = append(availablePorts, testServices.HTTP)
+	}
 
 	// Check SSH
 	sshConn, err := net.DialTimeout("tcp", "localhost:"+testServices.SSH, 1*time.Second)
@@ -474,8 +490,13 @@ func TestServiceDetection(t *testing.T) {
 		availablePorts = append(availablePorts, testServices.Redis)
 	}
 
+	if len(availablePorts) == 0 {
+		t.Skip("No test services are available - skipping service detection test")
+		return
+	}
+
 	if len(availablePorts) == 1 {
-		t.Logf("Only HTTP service is available, test will be limited")
+		t.Logf("Only one service is available, test will be limited")
 	}
 
 	// Build port list with comma-separated ports
