@@ -6,6 +6,13 @@ build/
 *.test
 *.out
 
+# Coverage files and reports
+coverage*.out
+coverage*.html
+api_coverage.*
+handlers_coverage.*
+*.coverage
+
 # Scan results
 *.xml
 result.*
@@ -16,6 +23,11 @@ scan_results.*
 coverage.out
 coverage.out.html
 coverage.html
+coverage_*.out
+coverage_*.html
+api_coverage.*
+handlers_coverage.*
+integration.test
 tmp/
 test_*.xml
 test_*.json
@@ -34,6 +46,12 @@ config.yml
 *.local.yaml
 *.local.yml
 
+# Act (GitHub Actions local testing) files
+.secrets.local
+.env.local
+act-*
+.act-*
+
 # Secrets and sensitive data
 secrets/
 *.key
@@ -45,10 +63,36 @@ secrets/
 .env.test
 test/docker/flask/__pycache__/
 
+# Node.js and documentation tooling
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+# package-lock.json should be committed for reproducible builds
+.npm
+.yarn-integrity
+
+# Documentation generation artifacts
+dist/
+docs/swagger/index.html
+docs/swagger/bundled.yaml
+docs/documentation-report.md
+*-client/
+/tmp/scanorama-docs-*/
+/tmp/test-client/
+
+# Documentation validation temporary files
+.redocly/
+.spectral/
+*.validation.json
+*.lint-report.*
+
 # IDE and OS
 .idea/
 .vscode/
 .DS_Store
+
+# Additional npm artifacts (main Node.js section above)
 
 # Claude development files (never commit)
 .claude-*
