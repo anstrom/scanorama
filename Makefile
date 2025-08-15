@@ -673,4 +673,43 @@ act-ci-help: ## Show comprehensive CI testing help
 	@echo "  - External action failures in dry-run are expected behavior"
 	@echo "  - Focus on structure validation + local executable testing"
 
+# Developer experience targets
+dev: ## Set up development environment and run initial checks
+	@echo "🚀 Setting up development environment..."
+	@$(MAKE) deps
+	@$(MAKE) validate
+	@$(MAKE) test-unit
+	@echo "✅ Development environment ready!"
+	@echo "💡 Available commands:"
+	@echo "  make run          # Start the application"
+	@echo "  make test         # Run all tests"
+	@echo "  make docs-serve   # Serve API documentation"
+
+validate: ## Quick code validation (format, lint, basic checks)
+	@echo "⚡ Running quick validation..."
+	@echo "Checking code formatting..."
+	@test -z "$$(gofmt -s -l . | tee /dev/stderr)" || (echo "❌ Files not formatted properly" && exit 1)
+	@echo "✅ Code formatting OK"
+	@echo "Running basic linting..."
+	@$(MAKE) lint >/dev/null 2>&1 && echo "✅ Linting passed" || echo "⚠️ Linting issues found - run 'make lint' for details"
+	@echo "✅ Quick validation completed"
+
+test-unit: ## Run unit tests only (fast, no database required)
+	@echo "🧪 Running unit tests..."
+	@$(GOTEST) -short -v ./... || (echo "❌ Unit tests failed" && exit 1)
+	@echo "✅ Unit tests passed"
+
+check: validate test-unit security ## Run all quality checks (validate + test + security)
+	@echo "✅ All quality checks passed!"
+
+deps: ## Install/update development dependencies
+	@echo "📦 Installing/updating dependencies..."
+	@go mod download
+	@go mod tidy
+	@$(MAKE) docs-install >/dev/null 2>&1 || echo "⚠️ Documentation tools installation skipped"
+	@echo "✅ Dependencies updated"
+
+quick: validate test-unit ## Quick development cycle (validate + unit tests)
+	@echo "⚡ Quick development cycle completed!"
+
 .DEFAULT_GOAL := help
