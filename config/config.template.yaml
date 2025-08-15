@@ -1,0 +1,236 @@
+# Scanorama Configuration Template
+# Copy this file to config.yaml and customize as needed
+
+# Server Configuration
+server:
+  # HTTP server settings
+  host: "0.0.0.0"              # Server bind address (0.0.0.0 for all interfaces)
+  port: 8080                   # Server port
+  read_timeout: "30s"          # HTTP read timeout
+  write_timeout: "30s"         # HTTP write timeout
+  idle_timeout: "60s"          # HTTP idle timeout
+
+  # CORS settings (for web UI)
+  cors:
+    enabled: true
+    allowed_origins: ["*"]     # In production, specify exact origins
+    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allowed_headers: ["Content-Type", "Authorization"]
+
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    requests_per_minute: 100   # Max requests per minute per IP
+    burst: 20                  # Burst capacity
+
+# Database Configuration
+database:
+  # PostgreSQL connection settings
+  host: "localhost"
+  port: 5432
+  name: "scanorama"
+  user: "scanorama"
+  password: "your_secure_password_here"  # Change this!
+
+  # Connection pool settings
+  max_open_connections: 25
+  max_idle_connections: 5
+  connection_max_lifetime: "1h"
+
+  # SSL/TLS settings
+  ssl_mode: "disable"          # Options: disable, require, verify-ca, verify-full
+
+  # Migration settings
+  auto_migrate: true           # Automatically run database migrations on startup
+  migration_timeout: "5m"      # Timeout for migration operations
+
+# Scanning Configuration
+scanning:
+  # Default scan settings
+  default_timeout: "5m"        # Default scan timeout
+  default_ports: "1-1000"      # Default port range to scan
+  max_concurrent_scans: 5      # Maximum concurrent scans
+
+  # Host discovery settings
+  discovery:
+    ping_timeout: "3s"         # Ping timeout for host discovery
+    max_hosts_per_scan: 1000   # Maximum hosts to discover in single scan
+
+  # Port scanning settings
+  port_scan:
+    timeout: "1s"              # Per-port scan timeout
+    max_concurrent_ports: 100  # Maximum concurrent port scans
+    scan_delay: "0ms"          # Delay between port scans (0ms for fastest)
+
+  # Service detection settings
+  service_detection:
+    enabled: true              # Enable service version detection
+    timeout: "10s"             # Service detection timeout
+    max_probes: 9              # Maximum number of probes per port
+
+# Network Configuration
+network:
+  # Default networks to scan (examples)
+  default_networks:
+    - "192.168.1.0/24"         # Common home network range
+    # - "10.0.0.0/8"           # Private network range
+    # - "172.16.0.0/12"        # Private network range
+
+  # Network exclusions (never scan these)
+  excluded_networks:
+    - "127.0.0.0/8"            # Localhost
+    - "169.254.0.0/16"         # Link-local
+    - "224.0.0.0/4"            # Multicast
+
+  # Interface settings
+  interface: "auto"            # Network interface to use ("auto" for automatic)
+
+# Logging Configuration
+logging:
+  # Log level: debug, info, warn, error
+  level: "info"
+
+  # Log format: text, json
+  format: "text"
+
+  # Log output: stdout, stderr, file
+  output: "stdout"
+
+  # File logging (when output is "file")
+  file:
+    path: "/var/log/scanorama/scanorama.log"
+    max_size: "100MB"          # Maximum log file size
+    max_age: "30d"             # Maximum log file age
+    max_backups: 5             # Maximum number of backup files
+    compress: true             # Compress rotated log files
+
+  # Component-specific logging
+  components:
+    database: "info"           # Database operations
+    scanner: "info"            # Scanning operations
+    api: "info"                # API requests
+    discovery: "info"          # Host discovery
+
+# Security Configuration
+security:
+  # API authentication
+  api:
+    enabled: false             # Enable API authentication
+    jwt_secret: "your_jwt_secret_here"  # Change this in production!
+    token_expiry: "24h"        # JWT token expiry time
+
+  # Admin interface security
+  admin:
+    enabled: true              # Enable admin endpoints
+    require_auth: false        # Require authentication for admin endpoints
+    allowed_ips: []            # IP whitelist for admin access (empty = all)
+
+  # Scanning security
+  scanning:
+    require_authorization: false  # Require explicit authorization for scans
+    max_scan_size: "10000"     # Maximum number of hosts per scan
+    scan_approval_required: false  # Require manual approval for large scans
+
+# Performance Configuration
+performance:
+  # Worker pool settings
+  worker_pool:
+    size: 10                   # Number of worker threads
+    queue_size: 1000           # Job queue size
+    retry_attempts: 3          # Number of retry attempts for failed jobs
+    retry_delay: "30s"         # Delay between retry attempts
+
+  # Memory limits
+  memory:
+    max_scan_results: 100000   # Maximum scan results to keep in memory
+    result_cache_ttl: "1h"     # Time to keep results in cache
+
+  # Timeouts
+  timeouts:
+    scan_job: "30m"            # Maximum time for a scan job
+    database_query: "30s"      # Database query timeout
+    external_api: "10s"        # External API call timeout
+
+# Monitoring and Metrics
+monitoring:
+  # Metrics collection
+  metrics:
+    enabled: true              # Enable metrics collection
+    endpoint: "/metrics"       # Metrics endpoint path
+    interval: "30s"            # Metrics collection interval
+
+  # Health checks
+  health:
+    enabled: true              # Enable health check endpoint
+    endpoint: "/health"        # Health check endpoint path
+
+  # Alerting (basic)
+  alerts:
+    enabled: false             # Enable basic alerting
+    webhook_url: ""            # Webhook URL for alerts
+    failed_scan_threshold: 5   # Alert after N failed scans
+
+# Storage Configuration
+storage:
+  # Scan result retention
+  retention:
+    scan_results: "90d"        # Keep scan results for 90 days
+    host_data: "365d"          # Keep host data for 1 year
+    logs: "30d"                # Keep logs for 30 days
+
+  # Cleanup settings
+  cleanup:
+    enabled: true              # Enable automatic cleanup
+    interval: "24h"            # Cleanup interval
+    batch_size: 1000           # Number of records to process per batch
+
+# External Integrations
+integrations:
+  # Vulnerability databases
+  vulnerability_db:
+    enabled: false             # Enable vulnerability checking
+    update_interval: "24h"     # Update interval for vulnerability data
+
+  # SIEM integration
+  siem:
+    enabled: false             # Enable SIEM integration
+    format: "json"             # Log format for SIEM (json, cef)
+    endpoint: ""               # SIEM endpoint URL
+
+# Development and Testing
+development:
+  # Development mode settings
+  debug: false                 # Enable debug mode
+  hot_reload: false           # Enable hot reload (development only)
+
+  # Testing settings
+  testing:
+    mock_scans: false          # Use mock scan results for testing
+    test_data_enabled: false   # Enable test data generation
+
+  # Profiling
+  profiling:
+    enabled: false             # Enable profiling endpoints
+    cpu_profile: false         # Enable CPU profiling
+    memory_profile: false      # Enable memory profiling
+
+# Feature Flags
+features:
+  # Experimental features
+  experimental:
+    advanced_scanning: false   # Enable experimental scanning features
+    ai_analysis: false         # Enable AI-powered analysis (future)
+
+  # Beta features
+  beta:
+    web_ui: true              # Enable web UI (if available)
+    api_v2: false             # Enable API v2 endpoints
+
+  # Legacy support
+  legacy:
+    api_v1_compat: true       # Maintain API v1 compatibility
+    old_config_format: false  # Support old configuration format
+
+# Environment-specific overrides
+# These can be overridden by environment variables with SCANORAMA_ prefix
+# Example: SCANORAMA_SERVER_PORT=9090 will override server.port

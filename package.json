@@ -1,6 +1,6 @@
 {
   "name": "scanorama-docs",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Documentation tooling for Scanorama API",
   "private": true,
   "scripts": {
@@ -18,8 +18,8 @@
   },
   "devDependencies": {
     "@jridgewell/sourcemap-codec": "1.5.5",
-    "@redocly/cli": "^2.0.0",
-    "@quobix/vacuum": "^0.17.0",
+    "@quobix/vacuum": "0.17.8",
+    "@redocly/cli": "2.0.5",
     "js-yaml": "^4.1.0",
     "swagger-ui-dist": "^5.17.0"
   },

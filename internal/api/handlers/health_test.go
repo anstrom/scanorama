@@ -418,7 +418,7 @@ func TestHealthHandler_LivenessVsHealthPerformance(t *testing.T) {
 
 	// Test with a mock database that has some latency
 	mockDB := &MockDB{}
-	mockDB.On("Ping", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+	mockDB.On("Ping", mock.Anything).Return(nil).Run(func(_ mock.Arguments) {
 		time.Sleep(5 * time.Millisecond) // Simulate database latency
 	})
 

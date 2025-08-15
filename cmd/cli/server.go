@@ -552,18 +552,17 @@ func waitForShutdown(apiServer *api.Server, logger *logging.Logger) error {
 }
 
 // runServerStart handles the server start command.
-func runServerStart(cmd *cobra.Command, args []string) error {
+func runServerStart(_ *cobra.Command, _ []string) error {
 	if serverForeground {
 		// Run in foreground mode
 		return runServerInForeground()
-	} else {
-		// Run in background mode (default)
-		return runServerInBackground()
 	}
+	// Run in background mode (default)
+	return runServerInBackground()
 }
 
 // runServerStop handles the server stop command.
-func runServerStop(cmd *cobra.Command, args []string) error {
+func runServerStop(_ *cobra.Command, _ []string) error {
 	pid, running := pidFileExists(serverPIDFile)
 	if !running {
 		fmt.Println("Server is not running")
@@ -629,7 +628,7 @@ func runServerRestart(cmd *cobra.Command, args []string) error {
 }
 
 // runServerStatus handles the server status command.
-func runServerStatus(cmd *cobra.Command, args []string) error {
+func runServerStatus(_ *cobra.Command, _ []string) error {
 	// Load config to get server address
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
@@ -679,7 +678,7 @@ func runServerStatus(cmd *cobra.Command, args []string) error {
 }
 
 // runServerLogs handles the server logs command.
-func runServerLogs(cmd *cobra.Command, args []string) error {
+func runServerLogs(cmd *cobra.Command, _ []string) error {
 	follow, _ := cmd.Flags().GetBool("follow")
 	lines, _ := cmd.Flags().GetInt("lines")
 
@@ -691,10 +690,9 @@ func runServerLogs(cmd *cobra.Command, args []string) error {
 	if follow {
 		// Use tail -f equivalent
 		return tailLog(serverLogFile)
-	} else {
-		// Show last N lines
-		return showLastLines(serverLogFile, lines)
 	}
+	// Show last N lines
+	return showLastLines(serverLogFile, lines)
 }
 
 // showLastLines displays the last N lines of a file.

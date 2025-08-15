@@ -1,0 +1,210 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'docs/**'
+      - 'internal/api/**'
+      - 'cmd/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/docs.yml'
+      - '**/*.go'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'internal/api/**'
+      - 'cmd/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/docs.yml'
+      - '**/*.go'
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.24.6"
+  NODE_VERSION: "22"
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  validate-openapi:
+    name: Validate OpenAPI Spec
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate OpenAPI syntax
+        run: npm run docs:validate
+
+      - name: Advanced OpenAPI linting
+        run: npm run spectral:lint
+
+      - name: Check schema compatibility
+        run: npm run openapi:check-schema
+
+  generate-docs:
+    name: Generate Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Go dependencies
+        run: go mod download
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Install Swagger tools
+        run: go install github.com/swaggo/swag/cmd/swag@latest
+
+      - name: Generate API documentation
+        run: make docs-generate
+
+      - name: Build HTML documentation
+        run: npm run docs:build
+
+      - name: Verify generated files
+        run: |
+          ls -la docs/swagger/
+          test -f docs/swagger/swagger.yaml
+          test -f docs/swagger/swagger.json
+          test -f docs/swagger/docs.go
+
+      - name: Upload documentation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-documentation
+          path: |
+            docs/swagger/
+            docs/*.md
+          retention-days: 30
+
+  test-client-generation:
+    name: Test Client Generation
+    runs-on: ubuntu-latest
+    needs: [validate-openapi]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Test JavaScript client generation
+        run: npm run openapi:generate-js
+
+      - name: Test TypeScript client generation
+        run: npm run openapi:generate-ts
+
+      - name: Validate client generation capability
+        run: npm run test:clients
+
+  check-docs-coverage:
+    name: Check Documentation Coverage
+    runs-on: ubuntu-latest
+    needs: [generate-docs]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download documentation artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: api-documentation
+          path: docs/
+
+      - name: Analyze API coverage
+        run: |
+          echo "🔍 Analyzing API documentation coverage..."
+
+          # Count total API endpoints in code
+          TOTAL_ENDPOINTS=$(grep -r "@Router" internal/api/handlers/ | wc -l || echo "0")
+
+          # Count documented endpoints in OpenAPI spec
+          DOCUMENTED_ENDPOINTS=$(grep -c "paths:" docs/swagger/swagger.yaml || echo "0")
+
+          echo "📊 Documentation Coverage Report:"
+          echo "  Total API endpoints found in code: $TOTAL_ENDPOINTS"
+          echo "  Documented endpoints in OpenAPI: $DOCUMENTED_ENDPOINTS"
+
+          if [ "$TOTAL_ENDPOINTS" -gt 0 ]; then
+            COVERAGE=$((DOCUMENTED_ENDPOINTS * 100 / TOTAL_ENDPOINTS))
+            echo "  Documentation coverage: ${COVERAGE}%"
+
+            if [ "$COVERAGE" -lt 80 ]; then
+              echo "⚠️ Documentation coverage below 80%"
+              echo "Consider adding missing API documentation"
+            else
+              echo "✅ Good documentation coverage"
+            fi
+          else
+            echo "ℹ️ No API endpoints found for coverage analysis"
+          fi
+
+  docs-summary:
+    name: Documentation Summary
+    runs-on: ubuntu-latest
+    needs: [validate-openapi, generate-docs, test-client-generation, check-docs-coverage]
+    if: always()
+    steps:
+      - name: Documentation pipeline summary
+        run: |
+          echo "📚 Documentation Pipeline Summary:"
+          echo "- OpenAPI Validation: ${{ needs.validate-openapi.result }}"
+          echo "- Documentation Generation: ${{ needs.generate-docs.result }}"
+          echo "- Client Generation Tests: ${{ needs.test-client-generation.result }}"
+          echo "- Documentation Coverage: ${{ needs.check-docs-coverage.result }}"
+
+          # Fail if critical documentation jobs failed
+          if [[ "${{ needs.validate-openapi.result }}" == "failure" ||
+                "${{ needs.generate-docs.result }}" == "failure" ]]; then
+            echo "❌ Critical documentation jobs failed"
+            exit 1
+          fi
+
+          if [[ "${{ needs.test-client-generation.result }}" == "failure" ]]; then
+            echo "⚠️ Client generation tests failed - API may not be suitable for client generation"
+          fi
+
+          echo "✅ Documentation pipeline completed!"

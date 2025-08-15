@@ -189,6 +189,7 @@ func (h *DiscoveryHandler) GetDiscoveryJob(w http.ResponseWriter, r *http.Reques
 		"api_discovery_jobs_retrieved_total")
 }
 
+// UpdateDiscoveryJob handles PUT /api/v1/discovery/{id} - update an existing discovery job.
 func (h *DiscoveryHandler) UpdateDiscoveryJob(w http.ResponseWriter, r *http.Request) {
 	UpdateEntity[db.DiscoveryJob, DiscoveryRequest](
 		w, r,

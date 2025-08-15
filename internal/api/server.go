@@ -15,7 +15,7 @@ import (
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	httpSwagger "github.com/swaggo/http-swagger"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 
 	_ "github.com/anstrom/scanorama/docs/swagger" // Import generated swagger docs
 	apihandlers "github.com/anstrom/scanorama/internal/api/handlers"
