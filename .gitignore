@@ -62,6 +62,13 @@ test/docker/flask/__pycache__/
 .vscode/
 .DS_Store
 
+# Node.js and npm files
+node_modules/
+package.json
+package-lock.json
+npm-debug.log*
+.npm
+
 # Claude development files (never commit)
 .claude-*
 REFACTORING_COMPLETE.md
