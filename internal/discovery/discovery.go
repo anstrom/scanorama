@@ -182,6 +182,16 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 		return
 	}
 
+	// Save discovered hosts to database
+	if len(discoveredHosts) > 0 {
+		err = e.saveDiscoveredHosts(ctx, discoveredHosts)
+		if err != nil {
+			fmt.Printf("Warning: Failed to save some discovered hosts: %v\n", err)
+		} else {
+			fmt.Printf("Saved %d discovered hosts to database\n", len(discoveredHosts))
+		}
+	}
+
 	// Update job with results
 	job.HostsResponsive = len(discoveredHosts)
 	job.HostsDiscovered = len(discoveredHosts)
@@ -461,4 +471,69 @@ func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout
 	}
 
 	return fmt.Errorf("discovery job did not complete within %v", timeout)
+}
+
+// saveDiscoveredHosts saves discovery results to the hosts table.
+func (e *Engine) saveDiscoveredHosts(ctx context.Context, results []Result) error {
+	if len(results) == 0 {
+		return nil
+	}
+
+	var errors []string
+
+	for _, result := range results {
+		// Check if host already exists
+		var existingID string
+		checkQuery := `SELECT id FROM hosts WHERE ip_address = $1`
+		err := e.db.QueryRowContext(ctx, checkQuery, result.IPAddress.String()).Scan(&existingID)
+
+		if err != nil && err.Error() != "sql: no rows in result set" {
+			// Some other error occurred
+			log.Printf("Error checking existing host %s: %v", result.IPAddress, err)
+			errors = append(errors, fmt.Sprintf("failed to check host %s: %v", result.IPAddress, err))
+			continue
+		}
+
+		if existingID != "" {
+			// Host exists, update it
+			updateQuery := `
+				UPDATE hosts SET
+					status = $2,
+					discovery_method = $3,
+					last_seen = NOW(),
+					discovery_count = COALESCE(discovery_count, 0) + 1
+				WHERE ip_address = $1`
+
+			_, err = e.db.ExecContext(ctx, updateQuery,
+				result.IPAddress.String(),
+				result.Status,
+				result.Method)
+
+			if err != nil {
+				log.Printf("Failed to update host %s: %v", result.IPAddress, err)
+				errors = append(errors, fmt.Sprintf("failed to update host %s: %v", result.IPAddress, err))
+			}
+		} else {
+			// Host doesn't exist, create it
+			insertQuery := `
+				INSERT INTO hosts (ip_address, status, discovery_method, first_seen, last_seen, discovery_count)
+				VALUES ($1, $2, $3, NOW(), NOW(), 1)`
+
+			_, err = e.db.ExecContext(ctx, insertQuery,
+				result.IPAddress.String(),
+				result.Status,
+				result.Method)
+
+			if err != nil {
+				log.Printf("Failed to insert host %s: %v", result.IPAddress, err)
+				errors = append(errors, fmt.Sprintf("failed to insert host %s: %v", result.IPAddress, err))
+			}
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("errors saving hosts: %s", strings.Join(errors, "; "))
+	}
+
+	return nil
 }
