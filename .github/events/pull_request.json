@@ -1,0 +1,118 @@
+{
+  "action": "opened",
+  "number": 42,
+  "pull_request": {
+    "id": 987654321,
+    "number": 42,
+    "state": "open",
+    "title": "Update API documentation with operation IDs and security fixes",
+    "body": "This PR adds missing operation IDs to all API endpoints and fixes security definition issues in the OpenAPI specification.\n\n## Changes\n- Added operation IDs to all 35 endpoints\n- Fixed security definitions\n- Updated error response documentation\n- Improved npm configuration for CI\n\n## Testing\n- [ ] Documentation validation passes\n- [ ] All operation IDs are present\n- [ ] Client generation works\n- [ ] No validation errors or warnings",
+    "created_at": "2024-08-15T12:00:00Z",
+    "updated_at": "2024-08-15T12:00:00Z",
+    "head": {
+      "ref": "feature/docs-improvements",
+      "sha": "f1e2d3c4b5a6789012345678901234567890abcd",
+      "repo": {
+        "id": 123456789,
+        "name": "scanorama",
+        "full_name": "anstrom/scanorama",
+        "owner": {
+          "login": "anstrom",
+          "id": 12345,
+          "type": "User"
+        }
+      }
+    },
+    "base": {
+      "ref": "main",
+      "sha": "a1b2c3d4e5f6789012345678901234567890abcd",
+      "repo": {
+        "id": 123456789,
+        "name": "scanorama",
+        "full_name": "anstrom/scanorama",
+        "owner": {
+          "login": "anstrom",
+          "id": 12345,
+          "type": "User"
+        }
+      }
+    },
+    "user": {
+      "login": "developer",
+      "id": 67890,
+      "type": "User"
+    },
+    "mergeable": true,
+    "mergeable_state": "clean",
+    "merged": false,
+    "draft": false,
+    "additions": 150,
+    "deletions": 25,
+    "changed_files": 8
+  },
+  "repository": {
+    "id": 123456789,
+    "name": "scanorama",
+    "full_name": "anstrom/scanorama",
+    "private": false,
+    "owner": {
+      "login": "anstrom",
+      "id": 12345,
+      "type": "User"
+    },
+    "html_url": "https://github.com/anstrom/scanorama",
+    "clone_url": "https://github.com/anstrom/scanorama.git",
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "developer",
+    "id": 67890,
+    "type": "User"
+  },
+  "changes": {
+    "files": [
+      {
+        "filename": "docs/swagger/swagger.yaml",
+        "status": "modified",
+        "additions": 75,
+        "deletions": 10,
+        "changes": 85
+      },
+      {
+        "filename": "docs/swagger_docs.go",
+        "status": "modified",
+        "additions": 45,
+        "deletions": 5,
+        "changes": 50
+      },
+      {
+        "filename": "internal/api/handlers.go",
+        "status": "modified",
+        "additions": 20,
+        "deletions": 8,
+        "changes": 28
+      },
+      {
+        "filename": "package.json",
+        "status": "modified",
+        "additions": 5,
+        "deletions": 2,
+        "changes": 7
+      },
+      {
+        "filename": "package-lock.json",
+        "status": "modified",
+        "additions": 3,
+        "deletions": 0,
+        "changes": 3
+      },
+      {
+        "filename": ".github/workflows/docs-validation.yml",
+        "status": "modified",
+        "additions": 2,
+        "deletions": 0,
+        "changes": 2
+      }
+    ]
+  }
+}

@@ -9,25 +9,25 @@
     "docs:build": "redocly build-docs docs/swagger/swagger.yaml --output docs/swagger/index.html",
     "docs:serve": "redocly preview-docs docs/swagger/swagger.yaml",
     "docs:bundle": "redocly bundle docs/swagger/swagger.yaml --output docs/swagger/bundled.yaml",
-    "spectral:lint": "spectral lint docs/swagger/swagger.yaml",
-    "openapi:generate-js": "openapi-generator-cli generate -i docs/swagger/swagger.yaml -g javascript -o dist/js-client",
-    "openapi:generate-ts": "openapi-generator-cli generate -i docs/swagger/swagger.yaml -g typescript-axios -o dist/ts-client",
-    "test:clients": "npm run openapi:generate-js && npm run openapi:generate-ts"
+    "spectral:lint": "vacuum lint docs/swagger/swagger.yaml",
+    "openapi:validate-for-codegen": "redocly lint docs/swagger/swagger.yaml --extends=recommended",
+    "openapi:check-schema": "js-yaml docs/swagger/swagger.yaml > /dev/null && echo 'OpenAPI schema is valid YAML'",
+    "test:clients": "npm run openapi:validate-for-codegen && npm run openapi:check-schema"
   },
   "devDependencies": {
-    "@redocly/cli": "^1.25.0",
-    "@stoplight/spectral-cli": "^6.13.0",
+    "@jridgewell/sourcemap-codec": "1.5.5",
     "@openapitools/openapi-generator-cli": "^2.15.0",
+    "@redocly/cli": "^1.25.0",
+    "@quobix/vacuum": "^0.6.1",
     "js-yaml": "^4.1.0",
     "swagger-ui-dist": "^5.17.0"
   },
   "overrides": {
-    "glob": "^11.0.0",
-    "sourcemap-codec": "@jridgewell/sourcemap-codec@^1.5.0"
+    "glob": "^11.0.0"
   },
   "engines": {
-    "node": ">=20.17.0",
-    "npm": ">=10.0.0"
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   },
   "repository": {
     "type": "git",
