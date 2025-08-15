@@ -1,12 +1,14 @@
 # Scanorama
 
-Scanorama is an advanced network scanning and discovery tool built for continuous network monitoring. It provides OS-aware scanning capabilities, automated scheduling, robust database persistence, and enterprise-grade reliability with comprehensive API support for network management.
+Scanorama is an advanced network scanning and discovery tool built on nmap for continuous network monitoring. It provides a Go-based wrapper around nmap's powerful scanning engine with OS-aware scanning capabilities, automated scheduling, robust database persistence, and enterprise-grade reliability with comprehensive API support for network management.
 
 ## Requirements
 
 - Go 1.24.6+
-- nmap 7.0+
+- **nmap 7.0+** (required - provides core scanning functionality)
 - PostgreSQL (for database storage)
+
+**Note**: nmap must be installed and available in your system PATH. Scanorama uses nmap as its scanning engine for all network discovery and port scanning operations.
 
 ## Quick Start
 
@@ -53,11 +55,12 @@ make build
 - Graceful shutdown and resource cleanup
 - Production-ready error handling and recovery
 
-### Advanced Scanning Engine
-- Multiple scan types: connect, SYN, version detection, comprehensive, aggressive, stealth
-- Concurrent scanning with configurable rate limiting
-- Host discovery with OS detection capabilities
-- Service version detection and enumeration
+### Advanced Scanning Engine (Powered by nmap)
+- Multiple nmap scan types: connect, SYN, version detection, comprehensive, aggressive, stealth
+- Concurrent scanning with configurable rate limiting via nmap execution
+- Host discovery with OS detection capabilities using nmap's fingerprinting
+- Service version detection and enumeration through nmap's service detection
+- Direct integration with nmap's proven scanning algorithms and techniques
 
 ### Structured Logging & Monitoring
 - Built-in structured logging with `slog` support
@@ -84,20 +87,54 @@ make build
 - Detailed error information for troubleshooting
 - Request tracing and performance monitoring
 
+## Architecture
+
+Scanorama is built as a Go application that orchestrates nmap execution for all scanning operations:
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   REST API      │    │   Scan Engine   │    │      nmap       │
+│   & CLI         │───▶│   (Go Workers)  │───▶│   (External)    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   PostgreSQL    │    │   Scheduling    │    │   Raw Results   │
+│   Database      │    │   & Queuing     │    │   Parsing       │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+### nmap Integration
+- **Process Execution**: Scanorama spawns nmap processes with specific command-line arguments
+- **Result Parsing**: Raw nmap XML/JSON output is parsed into structured Go data types
+- **Error Handling**: nmap exit codes and stderr are captured for comprehensive error reporting
+- **Resource Management**: Concurrent nmap execution is controlled via worker pools with rate limiting
+- **Security Context**: nmap is executed with appropriate privileges for different scan types
+
+### Why nmap?
+- **Proven Reliability**: 25+ years of development and testing in production environments
+- **Comprehensive Coverage**: Industry-standard scanning techniques and OS fingerprinting
+- **Active Maintenance**: Regular updates for new protocols and evasion techniques
+- **Community Trust**: De facto standard for network scanning and security assessment
+
+Scanorama adds enterprise features (database persistence, API access, scheduling, monitoring) while leveraging nmap's proven scanning capabilities.
+
 ## Commands
 
-- `discover <network>` - Discover active hosts on network ranges with OS detection
-- `scan --targets <hosts>` - Perform port and service scanning with multiple scan types
-  - **connect**: TCP connect scanning (default)
-  - **syn**: SYN stealth scanning (requires privileges)
-  - **version**: Service version detection
-  - **comprehensive**: Full port range scanning
-  - **aggressive**: OS detection + version scanning + scripts
-  - **stealth**: Slow, evasive scanning
+- `discover <network>` - Discover active hosts on network ranges using nmap host discovery with OS detection
+- `scan --targets <hosts>` - Perform port and service scanning using nmap with multiple scan types
+  - **connect**: TCP connect scanning via nmap -sT (default)
+  - **syn**: SYN stealth scanning via nmap -sS (requires privileges)
+  - **version**: Service version detection via nmap -sV
+  - **comprehensive**: Full port range scanning via nmap -p-
+  - **aggressive**: OS detection + version scanning + scripts via nmap -A
+  - **stealth**: Slow, evasive scanning via nmap -sS -T1
 - `hosts` - Manage and view discovered hosts with filtering
 - `daemon` - Run as background service with API server and scheduling
 - `schedule` - Manage automated scan jobs with cron-like scheduling
-- `profiles` - Use predefined scan configurations for consistent scanning
+- `profiles` - Use predefined scan configurations for consistent nmap execution
+
+**Note**: All scanning operations require nmap to be installed and executable. Scanorama orchestrates nmap execution with database persistence and API integration.
 
 ## Make Targets
 
