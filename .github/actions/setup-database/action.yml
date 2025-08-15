@@ -55,7 +55,7 @@ runs:
 
         echo "Verifying database setup..."
         psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "SELECT version();"
-        psql -h localhost -p 5432 -U ${{ inputs.database-user }} -d ${{ inputs.database-name }} -c "SELECT current_database(), current_user;"
+        PGPASSWORD=${{ inputs.database-password }} psql -h localhost -p 5432 -U ${{ inputs.database-user }} -d ${{ inputs.database-name }} -c "SELECT current_database(), current_user;"
 
     - name: Test migration system
       shell: bash
