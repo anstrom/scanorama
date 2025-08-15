@@ -112,16 +112,9 @@ jobs:
           echo "Verifying database setup..."
           psql -h localhost -p 5432 -U postgres -d scanorama_test -c "SELECT version();"
 
-      - name: Run database migrations
-        env:
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: scanorama_test
-          DB_USER: test_user
-          DB_PASSWORD: test_password
-          DB_SSL_MODE: disable
+      - name: Build application and create config
         run: |
-          echo "Running database migrations..."
+          echo "Building application..."
 
           # Create test config file
           cat > config.integration-test.yaml << EOF
@@ -148,49 +141,31 @@ jobs:
 
           # Build application
           make build
-
-          # Test migrations can be applied
-          echo "Testing migration system..."
-          timeout 30s ./build/scanorama migrate --config config.integration-test.yaml || {
-            echo "Migration command failed or timed out"
-            exit 1
-          }
-
-          # Verify tables were created
-          PGPASSWORD=test_password psql -h localhost -p 5432 -U test_user -d scanorama_test -c "\dt" || {
-            echo "Failed to list tables after migration"
-            exit 1
-          }
+          echo "✅ Application built successfully"
 
       - name: Start server for integration testing
-        env:
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: scanorama_test
-          DB_USER: test_user
-          DB_PASSWORD: test_password
         run: |
-          echo "Starting Scanorama server in background..."
-          ./build/scanorama server --config config.integration-test.yaml &
+          echo "Starting Scanorama server in background (migrations will run automatically)..."
+          ./build/scanorama server start --config config.integration-test.yaml &
           SERVER_PID=$!
           echo $SERVER_PID > server.pid
           echo "Server PID: $SERVER_PID"
 
-          # Wait for server to start with timeout
-          echo "Waiting for server to start..."
-          for i in {1..30}; do
+          # Wait for server to start with timeout (includes migration time)
+          echo "Waiting for server to start and complete migrations..."
+          for i in {1..60}; do
             if curl -f -s http://localhost:8080/api/v1/health >/dev/null 2>&1; then
-              echo "✅ Server started successfully"
+              echo "✅ Server started successfully (migrations completed automatically)"
               break
             fi
-            if [ $i -eq 30 ]; then
+            if [ $i -eq 60 ]; then
               echo "❌ Server failed to start within timeout"
               echo "Server logs:"
               jobs -l
               kill $SERVER_PID 2>/dev/null || true
               exit 1
             fi
-            echo "Waiting for server ($i/30)..."
+            echo "Waiting for server and migrations ($i/60)..."
             sleep 2
           done
 
@@ -254,32 +229,33 @@ jobs:
         env:
           PGPASSWORD: test_password
         run: |
-          echo "Testing database operations..."
+          echo "Testing database operations (verifying automatic migrations)..."
 
           # Verify database is accessible and has correct schema
-          echo "Checking database schema..."
+          echo "Checking database schema after automatic migration..."
           TABLE_COUNT=$(psql -h localhost -p 5432 -U test_user -d scanorama_test -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" | tr -d ' ')
           echo "Found $TABLE_COUNT tables in database"
 
           if [ "$TABLE_COUNT" -lt 5 ]; then
-            echo "❌ Expected at least 5 tables, found $TABLE_COUNT"
+            echo "❌ Expected at least 5 tables after automatic migration, found $TABLE_COUNT"
+            echo "Available tables:"
             psql -h localhost -p 5432 -U test_user -d scanorama_test -c "\dt"
             exit 1
           fi
 
-          # Test that critical tables exist
+          # Test that critical tables exist (created by automatic migrations)
           CRITICAL_TABLES=("scan_jobs" "hosts" "scan_profiles")
           for table in "${CRITICAL_TABLES[@]}"; do
             EXISTS=$(psql -h localhost -p 5432 -U test_user -d scanorama_test -t -c "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '$table');" | tr -d ' ')
             if [ "$EXISTS" = "t" ]; then
-              echo "✅ Table $table exists"
+              echo "✅ Table $table exists (created by automatic migration)"
             else
-              echo "❌ Critical table $table missing"
+              echo "❌ Critical table $table missing after automatic migration"
               exit 1
             fi
           done
 
-          echo "✅ Database operations test completed"
+          echo "✅ Database operations test completed - automatic migrations working"
 
       - name: Run integration test suite
         run: |
