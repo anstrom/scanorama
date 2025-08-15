@@ -77,8 +77,8 @@ jobs:
       - name: Check operation IDs coverage
         run: |
           echo "Checking operation ID coverage..."
-          TOTAL_OPS=$(npx yq eval '.paths.*.* | length' docs/swagger/swagger.yaml)
-          OPS_WITH_IDS=$(npx yq eval '.paths.*.* | select(.operationId) | length' docs/swagger/swagger.yaml)
+          TOTAL_OPS=$(yq eval '[.paths.*.* | select(. != null)] | length' docs/swagger/swagger.yaml)
+          OPS_WITH_IDS=$(yq eval '[.paths.*.* | select(.operationId)] | length' docs/swagger/swagger.yaml)
           echo "Operation ID coverage: $OPS_WITH_IDS/$TOTAL_OPS operations"
 
           if [ "$OPS_WITH_IDS" -eq "$TOTAL_OPS" ]; then
@@ -91,12 +91,12 @@ jobs:
       - name: Verify required endpoints
         run: |
           echo "Verifying required endpoints are documented..."
-          DOCUMENTED=$(npx yq eval '.paths | keys | length' docs/swagger/swagger.yaml)
+          DOCUMENTED=$(yq eval '.paths | keys | length' docs/swagger/swagger.yaml)
           echo "Total documented endpoints: $DOCUMENTED"
 
           REQUIRED_ENDPOINTS=("/health" "/status" "/version" "/scans" "/hosts")
           for endpoint in "${REQUIRED_ENDPOINTS[@]}"; do
-            if npx yq eval ".paths | has(\"$endpoint\")" docs/swagger/swagger.yaml | grep -q "true"; then
+            if yq eval ".paths | has(\"$endpoint\")" docs/swagger/swagger.yaml | grep -q "true"; then
               echo "✅ $endpoint documented"
             else
               echo "⚠️  $endpoint not found (may use different path structure)"
@@ -189,10 +189,10 @@ jobs:
           fi
 
           if [ -f "$SPEC_FILE" ]; then
-            TOTAL_OPS=$(npx yq eval '.paths.*.* | length' "$SPEC_FILE")
-            OPS_WITH_IDS=$(npx yq eval '.paths.*.* | select(.operationId) | length' "$SPEC_FILE")
-            OPS_WITH_DESC=$(npx yq eval '.paths.*.* | select(.description) | length' "$SPEC_FILE")
-            OPS_WITH_SUMMARY=$(npx yq eval '.paths.*.* | select(.summary) | length' "$SPEC_FILE")
+            TOTAL_OPS=$(yq eval '[.paths.*.* | select(. != null)] | length' "$SPEC_FILE")
+            OPS_WITH_IDS=$(yq eval '[.paths.*.* | select(.operationId)] | length' "$SPEC_FILE")
+            OPS_WITH_DESC=$(yq eval '[.paths.*.* | select(.description)] | length' "$SPEC_FILE")
+            OPS_WITH_SUMMARY=$(yq eval '[.paths.*.* | select(.summary)] | length' "$SPEC_FILE")
 
             if [ "$TOTAL_OPS" -gt 0 ]; then
               ID_COVERAGE=$(( (OPS_WITH_IDS * 100) / TOTAL_OPS ))

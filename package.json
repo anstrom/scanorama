@@ -12,6 +12,8 @@
     "spectral:lint": "vacuum lint docs/swagger/swagger.yaml",
     "openapi:validate-for-codegen": "redocly lint docs/swagger/swagger.yaml --extends=recommended",
     "openapi:check-schema": "js-yaml docs/swagger/swagger.yaml > /dev/null && echo 'OpenAPI schema is valid YAML'",
+    "openapi:generate-js": "openapi-generator-cli generate -i docs/swagger/swagger.yaml -g javascript -o dist/js-client --skip-validate-spec",
+    "openapi:generate-ts": "openapi-generator-cli generate -i docs/swagger/swagger.yaml -g typescript-axios -o dist/ts-client --skip-validate-spec",
     "test:clients": "npm run openapi:validate-for-codegen && npm run openapi:check-schema"
   },
   "devDependencies": {
