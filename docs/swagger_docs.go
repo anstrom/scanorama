@@ -9,7 +9,7 @@
 // - Added comprehensive error responses
 // - Improved response coverage and documentation
 //
-//go:generate swag init -g swagger_docs_improved.go -o ./swagger --parseDependency --parseInternal
+//go:generate swag init -g swagger_docs.go -o ./swagger --parseDependency --parseInternal
 package docs
 
 import (
