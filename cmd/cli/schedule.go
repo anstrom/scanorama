@@ -144,7 +144,6 @@ func init() {
 
 func runScheduleList(cmd *cobra.Command, args []string) {
 	withDatabaseOrExit(func(database *db.DB) {
-		// Query scheduled jobs
 		jobs, err := queryScheduledJobs(database)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error querying scheduled jobs: %v\n", err)
@@ -267,14 +266,13 @@ func runScheduleShow(cmd *cobra.Command, args []string) {
 	name := args[0]
 
 	withDatabaseOrExit(func(database *db.DB) {
-		// Query job details
 		job, err := getScheduledJob(database, name)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error getting scheduled job: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error querying job '%s': %v\n", name, err)
 			os.Exit(1)
 		}
 
-		displayJobDetails(job)
+		displayScheduledJobDetails(job)
 	})
 }
 
@@ -317,8 +315,10 @@ type ScanJob struct {
 func queryScheduledJobs(database *db.DB) ([]ScheduledJob, error) {
 	query := `
 		SELECT
-			id, name, job_type, cron_expression, is_active,
-			created_at, last_run, run_count, configuration
+			id, name, type, cron_expression, enabled,
+			created_at, last_run,
+			COALESCE(last_run_duration_ms, 0) as last_run_duration_ms,
+			config
 		FROM scheduled_jobs
 		ORDER BY created_at DESC`
 
@@ -336,6 +336,7 @@ func queryScheduledJobs(database *db.DB) ([]ScheduledJob, error) {
 	for rows.Next() {
 		var job ScheduledJob
 		var configJSON string
+		var lastRunDurationMs int
 
 		err := rows.Scan(
 			&job.ID,
@@ -345,11 +346,16 @@ func queryScheduledJobs(database *db.DB) ([]ScheduledJob, error) {
 			&job.IsActive,
 			&job.CreatedAt,
 			&job.LastRun,
-			&job.RunCount,
+			&lastRunDurationMs,
 			&configJSON,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan failed: %w", err)
+		}
+
+		job.RunCount = 0 // Not stored in current schema
+		if job.LastRun != nil {
+			job.RunCount = 1 // Approximate
 		}
 
 		// Calculate next run time
@@ -393,7 +399,7 @@ func displayScheduledJobs(jobs []ScheduledJob) {
 
 func createScheduledDiscoveryJob(database *db.DB, job DiscoveryJob) error {
 	query := `
-		INSERT INTO scheduled_jobs (name, job_type, cron_expression, configuration, is_active)
+		INSERT INTO scheduled_jobs (name, type, cron_expression, config, enabled)
 		VALUES ($1, 'discovery', $2, $3, true)`
 
 	configJSON := fmt.Sprintf(`{"network":%q,"method":%q,"detect_os":%t}`,
@@ -409,7 +415,7 @@ func createScheduledDiscoveryJob(database *db.DB, job DiscoveryJob) error {
 
 func createScheduledScanJob(database *db.DB, job *ScanJob) error {
 	query := `
-		INSERT INTO scheduled_jobs (name, job_type, cron_expression, configuration, is_active)
+		INSERT INTO scheduled_jobs (name, type, cron_expression, config, enabled)
 		VALUES ($1, 'scan', $2, $3, true)`
 
 	configJSON := fmt.Sprintf(
@@ -446,13 +452,16 @@ func removeScheduledJob(database *db.DB, name string) error {
 func getScheduledJob(database *db.DB, name string) (*ScheduledJob, error) {
 	query := `
 		SELECT
-			id, name, job_type, cron_expression, is_active,
-			created_at, last_run, run_count, configuration
+			id, name, type, cron_expression, enabled,
+			created_at, last_run,
+			COALESCE(last_run_duration_ms, 0) as last_run_duration_ms,
+			config
 		FROM scheduled_jobs
 		WHERE name = $1`
 
 	var job ScheduledJob
 	var configJSON string
+	var lastRunDurationMs int
 
 	err := database.QueryRow(query, name).Scan(
 		&job.ID,
@@ -462,11 +471,16 @@ func getScheduledJob(database *db.DB, name string) (*ScheduledJob, error) {
 		&job.IsActive,
 		&job.CreatedAt,
 		&job.LastRun,
-		&job.RunCount,
+		&lastRunDurationMs,
 		&configJSON,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("job '%s' not found: %w", name, err)
+	}
+
+	job.RunCount = 0
+	if job.LastRun != nil {
+		job.RunCount = 1 // Approximate
 	}
 
 	job.NextRun = getNextRunTime(job.CronExpr)
@@ -474,13 +488,13 @@ func getScheduledJob(database *db.DB, name string) (*ScheduledJob, error) {
 	return &job, nil
 }
 
-func displayJobDetails(job *ScheduledJob) {
+func displayScheduledJobDetails(job *ScheduledJob) {
 	fmt.Printf("Scheduled Job Details: %s\n", job.Name)
 	fmt.Println(strings.Repeat("=", scheduleDetailSeparator))
 	fmt.Printf("ID: %s\n", job.ID)
-	fmt.Printf("Type: %s\n", job.JobType)
-	fmt.Printf("Schedule: %s\n", job.CronExpr)
-	fmt.Printf("Active: %t\n", job.IsActive)
+	fmt.Printf("Job Type: %s\n", job.JobType)
+	fmt.Printf("Cron Expression: %s\n", job.CronExpr)
+	fmt.Printf("Enabled: %t\n", job.IsActive)
 	fmt.Printf("Created: %s\n", job.CreatedAt.Format("2006-01-02 15:04:05"))
 	if job.LastRun != nil {
 		fmt.Printf("Last Run: %s\n", job.LastRun.Format("2006-01-02 15:04:05"))
