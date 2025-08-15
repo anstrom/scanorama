@@ -128,7 +128,14 @@ check_operation_ids() {
 
         # List endpoints without operation IDs
         log_info "Endpoints missing operation IDs:"
-        yq eval '.paths | to_entries | .[] | select(.value.*.operationId == null) | .key' "$spec_file" 2>/dev/null || true
+    local missing_ops=$(yq eval '[.paths[] | to_entries[] | select(.value.operationId == null)] | length' "$spec_file" 2>/dev/null)
+
+    if [ "$missing_ops" -gt 0 ]; then
+        log_warning "Found $missing_ops endpoints without operation IDs"
+
+        # List endpoints without operation IDs
+        log_info "Endpoints missing operation IDs:"
+        yq eval '.paths | to_entries[] | .key as $path | .value | to_entries[] | select(.value.operationId == null) | "\($path) \(.key)"' "$spec_file" 2>/dev/null || true
         return 1
     else
         log_success "All endpoints have operation IDs"
