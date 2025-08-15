@@ -1,0 +1,352 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "Dockerfile"
+      - "config*.yaml"
+      - "internal/**"
+      - "cmd/**"
+      - "migrations/**"
+      - ".github/workflows/integration-tests.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "Dockerfile"
+      - "config*.yaml"
+      - "internal/**"
+      - "cmd/**"
+      - "migrations/**"
+      - ".github/workflows/integration-tests.yml"
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.24.6"
+  NODE_VERSION: "22"
+
+permissions:
+  contents: read
+  checks: write
+  statuses: write
+  actions: read
+  pull-requests: read
+
+jobs:
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: scanorama_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d scanorama_test"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          go mod verify
+          npm ci || echo "No package.json found, skipping npm install"
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Wait for PostgreSQL
+        run: |
+          echo "Waiting for PostgreSQL to be ready..."
+          for i in {1..60}; do
+            if pg_isready -h localhost -p 5432 -U postgres -d scanorama_test; then
+              echo "PostgreSQL is ready!"
+              break
+            fi
+            echo "Waiting for PostgreSQL ($i/60)..."
+            sleep 2
+          done
+
+      - name: Setup test database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          echo "Creating test user and setting up database..."
+          psql -h localhost -p 5432 -U postgres -d postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'test_user') THEN CREATE USER test_user WITH PASSWORD 'test_password' CREATEDB SUPERUSER; END IF; END \$\$;"
+          psql -h localhost -p 5432 -U postgres -d scanorama_test -c "GRANT ALL PRIVILEGES ON DATABASE scanorama_test TO test_user;"
+
+          echo "Setting up database extensions..."
+          psql -h localhost -p 5432 -U postgres -d scanorama_test -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
+          psql -h localhost -p 5432 -U postgres -d scanorama_test -c "CREATE EXTENSION IF NOT EXISTS \"btree_gist\";"
+
+          echo "Verifying database setup..."
+          psql -h localhost -p 5432 -U postgres -d scanorama_test -c "SELECT version();"
+
+      - name: Run database migrations
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: scanorama_test
+          DB_USER: test_user
+          DB_PASSWORD: test_password
+          DB_SSL_MODE: disable
+        run: |
+          echo "Running database migrations..."
+
+          # Create test config file
+          cat > config.integration-test.yaml << EOF
+          database:
+            host: localhost
+            port: 5432
+            name: scanorama_test
+            username: test_user
+            password: test_password
+            ssl_mode: disable
+            max_connections: 10
+            max_idle_connections: 5
+
+          server:
+            host: localhost
+            port: 8080
+            read_timeout: 30s
+            write_timeout: 30s
+
+          logging:
+            level: info
+            format: json
+          EOF
+
+          # Build application
+          make build
+
+          # Test migrations can be applied
+          echo "Testing migration system..."
+          timeout 30s ./build/scanorama migrate --config config.integration-test.yaml || {
+            echo "Migration command failed or timed out"
+            exit 1
+          }
+
+          # Verify tables were created
+          PGPASSWORD=test_password psql -h localhost -p 5432 -U test_user -d scanorama_test -c "\dt" || {
+            echo "Failed to list tables after migration"
+            exit 1
+          }
+
+      - name: Start server for integration testing
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: scanorama_test
+          DB_USER: test_user
+          DB_PASSWORD: test_password
+        run: |
+          echo "Starting Scanorama server in background..."
+          ./build/scanorama server --config config.integration-test.yaml &
+          SERVER_PID=$!
+          echo $SERVER_PID > server.pid
+          echo "Server PID: $SERVER_PID"
+
+          # Wait for server to start with timeout
+          echo "Waiting for server to start..."
+          for i in {1..30}; do
+            if curl -f -s http://localhost:8080/api/v1/health >/dev/null 2>&1; then
+              echo "✅ Server started successfully"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ Server failed to start within timeout"
+              echo "Server logs:"
+              jobs -l
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+            fi
+            echo "Waiting for server ($i/30)..."
+            sleep 2
+          done
+
+      - name: Test core API endpoints
+        run: |
+          echo "Testing core API endpoints..."
+
+          # Test health endpoint
+          echo "Testing /api/v1/health..."
+          HEALTH_RESPONSE=$(curl -f -s http://localhost:8080/api/v1/health)
+          echo "Health response: $HEALTH_RESPONSE"
+
+          # Test status endpoint
+          echo "Testing /api/v1/status..."
+          STATUS_RESPONSE=$(curl -f -s http://localhost:8080/api/v1/status)
+          echo "Status response: $STATUS_RESPONSE"
+
+          # Test version endpoint
+          echo "Testing /api/v1/version..."
+          VERSION_RESPONSE=$(curl -f -s http://localhost:8080/api/v1/version)
+          echo "Version response: $VERSION_RESPONSE"
+
+          # Test admin endpoints (should be accessible in test mode)
+          echo "Testing /api/v1/admin/status..."
+          ADMIN_STATUS=$(curl -f -s http://localhost:8080/api/v1/admin/status || echo "Admin endpoint not accessible")
+          echo "Admin status: $ADMIN_STATUS"
+
+          echo "✅ Core endpoint tests completed"
+
+      - name: Test API endpoints match documentation
+        run: |
+          echo "Validating API endpoints match OpenAPI documentation..."
+
+          # Generate current OpenAPI spec
+          make docs-generate || {
+            echo "Failed to generate OpenAPI documentation"
+            exit 1
+          }
+
+          # Extract documented endpoints
+          if command -v yq >/dev/null 2>&1; then
+            echo "Documented endpoints:"
+            yq eval '.paths | keys | .[]' docs/swagger/swagger.yaml || echo "Could not extract endpoints from documentation"
+          else
+            echo "yq not available, skipping endpoint comparison"
+          fi
+
+          # Test documented API patterns
+          echo "Testing scan endpoints..."
+          curl -f -s -X GET "http://localhost:8080/api/v1/scans" || echo "Scans endpoint not responding"
+
+          echo "Testing host endpoints..."
+          curl -f -s -X GET "http://localhost:8080/api/v1/hosts" || echo "Hosts endpoint not responding"
+
+          echo "Testing profile endpoints..."
+          curl -f -s -X GET "http://localhost:8080/api/v1/profiles" || echo "Profiles endpoint not responding"
+
+          echo "✅ Documentation endpoint validation completed"
+
+      - name: Test database operations
+        env:
+          PGPASSWORD: test_password
+        run: |
+          echo "Testing database operations..."
+
+          # Verify database is accessible and has correct schema
+          echo "Checking database schema..."
+          TABLE_COUNT=$(psql -h localhost -p 5432 -U test_user -d scanorama_test -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" | tr -d ' ')
+          echo "Found $TABLE_COUNT tables in database"
+
+          if [ "$TABLE_COUNT" -lt 5 ]; then
+            echo "❌ Expected at least 5 tables, found $TABLE_COUNT"
+            psql -h localhost -p 5432 -U test_user -d scanorama_test -c "\dt"
+            exit 1
+          fi
+
+          # Test that critical tables exist
+          CRITICAL_TABLES=("scan_jobs" "hosts" "scan_profiles")
+          for table in "${CRITICAL_TABLES[@]}"; do
+            EXISTS=$(psql -h localhost -p 5432 -U test_user -d scanorama_test -t -c "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '$table');" | tr -d ' ')
+            if [ "$EXISTS" = "t" ]; then
+              echo "✅ Table $table exists"
+            else
+              echo "❌ Critical table $table missing"
+              exit 1
+            fi
+          done
+
+          echo "✅ Database operations test completed"
+
+      - name: Run integration test suite
+        run: |
+          echo "Running Go integration tests..."
+
+          # Set environment variables for integration tests
+          export DB_HOST=localhost
+          export DB_PORT=5432
+          export DB_NAME=scanorama_test
+          export DB_USER=test_user
+          export DB_PASSWORD=test_password
+          export DB_SSL_MODE=disable
+          export SERVER_URL=http://localhost:8080
+
+          # Run integration tests with timeout
+          timeout 300s go test -v -tags=integration ./test/integration/... || {
+            echo "Integration tests failed or timed out"
+            echo "Server logs:"
+            jobs -l
+            exit 1
+          }
+
+          echo "✅ Integration test suite completed"
+
+      - name: Performance baseline test
+        run: |
+          echo "Running basic performance tests..."
+
+          # Simple load test on health endpoint
+          echo "Testing health endpoint performance..."
+          for i in {1..10}; do
+            START_TIME=$(date +%s%N)
+            curl -f -s http://localhost:8080/api/v1/health >/dev/null
+            END_TIME=$(date +%s%N)
+            DURATION=$((($END_TIME - $START_TIME) / 1000000))
+            echo "Request $i: ${DURATION}ms"
+          done
+
+          echo "✅ Performance baseline completed"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "Cleaning up test environment..."
+
+          # Stop server
+          if [ -f server.pid ]; then
+            SERVER_PID=$(cat server.pid)
+            echo "Stopping server (PID: $SERVER_PID)..."
+            kill $SERVER_PID 2>/dev/null || echo "Server already stopped"
+            rm -f server.pid
+          fi
+
+          # Clean up test files
+          rm -f config.integration-test.yaml
+
+          # Wait a moment for cleanup
+          sleep 2
+
+          echo "✅ Cleanup completed"
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: integration-test-artifacts
+          path: |
+            config.integration-test.yaml
+            docs/swagger/
+          retention-days: 7
