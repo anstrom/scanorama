@@ -6,6 +6,13 @@ build/
 *.test
 *.out
 
+# Coverage files and reports
+coverage*.out
+coverage*.html
+api_coverage.*
+handlers_coverage.*
+*.coverage
+
 # Scan results
 *.xml
 result.*
@@ -16,6 +23,11 @@ scan_results.*
 coverage.out
 coverage.out.html
 coverage.html
+coverage_*.out
+coverage_*.html
+api_coverage.*
+handlers_coverage.*
+integration.test
 tmp/
 test_*.xml
 test_*.json
