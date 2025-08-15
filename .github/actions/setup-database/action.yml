@@ -5,10 +5,26 @@ inputs:
     description: "PostgreSQL version to use"
     required: false
     default: "16-alpine"
+  database-host:
+    description: "Database host"
+    required: false
+    default: "localhost"
+  database-port:
+    description: "Database port"
+    required: false
+    default: "5432"
   database-name:
     description: "Database name"
     required: false
     default: "scanorama_test"
+  postgres-user:
+    description: "PostgreSQL admin user"
+    required: false
+    default: "postgres"
+  postgres-password:
+    description: "PostgreSQL admin password"
+    required: false
+    default: "postgres"
   database-user:
     description: "Database user"
     required: false
@@ -32,7 +48,7 @@ runs:
       run: |
         echo "Waiting for PostgreSQL to be ready..."
         for i in {1..60}; do
-          if pg_isready -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }}; then
+          if pg_isready -h ${{ inputs.database-host }} -p ${{ inputs.database-port }} -U ${{ inputs.postgres-user }} -d ${{ inputs.database-name }}; then
             echo "PostgreSQL is ready!"
             break
           fi
@@ -43,24 +59,24 @@ runs:
     - name: Setup test user and extensions
       shell: bash
       env:
-        PGPASSWORD: postgres
+        PGPASSWORD: ${{ inputs.postgres-password }}
       run: |
         echo "Creating test user and setting up database..."
-        psql -h localhost -p 5432 -U postgres -d postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${{ inputs.database-user }}') THEN CREATE USER ${{ inputs.database-user }} WITH PASSWORD '${{ inputs.database-password }}' CREATEDB SUPERUSER; END IF; END \$\$;"
-        psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "GRANT ALL PRIVILEGES ON DATABASE ${{ inputs.database-name }} TO ${{ inputs.database-user }};"
+        psql -h ${{ inputs.database-host }} -p ${{ inputs.database-port }} -U ${{ inputs.postgres-user }} -d ${{ inputs.postgres-user }} -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${{ inputs.database-user }}') THEN CREATE USER ${{ inputs.database-user }} WITH PASSWORD '${{ inputs.database-password }}' CREATEDB SUPERUSER; END IF; END \$\$;"
+        psql -h ${{ inputs.database-host }} -p ${{ inputs.database-port }} -U ${{ inputs.postgres-user }} -d ${{ inputs.database-name }} -c "GRANT ALL PRIVILEGES ON DATABASE ${{ inputs.database-name }} TO ${{ inputs.database-user }};"
 
         echo "Setting up database extensions..."
-        psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
-        psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "CREATE EXTENSION IF NOT EXISTS \"btree_gist\";"
+        psql -h ${{ inputs.database-host }} -p ${{ inputs.database-port }} -U ${{ inputs.postgres-user }} -d ${{ inputs.database-name }} -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
+        psql -h ${{ inputs.database-host }} -p ${{ inputs.database-port }} -U ${{ inputs.postgres-user }} -d ${{ inputs.database-name }} -c "CREATE EXTENSION IF NOT EXISTS \"btree_gist\";"
 
         echo "Verifying database setup..."
-        psql -h localhost -p 5432 -U postgres -d ${{ inputs.database-name }} -c "SELECT version();"
-        PGPASSWORD=${{ inputs.database-password }} psql -h localhost -p 5432 -U ${{ inputs.database-user }} -d ${{ inputs.database-name }} -c "SELECT current_database(), current_user;"
+        psql -h ${{ inputs.database-host }} -p ${{ inputs.database-port }} -U ${{ inputs.postgres-user }} -d ${{ inputs.database-name }} -c "SELECT version();"
+        PGPASSWORD=${{ inputs.database-password }} psql -h ${{ inputs.database-host }} -p ${{ inputs.database-port }} -U ${{ inputs.database-user }} -d ${{ inputs.database-name }} -c "SELECT current_database(), current_user;"
 
     - name: Test migration system
       shell: bash
       env:
-        PGPASSWORD: postgres
+        PGPASSWORD: ${{ inputs.database-password }}
       run: |
         echo "Testing database migration system..."
 
@@ -78,8 +94,8 @@ runs:
 
         func main() {
             dbConfig := db.Config{
-                Host:     "localhost",
-                Port:     5432,
+                Host:     "${{ inputs.database-host }}",
+                Port:     ${{ inputs.database-port }},
                 Database: "${{ inputs.database-name }}",
                 Username: "${{ inputs.database-user }}",
                 Password: "${{ inputs.database-password }}",
@@ -152,7 +168,7 @@ runs:
         rm test_migrations.go
 
         # Verify final table count
-        TABLE_COUNT=$(psql -h localhost -p 5432 -U ${{ inputs.database-user }} -d ${{ inputs.database-name }} -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';")
+        TABLE_COUNT=$(PGPASSWORD=${{ inputs.database-password }} psql -h ${{ inputs.database-host }} -p ${{ inputs.database-port }} -U ${{ inputs.database-user }} -d ${{ inputs.database-name }} -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';")
         echo "Final table count: $TABLE_COUNT"
 
         if [ "$TABLE_COUNT" -lt 8 ]; then
@@ -166,8 +182,8 @@ runs:
         mkdir -p test/fixtures
         cat > test/fixtures/database.yml << EOF
         test:
-          host: localhost
-          port: 5432
+          host: ${{ inputs.database-host }}
+          port: ${{ inputs.database-port }}
           database: ${{ inputs.database-name }}
           username: ${{ inputs.database-user }}
           password: ${{ inputs.database-password }}

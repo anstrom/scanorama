@@ -30,6 +30,14 @@ on:
 env:
   GO_VERSION: "1.24.6"
   NODE_VERSION: "22"
+  # Database configuration
+  DB_HOST: "localhost"
+  DB_PORT: "5432"
+  DB_NAME: "scanorama_test"
+  POSTGRES_USER: "postgres"
+  POSTGRES_PASSWORD: "postgres"
+  DB_USER: "test_user"
+  DB_PASSWORD: "test_password"
 
 permissions:
   contents: read
@@ -47,13 +55,13 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: scanorama_test
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ${{ env.DB_NAME }}
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
         ports:
-          - 5432:5432
+          - ${{ env.DB_PORT }}:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d scanorama_test"
+          --health-cmd "pg_isready -U ${{ env.POSTGRES_USER }} -d ${{ env.DB_NAME }}"
           --health-interval 5s
           --health-timeout 10s
           --health-retries 10
@@ -83,9 +91,13 @@ jobs:
       - name: Setup test database
         uses: ./.github/actions/setup-database
         with:
-          database-name: scanorama_test
-          database-user: test_user
-          database-password: test_password
+          database-host: ${{ env.DB_HOST }}
+          database-port: ${{ env.DB_PORT }}
+          database-name: ${{ env.DB_NAME }}
+          postgres-user: ${{ env.POSTGRES_USER }}
+          postgres-password: ${{ env.POSTGRES_PASSWORD }}
+          database-user: ${{ env.DB_USER }}
+          database-password: ${{ env.DB_PASSWORD }}
 
       - name: Build application
         run: make build
