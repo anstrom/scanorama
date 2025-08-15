@@ -42,6 +42,8 @@ runs:
 
     - name: Setup test user and extensions
       shell: bash
+      env:
+        PGPASSWORD: postgres
       run: |
         echo "Creating test user and setting up database..."
         psql -h localhost -p 5432 -U postgres -d postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${{ inputs.database-user }}') THEN CREATE USER ${{ inputs.database-user }} WITH PASSWORD '${{ inputs.database-password }}' CREATEDB SUPERUSER; END IF; END \$\$;"
@@ -57,6 +59,8 @@ runs:
 
     - name: Test migration system
       shell: bash
+      env:
+        PGPASSWORD: postgres
       run: |
         echo "Testing database migration system..."
 
