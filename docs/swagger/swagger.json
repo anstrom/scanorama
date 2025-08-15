@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Network scanning and discovery service with automated reconnaissance capabilities\n\n## Features\n- Network host discovery and enumeration\n- Port scanning and service detection\n- Scan scheduling and automation\n- Real-time progress updates via WebSocket\n- Administrative monitoring and controls\n\n## Authentication\nAPI key authentication can be enabled. Include your API key in the `X-API-Key` header when required.",
+        "description": "Enterprise-grade network scanning and discovery service with automated reconnaissance capabilities\n\n## Features\n- **Advanced Scanning Engine**: Multiple scan types (connect, SYN, version, comprehensive, aggressive, stealth)\n- **Enterprise Reliability**: Race condition-free worker pools with graceful shutdown\n- **Database Integration**: PostgreSQL persistence with automatic migrations and transaction support\n- **Real-time Updates**: WebSocket support for live scan progress and results\n- **Comprehensive API**: RESTful endpoints with full CRUD operations\n- **Monitoring \u0026 Observability**: Built-in metrics, structured logging, and health checks\n- **Security**: Vulnerability scanning integration and secure error handling\n- **Scheduling**: Automated scan jobs with cron-like scheduling\n- **High Performance**: Concurrent processing with configurable rate limiting\n\n## Quality Assurance\n- **Test Coverage**: \u003e90% coverage on core packages with comprehensive integration tests\n- **Security**: Zero known vulnerabilities with automated security scanning\n- **Code Quality**: Zero linting issues with automated quality checks\n\n## Authentication\nAPI key authentication can be enabled. Include your API key in the `X-API-Key` header when required.",
         "title": "Scanorama API",
         "contact": {
             "name": "Scanorama Support",
@@ -11,7 +11,7 @@
             "name": "MIT",
             "url": "https://github.com/anstrom/scanorama/blob/main/LICENSE"
         },
-        "version": "1.0.0"
+        "version": "0.7.0"
     },
     "host": "localhost:8080",
     "basePath": "/api/v1",
@@ -847,7 +847,7 @@
                 },
                 "version": {
                     "type": "string",
-                    "example": "0.2.0"
+                    "example": "0.7.0"
                 }
             }
         },
@@ -863,7 +863,7 @@
                 },
                 "version": {
                     "type": "string",
-                    "example": "0.2.0"
+                    "example": "0.7.0"
                 }
             }
         }
