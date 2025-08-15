@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -14,11 +15,17 @@ import (
 )
 
 const (
-	// Profile management constants.
-	profileSeparatorLength = 85 // characters for profile list separator
-	maxDescriptionLength   = 35 // max description length before truncation
-	profileDetailSeparator = 50 // characters for profile detail separator
-	maxPortsToShow         = 5  // maximum ports to show before truncation
+	profileDetailSeparator   = 50
+	maxProfilesLimit         = 100
+	profileListSeparatorLen  = 100
+	maxOSFamilyDisplayLen    = 15
+	maxDescriptionDisplayLen = 40
+	maxPortsBeforeTruncate   = 5
+)
+
+var (
+	profileTestTarget string
+	profileTestDryRun bool
 )
 
 // profilesCmd represents the profiles command.
@@ -37,39 +44,31 @@ predefined port lists, scan types, and timing configurations.`,
 var profilesListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all available scan profiles",
-	Long: `Display all available scan profiles with their descriptions
-and basic configuration information.`,
+	Long: `Display a list of all available scan profiles with their
+basic information including name, description, and target OS family.`,
 	Run: runProfilesList,
 }
 
 // profilesShowCmd represents the profiles show command.
 var profilesShowCmd = &cobra.Command{
-	Use:   "show [profile-name]",
+	Use:   "show <profile-name>",
 	Short: "Show details of a specific scan profile",
 	Long: `Display detailed information about a specific scan profile
-including its port configuration, scan types, and timing settings.`,
-	Example: `  scanorama profiles show windows-server
-  scanorama profiles show linux-workstation`,
+including all configuration options, port specifications, and usage examples.`,
 	Args: cobra.ExactArgs(1),
 	Run:  runProfilesShow,
 }
 
 // profilesTestCmd represents the profiles test command.
 var profilesTestCmd = &cobra.Command{
-	Use:   "test [profile-name]",
+	Use:   "test <profile-name>",
 	Short: "Test a scan profile against a target",
-	Long: `Test a scan profile by running it against a specified target
-to verify the configuration and see what results it produces.`,
-	Example: `  scanorama profiles test windows-server --target 192.168.1.10
-  scanorama profiles test linux-server --target localhost`,
+	Long: `Test a scan profile configuration against a specific target host.
+This allows you to verify the profile works as expected before using it
+in production scans or scheduled jobs.`,
 	Args: cobra.ExactArgs(1),
 	Run:  runProfilesTest,
 }
-
-var (
-	profileTestTarget string
-	profileTestDryRun bool
-)
 
 func init() {
 	rootCmd.AddCommand(profilesCmd)
@@ -88,13 +87,13 @@ func init() {
 
 	// Add detailed descriptions
 	profilesTestCmd.Flags().Lookup("target").Usage = "Target host or IP address to test the profile against"
-	profilesTestCmd.Flags().Lookup("dry-run").Usage = "Display scan configuration without executing the scan"
+	profilesTestCmd.Flags().Lookup("dry-run").Usage = "Show scan configuration without actually running the scan"
 }
 
 func runProfilesList(cmd *cobra.Command, args []string) {
 	withDatabaseOrExit(func(database *db.DB) {
-		// Query profiles using safe scanning approach
-		profiles, err := queryProfiles(database)
+		ctx := context.Background()
+		profiles, _, err := database.ListProfiles(ctx, db.ProfileFilters{}, 0, maxProfilesLimit)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error querying profiles: %v\n", err)
 			os.Exit(1)
@@ -108,7 +107,7 @@ func runProfilesShow(cmd *cobra.Command, args []string) {
 	profileName := args[0]
 
 	withDatabaseOrExit(func(database *db.DB) {
-		profile, err := getProfile(database, profileName)
+		profile, err := getProfileByName(database, profileName)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error querying profile '%s': %v\n", profileName, err)
 			os.Exit(1)
@@ -121,181 +120,167 @@ func runProfilesShow(cmd *cobra.Command, args []string) {
 func runProfilesTest(cmd *cobra.Command, args []string) {
 	profileName := args[0]
 
-	// Validate target
-	if profileTestTarget == "" {
-		fmt.Fprintf(os.Stderr, "Error: target is required for profile testing\n")
+	// Validate target IP
+	if err := validateIP(profileTestTarget); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid target IP '%s': %v\n", profileTestTarget, err)
 		os.Exit(1)
 	}
 
 	withDatabaseOrExit(func(database *db.DB) {
-		// Get profile details
-		profile, err := getProfile(database, profileName)
+		profile, err := getProfileByName(database, profileName)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error getting profile '%s': %v\n", profileName, err)
+			fmt.Fprintf(os.Stderr, "Error querying profile '%s': %v\n", profileName, err)
 			os.Exit(1)
 		}
 
 		if profileTestDryRun {
-			// Show what would be scanned
 			displayTestConfiguration(profile, profileTestTarget)
 		} else {
-			// Actually run the test scan
 			runTestScan(database, profile, profileTestTarget)
 		}
 	})
 }
 
-// ScanProfile represents a scan profile.
-type ScanProfile struct {
-	ID            string
-	Name          string
-	Description   string
-	OSFamily      string
-	ScanType      string
-	Ports         string
-	TimingLevel   int
-	IsActive      bool
-	CreatedAt     string
-	CustomScripts string
-}
-
-func queryProfiles(database *db.DB) ([]ScanProfile, error) {
-	// Use safe approach to avoid pq.StringArray scanning issues
+func getProfileByName(database *db.DB, name string) (*db.ScanProfile, error) {
 	query := `
-		SELECT
-			id, name, description, os_family, scan_type,
-			ports, timing_level, is_active, created_at,
-			COALESCE(custom_scripts, '') as custom_scripts
-		FROM scan_profiles
-		WHERE is_active = true
-		ORDER BY os_family, name`
-
-	rows, err := database.Query(query)
-	if err != nil {
-		return nil, fmt.Errorf("query failed: %w", err)
-	}
-	defer func() {
-		if closeErr := rows.Close(); closeErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to close rows: %v\n", closeErr)
-		}
-	}()
-
-	var profiles []ScanProfile
-	for rows.Next() {
-		var profile ScanProfile
-
-		err := rows.Scan(
-			&profile.ID,
-			&profile.Name,
-			&profile.Description,
-			&profile.OSFamily,
-			&profile.ScanType,
-			&profile.Ports,
-			&profile.TimingLevel,
-			&profile.IsActive,
-			&profile.CreatedAt,
-			&profile.CustomScripts,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("scan failed: %w", err)
-		}
-
-		profiles = append(profiles, profile)
-	}
-
-	return profiles, nil
-}
-
-func getProfile(database *db.DB, name string) (*ScanProfile, error) {
-	query := `
-		SELECT
-			id, name, description, os_family, scan_type,
-			ports, timing_level, is_active, created_at,
-			COALESCE(custom_scripts, '') as custom_scripts
+		SELECT id, name, description, os_family, ports, scan_type,
+		       timing, scripts, options, priority, built_in,
+		       created_at, updated_at
 		FROM scan_profiles
 		WHERE name = $1`
 
-	var profile ScanProfile
+	profile := &db.ScanProfile{}
+	var osFamily, scripts interface{}
+	var options []byte
 
 	err := database.QueryRow(query, name).Scan(
 		&profile.ID,
 		&profile.Name,
 		&profile.Description,
-		&profile.OSFamily,
-		&profile.ScanType,
+		&osFamily,
 		&profile.Ports,
-		&profile.TimingLevel,
-		&profile.IsActive,
+		&profile.ScanType,
+		&profile.Timing,
+		&scripts,
+		&options,
+		&profile.Priority,
+		&profile.BuiltIn,
 		&profile.CreatedAt,
-		&profile.CustomScripts,
+		&profile.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("profile '%s' not found: %w", name, err)
 	}
 
-	return &profile, nil
+	// Handle array fields
+	if osFamily != nil {
+		if arr, ok := osFamily.([]interface{}); ok {
+			for _, item := range arr {
+				if str, ok := item.(string); ok {
+					profile.OSFamily = append(profile.OSFamily, str)
+				}
+			}
+		}
+	}
+
+	if scripts != nil {
+		if arr, ok := scripts.([]interface{}); ok {
+			for _, item := range arr {
+				if str, ok := item.(string); ok {
+					profile.Scripts = append(profile.Scripts, str)
+				}
+			}
+		}
+	}
+
+	// Handle JSONB options
+	if len(options) > 0 {
+		profile.Options = db.JSONB(options)
+	}
+
+	return profile, nil
 }
 
-func displayProfiles(profiles []ScanProfile) {
+func displayProfiles(profiles []*db.ScanProfile) {
 	if len(profiles) == 0 {
 		fmt.Println("No scan profiles found")
 		return
 	}
 
 	fmt.Printf("Found %d scan profile(s):\n\n", len(profiles))
-	fmt.Printf("%-25s %-12s %-12s %-15s %s\n",
-		"Name", "OS Family", "Scan Type", "Timing", "Description")
-	fmt.Println(strings.Repeat("-", profileSeparatorLength))
 
-	currentOSFamily := ""
-	for i := range profiles {
-		profile := &profiles[i]
-		// Group by OS family
-		if profile.OSFamily != currentOSFamily {
-			if currentOSFamily != "" {
-				fmt.Println()
+	// Header
+	fmt.Printf("%-20s %-12s %-15s %-40s %s\n", "Name", "Scan Type", "OS Family", "Description", "Built-in")
+	fmt.Println(strings.Repeat("-", profileListSeparatorLen))
+
+	// Display each profile
+	for _, profile := range profiles {
+		osFamily := "Any"
+		if len(profile.OSFamily) > 0 {
+			osFamily = strings.Join(profile.OSFamily, ",")
+			if len(osFamily) > maxOSFamilyDisplayLen {
+				osFamily = osFamily[:12] + "..."
 			}
-			currentOSFamily = profile.OSFamily
 		}
 
-		timingStr := fmt.Sprintf("T%d", profile.TimingLevel)
 		description := profile.Description
-		if len(description) > maxDescriptionLength {
-			description = description[:maxDescriptionLength-3] + "..."
+		if len(description) > maxDescriptionDisplayLen {
+			description = description[:37] + "..."
 		}
 
-		fmt.Printf("%-25s %-12s %-12s %-15s %s\n",
+		builtIn := "No"
+		if profile.BuiltIn {
+			builtIn = "Yes"
+		}
+
+		fmt.Printf("%-20s %-12s %-15s %-40s %s\n",
 			profile.Name,
-			profile.OSFamily,
 			profile.ScanType,
-			timingStr,
-			description)
+			osFamily,
+			description,
+			builtIn)
 	}
 
-	fmt.Printf("\nUse 'scanorama profiles show <name>' for detailed information\n")
+	fmt.Printf("\nUse 'scanorama profiles show <name>' to view profile details\n")
 	fmt.Printf("Use 'scanorama profiles test <name> --target <host>' to test a profile\n")
 }
 
-func displayProfileDetails(profile *ScanProfile) {
-	fmt.Printf("Scan Profile: %s\n", profile.Name)
+func displayProfileDetails(profile *db.ScanProfile) {
+	fmt.Printf("Profile: %s\n", profile.Name)
 	fmt.Println(strings.Repeat("=", profileDetailSeparator))
 	fmt.Printf("ID: %s\n", profile.ID)
 	fmt.Printf("Description: %s\n", profile.Description)
-	fmt.Printf("OS Family: %s\n", profile.OSFamily)
+
+	if len(profile.OSFamily) > 0 {
+		fmt.Printf("OS Family: %s\n", strings.Join(profile.OSFamily, ", "))
+	} else {
+		fmt.Printf("OS Family: Any\n")
+	}
+
+	if len(profile.OSPattern) > 0 {
+		fmt.Printf("OS Patterns: %s\n", strings.Join(profile.OSPattern, ", "))
+	}
+
 	fmt.Printf("Scan Type: %s\n", profile.ScanType)
 	fmt.Printf("Ports: %s\n", profile.Ports)
-	fmt.Printf("Timing Level: T%d\n", profile.TimingLevel)
-	fmt.Printf("Active: %t\n", profile.IsActive)
-	fmt.Printf("Created: %s\n", profile.CreatedAt)
+	fmt.Printf("Timing: %s\n", profile.Timing)
+	fmt.Printf("Priority: %d\n", profile.Priority)
+	fmt.Printf("Built-in: %t\n", profile.BuiltIn)
+	fmt.Printf("Created: %s\n", profile.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("Updated: %s\n", profile.UpdatedAt.Format("2006-01-02 15:04:05"))
 
-	if profile.CustomScripts != "" {
-		fmt.Printf("Custom Scripts: %s\n", profile.CustomScripts)
+	if len(profile.Scripts) > 0 {
+		fmt.Printf("Scripts: %s\n", strings.Join(profile.Scripts, ", "))
+	}
+
+	if len(profile.Options) > 0 {
+		fmt.Printf("Options: %+v\n", profile.Options)
 	}
 
 	// Parse and display port information
 	if profile.Ports != "" {
 		fmt.Println("\nPort Configuration:")
-		displayPortInfo(profile.Ports)
+		displayPortList(profile.Ports)
 	}
 
 	fmt.Printf("\nTo use this profile:\n")
@@ -303,10 +288,19 @@ func displayProfileDetails(profile *ScanProfile) {
 	fmt.Printf("  scanorama profiles test %s --target <host>\n", profile.Name)
 }
 
-func displayPortInfo(ports string) {
+func displayPortList(ports string) {
 	// Parse port specification and provide helpful information
 	if strings.Contains(ports, ",") {
-		displayPortList(ports)
+		portList := strings.Split(ports, ",")
+		fmt.Printf("  Specific ports: %d ports specified\n", len(portList))
+
+		// Show first few ports as example
+		if len(portList) <= 10 {
+			fmt.Printf("  Ports: %s\n", ports)
+		} else {
+			first5 := strings.Join(portList[:5], ",")
+			fmt.Printf("  Ports: %s... (and %d more)\n", first5, len(portList)-maxPortsBeforeTruncate)
+		}
 		return
 	}
 
@@ -323,40 +317,26 @@ func displayPortInfo(ports string) {
 	fmt.Printf("  Port specification: %s\n", ports)
 }
 
-func displayPortList(ports string) {
-	portList := strings.Split(ports, ",")
-	fmt.Printf("  Specific ports: %d ports specified\n", len(portList))
-
-	// Show first few ports as example
-	if len(portList) <= 10 {
-		fmt.Printf("  Ports: %s\n", ports)
-		return
-	}
-
-	first5 := strings.Join(portList[:maxPortsToShow], ",")
-	fmt.Printf("  Ports: %s... (and %d more)\n", first5, len(portList)-maxPortsToShow)
-}
-
-func displayTestConfiguration(profile *ScanProfile, target string) {
+func displayTestConfiguration(profile *db.ScanProfile, target string) {
 	fmt.Printf("Test Configuration for Profile: %s\n", profile.Name)
 	fmt.Println(strings.Repeat("=", profileDetailSeparator))
 	fmt.Printf("Target: %s\n", target)
 	fmt.Printf("Scan Type: %s\n", profile.ScanType)
 	fmt.Printf("Ports: %s\n", profile.Ports)
-	fmt.Printf("Timing Level: T%d\n", profile.TimingLevel)
+	fmt.Printf("Timing: %s\n", profile.Timing)
 
-	if profile.CustomScripts != "" {
-		fmt.Printf("Custom Scripts: %s\n", profile.CustomScripts)
+	if len(profile.Scripts) > 0 {
+		fmt.Printf("Scripts: %s\n", strings.Join(profile.Scripts, ", "))
 	}
 
 	fmt.Println("\nThis configuration would perform:")
-	displayPortInfo(profile.Ports)
+	displayPortList(profile.Ports)
 
 	fmt.Printf("\nTo actually run this test:\n")
 	fmt.Printf("  scanorama profiles test %s --target %s\n", profile.Name, target)
 }
 
-func runTestScan(database *db.DB, profile *ScanProfile, target string) {
+func runTestScan(database *db.DB, profile *db.ScanProfile, target string) {
 	fmt.Printf("Testing profile '%s' against target '%s'...\n", profile.Name, target)
 	fmt.Println(strings.Repeat("-", profileDetailSeparator))
 
@@ -365,7 +345,7 @@ func runTestScan(database *db.DB, profile *ScanProfile, target string) {
 	fmt.Printf("  Profile: %s (%s)\n", profile.Name, profile.Description)
 	fmt.Printf("  Scan type: %s\n", profile.ScanType)
 	fmt.Printf("  Ports: %s\n", profile.Ports)
-	fmt.Printf("  Timing: T%d\n", profile.TimingLevel)
+	fmt.Printf("  Timing: %s\n", profile.Timing)
 	fmt.Println()
 
 	// Create scan configuration from profile
@@ -389,25 +369,15 @@ func runTestScan(database *db.DB, profile *ScanProfile, target string) {
 		totalPorts += len(host.Ports)
 	}
 
-	// Display results
 	fmt.Printf("\nProfile test completed successfully!\n")
 	fmt.Printf("Hosts scanned: %d\n", len(result.Hosts))
-	fmt.Printf("Total ports found: %d\n", totalPorts)
+	fmt.Printf("Open ports found: %d\n", totalPorts)
 
-	// Show summary of open ports found
-	openPorts := 0
-	for _, host := range result.Hosts {
-		for _, port := range host.Ports {
-			if port.State == "open" {
-				openPorts++
-				fmt.Printf("  %s:%d (%s) - %s\n", host.Address, port.Number, port.Protocol, port.Service)
-			}
-		}
+	// Display results
+	if len(result.Hosts) > 0 {
+		fmt.Printf("\nScan Results:\n")
+		internal.PrintResults(result)
 	}
 
-	if openPorts == 0 {
-		fmt.Printf("No open ports found on target %s\n", target)
-	} else {
-		fmt.Printf("Found %d open port(s)\n", openPorts)
-	}
+	fmt.Printf("\nProfile '%s' test completed\n", profile.Name)
 }
