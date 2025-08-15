@@ -189,7 +189,7 @@ func gracefulShutdown(apiServer *api.Server) error {
 	}
 }
 
-func runAPIServer(cmd *cobra.Command, args []string) error {
+func runAPIServer(_ *cobra.Command, _ []string) error {
 	logger := logging.Default()
 
 	if verbose {

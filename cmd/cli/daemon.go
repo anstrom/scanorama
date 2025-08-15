@@ -119,7 +119,7 @@ func init() {
 	daemonStartCmd.Flags().Lookup("port").Usage = "Port number for daemon API server"
 }
 
-func runDaemonStart(cmd *cobra.Command, args []string) {
+func runDaemonStart(_ *cobra.Command, _ []string) {
 	// Check if daemon is already running
 	if isDaemonRunning() {
 		fmt.Fprintf(os.Stderr, "Daemon is already running (PID file: %s)\n", daemonPidFile)
@@ -191,7 +191,7 @@ func runDaemonStart(cmd *cobra.Command, args []string) {
 	}
 }
 
-func runDaemonStop(cmd *cobra.Command, args []string) {
+func runDaemonStop(_ *cobra.Command, _ []string) {
 	if !isDaemonRunning() {
 		fmt.Printf("Daemon is not running (no PID file found at %s)\n", daemonPidFile)
 		return
@@ -251,7 +251,7 @@ func runDaemonStop(cmd *cobra.Command, args []string) {
 	}
 }
 
-func runDaemonStatus(cmd *cobra.Command, args []string) {
+func runDaemonStatus(_ *cobra.Command, _ []string) {
 	fmt.Printf("Scanorama Daemon Status\n")
 	fmt.Println(strings.Repeat("=", statusLineLength))
 

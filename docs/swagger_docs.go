@@ -244,7 +244,7 @@ type PaginatedSchedulesResponse struct {
 // @Failure 500 {object} ErrorResponse
 // @Router /health [get]
 // @ID getHealth
-func Health(w http.ResponseWriter, r *http.Request) {}
+func Health(_ http.ResponseWriter, _ *http.Request) {}
 
 // Status godoc
 // @Summary System status
@@ -256,7 +256,7 @@ func Health(w http.ResponseWriter, r *http.Request) {}
 // @Failure 500 {object} ErrorResponse
 // @Router /status [get]
 // @ID getStatus
-func Status(w http.ResponseWriter, r *http.Request) {}
+func Status(_ http.ResponseWriter, _ *http.Request) {}
 
 // Version godoc
 // @Summary Version information
@@ -268,7 +268,7 @@ func Status(w http.ResponseWriter, r *http.Request) {}
 // @Failure 500 {object} ErrorResponse
 // @Router /version [get]
 // @ID getVersion
-func Version(w http.ResponseWriter, r *http.Request) {}
+func Version(_ http.ResponseWriter, _ *http.Request) {}
 
 // Metrics godoc
 // @Summary Application metrics
@@ -280,7 +280,7 @@ func Version(w http.ResponseWriter, r *http.Request) {}
 // @Failure 500 {object} ErrorResponse
 // @Router /metrics [get]
 // @ID getMetrics
-func Metrics(w http.ResponseWriter, r *http.Request) {}
+func Metrics(_ http.ResponseWriter, _ *http.Request) {}
 
 // AdminStatus godoc
 // @Summary Admin status
@@ -294,7 +294,7 @@ func Metrics(w http.ResponseWriter, r *http.Request) {}
 // @Failure 500 {object} ErrorResponse
 // @Router /admin/status [get]
 // @ID getAdminStatus
-func AdminStatus(w http.ResponseWriter, r *http.Request) {}
+func AdminStatus(_ http.ResponseWriter, _ *http.Request) {}
 
 // ListScans godoc
 // @Summary List scans
@@ -312,7 +312,7 @@ func AdminStatus(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /scans [get]
 // @ID listScans
-func ListScans(w http.ResponseWriter, r *http.Request) {}
+func ListScans(_ http.ResponseWriter, _ *http.Request) {}
 
 // CreateScan godoc
 // @Summary Create scan
@@ -329,7 +329,7 @@ func ListScans(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /scans [post]
 // @ID createScan
-func CreateScan(w http.ResponseWriter, r *http.Request) {}
+func CreateScan(_ http.ResponseWriter, _ *http.Request) {}
 
 // GetScan godoc
 // @Summary Get scan
@@ -345,7 +345,7 @@ func CreateScan(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /scans/{scanId} [get]
 // @ID getScan
-func GetScan(w http.ResponseWriter, r *http.Request) {}
+func GetScan(_ http.ResponseWriter, _ *http.Request) {}
 
 // DeleteScan godoc
 // @Summary Delete scan
@@ -361,7 +361,7 @@ func GetScan(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /scans/{scanId} [delete]
 // @ID deleteScan
-func DeleteScan(w http.ResponseWriter, r *http.Request) {}
+func DeleteScan(_ http.ResponseWriter, _ *http.Request) {}
 
 // ListHosts godoc
 // @Summary List hosts
@@ -380,7 +380,7 @@ func DeleteScan(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /hosts [get]
 // @ID listHosts
-func ListHosts(w http.ResponseWriter, r *http.Request) {}
+func ListHosts(_ http.ResponseWriter, _ *http.Request) {}
 
 // CreateHost godoc
 // @Summary Create host
@@ -398,7 +398,7 @@ func ListHosts(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /hosts [post]
 // @ID createHost
-func CreateHost(w http.ResponseWriter, r *http.Request) {}
+func CreateHost(_ http.ResponseWriter, _ *http.Request) {}
 
 // GetHost godoc
 // @Summary Get host
@@ -414,7 +414,7 @@ func CreateHost(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /hosts/{hostId} [get]
 // @ID getHost
-func GetHost(w http.ResponseWriter, r *http.Request) {}
+func GetHost(_ http.ResponseWriter, _ *http.Request) {}
 
 // UpdateHost godoc
 // @Summary Update host
@@ -433,7 +433,7 @@ func GetHost(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /hosts/{hostId} [put]
 // @ID updateHost
-func UpdateHost(w http.ResponseWriter, r *http.Request) {}
+func UpdateHost(_ http.ResponseWriter, _ *http.Request) {}
 
 // DeleteHost godoc
 // @Summary Delete host
@@ -448,7 +448,7 @@ func UpdateHost(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /hosts/{hostId} [delete]
 // @ID deleteHost
-func DeleteHost(w http.ResponseWriter, r *http.Request) {}
+func DeleteHost(_ http.ResponseWriter, _ *http.Request) {}
 
 // GetHostScans godoc
 // @Summary Get host scans
@@ -466,7 +466,7 @@ func DeleteHost(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /hosts/{hostId}/scans [get]
 // @ID getHostScans
-func GetHostScans(w http.ResponseWriter, r *http.Request) {}
+func GetHostScans(_ http.ResponseWriter, _ *http.Request) {}
 
 // ListProfiles godoc
 // @Summary List profiles
@@ -483,7 +483,7 @@ func GetHostScans(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /profiles [get]
 // @ID listProfiles
-func ListProfiles(w http.ResponseWriter, r *http.Request) {}
+func ListProfiles(_ http.ResponseWriter, _ *http.Request) {}
 
 // CreateProfile godoc
 // @Summary Create profile
@@ -501,7 +501,7 @@ func ListProfiles(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /profiles [post]
 // @ID createProfile
-func CreateProfile(w http.ResponseWriter, r *http.Request) {}
+func CreateProfile(_ http.ResponseWriter, _ *http.Request) {}
 
 // GetProfile godoc
 // @Summary Get profile
@@ -517,7 +517,7 @@ func CreateProfile(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /profiles/{profileId} [get]
 // @ID getProfile
-func GetProfile(w http.ResponseWriter, r *http.Request) {}
+func GetProfile(_ http.ResponseWriter, _ *http.Request) {}
 
 // UpdateProfile godoc
 // @Summary Update profile
@@ -536,7 +536,7 @@ func GetProfile(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /profiles/{profileId} [put]
 // @ID updateProfile
-func UpdateProfile(w http.ResponseWriter, r *http.Request) {}
+func UpdateProfile(_ http.ResponseWriter, _ *http.Request) {}
 
 // DeleteProfile godoc
 // @Summary Delete profile
@@ -552,7 +552,7 @@ func UpdateProfile(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /profiles/{profileId} [delete]
 // @ID deleteProfile
-func DeleteProfile(w http.ResponseWriter, r *http.Request) {}
+func DeleteProfile(_ http.ResponseWriter, _ *http.Request) {}
 
 // ListDiscoveryJobs godoc
 // @Summary List discovery jobs
@@ -569,7 +569,7 @@ func DeleteProfile(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /discovery [get]
 // @ID listDiscoveryJobs
-func ListDiscoveryJobs(w http.ResponseWriter, r *http.Request) {}
+func ListDiscoveryJobs(_ http.ResponseWriter, _ *http.Request) {}
 
 // CreateDiscoveryJob godoc
 // @Summary Create discovery job
@@ -586,7 +586,7 @@ func ListDiscoveryJobs(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /discovery [post]
 // @ID createDiscoveryJob
-func CreateDiscoveryJob(w http.ResponseWriter, r *http.Request) {}
+func CreateDiscoveryJob(_ http.ResponseWriter, _ *http.Request) {}
 
 // GetDiscoveryJob godoc
 // @Summary Get discovery job
@@ -602,7 +602,7 @@ func CreateDiscoveryJob(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /discovery/{discoveryId} [get]
 // @ID getDiscoveryJob
-func GetDiscoveryJob(w http.ResponseWriter, r *http.Request) {}
+func GetDiscoveryJob(_ http.ResponseWriter, _ *http.Request) {}
 
 // StartDiscovery godoc
 // @Summary Start discovery
@@ -619,7 +619,7 @@ func GetDiscoveryJob(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /discovery/{discoveryId}/start [post]
 // @ID startDiscovery
-func StartDiscovery(w http.ResponseWriter, r *http.Request) {}
+func StartDiscovery(_ http.ResponseWriter, _ *http.Request) {}
 
 // StopDiscovery godoc
 // @Summary Stop discovery
@@ -636,7 +636,7 @@ func StartDiscovery(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /discovery/{discoveryId}/stop [post]
 // @ID stopDiscovery
-func StopDiscovery(w http.ResponseWriter, r *http.Request) {}
+func StopDiscovery(_ http.ResponseWriter, _ *http.Request) {}
 
 // ListSchedules godoc
 // @Summary List schedules
@@ -653,7 +653,7 @@ func StopDiscovery(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /schedules [get]
 // @ID listSchedules
-func ListSchedules(w http.ResponseWriter, r *http.Request) {}
+func ListSchedules(_ http.ResponseWriter, _ *http.Request) {}
 
 // CreateSchedule godoc
 // @Summary Create schedule
@@ -670,7 +670,7 @@ func ListSchedules(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /schedules [post]
 // @ID createSchedule
-func CreateSchedule(w http.ResponseWriter, r *http.Request) {}
+func CreateSchedule(_ http.ResponseWriter, _ *http.Request) {}
 
 // GetSchedule godoc
 // @Summary Get schedule
@@ -686,7 +686,7 @@ func CreateSchedule(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /schedules/{scheduleId} [get]
 // @ID getSchedule
-func GetSchedule(w http.ResponseWriter, r *http.Request) {}
+func GetSchedule(_ http.ResponseWriter, _ *http.Request) {}
 
 // UpdateSchedule godoc
 // @Summary Update schedule
@@ -705,7 +705,7 @@ func GetSchedule(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /schedules/{scheduleId} [put]
 // @ID updateSchedule
-func UpdateSchedule(w http.ResponseWriter, r *http.Request) {}
+func UpdateSchedule(_ http.ResponseWriter, _ *http.Request) {}
 
 // DeleteSchedule godoc
 // @Summary Delete schedule
@@ -720,7 +720,7 @@ func UpdateSchedule(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /schedules/{scheduleId} [delete]
 // @ID deleteSchedule
-func DeleteSchedule(w http.ResponseWriter, r *http.Request) {}
+func DeleteSchedule(_ http.ResponseWriter, _ *http.Request) {}
 
 // EnableSchedule godoc
 // @Summary Enable schedule
@@ -736,7 +736,7 @@ func DeleteSchedule(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /schedules/{scheduleId}/enable [post]
 // @ID enableSchedule
-func EnableSchedule(w http.ResponseWriter, r *http.Request) {}
+func EnableSchedule(_ http.ResponseWriter, _ *http.Request) {}
 
 // DisableSchedule godoc
 // @Summary Disable schedule
@@ -752,7 +752,7 @@ func EnableSchedule(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /schedules/{scheduleId}/disable [post]
 // @ID disableSchedule
-func DisableSchedule(w http.ResponseWriter, r *http.Request) {}
+func DisableSchedule(_ http.ResponseWriter, _ *http.Request) {}
 
 // GetScanResults godoc
 // @Summary Get scan results
@@ -768,7 +768,7 @@ func DisableSchedule(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /scans/{scanId}/results [get]
 // @ID getScanResults
-func GetScanResults(w http.ResponseWriter, r *http.Request) {}
+func GetScanResults(_ http.ResponseWriter, _ *http.Request) {}
 
 // StartScan godoc
 // @Summary Start scan
@@ -785,7 +785,7 @@ func GetScanResults(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /scans/{scanId}/start [post]
 // @ID startScan
-func StartScan(w http.ResponseWriter, r *http.Request) {}
+func StartScan(_ http.ResponseWriter, _ *http.Request) {}
 
 // StopScan godoc
 // @Summary Stop scan
@@ -802,4 +802,4 @@ func StartScan(w http.ResponseWriter, r *http.Request) {}
 // @Security ApiKeyAuth
 // @Router /scans/{scanId}/stop [post]
 // @ID stopScan
-func StopScan(w http.ResponseWriter, r *http.Request) {}
+func StopScan(_ http.ResponseWriter, _ *http.Request) {}

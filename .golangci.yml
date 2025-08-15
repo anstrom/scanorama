@@ -51,6 +51,8 @@ linters:
     - predeclared
     - nolintlint
 
+    # Documentation and style (lenient)
+
   settings:
     govet:
       enable-all: true

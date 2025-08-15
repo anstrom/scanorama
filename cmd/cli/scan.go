@@ -80,7 +80,7 @@ func init() {
 	scanCmd.Flags().Lookup("os-family").Usage = "Filter targets by OS family when using --live-hosts"
 }
 
-func runScan(cmd *cobra.Command, args []string) {
+func runScan(cmd *cobra.Command, _ []string) {
 	// Validate arguments
 	if !scanLiveHosts && scanTargets == "" {
 		logging.Error("Either --targets or --live-hosts must be specified")

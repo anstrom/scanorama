@@ -744,7 +744,7 @@ func TestListOperation(t *testing.T) {
 		GetFilters: func(r *http.Request) TestFilter {
 			return TestFilter{Name: r.URL.Query().Get("name")}
 		},
-		ListFromDB: func(ctx context.Context, filters TestFilter, offset, limit int) ([]TestEntity, int64, error) {
+		ListFromDB: func(_ context.Context, _ TestFilter, offset, limit int) ([]TestEntity, int64, error) {
 			return testEntities, int64(len(testEntities)), nil
 		},
 		ToResponse: func(entity TestEntity) interface{} {
@@ -797,7 +797,7 @@ func TestCRUDOperation_ExecuteGet(t *testing.T) {
 		Metrics:    metricsRegistry,
 	}
 
-	getFromDB := func(ctx context.Context, id uuid.UUID) (*TestEntity, error) {
+	getFromDB := func(_ context.Context, id uuid.UUID) (*TestEntity, error) {
 		if id == testID {
 			return &TestEntity{ID: testID, Name: "Test Entity"}, nil
 		}
@@ -851,7 +851,7 @@ func TestCRUDOperation_ExecuteDelete(t *testing.T) {
 		Metrics:    metricsRegistry,
 	}
 
-	deleteFromDB := func(ctx context.Context, id uuid.UUID) error {
+	deleteFromDB := func(_ context.Context, id uuid.UUID) error {
 		if id == testID {
 			return nil
 		}
@@ -894,14 +894,14 @@ func TestJobControlOperation_ExecuteStart(t *testing.T) {
 		Metrics:    metricsRegistry,
 	}
 
-	startInDB := func(ctx context.Context, id uuid.UUID) error {
+	startInDB := func(_ context.Context, id uuid.UUID) error {
 		if id == testID {
 			return nil
 		}
 		return apierrors.ErrNotFound("test_job")
 	}
 
-	getFromDB := func(ctx context.Context, id uuid.UUID) (interface{}, error) {
+	getFromDB := func(_ context.Context, id uuid.UUID) (interface{}, error) {
 		if id == testID {
 			return testJob, nil
 		}
@@ -955,7 +955,7 @@ func TestJobControlOperation_ExecuteStop(t *testing.T) {
 		Metrics:    metricsRegistry,
 	}
 
-	stopInDB := func(ctx context.Context, id uuid.UUID) error {
+	stopInDB := func(_ context.Context, id uuid.UUID) error {
 		if id == testID {
 			return nil
 		}
@@ -1008,7 +1008,7 @@ func TestCreateEntity(t *testing.T) {
 		return req, nil
 	}
 
-	createInDB := func(ctx context.Context, data interface{}) (*TestEntity, error) {
+	createInDB := func(_ context.Context, data interface{}) (*TestEntity, error) {
 		if req, ok := data.(TestRequest); ok {
 			return &TestEntity{ID: uuid.New(), Name: req.Name}, nil
 		}
@@ -1072,7 +1072,7 @@ func TestUpdateEntity(t *testing.T) {
 		return req, nil
 	}
 
-	updateInDB := func(ctx context.Context, id uuid.UUID, data interface{}) (*TestEntity, error) {
+	updateInDB := func(_ context.Context, id uuid.UUID, data interface{}) (*TestEntity, error) {
 		if req, ok := data.(TestRequest); ok {
 			return &TestEntity{ID: id, Name: req.Name}, nil
 		}
@@ -1192,7 +1192,7 @@ func TestCommonHandlers_Integration(t *testing.T) {
 				}
 				return data, nil
 			},
-			func(ctx context.Context, data interface{}) (*TestEntity, error) {
+			func(_ context.Context, data interface{}) (*TestEntity, error) {
 				if req, ok := data.(map[string]string); ok {
 					entity := &TestEntity{
 						ID:        uuid.New(),

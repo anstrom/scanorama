@@ -1,0 +1,223 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for Scanorama
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a new feature! Please fill out the form below to help us understand your request.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: A brief, clear summary of the feature you'd like to see
+      placeholder: "Add support for..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What's the motivation behind this request?
+      placeholder: |
+        I'm always frustrated when...
+        It would be helpful if...
+        Currently there's no way to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like to see
+      placeholder: |
+        I would like to see...
+        The feature should work by...
+        Users would be able to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you've considered
+      placeholder: |
+        I considered...
+        Another approach could be...
+        A workaround is...
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      description: Which area of Scanorama does this feature relate to?
+      options:
+        - Network Scanning
+        - Host Discovery
+        - Port Scanning
+        - Service Detection
+        - API/REST Interface
+        - Web UI
+        - CLI Interface
+        - Database/Storage
+        - Configuration
+        - Security
+        - Performance
+        - Documentation
+        - Testing
+        - DevOps/CI-CD
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority Level
+      description: How important is this feature to you?
+      options:
+        - Low (Nice to have)
+        - Medium (Would be helpful)
+        - High (Important for my use case)
+        - Critical (Blocking my use case)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: complexity
+    attributes:
+      label: Estimated Complexity
+      description: How complex do you think this feature would be to implement?
+      options:
+        - Low (Simple change/addition)
+        - Medium (Moderate development effort)
+        - High (Significant development effort)
+        - Very High (Major architectural changes)
+        - Unknown
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case Details
+      description: Provide specific details about how you would use this feature
+      placeholder: |
+        In my environment, I need to...
+        The workflow would be...
+        This would help me...
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples/Mockups
+      description: Provide examples, mockups, or references to similar features in other tools
+      placeholder: |
+        Similar to how [tool] does...
+        Here's a mockup of the UI...
+        Example command: `scanorama scan --new-option`
+
+  - type: input
+    id: version
+    attributes:
+      label: Current Scanorama Version
+      description: What version of Scanorama are you currently using?
+      placeholder: "e.g., latest, v0.6.0"
+
+  - type: checkboxes
+    id: implementation
+    attributes:
+      label: Implementation Areas
+      description: Which parts of the system would this feature likely affect?
+      options:
+        - label: Backend/Core Engine
+        - label: REST API
+        - label: Database Schema
+        - label: Configuration System
+        - label: CLI Interface
+        - label: Web Frontend
+        - label: Documentation
+        - label: Testing Framework
+        - label: Docker/Containerization
+        - label: CI/CD Pipeline
+
+  - type: textarea
+    id: technical-details
+    attributes:
+      label: Technical Implementation Ideas
+      description: If you have technical knowledge, share implementation ideas or considerations
+      placeholder: |
+        This could be implemented by...
+        We would need to modify...
+        Dependencies might include...
+
+  - type: textarea
+    id: breaking-changes
+    attributes:
+      label: Breaking Changes
+      description: Would this feature require any breaking changes to existing functionality?
+      placeholder: |
+        This would require changes to...
+        Existing users would need to...
+        Migration path could be...
+
+  - type: textarea
+    id: testing
+    attributes:
+      label: Testing Considerations
+      description: How should this feature be tested? What test cases are important?
+      placeholder: |
+        Test cases should include...
+        Edge cases to consider...
+        Integration testing with...
+
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Documentation Requirements
+      description: What documentation would be needed for this feature?
+      placeholder: |
+        User documentation should cover...
+        API documentation changes...
+        Configuration examples...
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or information about the feature request
+      placeholder: |
+        Related issues...
+        External resources...
+        Timeline considerations...
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution Interest
+      description: Are you interested in contributing to this feature?
+      options:
+        - label: I would be willing to help implement this feature
+        - label: I can provide testing and feedback
+        - label: I can help with documentation
+        - label: I can provide domain expertise
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      description: Please confirm the following
+      options:
+        - label: I have searched existing issues and feature requests to avoid duplicates
+          required: true
+        - label: This feature aligns with Scanorama's purpose as a network scanning tool
+          required: true
+        - label: I understand this is a request and not a guarantee of implementation
+          required: true
+        - label: I am willing to provide additional clarification if needed
+          required: true

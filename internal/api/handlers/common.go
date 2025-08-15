@@ -466,7 +466,7 @@ func UpdateEntity[T any, R any](
 
 	crudOp.ExecuteUpdate(w, r, id,
 		parseAndConvert,
-		func(req interface{}) error {
+		func(_ interface{}) error {
 			// Skip validation for now as we converted to DB format
 			return nil
 		},

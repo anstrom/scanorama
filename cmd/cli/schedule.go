@@ -142,7 +142,7 @@ func init() {
 		"comprehensive, aggressive, stealth"
 }
 
-func runScheduleList(cmd *cobra.Command, args []string) {
+func runScheduleList(_ *cobra.Command, _ []string) {
 	withDatabaseOrExit(func(database *db.DB) {
 		jobs, err := queryScheduledJobs(database)
 		if err != nil {
@@ -154,7 +154,7 @@ func runScheduleList(cmd *cobra.Command, args []string) {
 	})
 }
 
-func runScheduleAddDiscovery(cmd *cobra.Command, args []string) {
+func runScheduleAddDiscovery(_ *cobra.Command, args []string) {
 	name := args[0]
 	cronExpr := args[1]
 	network := args[2]
@@ -195,7 +195,7 @@ func runScheduleAddDiscovery(cmd *cobra.Command, args []string) {
 	})
 }
 
-func runScheduleAddScan(cmd *cobra.Command, args []string) {
+func runScheduleAddScan(_ *cobra.Command, args []string) {
 	name := args[0]
 	cronExpr := args[1]
 
@@ -247,7 +247,7 @@ func runScheduleAddScan(cmd *cobra.Command, args []string) {
 	})
 }
 
-func runScheduleRemove(cmd *cobra.Command, args []string) {
+func runScheduleRemove(_ *cobra.Command, args []string) {
 	name := args[0]
 
 	withDatabaseOrExit(func(database *db.DB) {
@@ -262,7 +262,7 @@ func runScheduleRemove(cmd *cobra.Command, args []string) {
 	})
 }
 
-func runScheduleShow(cmd *cobra.Command, args []string) {
+func runScheduleShow(_ *cobra.Command, args []string) {
 	name := args[0]
 
 	withDatabaseOrExit(func(database *db.DB) {

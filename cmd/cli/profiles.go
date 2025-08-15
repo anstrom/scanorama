@@ -90,7 +90,7 @@ func init() {
 	profilesTestCmd.Flags().Lookup("dry-run").Usage = "Show scan configuration without actually running the scan"
 }
 
-func runProfilesList(cmd *cobra.Command, args []string) {
+func runProfilesList(_ *cobra.Command, _ []string) {
 	withDatabaseOrExit(func(database *db.DB) {
 		ctx := context.Background()
 		profiles, _, err := database.ListProfiles(ctx, db.ProfileFilters{}, 0, maxProfilesLimit)
@@ -103,7 +103,7 @@ func runProfilesList(cmd *cobra.Command, args []string) {
 	})
 }
 
-func runProfilesShow(cmd *cobra.Command, args []string) {
+func runProfilesShow(_ *cobra.Command, args []string) {
 	profileName := args[0]
 
 	withDatabaseOrExit(func(database *db.DB) {
@@ -117,7 +117,7 @@ func runProfilesShow(cmd *cobra.Command, args []string) {
 	})
 }
 
-func runProfilesTest(cmd *cobra.Command, args []string) {
+func runProfilesTest(_ *cobra.Command, args []string) {
 	profileName := args[0]
 
 	// Validate target IP

@@ -88,7 +88,7 @@ func init() {
 	hostsCmd.Flags().Lookup("show-ignored").Usage = "Include hosts marked as ignored in the results"
 }
 
-func runHosts(cmd *cobra.Command, args []string) {
+func runHosts(_ *cobra.Command, _ []string) {
 	// Validate last-seen format if provided
 	if hostsLastSeen != "" {
 		if err := validateDuration(hostsLastSeen); err != nil {
@@ -145,7 +145,7 @@ func runHosts(cmd *cobra.Command, args []string) {
 	})
 }
 
-func runHostsIgnore(cmd *cobra.Command, args []string) {
+func runHostsIgnore(_ *cobra.Command, args []string) {
 	ip := args[0]
 
 	withHostDatabaseOperation(ip, func(database *db.DB) error {
@@ -161,7 +161,7 @@ func runHostsIgnore(cmd *cobra.Command, args []string) {
 	})
 }
 
-func runHostsUnignore(cmd *cobra.Command, args []string) {
+func runHostsUnignore(_ *cobra.Command, args []string) {
 	ip := args[0]
 
 	withHostDatabaseOperation(ip, func(database *db.DB) error {
@@ -428,8 +428,7 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%.0fm", d.Minutes())
 	} else if d < 24*time.Hour {
 		return fmt.Sprintf("%.1fh", d.Hours())
-	} else {
-		days := int(d.Hours() / hoursPerDay)
-		return fmt.Sprintf("%dd", days)
 	}
+	days := int(d.Hours() / hoursPerDay)
+	return fmt.Sprintf("%dd", days)
 }
