@@ -1,0 +1,80 @@
+# Redocly configuration for Scanorama API documentation
+# This configuration customizes linting rules to properly handle our API structure
+
+apis:
+  scanorama@v1:
+    root: docs/swagger/swagger.yaml
+
+extends:
+  - recommended
+
+rules:
+  # Security rules - customize to allow public endpoints
+  security-defined:
+    severity: error
+    exceptions:
+      # Public endpoints that don't require authentication
+      - /health#get
+      - /status#get
+      - /version#get
+      - /metrics#get
+
+  # Response coverage rules
+  operation-2xx-response: error
+  operation-4xx-response:
+    severity: warn
+    exceptions:
+      # Public endpoints may not need 4xx responses
+      - /health#get
+      - /status#get
+      - /version#get
+
+  # Operation rules
+  operation-operationId: error
+  operation-summary: warn
+  operation-description: warn
+  operation-tag-defined: error
+
+  # Path and parameter rules
+  path-declaration-must-exist: error
+  path-not-include-query: error
+  path-parameters-defined: error
+
+  # Schema and model rules
+  no-unresolved-refs: error
+  no-enum-type-mismatch: error
+
+  # Documentation quality rules
+  info-contact: warn
+  info-license: warn
+  tag-description: warn
+
+  # Disable some overly strict rules for our use case
+  no-path-trailing-slash: off
+  operation-singular-tag: off
+
+# Custom settings
+settings:
+  # Performance settings
+  validate-schema: true
+
+  # Output settings
+  format: stylish
+
+  # Ignore certain files
+  ignore:
+    - "docs/swagger/docs.go"
+    - "**/*_test.go"
+
+# Decorators for additional processing
+decorators: {}
+
+# Custom themes (for documentation generation)
+theme:
+  openapi:
+    generateCodeSamples:
+      languages:
+        - lang: curl
+        - lang: javascript
+        - lang: python
+        - lang: go
