@@ -225,7 +225,7 @@ func queryHosts(database *db.DB, filters HostFilters) ([]Host, error) {
 			h.last_seen,
 			h.first_seen,
 			COALESCE(h.ignore_scanning, false) as ignore_scanning,
-			h.discovery_method,
+			COALESCE(h.discovery_method, '') as discovery_method,
 			COUNT(DISTINCT ps.id) as open_ports,
 			COUNT(DISTINCT sj.id) as total_scans
 		FROM hosts h
