@@ -209,6 +209,7 @@ func (s *Server) setupRoutes() {
 	discoveryHandler := apihandlers.NewDiscoveryHandler(s.database, s.logger, s.metrics)
 	profileHandler := apihandlers.NewProfileHandler(s.database, s.logger, s.metrics)
 	scheduleHandler := apihandlers.NewScheduleHandler(s.database, s.logger, s.metrics)
+	networkHandler := apihandlers.NewNetworkHandler(s.database, s.logger, s.metrics)
 
 	// Scan endpoints
 	api.HandleFunc("/scans", scanHandler.ListScans).Methods("GET")
@@ -250,6 +251,24 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/schedules/{id}", scheduleHandler.DeleteSchedule).Methods("DELETE")
 	api.HandleFunc("/schedules/{id}/enable", scheduleHandler.EnableSchedule).Methods("POST")
 	api.HandleFunc("/schedules/{id}/disable", scheduleHandler.DisableSchedule).Methods("POST")
+
+	// Network endpoints
+	api.HandleFunc("/networks", networkHandler.ListNetworks).Methods("GET")
+	api.HandleFunc("/networks", networkHandler.CreateNetwork).Methods("POST")
+	api.HandleFunc("/networks/stats", networkHandler.GetNetworkStats).Methods("GET")
+	api.HandleFunc("/networks/{id}", networkHandler.GetNetwork).Methods("GET")
+	api.HandleFunc("/networks/{id}", networkHandler.UpdateNetwork).Methods("PUT")
+	api.HandleFunc("/networks/{id}", networkHandler.DeleteNetwork).Methods("DELETE")
+	api.HandleFunc("/networks/{id}/enable", networkHandler.EnableNetwork).Methods("POST")
+	api.HandleFunc("/networks/{id}/disable", networkHandler.DisableNetwork).Methods("POST")
+	api.HandleFunc("/networks/{id}/rename", networkHandler.RenameNetwork).Methods("PUT")
+	api.HandleFunc("/networks/{id}/exclusions", networkHandler.ListNetworkExclusions).Methods("GET")
+	api.HandleFunc("/networks/{id}/exclusions", networkHandler.CreateNetworkExclusion).Methods("POST")
+
+	// Global exclusions endpoints
+	api.HandleFunc("/exclusions", networkHandler.ListGlobalExclusions).Methods("GET")
+	api.HandleFunc("/exclusions", networkHandler.CreateGlobalExclusion).Methods("POST")
+	api.HandleFunc("/exclusions/{id}", networkHandler.DeleteExclusion).Methods("DELETE")
 
 	// Admin endpoints
 	api.HandleFunc("/admin/status", s.adminStatusHandler).Methods("GET")
