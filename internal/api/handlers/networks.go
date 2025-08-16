@@ -97,7 +97,7 @@ func (h *NetworkHandler) parseCreateNetworkRequest(r *http.Request) (*CreateNetw
 	return &req, nil
 }
 
-func (h *NetworkHandler) setNetworkDefaults(req *CreateNetworkRequest) (isActive bool, scanEnabled bool) {
+func (h *NetworkHandler) setNetworkDefaults(req *CreateNetworkRequest) (isActive, scanEnabled bool) {
 	isActive = true
 	if req.IsActive != nil {
 		isActive = *req.IsActive
@@ -131,7 +131,6 @@ func (h *NetworkHandler) updateNetworkFields(network *db.Network, req *UpdateNet
 	if req.ScanEnabled != nil {
 		network.ScanEnabled = *req.ScanEnabled
 	}
-
 }
 
 func (h *NetworkHandler) updateNetworkStatusFields(network *db.Network, isActive, scanEnabled bool) {

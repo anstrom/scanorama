@@ -13,6 +13,7 @@ import (
 
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/discovery"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -22,34 +23,70 @@ const (
 	defaultConcurrency      = 50 // default concurrency for discovery
 	timeoutBufferSeconds    = 30 // extra timeout buffer for operations
 	tableHeaderSeparatorLen = 70 // length of table header separator
+
+	// SQL error constants.
+	sqlNoRowsError = "sql: no rows in result set"
 )
 
 var (
-	discoverDetectOS    bool
-	discoverAllNetworks bool
-	discoverMethod      string
-	discoverTimeout     int
+	discoverDetectOS       bool
+	discoverAllNetworks    bool
+	discoverConfiguredNets bool
+	discoverNetworkName    string
+	discoverMethod         string
+	discoverTimeout        int
+	discoverAdd            bool
+	discoverAddName        string
 )
 
 // discoverCmd represents the discover command.
 var discoverCmd = &cobra.Command{
 	Use:   "discover [network]",
 	Short: "Perform network discovery",
-	Long: `Discover active hosts on the specified network using various methods
-like ping sweeps, ARP discovery, or TCP probes.
+	Long: `Discover active hosts using various methods like ping sweeps, ARP discovery, or TCP probes.
 
-The network argument should be in CIDR notation (e.g., 192.168.1.0/24).
-If --all-networks is specified, the network argument is optional and
-local networks will be auto-discovered.`,
+Discovery can be performed on:
+- Specific CIDR networks (e.g., 192.168.1.0/24)
+- Configured networks from the database (--configured-networks or --network)
+- Auto-discovered local networks (--all-networks)
+
+Network exclusions are automatically applied during discovery.`,
 	Example: `  scanorama discover 192.168.1.0/24
-  scanorama discover 10.0.0.0/8 --detect-os
-  scanorama discover --all-networks --method arp
-  scanorama discover 172.16.0.0/12 --method tcp --timeout 60`,
+  scanorama discover --configured-networks
+  scanorama discover --network corp-lan
+  scanorama discover 192.168.1.0/24 --add --name "corp-lan"
+  scanorama discover --all-networks --method arp`,
 	Args: func(cmd *cobra.Command, args []string) error {
-		// If --all-networks is specified, network argument is optional
+		// Count exclusive flags
+		flagCount := 0
 		if discoverAllNetworks {
-			return cobra.MaximumNArgs(1)(cmd, args)
+			flagCount++
 		}
+		if discoverConfiguredNets {
+			flagCount++
+		}
+		if discoverNetworkName != "" {
+			flagCount++
+		}
+
+		// Validate --add flag usage
+		if discoverAdd {
+			if flagCount > 0 {
+				return fmt.Errorf("--add can only be used with specific CIDR networks, " +
+					"not with --all-networks, --configured-networks, or --network")
+			}
+			// --add requires exactly one CIDR argument
+			return cobra.ExactArgs(1)(cmd, args)
+		}
+
+		// If any network flag is specified, no positional args needed
+		if flagCount > 0 {
+			if flagCount > 1 {
+				return fmt.Errorf("only one of --all-networks, --configured-networks, or --network can be specified")
+			}
+			return cobra.MaximumNArgs(0)(cmd, args)
+		}
+
 		// Otherwise, exactly one network argument is required
 		return cobra.ExactArgs(1)(cmd, args)
 	},
@@ -61,15 +98,34 @@ func init() {
 
 	// Define flags
 	discoverCmd.Flags().BoolVar(&discoverDetectOS, "detect-os", false, "Enable OS detection during discovery")
-	discoverCmd.Flags().BoolVar(&discoverAllNetworks, "all-networks", false, "Discover and scan all local networks")
-	discoverCmd.Flags().StringVar(&discoverMethod, "method", "tcp", "Discovery method: tcp, ping, or arp")
+	discoverCmd.Flags().BoolVar(&discoverAllNetworks, "all-networks", false, "Discover all local network interfaces")
+	discoverCmd.Flags().BoolVar(&discoverConfiguredNets, "configured-networks", false,
+		"Discover all configured networks")
+	discoverCmd.Flags().StringVar(&discoverNetworkName, "network", "", "Discover specific configured network by name")
+	discoverCmd.Flags().StringVar(&discoverMethod, "method", "ping", "Discovery method: tcp, ping, arp, or icmp")
 	discoverCmd.Flags().IntVar(&discoverTimeout, "timeout", defaultDiscoveryTimeout, "Discovery timeout in seconds")
+	discoverCmd.Flags().BoolVar(&discoverAdd, "add", false, "Add the discovered network to configured networks")
+	discoverCmd.Flags().StringVar(&discoverAddName, "name", "",
+		"Name for the network when using --add (defaults to CIDR if not specified)")
 
 	// Add flag descriptions
 	discoverCmd.Flags().Lookup("detect-os").Usage = "Enable OS fingerprinting during host discovery"
 	discoverCmd.Flags().Lookup("all-networks").Usage = "Auto-discover all local network interfaces and scan them"
-	discoverCmd.Flags().Lookup("method").Usage = "Discovery method: tcp (TCP connect), ping (ICMP), or arp (ARP scan)"
+	discoverCmd.Flags().Lookup("configured-networks").Usage = "Discover all active configured networks from database"
+	discoverCmd.Flags().Lookup("network").Usage = "Discover specific configured network by name"
+	discoverCmd.Flags().Lookup("method").Usage = "Discovery method: ping (ICMP), tcp (TCP connect), " +
+		"arp (ARP scan), or icmp (alias for ping)"
 	discoverCmd.Flags().Lookup("timeout").Usage = "Maximum time to wait for discovery completion"
+	discoverCmd.Flags().Lookup("add").Usage = "Add the discovered network to configured networks after discovery"
+	discoverCmd.Flags().Lookup("name").Usage = "Name for the network when using --add (defaults to CIDR)"
+
+	// Add shell completion for network names
+	if err := discoverCmd.RegisterFlagCompletionFunc("network", completeNetworkNames); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to register completion for network flag: %v\n", err)
+	}
+	if err := discoverCmd.RegisterFlagCompletionFunc("method", completeDiscoveryMethods); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to register completion for method flag: %v\n", err)
+	}
 }
 
 // waitForDiscoveryCompletion waits for a discovery job to complete and shows progress.
@@ -245,21 +301,27 @@ func discoverLocalNetworks() ([]string, error) {
 }
 
 func runDiscovery(cmd *cobra.Command, args []string) {
-	// Determine target network(s)
-	networks := determineTargetNetworks(cmd, args)
-
 	// Validate method
 	validMethods := map[string]bool{
 		"tcp":  true,
 		"ping": true,
 		"arp":  true,
+		"icmp": true,
 	}
 	if !validMethods[discoverMethod] {
-		fmt.Fprintf(os.Stderr, "Error: invalid discovery method '%s'. Valid methods: tcp, ping, arp\n", discoverMethod)
+		fmt.Fprintf(os.Stderr, "Error: invalid discovery method '%s'. Valid methods: tcp, ping, arp, icmp\n",
+			discoverMethod)
 		os.Exit(1)
 	}
 
+	// Determine target network(s)
+	networks := determineTargetNetworks(cmd, args)
+
 	withDatabaseOrExit(func(database *db.DB) {
+		// Add network to database if --add flag is specified
+		if discoverAdd && len(args) > 0 {
+			addNetworkFromDiscovery(database, args[0])
+		}
 		// Create discovery engine
 		engine := discovery.NewEngine(database)
 		engine.SetConcurrency(defaultConcurrency)
@@ -314,6 +376,7 @@ func runDiscovery(cmd *cobra.Command, args []string) {
 
 		fmt.Println("\nDiscovery complete!")
 		fmt.Println("Use 'scanorama hosts' to view all discovered hosts")
+		fmt.Println("Use 'scanorama networks list' to view network statistics")
 		fmt.Println("Use 'scanorama scan --live-hosts' to scan discovered hosts")
 	})
 }
@@ -322,6 +385,12 @@ func runDiscovery(cmd *cobra.Command, args []string) {
 func determineTargetNetworks(cmd *cobra.Command, args []string) []string {
 	if discoverAllNetworks {
 		return handleAllNetworksDiscovery()
+	}
+	if discoverConfiguredNets {
+		return handleConfiguredNetworksDiscovery()
+	}
+	if discoverNetworkName != "" {
+		return handleSingleConfiguredNetworkDiscovery()
 	}
 	return handleSingleNetworkDiscovery(cmd, args)
 }
@@ -354,4 +423,139 @@ func handleSingleNetworkDiscovery(cmd *cobra.Command, args []string) []string {
 		os.Exit(1)
 	}
 	return []string{args[0]}
+}
+
+// handleConfiguredNetworksDiscovery handles discovery of all configured networks.
+func handleConfiguredNetworksDiscovery() []string {
+	var networks []string
+
+	err := withDatabase(func(database *db.DB) error {
+		query := `SELECT cidr FROM networks WHERE is_active = true ORDER BY name`
+		rows, err := database.Query(query)
+		if err != nil {
+			return fmt.Errorf("failed to query configured networks: %w", err)
+		}
+		defer func() {
+			if closeErr := rows.Close(); closeErr != nil {
+				fmt.Printf("Warning: failed to close rows: %v\n", closeErr)
+			}
+		}()
+
+		for rows.Next() {
+			var cidr string
+			if err := rows.Scan(&cidr); err != nil {
+				fmt.Printf("Warning: failed to scan network: %v\n", err)
+				continue
+			}
+			networks = append(networks, cidr)
+		}
+		return nil
+	})
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(networks) == 0 {
+		fmt.Fprintf(os.Stderr, "Error: No active configured networks found\n")
+		fmt.Fprintf(os.Stderr, "Use 'scanorama networks add' to configure networks first\n")
+		os.Exit(1)
+	}
+
+	fmt.Printf("Discovering %d configured networks: %s\n", len(networks), strings.Join(networks, ", "))
+	return networks
+}
+
+// handleSingleConfiguredNetworkDiscovery handles discovery of a single configured network by name.
+func handleSingleConfiguredNetworkDiscovery() []string {
+	var cidr string
+
+	err := withDatabase(func(database *db.DB) error {
+		query := `SELECT cidr FROM networks WHERE name = $1 AND is_active = true`
+		err := database.QueryRow(query, discoverNetworkName).Scan(&cidr)
+		if err != nil {
+			if err.Error() == sqlNoRowsError {
+				return fmt.Errorf("network '%s' not found or not active", discoverNetworkName)
+			}
+			return fmt.Errorf("failed to query network '%s': %w", discoverNetworkName, err)
+		}
+		return nil
+	})
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Use 'scanorama networks list' to see available networks\n")
+		os.Exit(1)
+	}
+
+	fmt.Printf("Discovering configured network '%s' (%s)\n", discoverNetworkName, cidr)
+	return []string{cidr}
+}
+
+// addNetworkFromDiscovery adds a network to the database during discovery.
+func addNetworkFromDiscovery(database *db.DB, cidrStr string) {
+	// Validate CIDR
+	_, ipnet, err := net.ParseCIDR(cidrStr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid CIDR format '%s': %v\n", cidrStr, err)
+		os.Exit(1)
+	}
+
+	// Determine network name
+	networkName := discoverAddName
+	if networkName == "" {
+		networkName = cidrStr // Use CIDR as name if no name specified
+	}
+
+	// Check if network with same name or CIDR already exists
+	var existingCount int
+	checkQuery := `SELECT COUNT(*) FROM networks WHERE name = $1 OR cidr = $2`
+	err = database.QueryRow(checkQuery, networkName, ipnet.String()).Scan(&existingCount)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error checking existing networks: %v\n", err)
+		os.Exit(1)
+	}
+
+	if existingCount > 0 {
+		fmt.Printf("Network '%s' (%s) already exists, skipping addition\n", networkName, ipnet.String())
+		return
+	}
+
+	// Create network
+	network := &db.Network{
+		ID:              uuid.New(),
+		Name:            networkName,
+		CIDR:            db.NetworkAddr{IPNet: *ipnet},
+		DiscoveryMethod: discoverMethod,
+		IsActive:        true,
+		ScanEnabled:     true,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+
+	// Insert into database
+	insertQuery := `
+		INSERT INTO networks (id, name, cidr, discovery_method, is_active, scan_enabled, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+
+	_, err = database.Exec(insertQuery,
+		network.ID,
+		network.Name,
+		network.CIDR.String(),
+		network.DiscoveryMethod,
+		network.IsActive,
+		network.ScanEnabled,
+		network.CreatedAt,
+		network.UpdatedAt,
+	)
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error adding network: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Network '%s' (%s) added to configured networks\n", networkName, ipnet.String())
+	fmt.Printf("   Discovery method: %s, Active: %t, Scan enabled: %t\n",
+		network.DiscoveryMethod, network.IsActive, network.ScanEnabled)
 }
