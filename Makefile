@@ -142,7 +142,7 @@ quality: ## Run comprehensive code quality checks (lint + format + security)
 
 lint: ## Run golangci-lint to check code quality
 	@echo "Installing latest golangci-lint..."
-	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) latest
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) v2.1.5
 	@echo "Running golangci-lint..."
 	@$(GOBIN)/golangci-lint run --config .golangci.yml
 
@@ -172,7 +172,7 @@ coverage: ## Generate test coverage report
 
 format: ## Format code and fix linting issues automatically
 	@echo "Installing latest golangci-lint..."
-	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) latest
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) v2.1.5
 	@echo "Formatting code and fixing issues..."
 	@$(GOBIN)/golangci-lint run --config .golangci.yml --fix
 

@@ -22,6 +22,8 @@ const (
 	scheduleDetailSeparator = 50  // characters for schedule detail separator
 	maxJobNameLength        = 20  // max job name length before truncation
 	maxPortsDisplay         = 5   // max ports to show before truncation
+	// Display text constants
+	yesText = "Yes"
 )
 
 // scheduleCmd represents the schedule command.
@@ -382,7 +384,7 @@ func displayScheduledJobs(jobs []ScheduledJob) {
 		job := &jobs[i]
 		activeStr := "No"
 		if job.IsActive {
-			activeStr = "Yes"
+			activeStr = yesText
 		}
 
 		nextRunStr := job.NextRun.Format("2006-01-02 15:04")

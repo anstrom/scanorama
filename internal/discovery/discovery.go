@@ -28,6 +28,8 @@ const (
 	minTimeout            = 30 * time.Second
 	timeoutMultiplierBase = 6.0
 	timeoutMultiplierStep = 2.0
+	// SQL error constants
+	sqlNoRowsError        = "sql: no rows in result set"
 	timeoutMultiplierMax  = 50.0
 	timeoutDivisor        = 100.0
 	maxHostBits           = 24
@@ -451,7 +453,7 @@ func (e *Engine) WaitForCompletion(ctx context.Context, jobID uuid.UUID, timeout
 		err := e.db.QueryRowContext(ctx, query, jobID).Scan(&status, &completedAt)
 
 		if err != nil {
-			if err.Error() == "sql: no rows in result set" {
+			if err.Error() == sqlNoRowsError {
 				time.Sleep(retryInterval)
 				continue
 			}
@@ -487,7 +489,7 @@ func (e *Engine) saveDiscoveredHosts(ctx context.Context, results []Result) erro
 		checkQuery := `SELECT id FROM hosts WHERE ip_address = $1`
 		err := e.db.QueryRowContext(ctx, checkQuery, result.IPAddress.String()).Scan(&existingID)
 
-		if err != nil && err.Error() != "sql: no rows in result set" {
+		if err != nil && err.Error() != sqlNoRowsError {
 			// Some other error occurred
 			log.Printf("Error checking existing host %s: %v", result.IPAddress, err)
 			errors = append(errors, fmt.Sprintf("failed to check host %s: %v", result.IPAddress, err))

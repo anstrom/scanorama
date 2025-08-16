@@ -192,6 +192,8 @@ func (s *Server) Stop() error {
 }
 
 // setupRoutes configures all API routes.
+//
+//nolint:funlen // Route registration should stay together for clarity
 func (s *Server) setupRoutes() {
 	// API version prefix
 	api := s.router.PathPrefix("/api/v1").Subrouter()
