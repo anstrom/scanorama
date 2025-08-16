@@ -126,6 +126,12 @@ jobs:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       REDIS_URL: redis://localhost:6379
+      # Test database configuration
+      TEST_DB_HOST: localhost
+      TEST_DB_PORT: 5432
+      TEST_DB_NAME: scanorama_test
+      TEST_DB_USER: postgres
+      TEST_DB_PASSWORD: postgres
       CI: true
 
     steps:
@@ -149,6 +155,11 @@ jobs:
           sudo apt-get install -y redis-tools
           timeout 30 bash -c 'until pg_isready -h localhost -p 5432 -U postgres; do sleep 1; done'
           timeout 30 bash -c 'until redis-cli -h localhost -p 6379 ping | grep -q PONG; do sleep 1; done'
+
+      - name: Create test database
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE scanorama_test;" || echo "Database may already exist"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d scanorama_test -c "SELECT 1;" > /dev/null && echo "✅ Test database is ready"
 
       - name: Run integration tests
         run: |
