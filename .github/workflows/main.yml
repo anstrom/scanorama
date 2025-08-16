@@ -83,7 +83,9 @@ jobs:
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v5
+        continue-on-error: true
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.out
           flags: unittests
           name: codecov-umbrella
