@@ -69,7 +69,8 @@ Network exclusions are automatically applied during discovery.`,
 		// Validate --add flag usage
 		if discoverAdd {
 			if flagCount > 0 {
-				return fmt.Errorf("--add can only be used with specific CIDR networks, not with --all-networks, --configured-networks, or --network")
+				return fmt.Errorf("--add can only be used with specific CIDR networks, " +
+					"not with --all-networks, --configured-networks, or --network")
 			}
 			// --add requires exactly one CIDR argument
 			return cobra.ExactArgs(1)(cmd, args)
@@ -95,19 +96,22 @@ func init() {
 	// Define flags
 	discoverCmd.Flags().BoolVar(&discoverDetectOS, "detect-os", false, "Enable OS detection during discovery")
 	discoverCmd.Flags().BoolVar(&discoverAllNetworks, "all-networks", false, "Discover all local network interfaces")
-	discoverCmd.Flags().BoolVar(&discoverConfiguredNets, "configured-networks", false, "Discover all configured networks")
+	discoverCmd.Flags().BoolVar(&discoverConfiguredNets, "configured-networks", false,
+		"Discover all configured networks")
 	discoverCmd.Flags().StringVar(&discoverNetworkName, "network", "", "Discover specific configured network by name")
 	discoverCmd.Flags().StringVar(&discoverMethod, "method", "ping", "Discovery method: tcp, ping, arp, or icmp")
 	discoverCmd.Flags().IntVar(&discoverTimeout, "timeout", defaultDiscoveryTimeout, "Discovery timeout in seconds")
 	discoverCmd.Flags().BoolVar(&discoverAdd, "add", false, "Add the discovered network to configured networks")
-	discoverCmd.Flags().StringVar(&discoverAddName, "name", "", "Name for the network when using --add (defaults to CIDR if not specified)")
+	discoverCmd.Flags().StringVar(&discoverAddName, "name", "",
+		"Name for the network when using --add (defaults to CIDR if not specified)")
 
 	// Add flag descriptions
 	discoverCmd.Flags().Lookup("detect-os").Usage = "Enable OS fingerprinting during host discovery"
 	discoverCmd.Flags().Lookup("all-networks").Usage = "Auto-discover all local network interfaces and scan them"
 	discoverCmd.Flags().Lookup("configured-networks").Usage = "Discover all active configured networks from database"
 	discoverCmd.Flags().Lookup("network").Usage = "Discover specific configured network by name"
-	discoverCmd.Flags().Lookup("method").Usage = "Discovery method: ping (ICMP), tcp (TCP connect), arp (ARP scan), or icmp (alias for ping)"
+	discoverCmd.Flags().Lookup("method").Usage = "Discovery method: ping (ICMP), tcp (TCP connect), " +
+		"arp (ARP scan), or icmp (alias for ping)"
 	discoverCmd.Flags().Lookup("timeout").Usage = "Maximum time to wait for discovery completion"
 	discoverCmd.Flags().Lookup("add").Usage = "Add the discovered network to configured networks after discovery"
 	discoverCmd.Flags().Lookup("name").Usage = "Name for the network when using --add (defaults to CIDR)"
@@ -302,7 +306,8 @@ func runDiscovery(cmd *cobra.Command, args []string) {
 		"icmp": true,
 	}
 	if !validMethods[discoverMethod] {
-		fmt.Fprintf(os.Stderr, "Error: invalid discovery method '%s'. Valid methods: tcp, ping, arp, icmp\n", discoverMethod)
+		fmt.Fprintf(os.Stderr, "Error: invalid discovery method '%s'. Valid methods: tcp, ping, arp, icmp\n",
+			discoverMethod)
 		os.Exit(1)
 	}
 

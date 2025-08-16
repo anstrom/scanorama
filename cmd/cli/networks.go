@@ -21,6 +21,10 @@ const (
 	networksSeparatorLength = 140 // characters for network list separator
 	maxDescriptionLength    = 30  // max description length before truncation
 	defaultDiscoveryMethod  = "ping"
+	// Display formatting constants
+	exclusionsSeparatorLength = 100 // characters for exclusions list separator
+	statsHeaderLength         = 50  // characters for stats section headers
+	subnetMaskThreshold       = 31  // threshold for subnet mask display
 )
 
 var (
@@ -245,12 +249,16 @@ func init() {
 	}
 
 	// Exclusions command flags
-	networksExclusionsListCmd.Flags().StringVar(&exclusionsNetworkName, "network", "", "Show exclusions for specific network")
+	networksExclusionsListCmd.Flags().StringVar(&exclusionsNetworkName, "network", "",
+		"Show exclusions for specific network")
 	networksExclusionsListCmd.Flags().BoolVar(&exclusionsGlobal, "global", false, "Show only global exclusions")
 
-	networksExclusionsAddCmd.Flags().StringVar(&exclusionsNetworkName, "network", "", "Network name for network-specific exclusion")
-	networksExclusionsAddCmd.Flags().BoolVar(&exclusionsGlobal, "global", false, "Create global exclusion (applies to all networks)")
-	networksExclusionsAddCmd.Flags().StringVar(&exclusionsCIDR, "cidr", "", "IP address or CIDR range to exclude (required)")
+	networksExclusionsAddCmd.Flags().StringVar(&exclusionsNetworkName, "network", "",
+		"Network name for network-specific exclusion")
+	networksExclusionsAddCmd.Flags().BoolVar(&exclusionsGlobal, "global", false,
+		"Create global exclusion (applies to all networks)")
+	networksExclusionsAddCmd.Flags().StringVar(&exclusionsCIDR, "cidr", "",
+		"IP address or CIDR range to exclude (required)")
 	networksExclusionsAddCmd.Flags().StringVar(&exclusionsReason, "reason", "", "Reason for exclusion")
 
 	// Mark required flags for add command
@@ -295,7 +303,8 @@ func runNetworksAdd(cmd *cobra.Command, args []string) {
 		"icmp": true,
 	}
 	if !validMethods[networksMethod] {
-		fmt.Fprintf(os.Stderr, "Error: invalid discovery method '%s'. Valid methods: tcp, ping, arp, icmp\n", networksMethod)
+		fmt.Fprintf(os.Stderr, "Error: invalid discovery method '%s'. Valid methods: tcp, ping, arp, icmp\n",
+			networksMethod)
 		os.Exit(1)
 	}
 
@@ -310,7 +319,8 @@ func runNetworksAdd(cmd *cobra.Command, args []string) {
 		}
 
 		if existingCount > 0 {
-			fmt.Fprintf(os.Stderr, "Error: network with name '%s' or CIDR '%s' already exists\n", networksName, ipnet.String())
+			fmt.Fprintf(os.Stderr, "Error: network with name '%s' or CIDR '%s' already exists\n",
+				networksName, ipnet.String())
 			os.Exit(1)
 		}
 
@@ -332,7 +342,8 @@ func runNetworksAdd(cmd *cobra.Command, args []string) {
 
 		// Insert network
 		insertQuery := `
-			INSERT INTO networks (id, name, cidr, description, discovery_method, is_active, scan_enabled, created_at, updated_at)
+			INSERT INTO networks (id, name, cidr, description, discovery_method,
+				is_active, scan_enabled, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
 		_, err = database.Exec(insertQuery,
@@ -630,10 +641,11 @@ func displayNetworks(networks []db.Network) {
 	fmt.Printf("Found %d network(s):\n\n", len(networks))
 	fmt.Printf("%-36s %-20s %-18s %-8s %-8s %-8s %-6s %-6s %-30s\n",
 		"ID", "Name", "CIDR", "Method", "Active", "Scan", "Hosts", "Up", "Description")
-	fmt.Println(strings.Repeat("-", 140))
+	fmt.Println(strings.Repeat("-", networksSeparatorLength))
 
 	// Print networks
-	for _, network := range networks {
+	for i := range networks {
+		network := &networks[i]
 		description := ""
 		if network.Description != nil {
 			description = *network.Description
@@ -668,7 +680,8 @@ func displayNetworks(networks []db.Network) {
 	activeCount := 0
 	totalHosts := 0
 	totalActiveHosts := 0
-	for _, network := range networks {
+	for i := range networks {
+		network := &networks[i]
 		if network.IsActive {
 			activeCount++
 		}
@@ -719,18 +732,18 @@ func displayNetworkDetails(network *db.Network) {
 	}
 
 	// Calculate network information
-	ones, bits := network.CIDR.IPNet.Mask.Size()
+	ones, bits := network.CIDR.Mask.Size()
 	if bits == 32 { // IPv4
 		totalAddresses := 1 << (32 - ones)
-		if ones < 31 {
+		if ones < subnetMaskThreshold {
 			totalAddresses -= 2 // Subtract network and broadcast
 		}
 		fmt.Printf("\n=== Network Information ===\n")
-		fmt.Printf("Network: %s\n", network.CIDR.IPNet.IP.Mask(network.CIDR.IPNet.Mask))
-		fmt.Printf("Netmask: %s\n", net.IP(network.CIDR.IPNet.Mask))
+		fmt.Printf("Network: %s\n", network.CIDR.IP.Mask(network.CIDR.Mask))
+		fmt.Printf("Netmask: %s\n", net.IP(network.CIDR.Mask))
 		fmt.Printf("Broadcast: %s\n", getBroadcastAddr(network.CIDR.IPNet))
 		fmt.Printf("Total Addresses: %d\n", totalAddresses)
-		if ones < 31 {
+		if ones < subnetMaskThreshold {
 			fmt.Printf("Usable Addresses: %d\n", totalAddresses)
 		}
 	}
@@ -756,9 +769,7 @@ func completeNetworkNames(cmd *cobra.Command, args []string, toComplete string) 
 			return nil // Silent error in completion
 		}
 		defer func() {
-			if closeErr := rows.Close(); closeErr != nil {
-				// Silent error in completion
-			}
+			_ = rows.Close() // Ignore error in completion
 		}()
 
 		for rows.Next() {
@@ -774,7 +785,8 @@ func completeNetworkNames(cmd *cobra.Command, args []string, toComplete string) 
 	return networkNames, cobra.ShellCompDirectiveNoFileComp
 }
 
-func completeDiscoveryMethods(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func completeDiscoveryMethods(cmd *cobra.Command, args []string, toComplete string) (
+	[]string, cobra.ShellCompDirective) {
 	methods := []string{"tcp", "ping", "arp", "icmp"}
 	var matches []string
 
@@ -806,9 +818,9 @@ func runNetworkExclusionsAdd(cmd *cobra.Command, args []string) {
 		// Try as single IP
 		if ip := net.ParseIP(exclusionsCIDR); ip != nil {
 			if strings.Contains(exclusionsCIDR, ":") {
-				exclusionsCIDR = exclusionsCIDR + "/128" // IPv6
+				exclusionsCIDR += "/128" // IPv6
 			} else {
-				exclusionsCIDR = exclusionsCIDR + "/32" // IPv4
+				exclusionsCIDR += "/32" // IPv4
 			}
 		} else {
 			fmt.Fprintf(os.Stderr, "Error: invalid CIDR or IP address '%s': %v\n", exclusionsCIDR, err)
@@ -963,7 +975,7 @@ func queryNetworkExclusions(database *db.DB, networkName string, globalOnly bool
 	} else if networkName != "" {
 		query += fmt.Sprintf(" AND ne.network_id = (SELECT id FROM networks WHERE name = $%d)", argIndex)
 		args = append(args, networkName)
-		argIndex++
+
 	}
 
 	query += " ORDER BY ne.created_at DESC"
@@ -1008,7 +1020,7 @@ func displayNetworkExclusions(exclusions []db.NetworkExclusion) {
 
 	fmt.Printf("Found %d exclusion(s):\n\n", len(exclusions))
 	fmt.Printf("%-36s %-18s %-12s %-20s %s\n", "ID", "CIDR", "Scope", "Created", "Reason")
-	fmt.Println(strings.Repeat("-", 100))
+	fmt.Println(strings.Repeat("-", exclusionsSeparatorLength))
 
 	for _, exclusion := range exclusions {
 		scope := "Global"
@@ -1019,7 +1031,7 @@ func displayNetworkExclusions(exclusions []db.NetworkExclusion) {
 		reason := ""
 		if exclusion.Reason != nil {
 			reason = *exclusion.Reason
-			if len(reason) > 30 {
+			if len(reason) > maxDescriptionLength {
 				reason = reason[:27] + "..."
 			}
 		}
@@ -1044,4 +1056,76 @@ func displayNetworkExclusions(exclusions []db.NetworkExclusion) {
 	}
 
 	fmt.Printf("\nSummary: %d global exclusions, %d network-specific exclusions\n", globalCount, networkCount)
+}
+
+// runNetworksStats displays comprehensive network statistics.
+func runNetworksStats(cmd *cobra.Command, args []string) {
+	withDatabaseOrExit(func(database *db.DB) {
+		// Get network statistics
+		var stats struct {
+			TotalNetworks       int `db:"total_networks"`
+			ActiveNetworks      int `db:"active_networks"`
+			ScanEnabledNetworks int `db:"scan_enabled_networks"`
+			TotalHosts          int `db:"total_hosts"`
+			TotalActiveHosts    int `db:"total_active_hosts"`
+		}
+
+		statsQuery := `
+			SELECT
+				COUNT(*) as total_networks,
+				COUNT(*) FILTER (WHERE is_active = true) as active_networks,
+				COUNT(*) FILTER (WHERE scan_enabled = true) as scan_enabled_networks,
+				COALESCE(SUM(host_count), 0) as total_hosts,
+				COALESCE(SUM(active_host_count), 0) as total_active_hosts
+			FROM networks`
+
+		err := database.Get(&stats, statsQuery)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Failed to get network statistics: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Get exclusion statistics
+		var exclusionStats struct {
+			TotalExclusions   int `db:"total_exclusions"`
+			GlobalExclusions  int `db:"global_exclusions"`
+			NetworkExclusions int `db:"network_exclusions"`
+		}
+
+		exclusionQuery := `
+			SELECT
+				COUNT(*) as total_exclusions,
+				COUNT(*) FILTER (WHERE network_id IS NULL) as global_exclusions,
+				COUNT(*) FILTER (WHERE network_id IS NOT NULL) as network_exclusions
+			FROM network_exclusions
+			WHERE enabled = true`
+
+		err = database.Get(&exclusionStats, exclusionQuery)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Failed to get exclusion statistics: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Display statistics
+		fmt.Println("Network Statistics")
+		fmt.Println(strings.Repeat("=", statsHeaderLength))
+		fmt.Printf("Total Networks:        %d\n", stats.TotalNetworks)
+		fmt.Printf("Active Networks:       %d\n", stats.ActiveNetworks)
+		fmt.Printf("Scan Enabled:          %d\n", stats.ScanEnabledNetworks)
+		fmt.Printf("Inactive Networks:     %d\n", stats.TotalNetworks-stats.ActiveNetworks)
+		fmt.Println()
+
+		fmt.Println("Host Statistics")
+		fmt.Println(strings.Repeat("=", statsHeaderLength))
+		fmt.Printf("Total Hosts:           %d\n", stats.TotalHosts)
+		fmt.Printf("Active Hosts:          %d\n", stats.TotalActiveHosts)
+		fmt.Printf("Inactive Hosts:        %d\n", stats.TotalHosts-stats.TotalActiveHosts)
+		fmt.Println()
+
+		fmt.Println("Exclusion Statistics")
+		fmt.Println(strings.Repeat("=", statsHeaderLength))
+		fmt.Printf("Total Exclusions:      %d\n", exclusionStats.TotalExclusions)
+		fmt.Printf("Global Exclusions:     %d\n", exclusionStats.GlobalExclusions)
+		fmt.Printf("Network Exclusions:    %d\n", exclusionStats.NetworkExclusions)
+	})
 }

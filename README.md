@@ -26,8 +26,14 @@ make ci             # Build and test
 # Build the scanner
 make build
 
-# Discover hosts on a network
+# Discover hosts on configured networks
+./scanorama discover --configured-networks
+./scanorama discover --network corp-lan
 ./scanorama discover 192.168.1.0/24
+
+# Discover and add networks to database in one step
+./scanorama discover 192.168.1.0/24 --add --name "corp-lan"
+./scanorama discover 10.0.0.0/16 --add
 
 # Scan specific targets with different scan types
 ./scanorama scan --targets localhost --ports 80,443,8080
@@ -36,6 +42,18 @@ make build
 # View discovered hosts
 ./scanorama hosts
 ./scanorama hosts --status up
+
+# Manage network discovery targets
+./scanorama networks list                    # Shows network IDs and details
+./scanorama networks add --name "corp-lan" --cidr 192.168.1.0/24
+./scanorama networks add --name "dmz-servers" --cidr 10.0.1.0/24 --method tcp
+./scanorama networks show corp-lan           # Shows network ID and full details
+./scanorama networks rename corp-lan corporate-network
+
+# Manage network exclusions
+./scanorama networks exclusions list
+./scanorama networks exclusions add --cidr 192.168.1.1/32 --reason "Router" --global
+./scanorama networks exclusions add --network corp-lan --cidr 192.168.1.0/29 --reason "Management subnet"
 
 # Use verbose mode for detailed structured logging
 ./scanorama -v scan --targets localhost --type version
@@ -121,7 +139,12 @@ Scanorama adds enterprise features (database persistence, API access, scheduling
 
 ## Commands
 
-- `discover <network>` - Discover active hosts on network ranges using nmap host discovery with OS detection
+- `discover` - Discover active hosts using nmap host discovery with OS detection
+  - **configured-networks**: Discover all active configured networks from database
+  - **network**: Discover specific configured network by name
+  - **CIDR**: Discover specific CIDR range (e.g., 192.168.1.0/24)
+  - **all-networks**: Auto-discover local network interfaces
+  - **--add**: Add discovered CIDR to configured networks automatically
 - `scan --targets <hosts>` - Perform port and service scanning using nmap with multiple scan types
   - **connect**: TCP connect scanning via nmap -sT (default)
   - **syn**: SYN stealth scanning via nmap -sS (requires privileges)
@@ -130,11 +153,46 @@ Scanorama adds enterprise features (database persistence, API access, scheduling
   - **aggressive**: OS detection + version scanning + scripts via nmap -A
   - **stealth**: Slow, evasive scanning via nmap -sS -T1
 - `hosts` - Manage and view discovered hosts with filtering
+- `networks` - Manage network discovery targets and CIDR ranges
+  - **list**: View configured networks with IDs, status and statistics
+  - **add**: Add new network CIDR ranges for discovery and scanning
+  - **remove**: Remove network discovery targets
+  - **show**: Display detailed network information with ID and statistics
+  - **rename**: Rename existing networks while preserving configuration
+  - **enable/disable**: Control network discovery and scanning status
+  - **exclusions**: Manage IP addresses and ranges to exclude from discovery and scanning
+    - **list**: View configured exclusions (global and network-specific)
+    - **add**: Add IP addresses or CIDR ranges to exclude
+    - **remove**: Remove exclusions by ID
 - `daemon` - Run as background service with API server and scheduling
 - `schedule` - Manage automated scan jobs with cron-like scheduling
 - `profiles` - Use predefined scan configurations for consistent nmap execution
 
 **Note**: All scanning operations require nmap to be installed and executable. Scanorama orchestrates nmap execution with database persistence and API integration.
+
+## Shell Completion
+
+Scanorama supports shell completion for bash, zsh, fish, and powershell:
+
+```bash
+# Generate completion script for your shell
+scanorama completion bash > /etc/bash_completion.d/scanorama  # Linux
+scanorama completion bash > $(brew --prefix)/etc/bash_completion.d/scanorama  # macOS
+
+# For zsh
+scanorama completion zsh > ~/.zsh/completions/_scanorama
+
+# Load completion in current session
+source <(scanorama completion bash)
+```
+
+Features include:
+- Command and subcommand completion
+- Flag name and value completion  
+- Network name completion for network management commands
+- Discovery method completion (tcp, ping, arp, icmp)
+- Dynamic completion from database content
+- Exclusions management with network name completion
 
 ## Make Targets
 

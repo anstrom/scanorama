@@ -197,7 +197,8 @@ func init() {
 	completionCmd.AddCommand(powershellCompletionCmd)
 
 	// Add shell completion for the completion command itself
-	completionCmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	completionCmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) (
+		[]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
 			return []string{"bash", "zsh", "fish", "powershell"}, cobra.ShellCompDirectiveNoFileComp
 		}
