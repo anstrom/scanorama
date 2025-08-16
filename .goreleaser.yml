@@ -32,6 +32,45 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+dockers:
+  - image_templates:
+      - "ghcr.io/anstrom/scanorama:latest"
+      - "ghcr.io/anstrom/scanorama:{{ .Tag }}"
+      - "ghcr.io/anstrom/scanorama:v{{ .Major }}"
+    dockerfile: Dockerfile.goreleaser
+    goos: linux
+    goarch: amd64
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+  - image_templates:
+      - "ghcr.io/anstrom/scanorama:latest-arm64"
+      - "ghcr.io/anstrom/scanorama:{{ .Tag }}-arm64"
+    dockerfile: Dockerfile.goreleaser
+    goos: linux
+    goarch: arm64
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+
+docker_manifests:
+  - name_template: "ghcr.io/anstrom/scanorama:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/anstrom/scanorama:{{ .Tag }}-arm64"
+      - "ghcr.io/anstrom/scanorama:{{ .Tag }}"
+  - name_template: "ghcr.io/anstrom/scanorama:latest"
+    image_templates:
+      - "ghcr.io/anstrom/scanorama:latest-arm64"
+      - "ghcr.io/anstrom/scanorama:latest"
+
 changelog:
   sort: asc
   filters:
