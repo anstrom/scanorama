@@ -12,12 +12,13 @@ RUN addgroup -g 1000 scanorama && \
 # Set working directory
 WORKDIR /app
 
-# Copy pre-built binary
-COPY build/scanorama-linux-amd64 /app/scanorama
+# Copy pre-built binary from GoReleaser
+COPY scanorama /app/scanorama
 
 # Create config directory and set ownership
 RUN mkdir -p /app/config && \
-    chown -R scanorama:scanorama /app
+    chown -R scanorama:scanorama /app && \
+    chmod +x /app/scanorama
 
 # Switch to non-root user
 USER scanorama
