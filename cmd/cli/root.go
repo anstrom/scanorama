@@ -6,6 +6,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -171,7 +172,7 @@ func initLogging() {
 
 // getConfigFilePath returns the config file path from viper or default.
 func getConfigFilePath() string {
-	if configFile := viper.ConfigFileUsed(); configFile != "" {
+	if configFile := viper.ConfigFileUsed(); strings.TrimSpace(configFile) != "" {
 		return configFile
 	}
 	// Fallback to default if no config file was loaded
