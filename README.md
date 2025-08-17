@@ -12,13 +12,9 @@
 [![License](https://img.shields.io/github/license/anstrom/scanorama)](https://github.com/anstrom/scanorama/blob/main/LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/anstrom/scanorama/pkgs/container/scanorama)
 
-<!-- Activity & Stats -->
-[![GitHub last commit](https://img.shields.io/github/last-commit/anstrom/scanorama)](https://github.com/anstrom/scanorama/commits/main)
-[![GitHub issues](https://img.shields.io/github/issues/anstrom/scanorama)](https://github.com/anstrom/scanorama/issues)
-[![GitHub pull requests](https://img.shields.io/github/issues-pr/anstrom/scanorama)](https://github.com/anstrom/scanorama/pulls)
-[![GitHub stars](https://img.shields.io/github/stars/anstrom/scanorama)](https://github.com/anstrom/scanorama/stargazers)
 
-> **⚠️ Development Status**: This project is under active development. Production use is not recommended until v1.0.0 release.
+
+
 
 Scanorama is an advanced network scanning and discovery tool built on nmap for continuous network monitoring. It provides a Go-based wrapper around nmap's powerful scanning engine with OS-aware scanning capabilities, automated scheduling, robust database persistence, and enterprise-grade reliability with comprehensive API support for network management.
 

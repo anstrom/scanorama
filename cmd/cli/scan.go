@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/anstrom/scanorama/internal"
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/logging"
+	"github.com/anstrom/scanorama/internal/scanning"
 	"github.com/spf13/cobra"
 )
 
@@ -131,7 +131,7 @@ func runScan(cmd *cobra.Command, _ []string) {
 	}()
 
 	// Create scan configuration
-	scanConfig := internal.ScanConfig{
+	scanConfig := scanning.ScanConfig{
 		Targets:    []string{},
 		Ports:      scanPorts,
 		ScanType:   scanType,
@@ -158,7 +158,7 @@ func runScan(cmd *cobra.Command, _ []string) {
 	}
 }
 
-func runLiveHostsScan(database *db.DB, scanConfig *internal.ScanConfig) {
+func runLiveHostsScan(database *db.DB, scanConfig *scanning.ScanConfig) {
 	fmt.Println("Scanning discovered live hosts...")
 
 	// Query for live hosts
@@ -209,7 +209,7 @@ func runLiveHostsScan(database *db.DB, scanConfig *internal.ScanConfig) {
 	scanConfig.Targets = targets
 
 	// Run the scan using internal package
-	result, err := internal.RunScanWithDB(scanConfig, database)
+	result, err := scanning.RunScanWithDB(scanConfig, database)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Scan failed: %v\n", err)
 		os.Exit(1)
@@ -238,7 +238,7 @@ func runLiveHostsScan(database *db.DB, scanConfig *internal.ScanConfig) {
 	fmt.Printf("Open ports found: %d\n", openPorts)
 }
 
-func runTargetsScan(database *db.DB, scanConfig *internal.ScanConfig, targets string) {
+func runTargetsScan(database *db.DB, scanConfig *scanning.ScanConfig, targets string) {
 	fmt.Printf("Scanning targets: %s\n", targets)
 
 	// Parse targets
@@ -257,7 +257,7 @@ func runTargetsScan(database *db.DB, scanConfig *internal.ScanConfig, targets st
 
 	// Run the scan using internal package
 	fmt.Printf("Starting scan of %d target(s)...\n", len(targetList))
-	result, err := internal.RunScanWithDB(scanConfig, database)
+	result, err := scanning.RunScanWithDB(scanConfig, database)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Scan failed: %v\n", err)
 		os.Exit(1)

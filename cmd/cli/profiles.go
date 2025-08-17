@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/anstrom/scanorama/internal"
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/scanning"
 	"github.com/spf13/cobra"
 )
 
@@ -349,7 +349,7 @@ func runTestScan(database *db.DB, profile *db.ScanProfile, target string) {
 	fmt.Println()
 
 	// Create scan configuration from profile
-	scanConfig := &internal.ScanConfig{
+	scanConfig := &scanning.ScanConfig{
 		Targets:    []string{target},
 		Ports:      profile.Ports,
 		ScanType:   profile.ScanType,
@@ -357,7 +357,7 @@ func runTestScan(database *db.DB, profile *db.ScanProfile, target string) {
 	}
 
 	fmt.Printf("Starting profile test scan...\n")
-	result, err := internal.RunScanWithDB(scanConfig, database)
+	result, err := scanning.RunScanWithDB(scanConfig, database)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Profile test scan failed: %v\n", err)
 		os.Exit(1)
@@ -376,7 +376,7 @@ func runTestScan(database *db.DB, profile *db.ScanProfile, target string) {
 	// Display results
 	if len(result.Hosts) > 0 {
 		fmt.Printf("\nScan Results:\n")
-		internal.PrintResults(result)
+		scanning.PrintResults(result)
 	}
 
 	fmt.Printf("\nProfile '%s' test completed\n", profile.Name)

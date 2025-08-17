@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anstrom/scanorama/internal"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/discovery"
+	"github.com/anstrom/scanorama/internal/scanning"
 	"github.com/anstrom/scanorama/test/helpers"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -149,7 +149,7 @@ func TestBasicScanFunctionality(t *testing.T) {
 	testStartTime := time.Now()
 
 	// Test scanning localhost with a common port
-	scanConfig := &internal.ScanConfig{
+	scanConfig := &scanning.ScanConfig{
 		Targets:     []string{testLocalhostIP},
 		Ports:       "22",
 		ScanType:    "connect",
@@ -158,7 +158,7 @@ func TestBasicScanFunctionality(t *testing.T) {
 	}
 
 	// Execute the scan
-	result, err := internal.RunScanWithContext(suite.ctx, scanConfig, suite.database)
+	result, err := scanning.RunScanWithContext(suite.ctx, scanConfig, suite.database)
 	require.NoError(t, err, "Scan execution should succeed")
 	require.NotNil(t, result, "Scan result should not be nil")
 	require.NotEmpty(t, result.Hosts, "Scan should return at least one host")
@@ -268,7 +268,7 @@ func TestScanDiscoveredHost(t *testing.T) {
 	require.NoError(t, err, "Should be able to create test host record")
 
 	// Now scan the host
-	scanConfig := &internal.ScanConfig{
+	scanConfig := &scanning.ScanConfig{
 		Targets:     []string{testIP},
 		Ports:       "8080,8022,8379", // Use CI service ports
 		ScanType:    "connect",
@@ -276,7 +276,7 @@ func TestScanDiscoveredHost(t *testing.T) {
 		Concurrency: 1,
 	}
 
-	result, err := internal.RunScanWithContext(suite.ctx, scanConfig, suite.database)
+	result, err := scanning.RunScanWithContext(suite.ctx, scanConfig, suite.database)
 	require.NoError(t, err, "Scan should succeed")
 	require.NotEmpty(t, result.Hosts, "Scan should return hosts")
 
@@ -304,7 +304,7 @@ func TestDatabaseQueries(t *testing.T) {
 
 	// First, ensure we have some data by running a scan with CI service ports
 	testIP := testLocalhostIP // Use localhost since it has CI services running
-	scanConfig := &internal.ScanConfig{
+	scanConfig := &scanning.ScanConfig{
 		Targets:     []string{testIP},
 		Ports:       "8080,8022,8379", // Use CI service ports
 		ScanType:    "connect",
@@ -312,7 +312,7 @@ func TestDatabaseQueries(t *testing.T) {
 		Concurrency: 1,
 	}
 
-	_, err := internal.RunScanWithContext(suite.ctx, scanConfig, suite.database)
+	_, err := scanning.RunScanWithContext(suite.ctx, scanConfig, suite.database)
 	require.NoError(t, err, "Setup scan should succeed")
 
 	// Test querying active hosts
@@ -421,7 +421,7 @@ func TestMultipleScanTypes(t *testing.T) {
 		t.Run(fmt.Sprintf("ScanType_%s", scanType), func(t *testing.T) {
 			// Use localhost since it's the only IP with CI services running
 			testIP := testLocalhostIP
-			scanConfig := &internal.ScanConfig{
+			scanConfig := &scanning.ScanConfig{
 				Targets:     []string{testIP},
 				Ports:       "8080,8022,8379", // Use CI service ports
 				ScanType:    scanType,
@@ -429,7 +429,7 @@ func TestMultipleScanTypes(t *testing.T) {
 				Concurrency: 1,
 			}
 
-			result, err := internal.RunScanWithContext(suite.ctx, scanConfig, suite.database)
+			result, err := scanning.RunScanWithContext(suite.ctx, scanConfig, suite.database)
 			require.NoError(t, err, "Scan with type %s should succeed", scanType)
 			require.NotEmpty(t, result.Hosts, "Should return host results")
 

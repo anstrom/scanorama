@@ -14,7 +14,7 @@ docker-compose up -d postgres
 
 # Build and run the API server
 go build -o scanorama ./cmd/scanorama
-./scanorama api --config config.local.yaml
+./scanorama api --config config/environments/config.local.yaml
 ```
 
 The API will be available at: `http://localhost:8080`
@@ -923,7 +923,7 @@ curl -s http://localhost:8080/api/v1/scans/{scan-id} | jq
 
 Run the API with debug logging:
 ```bash
-./scanorama api --config config.local.yaml --verbose
+./scanorama api --config config/environments/config.local.yaml --verbose
 ```
 
 ### Database Issues

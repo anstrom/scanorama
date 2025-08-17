@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anstrom/scanorama/internal"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/discovery"
+	"github.com/anstrom/scanorama/internal/scanning"
 	"github.com/anstrom/scanorama/test/helpers"
 	"github.com/google/uuid"
 )
@@ -60,7 +60,7 @@ func BenchmarkScanWithDatabaseStorage(b *testing.B) {
 	// Use standard port for testing (no Docker services needed)
 	testPort := "22"
 
-	scanConfig := &internal.ScanConfig{
+	scanConfig := &scanning.ScanConfig{
 		Targets:     []string{"localhost"},
 		Ports:       testPort,
 		ScanType:    "connect",
@@ -72,7 +72,7 @@ func BenchmarkScanWithDatabaseStorage(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		result, err := internal.RunScanWithContext(suite.ctx, scanConfig, suite.database)
+		result, err := scanning.RunScanWithContext(suite.ctx, scanConfig, suite.database)
 		if err != nil {
 			b.Fatalf("Scan failed: %v", err)
 		}
@@ -89,7 +89,7 @@ func BenchmarkScanWithoutDatabase(b *testing.B) {
 	// Use standard port for testing (no Docker services needed)
 	testPort := "22"
 
-	scanConfig := &internal.ScanConfig{
+	scanConfig := &scanning.ScanConfig{
 		Targets:     []string{"localhost"},
 		Ports:       testPort,
 		ScanType:    "connect",
@@ -101,7 +101,7 @@ func BenchmarkScanWithoutDatabase(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		result, err := internal.RunScanWithContext(suite.ctx, scanConfig, nil) // No database
+		result, err := scanning.RunScanWithContext(suite.ctx, scanConfig, nil) // No database
 		if err != nil {
 			b.Fatalf("Scan failed: %v", err)
 		}
@@ -358,7 +358,7 @@ func BenchmarkConcurrentScans(b *testing.B) {
 	// Use standard port for testing (no Docker services needed)
 	testPort := "22"
 
-	scanConfig := &internal.ScanConfig{
+	scanConfig := &scanning.ScanConfig{
 		Targets:     []string{"localhost"},
 		Ports:       testPort,
 		ScanType:    "connect",
@@ -371,7 +371,7 @@ func BenchmarkConcurrentScans(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			result, err := internal.RunScanWithContext(suite.ctx, scanConfig, suite.database)
+			result, err := scanning.RunScanWithContext(suite.ctx, scanConfig, suite.database)
 			if err != nil {
 				b.Fatalf("Concurrent scan failed: %v", err)
 			}
@@ -388,7 +388,7 @@ func setupBenchmarkTestData(b *testing.B, suite *BenchmarkSuite) {
 	testPort := "22"
 
 	// Run a scan to populate some test data
-	scanConfig := &internal.ScanConfig{
+	scanConfig := &scanning.ScanConfig{
 		Targets:     []string{"localhost"},
 		Ports:       testPort,
 		ScanType:    "connect",
@@ -396,7 +396,7 @@ func setupBenchmarkTestData(b *testing.B, suite *BenchmarkSuite) {
 		Concurrency: 1,
 	}
 
-	_, err := internal.RunScanWithContext(suite.ctx, scanConfig, suite.database)
+	_, err := scanning.RunScanWithContext(suite.ctx, scanConfig, suite.database)
 	if err != nil {
 		b.Fatalf("Failed to set up benchmark test data: %v", err)
 	}
