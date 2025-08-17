@@ -1,6 +1,37 @@
 # Scanorama
 
+<!-- Build & Quality -->
+[![CI](https://github.com/anstrom/scanorama/actions/workflows/main.yml/badge.svg)](https://github.com/anstrom/scanorama/actions/workflows/main.yml)
+[![Security](https://github.com/anstrom/scanorama/actions/workflows/security.yml/badge.svg)](https://github.com/anstrom/scanorama/actions/workflows/security.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/anstrom/scanorama)](https://goreportcard.com/report/github.com/anstrom/scanorama)
+[![codecov](https://codecov.io/gh/anstrom/scanorama/branch/main/graph/badge.svg)](https://codecov.io/gh/anstrom/scanorama)
+
+<!-- Version & Compatibility -->
+[![Go Version](https://img.shields.io/github/go-mod/go-version/anstrom/scanorama)](https://github.com/anstrom/scanorama/blob/main/go.mod)
+[![Release](https://img.shields.io/github/v/release/anstrom/scanorama)](https://github.com/anstrom/scanorama/releases)
+[![License](https://img.shields.io/github/license/anstrom/scanorama)](https://github.com/anstrom/scanorama/blob/main/LICENSE)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/anstrom/scanorama/pkgs/container/scanorama)
+
+<!-- Activity & Stats -->
+[![GitHub last commit](https://img.shields.io/github/last-commit/anstrom/scanorama)](https://github.com/anstrom/scanorama/commits/main)
+[![GitHub issues](https://img.shields.io/github/issues/anstrom/scanorama)](https://github.com/anstrom/scanorama/issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/anstrom/scanorama)](https://github.com/anstrom/scanorama/pulls)
+[![GitHub stars](https://img.shields.io/github/stars/anstrom/scanorama)](https://github.com/anstrom/scanorama/stargazers)
+
+> **⚠️ Development Status**: This project is under active development. Production use is not recommended until v1.0.0 release.
+
 Scanorama is an advanced network scanning and discovery tool built on nmap for continuous network monitoring. It provides a Go-based wrapper around nmap's powerful scanning engine with OS-aware scanning capabilities, automated scheduling, robust database persistence, and enterprise-grade reliability with comprehensive API support for network management.
+
+## 📊 Project Status
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| 🏗️ **Core Engine** | ✅ Stable | nmap integration and scanning functionality |
+| 🗄️ **Database** | ✅ Stable | PostgreSQL persistence layer |
+| 🌐 **REST API** | 🚧 Active | HTTP API for network management |
+| 📱 **CLI Interface** | 🚧 Active | Command-line tools and utilities |
+| 🐳 **Docker** | ✅ Ready | Containerized deployment |
+| 📖 **Documentation** | 🚧 Active | API docs and user guides |
 
 ## Requirements
 
