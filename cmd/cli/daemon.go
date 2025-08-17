@@ -128,7 +128,7 @@ func runDaemonStart(_ *cobra.Command, _ []string) {
 	}
 
 	// Setup configuration
-	cfg, err := config.Load("config.yaml")
+	cfg, err := config.Load(getConfigFilePath())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
 		os.Exit(1)

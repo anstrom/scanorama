@@ -113,7 +113,7 @@ func runScan(cmd *cobra.Command, _ []string) {
 	}
 
 	// Setup database connection
-	cfg, err := config.Load("config.yaml")
+	cfg, err := config.Load(getConfigFilePath())
 	if err != nil {
 		logging.Error("Failed to load configuration", "error", err)
 		os.Exit(1)

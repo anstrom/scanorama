@@ -168,3 +168,12 @@ func initLogging() {
 		logging.Info("Structured logging initialized", "level", cfg.Logging.Level, "format", cfg.Logging.Format)
 	}
 }
+
+// getConfigFilePath returns the config file path from viper or default.
+func getConfigFilePath() string {
+	if configFile := viper.ConfigFileUsed(); configFile != "" {
+		return configFile
+	}
+	// Fallback to default if no config file was loaded
+	return "config.yaml"
+}
