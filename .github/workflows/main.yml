@@ -231,6 +231,34 @@ jobs:
     needs: [integration-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d scanorama_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: scanorama_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      TEST_DB_HOST: localhost
+      TEST_DB_PORT: 5432
+      TEST_DB_NAME: scanorama_test
+      TEST_DB_USER: scanorama_test_user
+      TEST_DB_PASSWORD: test_password_123
+      CI: true
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -250,6 +278,16 @@ jobs:
         run: |
           sudo systemctl start redis-server
           sudo systemctl start ssh
+
+          # Wait for PostgreSQL
+          timeout 30 bash -c 'until pg_isready -h localhost -p 5432 -U postgres; do sleep 1; done'
+
+          # Create test database and user
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER scanorama_test_user WITH PASSWORD 'test_password_123';" || echo "User may already exist"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE scanorama_test OWNER scanorama_test_user;" || echo "Database may already exist"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE scanorama_test TO scanorama_test_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d scanorama_test -c "GRANT ALL ON SCHEMA public TO scanorama_test_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d scanorama_test -c "GRANT CREATE ON SCHEMA public TO scanorama_test_user;"
 
       - name: Download dependencies
         run: |
