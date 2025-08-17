@@ -45,6 +45,10 @@ config.yaml
 config.yml
 *.local.yaml
 *.local.yml
+config/environments/*.local.yaml
+config/environments/*.local.yml
+config/environments/config.yaml
+config/environments/config.yml
 
 # Act (GitHub Actions local testing) files
 .secrets.local

@@ -1,7 +1,7 @@
-// Package internal provides core scanning functionality and shared types for scanorama.
+// Package scanning provides core scanning functionality and shared types for scanorama.
 // It contains scan execution logic, result processing, XML handling,
 // and common data structures used throughout the application.
-package internal
+package scanning
 
 import (
 	"context"

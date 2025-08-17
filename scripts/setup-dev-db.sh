@@ -158,8 +158,8 @@ verify_setup() {
 # Create config file
 create_config() {
     if [ ! -f "config.yaml" ]; then
-        log_info "Creating config.yaml from config.dev.yaml..."
-        cp config.dev.yaml config.yaml
+        log_info "Creating config.yaml from config/environments/config.dev.yaml..."
+        cp config/environments/config.dev.yaml config.yaml
         log_success "Created config.yaml"
     else
         log_info "config.yaml already exists, not overwriting"

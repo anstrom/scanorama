@@ -13,10 +13,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/anstrom/scanorama/internal"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/scanning"
 )
 
 // Scan validation constants.
@@ -367,7 +367,7 @@ func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 	h.logger.Info("Starting async scan execution", "scan_id", scanID, "scan_name", scan.Name)
 
 	// Convert database scan to internal ScanConfig
-	scanConfig := &internal.ScanConfig{
+	scanConfig := &scanning.ScanConfig{
 		Targets:    scan.Targets,
 		Ports:      scan.Ports,
 		ScanType:   scan.ScanType,
@@ -376,7 +376,7 @@ func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 
 	// Execute the scan using the internal scan engine
 	ctx := context.Background()
-	result, err := internal.RunScanWithContext(ctx, scanConfig, h.database)
+	result, err := scanning.RunScanWithContext(ctx, scanConfig, h.database)
 
 	// Update scan status based on result
 	if err != nil {
