@@ -10,6 +10,12 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  security-events: write
+
 jobs:
   # Run CI pipeline to ensure quality
   ci:
