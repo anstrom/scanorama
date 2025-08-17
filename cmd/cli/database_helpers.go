@@ -20,7 +20,7 @@ type DatabaseOperation func(*db.DB) error
 // This is the preferred method for operations that can handle errors gracefully.
 func withDatabase(operation DatabaseOperation) error {
 	// Load configuration
-	cfg, err := config.Load("config.yaml")
+	cfg, err := config.Load(getConfigFilePath())
 	if err != nil {
 		return fmt.Errorf("error loading config: %v", err)
 	}
@@ -66,7 +66,7 @@ func setupDatabaseForHostOperation(ip string) (*db.DB, error) {
 	}
 
 	// Setup database connection
-	cfg, err := config.Load("config.yaml")
+	cfg, err := config.Load(getConfigFilePath())
 	if err != nil {
 		return nil, fmt.Errorf("error loading config: %v", err)
 	}
