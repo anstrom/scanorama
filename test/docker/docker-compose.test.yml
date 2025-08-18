@@ -1,0 +1,167 @@
+services:
+  # PostgreSQL service optimized for testing
+  test-postgres:
+    image: postgres:17-alpine
+    container_name: scanorama-test-postgres-${TEST_DB_PORT:-5433}
+    environment:
+      POSTGRES_DB: ${TEST_DB_NAME:-scanorama_test}
+      POSTGRES_USER: ${TEST_DB_USER:-test_user}
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD:-test_password}
+      POSTGRES_INITDB_ARGS: "--auth-host=trust --auth-local=trust"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      # Use tmpfs for faster I/O in tests
+      - type: tmpfs
+        target: /var/lib/postgresql/data
+        tmpfs:
+          size: 512M
+      # Mount initialization scripts
+      - ${PWD}/test/fixtures/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ${PWD}/test/fixtures/00-create-user.sql:/docker-entrypoint-initdb.d/00-create-user.sql:ro
+    ports:
+      - "${TEST_DB_PORT:-5433}:5432"
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${TEST_DB_USER:-test_user} -d ${TEST_DB_NAME:-scanorama_test} || pg_isready -U postgres",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: "no"
+    # Performance optimizations for testing
+    command:
+      [
+        "postgres",
+        "-c",
+        "fsync=off",
+        "-c",
+        "synchronous_commit=off",
+        "-c",
+        "full_page_writes=off",
+        "-c",
+        "checkpoint_completion_target=0.9",
+        "-c",
+        "wal_buffers=16MB",
+        "-c",
+        "shared_buffers=256MB",
+        "-c",
+        "effective_cache_size=512MB",
+        "-c",
+        "work_mem=16MB",
+        "-c",
+        "maintenance_work_mem=64MB",
+        "-c",
+        "random_page_cost=1.1",
+        "-c",
+        "temp_file_limit=100MB",
+        "-c",
+        "log_min_duration_statement=1000",
+        "-c",
+        "log_connections=on",
+        "-c",
+        "log_disconnections=on",
+        "-c",
+        "log_lock_waits=on",
+        "-c",
+        "deadlock_timeout=1s",
+        "-c",
+        "max_connections=100",
+      ]
+
+  # Redis for caching tests (optional)
+  test-redis:
+    image: redis:8-alpine
+    container_name: scanorama-test-redis-${TEST_REDIS_PORT:-6380}
+    ports:
+      - "${TEST_REDIS_PORT:-6380}:6379"
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: "no"
+    # Use tmpfs for test data
+    tmpfs:
+      - /data:rw,noexec,nosuid,size=128m
+    command:
+      [
+        "redis-server",
+        "--save",
+        "",
+        "--appendonly",
+        "no",
+        "--maxmemory",
+        "128mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+      ]
+
+  # Test service targets for integration testing
+  test-nginx:
+    image: nginx:alpine
+    container_name: scanorama-test-nginx-${TEST_HTTP_PORT:-8081}
+    ports:
+      - "${TEST_HTTP_PORT:-8081}:80"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost:80",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: "no"
+    volumes:
+      - type: tmpfs
+        target: /var/cache/nginx
+        tmpfs:
+          size: 64M
+
+  test-ssh:
+    image: lscr.io/linuxserver/openssh-server:latest
+    container_name: scanorama-test-ssh-${TEST_SSH_PORT:-2223}
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=${TEST_SSH_PASSWORD:-testpass}
+      - USER_NAME=${TEST_SSH_USER:-testuser}
+      - LOG_STDOUT=true
+    ports:
+      - "${TEST_SSH_PORT:-2223}:2222"
+
+    healthcheck:
+      test: ["CMD", "pgrep", "sshd"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    restart: "no"
+    volumes:
+      - type: tmpfs
+        target: /config
+        tmpfs:
+          size: 128M
+
+# Named volumes (optional, for persistent test data)
+volumes:
+  test-postgres-data:
+    name: scanorama-test-postgres-${TEST_DB_PORT:-5433}
+    driver: local
+
+  test-redis-data:
+    name: scanorama-test-redis-${TEST_REDIS_PORT:-6380}
+    driver: local

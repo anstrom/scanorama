@@ -1,0 +1,407 @@
+🚀 Running comprehensive CI pipeline...
+time="2025-08-18T23:27:04+02:00" level=info msg="Using docker host 'unix:///var/run/docker.sock', and daemon socket 'unix:///var/run/docker.sock'"
+[CI/Code Quality                     ] ⭐ Run Set up job
+[Security/NPM Security Audit         ] ⭐ Run Set up job
+[Security/CodeQL Analysis            ] ⭐ Run Set up job
+[CI/Code Quality                     ] 🚀  Start image=catthehacker/ubuntu:act-latest
+[Security/Vulnerability Scan         ] ⭐ Run Set up job
+[Security/Security Hardening Check   ] ⭐ Run Set up job
+[Documentation/Validate OpenAPI Spec ] ⭐ Run Set up job
+[Documentation/Validate OpenAPI Spec ] 🚀  Start image=catthehacker/ubuntu:act-latest
+[Security/CodeQL Analysis            ] 🚀  Start image=catthehacker/ubuntu:act-latest
+[Documentation/Generate Documentation] ⭐ Run Set up job
+[Documentation/Generate Documentation] 🚀  Start image=catthehacker/ubuntu:act-latest
+[Security/Vulnerability Scan         ] 🚀  Start image=catthehacker/ubuntu:act-latest
+[Security/NPM Security Audit         ] 🚀  Start image=catthehacker/ubuntu:act-latest
+[Security/Security Hardening Check   ] 🚀  Start image=catthehacker/ubuntu:act-latest
+[Security/License Compliance         ] ⭐ Run Set up job
+[Security/License Compliance         ] 🚀  Start image=catthehacker/ubuntu:act-latest
+[ci/CI/Code Quality] ⭐ Run Set up job
+[ci/CI/Code Quality] 🚀  Start image=catthehacker/ubuntu:act-latest
+[Documentation/Generate Documentation]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=true
+[Security/NPM Security Audit         ]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=true
+[Security/License Compliance         ]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=true
+[ci/CI/Code Quality]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=true
+[Security/Vulnerability Scan         ]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=true
+[Documentation/Validate OpenAPI Spec ]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=true
+[Security/Security Hardening Check   ]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=true
+[Security/CodeQL Analysis            ]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=true
+[CI/Code Quality                     ]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=true
+[CI/Code Quality                     ] using DockerAuthConfig authentication for docker pull
+[Security/CodeQL Analysis            ] using DockerAuthConfig authentication for docker pull
+[Security/Security Hardening Check   ] using DockerAuthConfig authentication for docker pull
+[Security/NPM Security Audit         ] using DockerAuthConfig authentication for docker pull
+[ci/CI/Code Quality] using DockerAuthConfig authentication for docker pull
+[Documentation/Validate OpenAPI Spec ] using DockerAuthConfig authentication for docker pull
+[Security/Vulnerability Scan         ] using DockerAuthConfig authentication for docker pull
+[Documentation/Generate Documentation] using DockerAuthConfig authentication for docker pull
+[Security/License Compliance         ] using DockerAuthConfig authentication for docker pull
+[Security/Security Hardening Check   ]   🐳  docker create image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Security/CodeQL Analysis            ]   🐳  docker create image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Security/Security Hardening Check   ]   🐳  docker run image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Security/CodeQL Analysis            ]   🐳  docker run image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[CI/Code Quality                     ]   🐳  docker create image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[ci/CI/Code Quality]   🐳  docker create image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[CI/Code Quality                     ]   🐳  docker run image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[ci/CI/Code Quality]   🐳  docker run image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Security/NPM Security Audit         ]   🐳  docker create image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Security/NPM Security Audit         ]   🐳  docker run image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Documentation/Generate Documentation]   🐳  docker create image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Documentation/Validate OpenAPI Spec ]   🐳  docker create image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Security/License Compliance         ]   🐳  docker create image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Documentation/Validate OpenAPI Spec ]   🐳  docker run image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Documentation/Generate Documentation]   🐳  docker run image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Security/License Compliance         ]   🐳  docker run image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Security/Vulnerability Scan         ]   🐳  docker create image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Security/Vulnerability Scan         ]   🐳  docker run image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Security/Security Hardening Check   ]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[CI/Code Quality                     ]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[Security/CodeQL Analysis            ]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[Security/NPM Security Audit         ]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[ci/CI/Code Quality]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[Documentation/Validate OpenAPI Spec ]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[Documentation/Generate Documentation]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[Security/License Compliance         ]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[Security/Vulnerability Scan         ]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[Security/NPM Security Audit         ]   ✅  Success - Set up job
+[ci/CI/Code Quality]   ✅  Success - Set up job
+[Security/CodeQL Analysis            ]   ✅  Success - Set up job
+[Security/NPM Security Audit         ]   ☁  git clone 'https://github.com/actions/setup-node' # ref=v4
+[ci/CI/Code Quality]   ☁  git clone 'https://github.com/actions/setup-go' # ref=v5
+[Security/CodeQL Analysis            ]   ☁  git clone 'https://github.com/actions/setup-go' # ref=v5
+[CI/Code Quality                     ]   ✅  Success - Set up job
+[CI/Code Quality                     ]   ☁  git clone 'https://github.com/actions/setup-go' # ref=v5
+[Security/Security Hardening Check   ]   ✅  Success - Set up job
+[Security/Security Hardening Check   ]   ☁  git clone 'https://github.com/actions/setup-go' # ref=v5
+[Security/License Compliance         ]   ✅  Success - Set up job
+[Security/License Compliance         ]   ☁  git clone 'https://github.com/actions/setup-go' # ref=v5
+[Documentation/Generate Documentation]   ✅  Success - Set up job
+[Documentation/Validate OpenAPI Spec ]   ✅  Success - Set up job
+[Documentation/Validate OpenAPI Spec ]   ☁  git clone 'https://github.com/actions/setup-node' # ref=v4
+[Documentation/Generate Documentation]   ☁  git clone 'https://github.com/actions/setup-go' # ref=v5
+[Security/Vulnerability Scan         ]   ✅  Success - Set up job
+[Security/Vulnerability Scan         ]   ☁  git clone 'https://github.com/actions/setup-go' # ref=v5
+[Security/NPM Security Audit         ] ⭐ Run Main Checkout code
+[Security/NPM Security Audit         ]   🐳  docker cp src=/Users/andreas/git/scanorama/. dst=/Users/andreas/git/scanorama
+[ci/CI/Code Quality] Non-terminating error while running 'git clone': some refs were not updated
+[ci/CI/Code Quality]   ☁  git clone 'https://github.com/golangci/golangci-lint-action' # ref=v8
+[Security/CodeQL Analysis            ] Non-terminating error while running 'git clone': some refs were not updated
+[Security/CodeQL Analysis            ]   ☁  git clone 'https://github.com/github/codeql-action' # ref=v3
+[CI/Code Quality                     ] Non-terminating error while running 'git clone': some refs were not updated
+[CI/Code Quality                     ]   ☁  git clone 'https://github.com/golangci/golangci-lint-action' # ref=v8
+[Security/Security Hardening Check   ] Non-terminating error while running 'git clone': some refs were not updated
+[Security/Security Hardening Check   ] ⭐ Run Main Checkout code
+[Security/Security Hardening Check   ]   🐳  docker cp src=/Users/andreas/git/scanorama/. dst=/Users/andreas/git/scanorama
+[Security/License Compliance         ] Non-terminating error while running 'git clone': some refs were not updated
+[Security/License Compliance         ] ⭐ Run Main Checkout code
+[Security/License Compliance         ]   🐳  docker cp src=/Users/andreas/git/scanorama/. dst=/Users/andreas/git/scanorama
+[Documentation/Validate OpenAPI Spec ] ⭐ Run Main Checkout code
+[Documentation/Validate OpenAPI Spec ]   🐳  docker cp src=/Users/andreas/git/scanorama/. dst=/Users/andreas/git/scanorama
+[Documentation/Generate Documentation] Non-terminating error while running 'git clone': some refs were not updated
+[Documentation/Generate Documentation]   ☁  git clone 'https://github.com/actions/setup-node' # ref=v4
+[Security/NPM Security Audit         ]   ✅  Success - Main Checkout code [2.961114916s]
+[Security/Vulnerability Scan         ] Non-terminating error while running 'git clone': some refs were not updated
+[Security/NPM Security Audit         ] ⭐ Run Main Set up Node.js
+[Security/Vulnerability Scan         ] ⭐ Run Main Checkout code
+[Security/NPM Security Audit         ]   🐳  docker cp src=/Users/andreas/.cache/act/actions-setup-node@v4/ dst=/var/run/act/actions/actions-setup-node@v4/
+[Security/Vulnerability Scan         ]   🐳  docker cp src=/Users/andreas/git/scanorama/. dst=/Users/andreas/git/scanorama
+[ci/CI/Code Quality] ⭐ Run Main Checkout code
+[ci/CI/Code Quality]   🐳  docker cp src=/Users/andreas/git/scanorama/. dst=/Users/andreas/git/scanorama
+[Security/Security Hardening Check   ]   ✅  Success - Main Checkout code [3.639317708s]
+[Security/License Compliance         ]   ✅  Success - Main Checkout code [3.528933083s]
+[Security/Security Hardening Check   ] ⭐ Run Main Set up Go
+[Security/Security Hardening Check   ]   🐳  docker cp src=/Users/andreas/.cache/act/actions-setup-go@v5/ dst=/var/run/act/actions/actions-setup-go@v5/
+[Security/License Compliance         ] ⭐ Run Main Set up Go
+[Security/License Compliance         ]   🐳  docker cp src=/Users/andreas/.cache/act/actions-setup-go@v5/ dst=/var/run/act/actions/actions-setup-go@v5/
+[Security/CodeQL Analysis            ] Non-terminating error while running 'git clone': some refs were not updated
+[Security/CodeQL Analysis            ]   ☁  git clone 'https://github.com/github/codeql-action' # ref=v3
+[Security/License Compliance         ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-go@v5/dist/setup/index.js] user= workdir=
+[Security/NPM Security Audit         ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-node@v4/dist/setup/index.js] user= workdir=
+[Documentation/Validate OpenAPI Spec ]   ✅  Success - Main Checkout code [3.897154125s]
+[Documentation/Validate OpenAPI Spec ] ⭐ Run Main Set up Node.js
+[Documentation/Validate OpenAPI Spec ]   🐳  docker cp src=/Users/andreas/.cache/act/actions-setup-node@v4/ dst=/var/run/act/actions/actions-setup-node@v4/
+[CI/Code Quality                     ] ⭐ Run Main Checkout code
+[CI/Code Quality                     ]   🐳  docker cp src=/Users/andreas/git/scanorama/. dst=/Users/andreas/git/scanorama
+[Security/NPM Security Audit         ]   ❓  ::group::Environment details
+[Security/Security Hardening Check   ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-go@v5/dist/setup/index.js] user= workdir=
+[Documentation/Generate Documentation]   ☁  git clone 'https://github.com/actions/upload-artifact' # ref=v4
+[Security/Vulnerability Scan         ]   ✅  Success - Main Checkout code [4.6116115s]
+[Security/Vulnerability Scan         ] ⭐ Run Main Set up Go
+[Security/Vulnerability Scan         ]   🐳  docker cp src=/Users/andreas/.cache/act/actions-setup-go@v5/ dst=/var/run/act/actions/actions-setup-go@v5/
+[Security/License Compliance         ]   ⚙  ***
+[ci/CI/Code Quality]   ✅  Success - Main Checkout code [4.156020584s]
+[ci/CI/Code Quality] ⭐ Run Main Set up Go
+[ci/CI/Code Quality]   🐳  docker cp src=/Users/andreas/.cache/act/actions-setup-go@v5/ dst=/var/run/act/actions/actions-setup-go@v5/
+[Security/NPM Security Audit         ]   ❓  ::endgroup::
+[Security/CodeQL Analysis            ] Non-terminating error while running 'git clone': some refs were not updated
+[Security/CodeQL Analysis            ] ⭐ Run Main Checkout code
+[Security/Vulnerability Scan         ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-go@v5/dist/setup/index.js] user= workdir=
+[Security/CodeQL Analysis            ]   🐳  docker cp src=/Users/andreas/git/scanorama/. dst=/Users/andreas/git/scanorama
+[Security/Security Hardening Check   ]   ⚙  ***
+[ci/CI/Code Quality]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-go@v5/dist/setup/index.js] user= workdir=
+[Documentation/Generate Documentation] ⭐ Run Main Checkout code
+[Documentation/Generate Documentation]   🐳  docker cp src=/Users/andreas/git/scanorama/. dst=/Users/andreas/git/scanorama
+[Documentation/Validate OpenAPI Spec ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-node@v4/dist/setup/index.js] user= workdir=
+[Security/NPM Security Audit         ]   ⚙  ***
+[Documentation/Validate OpenAPI Spec ]   ❓  ::group::Environment details
+[Security/Vulnerability Scan         ]   ⚙  ***
+[Security/NPM Security Audit         ]   ❓ add-matcher /run/act/actions/actions-setup-node@v4/.github/tsc.json
+[Security/NPM Security Audit         ]   ❓ add-matcher /run/act/actions/actions-setup-node@v4/.github/eslint-stylish.json
+[Security/NPM Security Audit         ]   ❓ add-matcher /run/act/actions/actions-setup-node@v4/.github/eslint-compact.json
+[Security/NPM Security Audit         ]   ✅  Success - Main Set up Node.js [8.001676041s]
+[Security/NPM Security Audit         ]   ⚙  ::set-output:: node-version=v22.18.0
+[Security/NPM Security Audit         ]   ⚙  ::set-output:: cache-hit=true
+[Security/NPM Security Audit         ]   ⚙  ::add-path:: /opt/hostedtoolcache/node/22.18.0/x64/bin
+[Security/NPM Security Audit         ] ⭐ Run Main Install dependencies
+[ci/CI/Code Quality]   ⚙  ***
+[Security/NPM Security Audit         ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/2] user= workdir=
+[Documentation/Validate OpenAPI Spec ]   ❓  ::endgroup::
+[CI/Code Quality                     ]   ✅  Success - Main Checkout code [5.833479375s]
+[CI/Code Quality                     ] ⭐ Run Main Set up Go
+[CI/Code Quality                     ]   🐳  docker cp src=/Users/andreas/.cache/act/actions-setup-go@v5/ dst=/var/run/act/actions/actions-setup-go@v5/
+[Documentation/Validate OpenAPI Spec ]   ⚙  ***
+[Security/CodeQL Analysis            ]   ✅  Success - Main Checkout code [4.862962417s]
+[Documentation/Generate Documentation]   ✅  Success - Main Checkout code [4.213032333s]
+[Security/CodeQL Analysis            ] ⭐ Run Main Set up Go
+[Security/CodeQL Analysis            ]   🐳  docker cp src=/Users/andreas/.cache/act/actions-setup-go@v5/ dst=/var/run/act/actions/actions-setup-go@v5/
+[Documentation/Generate Documentation] ⭐ Run Main Set up Go
+[Documentation/Generate Documentation]   🐳  docker cp src=/Users/andreas/.cache/act/actions-setup-go@v5/ dst=/var/run/act/actions/actions-setup-go@v5/
+[CI/Code Quality                     ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-go@v5/dist/setup/index.js] user= workdir=
+[Documentation/Validate OpenAPI Spec ]   ❓ add-matcher /run/act/actions/actions-setup-node@v4/.github/tsc.json
+[Documentation/Validate OpenAPI Spec ]   ❓ add-matcher /run/act/actions/actions-setup-node@v4/.github/eslint-stylish.json
+[Documentation/Validate OpenAPI Spec ]   ❓ add-matcher /run/act/actions/actions-setup-node@v4/.github/eslint-compact.json
+[Documentation/Validate OpenAPI Spec ]   ✅  Success - Main Set up Node.js [7.770925125s]
+[Documentation/Validate OpenAPI Spec ]   ⚙  ::set-output:: node-version=v22.18.0
+[Documentation/Validate OpenAPI Spec ]   ⚙  ::set-output:: cache-hit=true
+[Documentation/Validate OpenAPI Spec ]   ⚙  ::add-path:: /opt/hostedtoolcache/node/22.18.0/x64/bin
+[Documentation/Validate OpenAPI Spec ] ⭐ Run Main Install dependencies
+[Documentation/Validate OpenAPI Spec ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/2] user= workdir=
+[Security/CodeQL Analysis            ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-go@v5/dist/setup/index.js] user= workdir=
+[Documentation/Generate Documentation]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-go@v5/dist/setup/index.js] user= workdir=
+[CI/Code Quality                     ]   ⚙  ***
+[Security/NPM Security Audit         ]   ✅  Success - Main Install dependencies [4.687259916s]
+[Security/NPM Security Audit         ] ⭐ Run Main Run npm audit
+[Security/NPM Security Audit         ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/3] user= workdir=
+[Documentation/Generate Documentation]   ⚙  ***
+[Security/CodeQL Analysis            ]   ⚙  ***
+[Documentation/Validate OpenAPI Spec ]   ✅  Success - Main Install dependencies [3.25051625s]
+[Documentation/Validate OpenAPI Spec ] ⭐ Run Main Validate OpenAPI syntax
+[Documentation/Validate OpenAPI Spec ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/3] user= workdir=
+[Security/NPM Security Audit         ]   ✅  Success - Main Run npm audit [2.287670458s]
+[Security/NPM Security Audit         ] ⭐ Run Main Check for outdated packages
+[ci/CI/Code Quality]   ❓ add-matcher /run/act/actions/actions-setup-go@v5/matchers.json
+[ci/CI/Code Quality]   ❓  ::group::go env
+[Security/NPM Security Audit         ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/4] user= workdir=
+[Security/License Compliance         ]   ❓ add-matcher /run/act/actions/actions-setup-go@v5/matchers.json
+[Security/License Compliance         ]   ❓  ::group::go env
+[ci/CI/Code Quality]   ❓  ::endgroup::
+[ci/CI/Code Quality]   ✅  Success - Main Set up Go [10.822110125s]
+[ci/CI/Code Quality]   ⚙  ::set-output:: cache-hit=true
+[ci/CI/Code Quality]   ⚙  ::set-output:: go-version=1.24.6
+[ci/CI/Code Quality]   ⚙  ::add-path:: /opt/hostedtoolcache/go/1.24.6/x64/bin
+[ci/CI/Code Quality]   ⚙  ::add-path:: /root/go/bin
+[ci/CI/Code Quality] ⭐ Run Main Check code formatting
+[ci/CI/Code Quality]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/2] user= workdir=
+[Security/License Compliance         ]   ❓  ::endgroup::
+[Security/License Compliance         ]   ✅  Success - Main Set up Go [14.015717417s]
+[Security/License Compliance         ]   ⚙  ::set-output:: cache-hit=true
+[Security/License Compliance         ]   ⚙  ::set-output:: go-version=1.24.6
+[Security/License Compliance         ]   ⚙  ::add-path:: /opt/hostedtoolcache/go/1.24.6/x64/bin
+[Security/License Compliance         ]   ⚙  ::add-path:: /root/go/bin
+[Security/License Compliance         ] ⭐ Run Main Check Go module licenses
+[Security/License Compliance         ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/2] user= workdir=
+[ci/CI/Code Quality]   ✅  Success - Main Check code formatting [1.14021175s]
+[ci/CI/Code Quality] ⭐ Run Main Run linter
+[ci/CI/Code Quality]   🐳  docker cp src=/Users/andreas/.cache/act/golangci-golangci-lint-action@v8/ dst=/var/run/act/actions/golangci-golangci-lint-action@v8/
+[Security/NPM Security Audit         ]   ✅  Success - Main Check for outdated packages [2.291429s]
+[Security/NPM Security Audit         ] ⭐ Run Post Set up Node.js
+[Security/NPM Security Audit         ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-node@v4/dist/cache-save/index.js] user= workdir=
+[ci/CI/Code Quality]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/golangci-golangci-lint-action@v8/dist/run/index.js] user= workdir=
+[ci/CI/Code Quality]   ❓  ::group::prepare environment
+[ci/CI/Code Quality]   ⚙  ***
+[Security/Security Hardening Check   ]   ❓ add-matcher /run/act/actions/actions-setup-go@v5/matchers.json
+[Security/Security Hardening Check   ]   ❓  ::group::go env
+[Security/NPM Security Audit         ]   ✅  Success - Post Set up Node.js [2.665981917s]
+[Security/NPM Security Audit         ] ⭐ Run Complete job
+[Security/NPM Security Audit         ] Cleaning up container for job NPM Security Audit
+[Security/NPM Security Audit         ]   ✅  Success - Complete job
+[Security/NPM Security Audit         ] 🏁  Job succeeded
+[Security/Security Hardening Check   ]   ❓  ::endgroup::
+[Security/Security Hardening Check   ]   ✅  Success - Main Set up Go [18.807343875s]
+[Security/Security Hardening Check   ]   ⚙  ::set-output:: go-version=1.24.6
+[Security/Security Hardening Check   ]   ⚙  ::set-output:: cache-hit=true
+[Security/Security Hardening Check   ]   ⚙  ::add-path:: /opt/hostedtoolcache/go/1.24.6/x64/bin
+[Security/Security Hardening Check   ]   ⚙  ::add-path:: /root/go/bin
+[Security/Security Hardening Check   ] ⭐ Run Main Check for hardcoded secrets patterns
+[Security/Security Hardening Check   ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/2] user= workdir=
+[Security/Vulnerability Scan         ]   ❓ add-matcher /run/act/actions/actions-setup-go@v5/matchers.json
+[Security/Vulnerability Scan         ]   ❓  ::group::go env
+[Security/Vulnerability Scan         ]   ❓  ::endgroup::
+[Security/Security Hardening Check   ]   ✅  Success - Main Check for hardcoded secrets patterns [845.936292ms]
+[Security/Vulnerability Scan         ]   ✅  Success - Main Set up Go [17.188609542s]
+[Security/Vulnerability Scan         ]   ⚙  ::set-output:: cache-hit=true
+[Security/Vulnerability Scan         ]   ⚙  ::set-output:: go-version=1.24.6
+[Security/Security Hardening Check   ] ⭐ Run Main Check file permissions
+[Security/Vulnerability Scan         ]   ⚙  ::add-path:: /opt/hostedtoolcache/go/1.24.6/x64/bin
+[Security/Vulnerability Scan         ]   ⚙  ::add-path:: /root/go/bin
+[Security/Vulnerability Scan         ] ⭐ Run Main Download dependencies
+[Security/Security Hardening Check   ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/3] user= workdir=
+[Security/Vulnerability Scan         ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/2] user= workdir=
+[Security/Security Hardening Check   ]   ✅  Success - Main Check file permissions [362.473417ms]
+[ci/CI/Code Quality]   ❓  ::endgroup::
+[ci/CI/Code Quality]   ❓  ::group::run golangci-lint
+[Security/Security Hardening Check   ] ⭐ Run Post Set up Go
+[Security/Security Hardening Check   ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-go@v5/dist/cache-save/index.js] user= workdir=
+[Security/Vulnerability Scan         ]   ✅  Success - Main Download dependencies [484.058ms]
+[Security/Vulnerability Scan         ] ⭐ Run Main Run Go vulnerability check
+[Security/Vulnerability Scan         ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/3] user= workdir=
+[CI/Code Quality                     ]   ❓ add-matcher /run/act/actions/actions-setup-go@v5/matchers.json
+[CI/Code Quality                     ]   ❓  ::group::go env
+[CI/Code Quality                     ]   ❓  ::endgroup::
+[CI/Code Quality                     ]   ✅  Success - Main Set up Go [14.495894292s]
+[CI/Code Quality                     ]   ⚙  ::set-output:: cache-hit=true
+[CI/Code Quality                     ]   ⚙  ::set-output:: go-version=1.24.6
+[CI/Code Quality                     ]   ⚙  ::add-path:: /opt/hostedtoolcache/go/1.24.6/x64/bin
+[CI/Code Quality                     ]   ⚙  ::add-path:: /root/go/bin
+[CI/Code Quality                     ] ⭐ Run Main Check code formatting
+[CI/Code Quality                     ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/2] user= workdir=
+[CI/Code Quality                     ]   ✅  Success - Main Check code formatting [702.915458ms]
+[CI/Code Quality                     ] ⭐ Run Main Run linter
+[CI/Code Quality                     ]   🐳  docker cp src=/Users/andreas/.cache/act/golangci-golangci-lint-action@v8/ dst=/var/run/act/actions/golangci-golangci-lint-action@v8/
+[Documentation/Validate OpenAPI Spec ]   ✅  Success - Main Validate OpenAPI syntax [10.500603333s]
+[Documentation/Validate OpenAPI Spec ] ⭐ Run Main Advanced OpenAPI linting
+[Documentation/Validate OpenAPI Spec ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/4] user= workdir=
+[Security/CodeQL Analysis            ]   ❓ add-matcher /run/act/actions/actions-setup-go@v5/matchers.json
+[Security/CodeQL Analysis            ]   ❓  ::group::go env
+[CI/Code Quality                     ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/golangci-golangci-lint-action@v8/dist/run/index.js] user= workdir=
+[Security/CodeQL Analysis            ]   ❓  ::endgroup::
+[Security/CodeQL Analysis            ]   ✅  Success - Main Set up Go [15.1286345s]
+[Security/CodeQL Analysis            ]   ⚙  ::set-output:: cache-hit=true
+[Security/CodeQL Analysis            ]   ⚙  ::set-output:: go-version=1.24.6
+[Security/CodeQL Analysis            ]   ⚙  ::add-path:: /opt/hostedtoolcache/go/1.24.6/x64/bin
+[Security/CodeQL Analysis            ]   ⚙  ::add-path:: /root/go/bin
+[Security/CodeQL Analysis            ] ⭐ Run Main Verify Go installation
+[Security/CodeQL Analysis            ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/2] user= workdir=
+[Documentation/Generate Documentation]   ❓ add-matcher /run/act/actions/actions-setup-go@v5/matchers.json
+[Documentation/Generate Documentation]   ❓  ::group::go env
+[Documentation/Generate Documentation]   ❓  ::endgroup::
+[Documentation/Generate Documentation]   ✅  Success - Main Set up Go [15.751091584s]
+[CI/Code Quality                     ]   ❓  ::group::prepare environment
+[Documentation/Generate Documentation]   ⚙  ::set-output:: go-version=1.24.6
+[Documentation/Generate Documentation]   ⚙  ::set-output:: cache-hit=true
+[Documentation/Generate Documentation]   ⚙  ::add-path:: /opt/hostedtoolcache/go/1.24.6/x64/bin
+[Documentation/Generate Documentation]   ⚙  ::add-path:: /root/go/bin
+[Security/CodeQL Analysis            ]   ✅  Success - Main Verify Go installation [767.917208ms]
+[Documentation/Generate Documentation] ⭐ Run Main Set up Node.js
+[Documentation/Generate Documentation]   🐳  docker cp src=/Users/andreas/.cache/act/actions-setup-node@v4/ dst=/var/run/act/actions/actions-setup-node@v4/
+[Security/CodeQL Analysis            ] ⭐ Run Main Initialize CodeQL
+[CI/Code Quality                     ]   ⚙  ***
+[Security/CodeQL Analysis            ]   🐳  docker cp src=/Users/andreas/.cache/act/github-codeql-action-init@v3/ dst=/var/run/act/actions/github-codeql-action-init@v3/
+[Security/License Compliance         ]   ✅  Success - Main Check Go module licenses [10.817833083s]
+[Security/License Compliance         ] ⭐ Run Post Set up Go
+[Security/License Compliance         ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-go@v5/dist/cache-save/index.js] user= workdir=
+[Documentation/Validate OpenAPI Spec ]   ✅  Success - Main Advanced OpenAPI linting [3.810683666s]
+[Documentation/Validate OpenAPI Spec ] ⭐ Run Main Check schema compatibility
+[Documentation/Generate Documentation]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-node@v4/dist/setup/index.js] user= workdir=
+[Documentation/Validate OpenAPI Spec ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/5] user= workdir=
+[Security/Vulnerability Scan         ]   ✅  Success - Main Run Go vulnerability check [7.411635875s]
+[Security/Vulnerability Scan         ] ⭐ Run Main Check for known vulnerabilities in dependencies
+[Security/Vulnerability Scan         ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/4] user= workdir=
+[Documentation/Generate Documentation]   ❓  ::group::Environment details
+[CI/Code Quality                     ]   ❓  ::endgroup::
+[CI/Code Quality                     ]   ❓  ::group::run golangci-lint
+[ci/CI/Code Quality]   ❗  ::error::issues found
+[ci/CI/Code Quality]   ❓  ::endgroup::
+[ci/CI/Code Quality]   ❌  Failure - Main Run linter [13.501629167s]
+[ci/CI/Code Quality]   ⚙  ::add-path:: /root/golangci-lint-2.4.0-linux-amd64
+[ci/CI/Code Quality] exitcode '1': failure
+[ci/CI/Code Quality] ⭐ Run Post Run linter
+[Documentation/Validate OpenAPI Spec ]   ✅  Success - Main Check schema compatibility [1.706186041s]
+[ci/CI/Code Quality]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/golangci-golangci-lint-action@v8/dist/post_run/index.js] user= workdir=
+[Documentation/Validate OpenAPI Spec ] ⭐ Run Post Set up Node.js
+[Documentation/Validate OpenAPI Spec ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-node@v4/dist/cache-save/index.js] user= workdir=
+[Documentation/Generate Documentation]   ❓  ::endgroup::
+[ci/CI/Code Quality]   ✅  Success - Post Run linter [1.126043667s]
+[Documentation/Generate Documentation]   ⚙  ***
+[ci/CI/Code Quality] ⭐ Run Complete job
+[ci/CI/Code Quality]   ✅  Success - Complete job
+[ci/CI/Code Quality] 🏁  Job failed
+[ci/CI/CI Summary       ] ⭐ Run Set up job
+[ci/CI/CI Summary       ] 🚀  Start image=catthehacker/ubuntu:act-latest
+[ci/CI/CI Summary       ]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=true
+[Security/Vulnerability Scan         ]   ✅  Success - Main Check for known vulnerabilities in dependencies [2.29826075s]
+[ci/CI/CI Summary       ] using DockerAuthConfig authentication for docker pull
+[Security/Vulnerability Scan         ] ⭐ Run Post Set up Go
+[Security/Vulnerability Scan         ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/actions-setup-go@v5/dist/cache-save/index.js] user= workdir=
+[Documentation/Validate OpenAPI Spec ]   ✅  Success - Post Set up Node.js [2.364271708s]
+[Documentation/Validate OpenAPI Spec ] ⭐ Run Complete job
+[Documentation/Validate OpenAPI Spec ] Cleaning up container for job Validate OpenAPI Spec
+[Documentation/Validate OpenAPI Spec ]   ✅  Success - Complete job
+[Documentation/Validate OpenAPI Spec ] 🏁  Job succeeded
+[Documentation/Generate Documentation]   ❓ add-matcher /run/act/actions/actions-setup-node@v4/.github/tsc.json
+[Documentation/Generate Documentation]   ❓ add-matcher /run/act/actions/actions-setup-node@v4/.github/eslint-stylish.json
+[Documentation/Generate Documentation]   ❓ add-matcher /run/act/actions/actions-setup-node@v4/.github/eslint-compact.json
+[ci/CI/CI Summary       ]   🐳  docker create image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[ci/CI/CI Summary       ]   🐳  docker run image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[Documentation/Generate Documentation]   ✅  Success - Main Set up Node.js [7.153480708s]
+[Documentation/Generate Documentation]   ⚙  ::set-output:: node-version=v22.18.0
+[Documentation/Generate Documentation]   ⚙  ::set-output:: cache-hit=true
+[Documentation/Generate Documentation]   ⚙  ::add-path:: /opt/hostedtoolcache/node/22.18.0/x64/bin
+[Documentation/Generate Documentation] ⭐ Run Main Install Go dependencies
+[Documentation/Generate Documentation]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/3] user= workdir=
+[ci/CI/CI Summary       ]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[Documentation/Generate Documentation]   ✅  Success - Main Install Go dependencies [460.111584ms]
+[ci/CI/CI Summary       ]   ✅  Success - Set up job
+[Documentation/Generate Documentation] ⭐ Run Main Install Node dependencies
+[ci/CI/CI Summary       ] ⭐ Run Main Check all jobs status
+[Documentation/Generate Documentation]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/4] user= workdir=
+[ci/CI/CI Summary       ]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/0] user= workdir=
+[ci/CI/CI Summary       ]   ❌  Failure - Main Check all jobs status [221.035167ms]
+[ci/CI/CI Summary       ] exitcode '1': failure
+[ci/CI/CI Summary       ] ⭐ Run Complete job
+[ci/CI/CI Summary       ]   ✅  Success - Complete job
+[ci/CI/CI Summary       ] 🏁  Job failed
+[Documentation/Generate Documentation]   ✅  Success - Main Install Node dependencies [2.280250042s]
+[Documentation/Generate Documentation] ⭐ Run Main Install Swagger tools
+[Documentation/Generate Documentation]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/5] user= workdir=
+[Documentation/Generate Documentation]   ✅  Success - Main Install Swagger tools [2.603876875s]
+[Documentation/Generate Documentation] ⭐ Run Main Generate API documentation
+[Documentation/Generate Documentation]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/6] user= workdir=
+[Security/CodeQL Analysis            ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/github-codeql-action-init@v3/lib/init-action.js] user= workdir=
+[Security/CodeQL Analysis            ]   🚧  ::warning::Caught an exception while gathering information for telemetry: HttpError: Not Found - https://docs.github.com/rest/actions/workflow-runs#get-a-workflow-run. Will skip sending status report.
+[Security/CodeQL Analysis            ]   ❓  ::group::Setup CodeQL tools
+[CI/Code Quality                     ]   ❗  ::error::issues found
+[CI/Code Quality                     ]   ❓  ::endgroup::
+[CI/Code Quality                     ]   ❌  Failure - Main Run linter [19.82240075s]
+[CI/Code Quality                     ]   ⚙  ::add-path:: /root/golangci-lint-2.4.0-linux-amd64
+[CI/Code Quality                     ] exitcode '1': failure
+[CI/Code Quality                     ] ⭐ Run Post Run linter
+[CI/Code Quality                     ]   🐳  docker exec cmd=[/opt/acttoolcache/node/18.20.8/x64/bin/node /var/run/act/actions/golangci-golangci-lint-action@v8/dist/post_run/index.js] user= workdir=
+[Documentation/Generate Documentation]   ✅  Success - Main Generate API documentation [6.124732917s]
+[Documentation/Generate Documentation] ⭐ Run Main Build HTML documentation
+[Documentation/Generate Documentation]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/7] user= workdir=
+[CI/Code Quality                     ]   ✅  Success - Post Run linter [1.165402375s]
+[CI/Code Quality                     ] ⭐ Run Complete job
+[CI/Code Quality                     ]   ✅  Success - Complete job
+[CI/Code Quality                     ] 🏁  Job failed
+[Security/Security Hardening Check   ]   ✅  Success - Post Set up Go [25.007481708s]
+[Security/Security Hardening Check   ] ⭐ Run Complete job
+[Security/Security Hardening Check   ] Cleaning up container for job Security Hardening Check
+[Security/Security Hardening Check   ]   ✅  Success - Complete job
+[Security/Security Hardening Check   ] 🏁  Job succeeded
+[Security/License Compliance         ]   ✅  Success - Post Set up Go [20.6630405s]
+[Security/License Compliance         ] ⭐ Run Complete job
+[Security/License Compliance         ] Cleaning up container for job License Compliance
+[Security/License Compliance         ]   ✅  Success - Complete job
+[Security/License Compliance         ] 🏁  Job succeeded
+[Security/Vulnerability Scan         ]   ✅  Success - Post Set up Go [16.892492s]
+[Security/Vulnerability Scan         ] ⭐ Run Complete job
+[Security/Vulnerability Scan         ] Cleaning up container for job Vulnerability Scan
+[Security/Vulnerability Scan         ]   ✅  Success - Complete job
+[Security/Vulnerability Scan         ] 🏁  Job succeeded
+[Security/CodeQL Analysis            ]   ❓  ::endgroup::
+[Security/CodeQL Analysis            ]   ❓  ::group::Validating workflow
+[Security/CodeQL Analysis            ]   🚧  ::warning::Unable to validate code scanning workflow: error: getWorkflow() failed: HttpError: Not Found - https://docs.github.com/rest/actions/workflow-runs#get-a-workflow-run
+[Security/CodeQL Analysis            ]   ❓  ::endgroup::
+[Security/CodeQL Analysis            ]   ❓  ::group::Load language configuration
+make: *** [ci] Hangup: 1

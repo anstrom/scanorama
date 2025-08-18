@@ -26,7 +26,6 @@ Added new developer-friendly targets:
 
 ### 4. Security Scanning Improvements
 - Enhanced gosec configuration with proper rule exclusions
-- Improved hardcoded secrets detection with better patterns
 - Added comprehensive vulnerability scanning
 - Implemented license compliance checking
 
@@ -85,10 +84,10 @@ The existing GitHub workflows continue to work as before, with enhanced:
 - Added proper test file exclusions
 - Enhanced reporting format
 
-### Secret Detection
-- Improved pattern matching for hardcoded secrets
-- Better exclusion handling for test files and examples
-- Enhanced error reporting and remediation guidance
+### Gosec Security Scanning
+- Enhanced gosec rule configuration to reduce false positives
+- Proper exclusion of test files from security scanning
+- JSON output format for better integration
 
 ### License Compliance
 - Automated license checking for all dependencies

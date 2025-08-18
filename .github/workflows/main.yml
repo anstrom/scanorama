@@ -107,7 +107,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d scanorama_test"
+          --health-cmd "pg_isready -U postgres -d postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -162,17 +162,18 @@ jobs:
     env:
       POSTGRES_HOST: localhost
       POSTGRES_PORT: 5432
-      POSTGRES_DB: scanorama_test
+      POSTGRES_DB: postgres
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       REDIS_URL: redis://localhost:6379
-      # Test database configuration
+      # Test database configuration - matches what tests expect
       TEST_DB_HOST: localhost
       TEST_DB_PORT: 5432
       TEST_DB_NAME: scanorama_test
       TEST_DB_USER: scanorama_test_user
       TEST_DB_PASSWORD: test_password_123
       CI: true
+      GITHUB_ACTIONS: true
 
     steps:
       - name: Checkout code
@@ -201,6 +202,9 @@ jobs:
 
       - name: Create test database and user
         run: |
+          # Wait for PostgreSQL to be ready
+          timeout 30 bash -c 'until pg_isready -h localhost -p 5432 -U postgres; do sleep 1; done'
+
           # Create test user
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER scanorama_test_user WITH PASSWORD 'test_password_123';" || echo "User may already exist"
 
@@ -218,6 +222,7 @@ jobs:
       - name: Run integration tests
         run: |
           # Run all tests (including integration tests that need database)
+          # Tests will detect CI environment and use service containers
           go test -v -p 1 ./...
 
       - name: Run database migration tests
@@ -249,7 +254,7 @@ jobs:
     env:
       POSTGRES_HOST: localhost
       POSTGRES_PORT: 5432
-      POSTGRES_DB: scanorama_test
+      POSTGRES_DB: postgres
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       TEST_DB_HOST: localhost
@@ -258,6 +263,7 @@ jobs:
       TEST_DB_USER: scanorama_test_user
       TEST_DB_PASSWORD: test_password_123
       CI: true
+      GITHUB_ACTIONS: true
 
     steps:
       - name: Checkout code
