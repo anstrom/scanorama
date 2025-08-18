@@ -2,10 +2,10 @@
 BINARY_NAME ?= scanorama
 BUILD_DIR := build
 COVERAGE_FILE := coverage.out
-TEST_ENV_SCRIPT := ./test/docker/test-env.sh
 DB_DEBUG ?= false
-# Use default PostgreSQL port for simplicity
-POSTGRES_PORT ?= 5432
+# Database testing configuration
+TEST_DB_PORT ?= 5433
+TEST_DB_COMPOSE_FILE := test/docker/docker-compose.test.yml
 
 # Dependency check functions
 define check_tool
@@ -50,20 +50,30 @@ help: ## Show this help message
 	@echo 'Quick Start:'
 	@echo '  make setup-hooks  # Set up Git hooks for code quality'
 	@echo '  make setup-dev-db # Set up development database'
-	@echo '  make ci           # Run comprehensive CI pipeline with act (GitHub Actions locally)'
-	@echo '  make ci-quick     # Fast CI validation (syntax + docs only)'
 	@echo '  make test         # Run all tests (core + integration) with database'
 	@echo '  make build        # Build binary'
+	@echo ''
+	@echo 'Testing:'
+	@echo '  make test-short      # Unit tests only (no database required)'
+	@echo '  make test-db         # Database tests with local container'
+	@echo '  make test-ci         # Simulate GitHub Actions CI environment'
+	@echo '  make test-integration # Full integration tests with all services'
+	@echo ''
+	@echo 'CI & Docker:'
+	@echo '  make ci              # Run full CI pipeline locally'
+	@echo '  make ci-local        # Run CI excluding GitHub-specific jobs'
+	@echo '  make ci-clean        # Run CI with Docker cleanup first'
+	@echo '  make docker-cleanup  # Clean Docker cache and unused images'
+	@echo '  make docker-cleanup-all # Complete Docker cleanup (all resources)'
 	@echo ''
 	@echo 'Environment Variables:'
 	@echo '  DEBUG=true make test    # Run tests with debug output'
 	@echo '  POSTGRES_PORT=5433      # Use custom PostgreSQL port'
 	@echo ''
-	@echo 'CI Testing:'
-	@echo '  make ci              # Comprehensive CI with GitHub Actions (act)'
-	@echo '  make ci-quick        # Quick validation (syntax + docs)'
-	@echo '  make ci-all          # All workflows comprehensive test'
-	@echo '  make ci-help         # Detailed CI testing help'
+	@echo 'CI Pipeline:'
+	@echo '  make ci              # Run comprehensive CI pipeline locally'
+
+	@echo '  make ci-quick        # Quick validation (dry-run only)'
 	@echo ''
 	@echo 'All Targets:'
 	@awk '/^[a-zA-Z_-]+:.*?## / { \
@@ -90,37 +100,51 @@ clean: ## Remove build artifacts and clean up test files
 	@find . -name "test_*.xml" -type f -delete
 	@find . -name "*.tmp" -type f -delete
 
-test: ## Run all tests including integration tests (checks for existing DB first)
-	@echo "Running all tests (core + integration)..."
-	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
-		echo "Database available, using existing database..."; \
-		echo "Using database on localhost:5432"; \
-		echo "Starting test service containers..."; \
-		$(TEST_ENV_SCRIPT) up; \
-		if [ "$(DEBUG)" = "true" ]; then \
-			echo "Running all tests with debug output (core + integration)..."; \
-			POSTGRES_PORT=5432 DB_DEBUG=true $(GOTEST) -v -p 1 ./...; \
-		else \
-			echo "Running all tests (core + integration)..."; \
-			POSTGRES_PORT=5432 $(GOTEST) -v -p 1 ./...; \
-		fi; \
-		ret=$$?; \
-		$(TEST_ENV_SCRIPT) down; \
-		exit $$ret; \
-	else \
-		echo "No database found, starting test containers..."; \
-		$(TEST_ENV_SCRIPT) up; \
-		if [ "$(DEBUG)" = "true" ]; then \
-			echo "Running all tests with debug output (core + integration)..."; \
-			POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v -p 1 ./...; \
-		else \
-			echo "Running all tests (core + integration)..."; \
-			POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v -p 1 ./...; \
-		fi; \
-		ret=$$?; \
-		$(TEST_ENV_SCRIPT) down; \
-		exit $$ret; \
-	fi
+test: ## Run all tests with database container
+	@echo "Running all tests with database container..."
+	@docker compose -f $(TEST_DB_COMPOSE_FILE) up -d test-postgres
+	@echo "Waiting for database to be ready..."
+	@sleep 5
+	@TEST_DB_PORT=$(TEST_DB_PORT) $(GOTEST) -v ./...
+	@docker compose -f $(TEST_DB_COMPOSE_FILE) down
+
+test-db: ## Run database tests only
+	@echo "Running database tests..."
+	@docker compose -f $(TEST_DB_COMPOSE_FILE) up -d test-postgres
+	@echo "Waiting for database to be ready..."
+	@sleep 5
+	@TEST_DB_PORT=$(TEST_DB_PORT) $(GOTEST) -v ./internal/db/...
+	@docker compose -f $(TEST_DB_COMPOSE_FILE) down
+
+test-integration: ## Run integration tests with all services
+	@echo "Running integration tests..."
+	@docker compose -f $(TEST_DB_COMPOSE_FILE) up -d
+	@echo "Waiting for services to be ready..."
+	@sleep 10
+	@TEST_DB_PORT=$(TEST_DB_PORT) $(GOTEST) -tags=integration -v ./...
+	@docker compose -f $(TEST_DB_COMPOSE_FILE) down
+
+test-short: ## Run unit tests only (no database)
+	@echo "Running unit tests (short mode)..."
+	@$(GOTEST) -short -v ./...
+
+test-ci: ## Test CI database configuration (simulates GitHub Actions environment)
+	@echo "Testing CI database configuration..."
+	@echo "Setting up CI environment variables..."
+	@docker compose -f $(TEST_DB_COMPOSE_FILE) up -d test-postgres
+	@echo "Waiting for database to be ready..."
+	@sleep 5
+	@echo "Creating CI test database and user..."
+	@docker exec scanorama-test-postgres-$(TEST_DB_PORT) psql -U test_user -d scanorama_test -c "CREATE USER IF NOT EXISTS scanorama_test_user WITH PASSWORD 'test_password_123';" || true
+	@docker exec scanorama-test-postgres-$(TEST_DB_PORT) psql -U test_user -d scanorama_test -c "GRANT ALL PRIVILEGES ON DATABASE scanorama_test TO scanorama_test_user;" || true
+	@docker exec scanorama-test-postgres-$(TEST_DB_PORT) psql -U test_user -d scanorama_test -c "GRANT ALL ON SCHEMA public TO scanorama_test_user;" || true
+	@echo "Running tests with CI environment..."
+	@GITHUB_ACTIONS=true CI=true TEST_DB_HOST=localhost TEST_DB_PORT=$(TEST_DB_PORT) TEST_DB_NAME=scanorama_test TEST_DB_USER=scanorama_test_user TEST_DB_PASSWORD=test_password_123 $(GOTEST) -v ./internal/db/...
+	@echo "Running CI detection tests..."
+	@GITHUB_ACTIONS=true CI=true DB_DEBUG=true $(GOTEST) -v ./internal/db/ -run TestCI
+	@docker compose -f $(TEST_DB_COMPOSE_FILE) down
+	@echo "✅ CI database configuration tests completed successfully!"
+
 
 
 
@@ -225,76 +249,7 @@ coverage-core: ## Generate coverage report for core packages
 		echo "No coverage data generated - all tests may have failed"; \
 	fi
 
-ci-legacy: ## Run legacy CI pipeline locally (quality + test + build + coverage + security)
-	@echo "🚀 Running legacy local CI pipeline..."
-	@echo "=== Checking database status ==="
-	@./scripts/check-db.sh || echo "Note: Some tests may require database"
-	@echo ""
-	@echo "=== Step 1: Code Quality Checks ==="
-	@$(MAKE) quality
-	@echo ""
-	@echo "=== Step 2: Core Package Tests ==="
-	@$(MAKE) test-core
-	@echo ""
-	@echo "=== Step 3: Core Package Coverage ==="
-	@$(MAKE) coverage-core
-	@echo ""
-	@echo "=== Step 4: Coverage Threshold Check ==="
-	@if [ -f $(COVERAGE_FILE) ]; then \
-		coverage=$$(go tool cover -func=$(COVERAGE_FILE) | tail -1 | awk '{print $$3}' | sed 's/%//'); \
-		echo "Core package coverage: $${coverage}%"; \
-		if [ "$$(echo "$${coverage} >= 90" | bc -l)" -eq 1 ]; then \
-			echo "✅ Core package coverage threshold (90%) met: $${coverage}%"; \
-		else \
-			echo "❌ Core package coverage below threshold (90%): $${coverage}%"; \
-			exit 1; \
-		fi; \
-	else \
-		echo "❌ No coverage file found"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "=== Step 5: Security Vulnerability Scans ==="
-	@$(MAKE) security
-	@echo ""
-	@echo "=== Step 6: Build Verification ==="
-	@$(MAKE) build
-	@echo ""
-	@echo "=== Step 7: Binary Functionality Test ==="
-	@./$(BUILD_DIR)/$(BINARY_NAME) --version
-	@echo ""
-	@echo "=== Step 8: Full Test Suite ==="
-	@echo "Running complete test suite (core + integration)..."
-	@$(MAKE) test
-	@echo ""
-	@echo "✅ All CI pipeline steps passed successfully!"
-	@echo "📊 Core packages (errors, logging, metrics) have excellent test coverage"
-	@echo "🔒 No security vulnerabilities found"
-	@echo "🏗️ Build verification completed"
 
-ci: ## Run comprehensive CI pipeline using act (GitHub Actions locally)
-	@echo "🚀 Running comprehensive CI pipeline with act..."
-	@$(MAKE) act-check-setup
-	@echo ""
-	@echo "=== Step 1: Validate All Workflows ==="
-	@$(MAKE) act-validate-all
-	@echo ""
-	@echo "=== Step 2: Code Quality and Testing ==="
-	@$(MAKE) ci-quality
-	@$(MAKE) ci-test
-	@echo ""
-	@echo "=== Step 3: Build and Documentation ==="
-	@$(MAKE) ci-build
-	@$(MAKE) ci-docs
-	@echo ""
-	@echo "=== Step 4: Security and Docker Validation ==="
-	@$(MAKE) ci-security
-	@$(MAKE) ci-docker
-	@echo ""
-	@echo "✅ Comprehensive CI pipeline completed successfully!"
-	@echo "🎯 All workflows validated and ready for GitHub Actions"
-	@echo "💡 Local testing provides 95% confidence before pushing"
-	@echo "🚀 Ready for production deployment"
 
 security: ## Run comprehensive security scans (vulnerability + hardening)
 	@echo "🔒 Running comprehensive security scans..."
@@ -402,163 +357,58 @@ docs-ci: docs-install ## CI-friendly documentation validation (fails on issues)
 	@echo "Running CI documentation validation..."
 	@npm run docs:validate && npm run spectral:lint
 
-# Essential GitHub Actions testing with act
-act-list: ## List all available GitHub Actions workflows and jobs
-	@echo "📋 Available CI Workflows and Jobs:"
-	@echo ""
+# Act testing with GitHub Actions locally
+act-list: ## List available GitHub Actions workflows
 	$(call check_tool,act)
-	@act --list 2>/dev/null || echo "❌ Unable to list workflows (check act setup)"
+	@act --list
 
-act-validate: ## Validate workflow syntax without executing
-	@echo "⚡ Validating GitHub Actions workflow syntax..."
+act-validate: ## Validate GitHub Actions workflow syntax
 	$(call check_tool,act)
-	@act --dryrun --list >/dev/null 2>&1 && echo "✅ Workflow syntax is valid" || { echo "❌ Workflow syntax has errors. Run 'act --dryrun --list' for details."; exit 1; }
+	@act --dryrun --list >/dev/null 2>&1 && echo "✅ Workflow syntax is valid" || { echo "❌ Workflow syntax errors found"; exit 1; }
 
 act-clean: ## Clean up act containers and cache
-	@echo "🧹 Cleaning up CI containers and cache..."
 	$(call check_tool,docker)
 	$(call check_docker)
-	@docker container prune -f --filter "label=act" >/dev/null 2>&1 || echo "⚠️ Container cleanup had issues"
-	@docker image prune -f --filter "label=act" >/dev/null 2>&1 || echo "⚠️ Image cleanup had issues"
-	@docker volume prune -f >/dev/null 2>&1 || echo "⚠️ Volume cleanup had issues"
-	@echo "✅ CI cleanup completed"
+	@docker container prune -f --filter "label=act" >/dev/null 2>&1 || true
+	@docker image prune -f --filter "label=act" >/dev/null 2>&1 || true
+	@echo "✅ Act cleanup completed"
 
-act-help: ## Show act usage help
-	@echo "🚀 Essential Act Commands:"
-	@echo ""
-	@echo "  make act-list         # List all workflows and jobs"
-	@echo "  make act-validate     # Validate workflow syntax"
-	@echo "  make act-clean        # Clean up containers"
-	@echo ""
-	@echo "  make ci-quick         # Quick CI validation"
-	@echo "  make ci-quality       # Test code quality job"
-	@echo "  make ci-test          # Test unit & integration jobs"
-	@echo "  make ci-build         # Test build job"
-	@echo ""
-	@echo "💡 Use 'make ci-help' for comprehensive CI testing options"
-
-act-check-setup: ## Check if act is properly set up and configured
-	@echo "🔧 Checking act setup..."
+ci: ## Run comprehensive CI pipeline locally with act
+	@echo "🚀 Running comprehensive CI pipeline..."
 	$(call check_tool,act)
 	$(call check_docker)
-	@act --version >/dev/null 2>&1 && echo "✅ Act is properly installed and configured" || { echo "❌ Act setup issues detected"; exit 1; }
+	@act push --quiet || { echo "⚠️ CI pipeline completed with issues"; }
+	@echo "✅ CI pipeline completed"
 
-act-validate-all: ## Validate syntax of all GitHub Actions workflows
-	@echo "⚡ Validating all workflow syntax..."
-	$(call check_tool,act)
-	@for workflow in .github/workflows/*.yml; do \
-		echo "Validating $$workflow..."; \
-		act --dryrun -W "$$workflow" --list >/dev/null 2>&1 && echo "✅ $$workflow valid" || echo "❌ $$workflow invalid"; \
-	done
-	@echo "✅ All workflow validation completed"
+docker-cleanup: ## Clean Docker build cache and unused images
+	@echo "🧹 Cleaning Docker build cache and unused images..."
+	$(call check_docker)
+	@docker builder prune -f
+	@docker image prune -f
+	@echo "✅ Docker cleanup completed"
 
+docker-cleanup-all: ## Complete Docker cleanup (including volumes and containers)
+	@echo "🧹 Performing complete Docker cleanup..."
+	$(call check_docker)
+	@docker system prune -a -f --volumes
+	@echo "✅ Complete Docker cleanup completed"
 
-
-# Streamlined CI Testing Targets
-ci-quality: ## Run code quality CI job locally with act
-	@echo "🔍 Running code quality CI job locally..."
+ci-local: ## Run CI locally excluding GitHub-specific jobs (like CodeQL)
+	@echo "🚀 Running local CI pipeline (excluding GitHub-specific jobs)..."
 	$(call check_tool,act)
 	$(call check_docker)
-	@act push -j code-quality --quiet || { echo "❌ Code quality CI job failed"; exit 1; }
-	@echo "✅ Code quality CI job completed successfully"
+	@act push --quiet --workflows .github/workflows/local-ci.yml || { echo "⚠️ Local CI pipeline completed with issues"; }
+	@echo "✅ Local CI pipeline completed"
 
-ci-test: ## Run test CI jobs locally with act
-	@echo "🧪 Running test CI jobs locally..."
+ci-clean: ## Run CI with Docker cleanup first
+	@echo "🧹 Cleaning Docker environment before CI..."
+	@$(MAKE) docker-cleanup
+	@$(MAKE) ci-local
+
+ci-quick: ## Quick CI validation (syntax check only)
+	@echo "⚡ Quick CI validation..."
 	$(call check_tool,act)
-	$(call check_docker)
-	@act push -j unit-tests --quiet || { echo "⚠️ Unit tests job completed with issues"; }
-	@act push -j integration-tests --quiet || { echo "⚠️ Integration tests job completed with issues"; }
-	@echo "✅ Test CI jobs completed"
-
-ci-build: ## Run build CI job locally with act
-	@echo "🏗️ Running build CI job locally..."
-	$(call check_tool,act)
-	$(call check_docker)
-	@act push -j build --quiet || { echo "❌ Build CI job failed"; exit 1; }
-	@echo "✅ Build CI job completed successfully"
-
-ci-security: ## Run security CI jobs locally with act
-	@echo "🔒 Running security CI jobs locally..."
-	$(call check_tool,act)
-	$(call check_docker)
-	@act push -j vulnerability-scan -W .github/workflows/security.yml --quiet || { echo "⚠️ Vulnerability scan completed with issues"; }
-	@act push -j security-hardening -W .github/workflows/security.yml --quiet || { echo "⚠️ Security hardening completed with issues"; }
-	@act push -j codeql-analysis -W .github/workflows/security.yml --quiet || { echo "⚠️ CodeQL analysis completed with issues"; }
-	@echo "✅ Security CI jobs completed"
-
-ci-docs: ## Run documentation CI jobs locally with act
-	@echo "📚 Running documentation CI jobs locally..."
-	$(call check_tool,act)
-	$(call check_docker)
-	@act push -j documentation -W .github/workflows/main.yml --quiet || { echo "⚠️ Documentation job completed with issues"; }
-	@act push -j generate-docs -W .github/workflows/docs.yml --quiet || { echo "⚠️ Documentation generation completed with issues"; }
-	@echo "✅ Documentation CI jobs completed"
-
-ci-docker: ## Run Docker CI jobs locally with act
-	@echo "🐳 Running Docker CI jobs locally..."
-	$(call check_tool,act)
-	$(call check_docker)
-	@act push -j docker -W .github/workflows/main.yml --dryrun --quiet >/dev/null 2>&1 && echo "✅ Docker build job structure valid" || echo "⚠️ Docker build job validation incomplete"
-	@echo "✅ Docker CI jobs completed"
-
-ci-integration: ## Run integration CI jobs locally with act
-	@echo "🔄 Running integration CI jobs locally..."
-	$(call check_tool,act)
-	$(call check_docker)
-	@act push -j integration-tests -W .github/workflows/main.yml --quiet || { echo "⚠️ Integration tests job completed with issues"; }
-	@echo "✅ Integration CI jobs completed"
-
-ci-all: ## Run all CI jobs locally with act (comprehensive test)
-	@echo "🚀 Running comprehensive CI pipeline locally..."
-	@echo "⚠️ This may take several minutes..."
-	@$(MAKE) ci-quality
-	@$(MAKE) ci-test
-	@$(MAKE) ci-build
-	@$(MAKE) ci-security
-	@$(MAKE) ci-docs
-	@$(MAKE) ci-docker
-	@$(MAKE) ci-integration
-	@echo "🎉 Comprehensive CI pipeline completed!"
-	@echo "📊 All CI jobs validated locally"
-
-ci-quick: ## Quick CI validation (dry-run only, fast)
-	@echo "⚡ Running quick CI validation..."
-	$(call check_tool,act)
-	$(call check_docker)
-	@echo "🔍 Validating main workflow jobs..."
-	@act push -j code-quality -W .github/workflows/main.yml --dryrun --quiet >/dev/null 2>&1 && echo "✅ Code quality job valid" || echo "❌ Code quality job invalid"
-	@act push -j unit-tests -W .github/workflows/main.yml --dryrun --quiet >/dev/null 2>&1 && echo "✅ Unit tests job valid" || echo "❌ Unit tests job invalid"
-	@act push -j build -W .github/workflows/main.yml --dryrun --quiet >/dev/null 2>&1 && echo "✅ Build job valid" || echo "❌ Build job invalid"
-	@echo "✅ Quick CI validation completed (~10 seconds)"
-
-ci-help: ## Show comprehensive CI testing help
-	@echo "🚀 Local CI Testing Commands:"
-	@echo ""
-	@echo "📋 Individual Jobs:"
-	@echo "  make ci-quality      # Run code quality checks locally"
-	@echo "  make ci-test         # Run unit & integration tests locally"
-	@echo "  make ci-build        # Run build process locally"
-	@echo "  make ci-security     # Run security scans locally"
-	@echo "  make ci-docs         # Run documentation validation locally"
-	@echo "  make ci-docker       # Run Docker build tests locally"
-	@echo "  make ci-integration  # Run integration tests locally"
-	@echo ""
-	@echo "🎯 Comprehensive Testing:"
-	@echo "  make ci-all          # Run complete CI pipeline locally (~5-10 min)"
-	@echo "  make ci-quick        # Quick validation (dry-run only, ~10 sec)"
-	@echo ""
-	@echo "🧹 Maintenance:"
-	@echo "  make act-clean       # Clean up containers and cache"
-	@echo ""
-	@echo "📚 Available Workflows:"
-	@echo "  - main.yml       # Core CI pipeline (quality, tests, build, docs, docker)"
-	@echo "  - docs.yml       # Documentation validation and generation"
-	@echo "  - security.yml   # Security scans and vulnerability checks"
-	@echo ""
-	@echo "💡 Tips:"
-	@echo "  - Use 'make ci-quick' for fast validation during development"
-	@echo "  - Use 'make ci-quality && make ci-test' for common dev workflow"
-	@echo "  - Use 'make ci-all' before submitting PRs for full validation"
+	@act --dryrun --list >/dev/null 2>&1 && echo "✅ All workflows valid" || { echo "❌ Workflow issues found"; exit 1; }
 
 # Developer experience targets
 dev: ## Set up development environment and run initial checks

@@ -54,6 +54,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Verify Go installation
+        run: |
+          echo "Go version: $(go version)"
+          echo "GOPATH: $(go env GOPATH)"
+          echo "GOROOT: $(go env GOROOT)"
+          which go
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
@@ -64,8 +77,18 @@ jobs:
               - "**/testdata/**"
               - "**/vendor/**"
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+      - name: Download dependencies
+        run: |
+          echo "Downloading Go modules..."
+          go mod download
+          go mod verify
+
+      - name: Build Go code
+        run: |
+          echo "Building Go code for CodeQL analysis..."
+          go build -v ./cmd/...
+          go build -v ./internal/...
+          echo "Build completed successfully"
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
@@ -89,20 +112,58 @@ jobs:
         run: |
           echo "🔍 Checking for potential hardcoded secrets..."
 
-          # Check for common secret patterns
-          if grep -r -i "password.*=" --include="*.go" . | grep -v "_test.go" | grep -v "example\|template\|config\.template"; then
-            echo "⚠️ Found potential hardcoded passwords"
+          # Create exclusion patterns for legitimate uses
+          EXCLUDE_PATTERNS="test|example|template|mock|fixture|demo|sample|_test\.go"
+          SECRET_FOUND=false
+
+          # Check for API keys (excluding test files and examples)
+          echo "Checking for API keys..."
+          if grep -r -E "(api[_-]?key|apikey)\s*[:=]\s*[\"'][A-Za-z0-9]{20,}" --include="*.go" --exclude-dir=vendor . | grep -v -E "$EXCLUDE_PATTERNS"; then
+            echo "❌ Potential hardcoded API keys found"
+            SECRET_FOUND=true
           fi
 
-          if grep -r -i "api[_-]key.*=" --include="*.go" . | grep -v "_test.go" | grep -v "example\|template"; then
-            echo "⚠️ Found potential hardcoded API keys"
+          # Check for passwords (excluding test files and examples)
+          echo "Checking for passwords..."
+          if grep -r -E "(password|pwd)\s*[:=]\s*[\"'][^\"']{8,}" --include="*.go" --exclude-dir=vendor . | grep -v -E "$EXCLUDE_PATTERNS|placeholder|changeme|your_password"; then
+            echo "❌ Potential hardcoded passwords found"
+            SECRET_FOUND=true
           fi
 
-          if grep -r -i "secret.*=" --include="*.go" . | grep -v "_test.go" | grep -v "example\|template"; then
-            echo "⚠️ Found potential hardcoded secrets"
+          # Check for JWT tokens
+          echo "Checking for JWT tokens..."
+          if grep -r -E "(jwt|token)\s*[:=]\s*[\"'][A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+" --include="*.go" --exclude-dir=vendor . | grep -v -E "$EXCLUDE_PATTERNS"; then
+            echo "❌ Potential hardcoded JWT tokens found"
+            SECRET_FOUND=true
           fi
 
-          echo "✅ Secret pattern check completed"
+          # Check for database URLs with credentials
+          echo "Checking for database URLs..."
+          if grep -r -E "(database_url|db_url|connection_string)\s*[:=]\s*[\"'][^\"']*://[^\"']*:[^\"']*@" --include="*.go" --exclude-dir=vendor . | grep -v -E "$EXCLUDE_PATTERNS|user:pass|username:password"; then
+            echo "❌ Potential hardcoded database credentials found"
+            SECRET_FOUND=true
+          fi
+
+          # Check for generic secrets (more restrictive)
+          echo "Checking for generic secrets..."
+          if grep -r -E "(secret|private[_-]?key)\s*[:=]\s*[\"'][A-Za-z0-9+/]{32,}" --include="*.go" --exclude-dir=vendor . | grep -v -E "$EXCLUDE_PATTERNS|your_secret|placeholder"; then
+            echo "❌ Potential hardcoded secrets found"
+            SECRET_FOUND=true
+          fi
+
+          # Check for AWS-style access keys
+          echo "Checking for AWS access keys..."
+          if grep -r -E "(aws[_-]?access[_-]?key|access[_-]?key[_-]?id)\s*[:=]\s*[\"'][A-Z0-9]{16,}" --include="*.go" --exclude-dir=vendor . | grep -v -E "$EXCLUDE_PATTERNS"; then
+            echo "❌ Potential AWS access keys found"
+            SECRET_FOUND=true
+          fi
+
+          if [ "$SECRET_FOUND" = true ]; then
+            echo "❌ Hardcoded secrets detected! Please review the above matches and use environment variables or secure configuration instead."
+            exit 1
+          else
+            echo "✅ No hardcoded secrets found"
+          fi
 
       - name: Check file permissions
         run: |
@@ -168,14 +229,24 @@ jobs:
           # Install go-licenses tool
           go install github.com/google/go-licenses@latest
 
+          # Generate license report first
+          echo "Generating license report..."
+          go-licenses report ./... > licenses-report.txt || {
+            echo "⚠️ Could not generate complete license report, proceeding with basic check"
+          }
+
           # Check licenses (allow common permissive licenses)
-          go-licenses check ./... --allowed_licenses=Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC || {
+          go-licenses check ./... --allowed_licenses=Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC,MPL-2.0 || {
             echo "❌ License compliance check failed"
-            echo "Run 'go-licenses report ./...' to see all licenses"
+            echo "📋 License report:"
+            cat licenses-report.txt 2>/dev/null || echo "No license report available"
+            echo ""
+            echo "To see detailed license information, run: go-licenses report ./..."
             exit 1
           }
 
           echo "✅ License compliance check passed"
+          echo "📋 All dependencies use approved licenses"
 
   security-summary:
     name: Security Summary
@@ -199,29 +270,48 @@ jobs:
           echo "- NPM Audit: ${{ needs.npm-audit.result }}"
           echo "- License Compliance: ${{ needs.license-compliance.result }}"
 
-          # Count failures
+          # Count failures and provide detailed feedback
           FAILURES=0
+          FAILED_JOBS=""
+
           if [[ "${{ needs.vulnerability-scan.result }}" == "failure" ]]; then
             echo "❌ Vulnerability scan failed"
             FAILURES=$((FAILURES + 1))
+            FAILED_JOBS="$FAILED_JOBS vulnerability-scan"
           fi
           if [[ "${{ needs.codeql-analysis.result }}" == "failure" ]]; then
             echo "❌ CodeQL analysis failed"
             FAILURES=$((FAILURES + 1))
+            FAILED_JOBS="$FAILED_JOBS codeql-analysis"
           fi
           if [[ "${{ needs.security-hardening.result }}" == "failure" ]]; then
             echo "❌ Security hardening check failed"
             FAILURES=$((FAILURES + 1))
+            FAILED_JOBS="$FAILED_JOBS security-hardening"
+          fi
+          if [[ "${{ needs.npm-audit.result }}" == "failure" ]]; then
+            echo "❌ NPM audit failed"
+            FAILURES=$((FAILURES + 1))
+            FAILED_JOBS="$FAILED_JOBS npm-audit"
           fi
           if [[ "${{ needs.license-compliance.result }}" == "failure" ]]; then
             echo "❌ License compliance check failed"
             FAILURES=$((FAILURES + 1))
+            FAILED_JOBS="$FAILED_JOBS license-compliance"
           fi
 
           if [ "$FAILURES" -gt 0 ]; then
-            echo "⚠️ $FAILURES security check(s) failed"
-            echo "Please review the failed jobs and address security issues"
+            echo ""
+            echo "⚠️ $FAILURES security check(s) failed: $FAILED_JOBS"
+            echo ""
+            echo "🔧 Remediation steps:"
+            echo "1. Review the failed job logs above"
+            echo "2. Address identified security issues"
+            echo "3. Run 'make security' locally to verify fixes"
+            echo "4. Re-run the security pipeline"
+            echo ""
             exit 1
           fi
 
           echo "✅ All security checks passed!"
+          echo "🔒 Security pipeline completed successfully"

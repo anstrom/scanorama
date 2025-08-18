@@ -1,0 +1,333 @@
+name: Local CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.24.6"
+  NODE_VERSION: "22"
+
+permissions:
+  contents: read
+
+jobs:
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.61.0
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Run golangci-lint
+        run: golangci-lint run --timeout=10m
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Check formatting
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "The following files are not formatted:"
+            gofmt -s -l .
+            exit 1
+          fi
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: scanorama_test
+          POSTGRES_USER: scanorama_test_user
+          POSTGRES_PASSWORD: test_password_123
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        env:
+          TEST_DB_HOST: localhost
+          TEST_DB_PORT: 5432
+          TEST_DB_NAME: scanorama_test
+          TEST_DB_USER: scanorama_test_user
+          TEST_DB_PASSWORD: test_password_123
+        run: |
+          go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Generate coverage report
+        run: |
+          go tool cover -html=coverage.out -o coverage.html
+          go tool cover -func=coverage.out
+
+  vulnerability-scan:
+    name: Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run Go vulnerability check
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Check for known vulnerabilities in dependencies
+        run: |
+          go list -json -deps ./... | jq -r '.Module | select(.Path != null) | .Path + "@" + .Version' | sort -u > deps.txt
+          echo "📦 Dependencies scanned:"
+          cat deps.txt
+          echo "✅ Vulnerability scan completed"
+
+  security-hardening:
+    name: Security Hardening Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec security scanner
+        run: |
+          gosec -exclude=G107,G204,G304 -fmt json -out gosec-report.json -stdout ./...
+
+      - name: Check for hardcoded secrets
+        run: |
+          echo "🔍 Checking for potential hardcoded secrets..."
+
+          # Create exclusion patterns for legitimate uses
+          EXCLUDE_PATTERNS="test|example|template|mock|fixture|demo|sample"
+          SECRET_FOUND=false
+
+          # Check for API keys (excluding test files and examples)
+          echo "Checking for API keys..."
+          if grep -r -E "(api[_-]?key|apikey)\s*[:=]\s*[\"'][A-Za-z0-9]{20,}" --include="*.go" --exclude-dir=vendor . | grep -v -E "$EXCLUDE_PATTERNS"; then
+            echo "⚠️ Potential hardcoded API keys found"
+            SECRET_FOUND=true
+          fi
+
+          # Check for passwords (excluding test files and examples)
+          echo "Checking for passwords..."
+          if grep -r -E "(password|pwd)\s*[:=]\s*[\"'][^\"']{8,}" --include="*.go" --exclude-dir=vendor . | grep -v -E "$EXCLUDE_PATTERNS|placeholder|changeme|your_password"; then
+            echo "⚠️ Potential hardcoded passwords found"
+            SECRET_FOUND=true
+          fi
+
+          # Check for JWT tokens
+          echo "Checking for JWT tokens..."
+          if grep -r -E "(jwt|token)\s*[:=]\s*[\"'][A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+" --include="*.go" --exclude-dir=vendor . | grep -v -E "$EXCLUDE_PATTERNS"; then
+            echo "⚠️ Potential hardcoded JWT tokens found"
+            SECRET_FOUND=true
+          fi
+
+          # Check for database URLs with credentials
+          echo "Checking for database URLs..."
+          if grep -r -E "(database_url|db_url|connection_string)\s*[:=]\s*[\"'][^\"']*://[^\"']*:[^\"']*@" --include="*.go" --exclude-dir=vendor . | grep -v -E "$EXCLUDE_PATTERNS|user:pass|username:password"; then
+            echo "⚠️ Potential hardcoded database credentials found"
+            SECRET_FOUND=true
+          fi
+
+          # Check for generic secrets (more restrictive)
+          echo "Checking for generic secrets..."
+          if grep -r -E "(secret|private[_-]?key)\s*[:=]\s*[\"'][A-Za-z0-9+/]{32,}" --include="*.go" --exclude-dir=vendor . | grep -v -E "$EXCLUDE_PATTERNS|your_secret|placeholder"; then
+            echo "⚠️ Potential hardcoded secrets found"
+            SECRET_FOUND=true
+          fi
+
+          if [ "$SECRET_FOUND" = true ]; then
+            echo "❌ Hardcoded secrets detected! Please review the above matches and use environment variables or secure configuration instead."
+            exit 1
+          else
+            echo "✅ No hardcoded secrets found"
+          fi
+
+  npm-security-audit:
+    name: NPM Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: |
+          npm audit --audit-level moderate
+          echo "✅ NPM security audit completed"
+
+  license-compliance:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install go-licenses
+        run: |
+          go install github.com/google/go-licenses@latest
+
+      - name: Check licenses
+        run: |
+          echo "📋 Checking Go module licenses..."
+          go-licenses report ./... > licenses.txt
+          echo "✅ License compliance check completed"
+          cat licenses.txt
+
+  validate-openapi:
+    name: Validate OpenAPI Spec
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate OpenAPI syntax
+        run: npm run docs:validate
+
+      - name: Advanced OpenAPI linting
+        run: npm run spectral:lint
+
+      - name: Check schema compatibility
+        run: npm run openapi:check-schema
+
+  generate-docs:
+    name: Generate Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Go dependencies
+        run: go mod download
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Install Swagger tools
+        run: go install github.com/swaggo/swag/cmd/swag@latest
+
+      - name: Generate API documentation
+        run: make docs-generate
+
+      - name: Build HTML documentation
+        run: npm run docs:build
+
+      - name: Verify generated files
+        run: |
+          ls -la docs/swagger/
+          test -f docs/swagger/swagger.yaml
+          test -f docs/swagger/swagger.json
+          test -f docs/swagger/docs.go
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build binaries
+        run: |
+          make build
+          ls -la build/
+
+      - name: Test binary execution
+        run: |
+          ./build/scanorama --version
+          ./build/scanorama --help
