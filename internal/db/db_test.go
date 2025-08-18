@@ -20,16 +20,35 @@ const (
 	trueString = "true"
 )
 
-// It prioritizes environment variables, then tries config files, then defaults.
+// It prioritizes CI service containers, then environment variables, then config files, then defaults.
 func getTestConfigs() []Config {
 	// Check if running in CI environment or debug mode
-	isCI := os.Getenv("GITHUB_ACTIONS") == trueString
+	isCI := os.Getenv("GITHUB_ACTIONS") == trueString || os.Getenv("CI") == trueString
 	isDebug := os.Getenv("DB_DEBUG") == trueString
 
 	// Use 5432 as the default port (PostgreSQL standard)
 	defaultPort := 5432
 
-	configs := []Config{
+	var configs []Config
+
+	// In CI, prioritize the standard PostgreSQL service container
+	if isCI {
+		configs = append(configs, Config{
+			Host:            "localhost",
+			Port:            5432,
+			Database:        "scanorama_test",
+			Username:        "scanorama_test_user",
+			Password:        "test_password_123",
+			SSLMode:         "disable",
+			MaxOpenConns:    5,
+			MaxIdleConns:    2,
+			ConnMaxLifetime: time.Minute,
+			ConnMaxIdleTime: time.Minute,
+		})
+	}
+
+	// Add standard test configurations (these come after CI config)
+	standardConfigs := []Config{
 		// Try test database first
 		{
 			Host:            getEnvOrDefault("TEST_DB_HOST", "localhost"),
@@ -58,24 +77,15 @@ func getTestConfigs() []Config {
 		},
 	}
 
+	configs = append(configs, standardConfigs...)
+
 	// Try to load from config file only if no environment overrides are set
 	if !hasEnvOverrides() {
-		var fileConfig Config
-		var err error
-
-		if isCI {
-			fileConfig, err = loadDBConfigFromFile("ci")
-		} else {
-			fileConfig, err = loadDBConfigFromFile("test")
-		}
-
-		if err == nil {
-			// Use file config as first preference if no environment variables are set
-			configs = append([]Config{fileConfig}, configs...)
-		}
+		configs = addFileConfigIfAvailable(configs, isCI)
 	}
 
 	if isDebug {
+		fmt.Printf("CI environment detected: %v\n", isCI)
 		for i, config := range configs {
 			fmt.Printf("Database config %d: host=%s port=%d user=%s db=%s\n",
 				i+1, config.Host, config.Port, config.Username, config.Database)
@@ -83,6 +93,32 @@ func getTestConfigs() []Config {
 	}
 
 	return configs
+}
+
+// addFileConfigIfAvailable loads and adds file config to the configs slice based on environment
+func addFileConfigIfAvailable(configs []Config, isCI bool) []Config {
+	configType := "test"
+	if isCI {
+		configType = "ci"
+	}
+
+	fileConfig, err := loadDBConfigFromFile(configType)
+	if err != nil {
+		return configs // Skip file config if loading failed
+	}
+
+	if !isCI {
+		// In non-CI, use file config as first preference
+		return append([]Config{fileConfig}, configs...)
+	}
+
+	if len(configs) > 0 {
+		// In CI, insert file config after CI service container config but before standard configs
+		// CI service container should always be first priority
+		return append([]Config{configs[0], fileConfig}, configs[1:]...)
+	}
+
+	return append([]Config{fileConfig}, configs...)
 }
 
 // hasEnvOverrides checks if any database environment variables are set.
@@ -174,14 +210,11 @@ func getEnvIntOrDefault(key string, defaultValue int) int {
 
 // waitForDB waits for the database to become available with timeout.
 func waitForDB(ctx context.Context, config *Config) error {
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	// Use the context timeout if already set, otherwise default to 10 seconds
+	// Use shorter timeout for faster test feedback - 2 seconds instead of 10
 	timeoutCtx := ctx
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
-		timeoutCtx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		timeoutCtx, cancel = context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 	}
 
@@ -189,6 +222,20 @@ func waitForDB(ctx context.Context, config *Config) error {
 	if isDebug {
 		fmt.Printf("Attempting to connect to database at %s:%d...\n", config.Host, config.Port)
 	}
+
+	// Quick port check first - fail fast if port isn't even listening
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", config.Host, config.Port), 1*time.Second)
+	if err != nil {
+		if isDebug {
+			fmt.Printf("Port %d not listening on %s: %v\n", config.Port, config.Host, err)
+		}
+		return fmt.Errorf("database port %d not available on %s: %w", config.Port, config.Host, err)
+	}
+	conn.Close()
+
+	// Now try actual database connection with shorter retry interval
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
 
 	for {
 		select {
@@ -202,13 +249,9 @@ func waitForDB(ctx context.Context, config *Config) error {
 				}
 				_ = db.Close()
 				return nil
-			} else {
+			} else if isDebug {
 				// Log the error for debugging
-				if isDebug {
-					fmt.Printf("Database connection attempt failed: %v\n", err)
-				}
-				// Add a small delay between connection attempts
-				time.Sleep(500 * time.Millisecond)
+				fmt.Printf("Database connection attempt failed: %v\n", err)
 			}
 		}
 	}
@@ -347,17 +390,11 @@ func findWorkingDatabase(ctx context.Context, t *testing.T) *DB {
 func setupTestDB(t *testing.T) (testDB *DB, cleanup func()) {
 	t.Helper()
 
-	// Skip if running in short mode
-	if testing.Short() {
-		t.Skip("Skipping database tests in short mode")
-	}
-
 	ctx := context.Background()
 	db := findWorkingDatabase(ctx, t)
 
 	if db == nil {
-		t.Skipf("Skipping test - no database available from any configuration")
-		return nil, func() {}
+		t.Fatal("No database available. Ensure PostgreSQL is running with test database configured.")
 	}
 
 	// Initialize database schema if needed
@@ -436,7 +473,8 @@ func TestConnect(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if testing.Short() && !tt.wantErr {
-				t.Skip("Skipping database connection test in short mode")
+				t.Fatal("Database connection tests cannot run in short mode. " +
+					"Run without -short flag or use make test-db")
 			}
 
 			ctx := context.Background()
@@ -455,7 +493,8 @@ func TestConnect(t *testing.T) {
 					strings.Contains(err.Error(), "connect: network is unreachable") ||
 					strings.Contains(err.Error(), "password authentication failed") ||
 					strings.Contains(err.Error(), "database") && strings.Contains(err.Error(), "does not exist") {
-					t.Skipf("Skipping test - database not available with this config: %v", err)
+					t.Fatalf("Database not available with this config: %v. "+
+						"Ensure PostgreSQL is running or Docker is available", err)
 				} else {
 					t.Errorf("Connect() unexpected error: %v", err)
 				}
@@ -475,10 +514,6 @@ func TestPing(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	if db == nil {
-		return // Test was skipped
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -490,10 +525,6 @@ func TestPing(t *testing.T) {
 func TestRepositories(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-
-	if db == nil {
-		return // Test was skipped
-	}
 
 	t.Run("ScanTargetRepository", func(t *testing.T) {
 		repo := NewScanTargetRepository(db)
@@ -584,10 +615,6 @@ func TestQueryRow(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	if db == nil {
-		return // Test was skipped
-	}
-
 	ctx := context.Background()
 	var result int
 	err := db.QueryRowContext(ctx, "SELECT 1").Scan(&result)
@@ -603,10 +630,6 @@ func TestQueryRow(t *testing.T) {
 func TestQuery(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-
-	if db == nil {
-		return // Test was skipped
-	}
 
 	rows, err := db.QueryContext(context.Background(), "SELECT generate_series(1, 3)")
 	if err != nil {
@@ -644,10 +667,6 @@ func TestExec(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	if db == nil {
-		return // Test was skipped
-	}
-
 	result, err := db.ExecContext(context.Background(), "CREATE TEMPORARY TABLE test (id SERIAL PRIMARY KEY)")
 	if err != nil {
 		t.Errorf("ExecContext() error = %v", err)
@@ -667,10 +686,6 @@ func TestExec(t *testing.T) {
 func TestTransaction(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-
-	if db == nil {
-		return // Test was skipped
-	}
 
 	ctx := context.Background()
 

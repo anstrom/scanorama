@@ -27,3 +27,8 @@
 --env GITHUB_ACTIONS=true
 --env RUNNER_OS=Linux
 --env RUNNER_ARCH=X64
+
+# Configure timeouts for local testing
+--env ACT_JOB_TIMEOUT=30m
+
+# Note: Memory and CPU limits should be configured in Docker settings

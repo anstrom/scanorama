@@ -14,13 +14,10 @@ import (
 
 // TestMigrationSystem validates the complete migration system functionality.
 func TestMigrationSystem(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping migration test in short mode")
-	}
-
 	configs := getTestConfigs()
 	if len(configs) == 0 {
-		t.Skip("No test database configuration available")
+		t.Fatal("No test database configuration available. Check that PostgreSQL is running and " +
+			"test database is created")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -29,7 +26,7 @@ func TestMigrationSystem(t *testing.T) {
 	// Create a clean database specifically for migration testing
 	db, cleanup, err := setupCleanMigrationDatabase(ctx, &configs[0], t)
 	if err != nil {
-		t.Skipf("Cannot setup clean migration database: %v", err)
+		t.Fatalf("Cannot setup clean migration database: %v", err)
 	}
 	defer cleanup()
 	defer db.Close()
@@ -164,13 +161,15 @@ func TestMigrationSystem(t *testing.T) {
 // TestSchemaAfterMigrations validates that the schema after migrations
 // matches the expectations of the application code.
 func TestSchemaAfterMigrations(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping migration test in short mode")
-	}
-
 	configs := getTestConfigs()
 	if len(configs) == 0 {
-		t.Skip("No test database configuration available")
+		isCI := os.Getenv("GITHUB_ACTIONS") == "true" || os.Getenv("CI") == "true"
+		if isCI {
+			t.Fatal("No test database configuration available in CI. Check that PostgreSQL service is " +
+				"running and test database is created")
+		}
+		t.Skip("No database available for migration tests. Set SKIP_DB_TESTS=true to skip explicitly")
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -330,12 +329,26 @@ func TestSchemaAfterMigrations(t *testing.T) {
 // and stored correctly to detect migration file changes.
 func TestMigrationChecksums(t *testing.T) {
 	if testing.Short() {
-		t.Skip("Skipping checksum test in short mode")
+		t.Skip("Skipping migration tests in short mode. Run without -short flag or use make test-db")
+		return
+	}
+
+	// Skip if explicitly disabled
+	skipOnLocal := os.Getenv("SKIP_DB_TESTS") == "true"
+	if skipOnLocal {
+		t.Skip("Migration tests skipped via SKIP_DB_TESTS environment variable")
+		return
 	}
 
 	configs := getTestConfigs()
 	if len(configs) == 0 {
-		t.Skip("No test database configuration available")
+		isCI := os.Getenv("GITHUB_ACTIONS") == "true" || os.Getenv("CI") == "true"
+		if isCI {
+			t.Fatal("No test database configuration available in CI. Check that PostgreSQL service is " +
+				"running and test database is created")
+		}
+		t.Skip("No database available for migration tests. Set SKIP_DB_TESTS=true to skip explicitly")
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1369,12 +1382,26 @@ func handleSelectQueries(upperSQL string, paramIndex int) interface{} {
 // work correctly after all migrations are applied.
 func TestCriticalQueriesAfterMigration(t *testing.T) {
 	if testing.Short() {
-		t.Skip("Skipping query validation test in short mode")
+		t.Skip("Skipping migration tests in short mode. Run without -short flag or use make test-db")
+		return
+	}
+
+	// Skip if explicitly disabled
+	skipOnLocal := os.Getenv("SKIP_DB_TESTS") == "true"
+	if skipOnLocal {
+		t.Skip("Migration tests skipped via SKIP_DB_TESTS environment variable")
+		return
 	}
 
 	configs := getTestConfigs()
 	if len(configs) == 0 {
-		t.Skip("No test database configuration available")
+		isCI := os.Getenv("GITHUB_ACTIONS") == "true" || os.Getenv("CI") == "true"
+		if isCI {
+			t.Fatal("No test database configuration available in CI. Check that PostgreSQL service is " +
+				"running and test database is created")
+		}
+		t.Skip("No database available for migration tests. Set SKIP_DB_TESTS=true to skip explicitly")
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1467,12 +1494,26 @@ func TestCriticalQueriesAfterMigration(t *testing.T) {
 // corrupted or rolled back unsafely.
 func TestMigrationRollbackSafety(t *testing.T) {
 	if testing.Short() {
-		t.Skip("Skipping rollback safety test in short mode")
+		t.Skip("Skipping migration tests in short mode. Run without -short flag or use make test-db")
+		return
+	}
+
+	// Skip if explicitly disabled
+	skipOnLocal := os.Getenv("SKIP_DB_TESTS") == "true"
+	if skipOnLocal {
+		t.Skip("Migration tests skipped via SKIP_DB_TESTS environment variable")
+		return
 	}
 
 	configs := getTestConfigs()
 	if len(configs) == 0 {
-		t.Skip("No test database configuration available")
+		isCI := os.Getenv("GITHUB_ACTIONS") == "true" || os.Getenv("CI") == "true"
+		if isCI {
+			t.Fatal("No test database configuration available in CI. Check that PostgreSQL service is " +
+				"running and test database is created")
+		}
+		t.Skip("No database available for migration tests. Set SKIP_DB_TESTS=true to skip explicitly")
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

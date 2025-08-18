@@ -44,14 +44,11 @@ func TestDatabaseConfigDefaults(t *testing.T) {
 // TestQueryColumnConsistency validates that critical queries reference
 // columns that should exist in the database schema.
 func TestQueryColumnConsistency(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping database integration test in short mode")
-	}
-
 	// Try to connect to any available test database
 	configs := getTestConfigs()
 	if len(configs) == 0 {
-		t.Skip("No test database configuration available")
+		t.Fatal("No test database configuration available. Check that PostgreSQL is running and " +
+			"test database is created")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -59,7 +56,7 @@ func TestQueryColumnConsistency(t *testing.T) {
 
 	db, err := Connect(ctx, &configs[0])
 	if err != nil {
-		t.Skipf("Cannot connect to test database: %v", err)
+		t.Fatalf("Cannot connect to test database: %v", err)
 	}
 	defer db.Close()
 
@@ -146,13 +143,10 @@ func TestConfigurationLoading(t *testing.T) {
 // TestTableSchemaAssumptions validates that our code assumptions about
 // database schema are correct. This catches schema drift.
 func TestTableSchemaAssumptions(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping database integration test in short mode")
-	}
-
 	configs := getTestConfigs()
 	if len(configs) == 0 {
-		t.Skip("No test database configuration available")
+		t.Fatal("No test database configuration available. Check that PostgreSQL is running and " +
+			"test database is created")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -160,7 +154,7 @@ func TestTableSchemaAssumptions(t *testing.T) {
 
 	db, err := Connect(ctx, &configs[0])
 	if err != nil {
-		t.Skipf("Cannot connect to test database: %v", err)
+		t.Fatalf("Cannot connect to test database: %v", err)
 	}
 	defer db.Close()
 

@@ -42,7 +42,7 @@ export PATH := $(GOBIN):$(PATH)
 DOCKER_COMPOSE := docker compose
 COMPOSE_FILE := ./test/docker/docker-compose.yml
 
-.PHONY: help build clean test coverage quality lint format security ci setup-dev-db setup-hooks docker-build docker-up docker-down docker-logs docs-install docs-generate docs-serve docs-clean docs
+.PHONY: help build clean test coverage quality lint format security ci setup-dev-db setup-hooks test-db-up test-db-down test-db-status docker-build docker-up docker-down docker-logs docs-install docs-generate docs-serve docs-clean docs
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -50,6 +50,8 @@ help: ## Show this help message
 	@echo 'Quick Start:'
 	@echo '  make setup-hooks  # Set up Git hooks for code quality'
 	@echo '  make setup-dev-db # Set up development database'
+	@echo '  make test-db-up   # Start local test database container'
+	@echo '  make test-db-down # Stop local test database container'
 	@echo '  make ci           # Run comprehensive CI pipeline with act (GitHub Actions locally)'
 	@echo '  make ci-quick     # Fast CI validation (syntax + docs only)'
 	@echo '  make test         # Run all tests (core + integration) with database'
@@ -132,6 +134,22 @@ setup-dev-db: ## Set up development PostgreSQL database
 setup-hooks: ## Set up Git hooks for code quality checks
 	@echo "Setting up Git hooks..."
 	@./scripts/setup-hooks.sh
+
+test-db-up: ## Start local test database container
+	@echo "Starting test database container..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d scanorama-postgres
+	@echo "Waiting for database to be ready..."
+	@sleep 5
+	@echo "✅ Test database ready"
+
+test-db-down: ## Stop local test database container
+	@echo "Stopping test database container..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) down
+	@echo "✅ Test database stopped"
+
+test-db-status: ## Check test database status
+	@echo "Checking test database status..."
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) ps scanorama-postgres
 
 quality: ## Run comprehensive code quality checks (lint + format + security)
 	@echo "Running comprehensive code quality checks..."

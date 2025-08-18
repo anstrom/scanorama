@@ -809,6 +809,7 @@ func TestLoggerChaining(t *testing.T) {
 }
 
 func TestConcurrentLogging(t *testing.T) {
+	t.Parallel()
 	tmpFile := filepath.Join(t.TempDir(), "concurrent.log")
 
 	cfg := Config{

@@ -1106,6 +1106,7 @@ func TestMiddleware_EdgeCases(t *testing.T) {
 
 func TestMiddleware_ConcurrentSafety(t *testing.T) {
 	t.Run("rate limiter concurrent access", func(t *testing.T) {
+		t.Parallel()
 		limiter := NewRateLimiter(1000, time.Minute)
 
 		const numGoroutines = 50
@@ -1144,6 +1145,7 @@ func TestMiddleware_ConcurrentSafety(t *testing.T) {
 	})
 
 	t.Run("logging middleware concurrent requests", func(t *testing.T) {
+		t.Parallel()
 		logger := createTestLogger()
 
 		testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

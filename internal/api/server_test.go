@@ -185,8 +185,25 @@ func TestServerStartStop(t *testing.T) {
 			startErr <- server.Start(context.Background())
 		}()
 
-		// Give server time to start
-		time.Sleep(100 * time.Millisecond)
+		// Wait for server to be ready with timeout
+		ready := make(chan bool, 1)
+		go func() {
+			for i := 0; i < 50; i++ { // Max 500ms wait
+				if server.IsRunning() {
+					ready <- true
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			ready <- false
+		}()
+
+		select {
+		case isReady := <-ready:
+			assert.True(t, isReady, "Server should be ready within timeout")
+		case <-time.After(1 * time.Second):
+			t.Fatal("Server failed to start within timeout")
+		}
 
 		// Verify server is running
 		assert.True(t, server.IsRunning())
@@ -228,7 +245,12 @@ func TestServerStartStop(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go server.Start(ctx)
-		time.Sleep(100 * time.Millisecond)
+
+		// Wait for server to be ready
+		for i := 0; i < 50 && !server.IsRunning(); i++ {
+			time.Sleep(10 * time.Millisecond)
+		}
+		require.True(t, server.IsRunning(), "Server should be running")
 		assert.True(t, server.IsRunning())
 
 		// Try to start again - should return error
@@ -250,7 +272,12 @@ func TestServerStartStop(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go server.Start(ctx)
-		time.Sleep(100 * time.Millisecond)
+
+		// Wait for server to be ready
+		for i := 0; i < 50 && !server.IsRunning(); i++ {
+			time.Sleep(10 * time.Millisecond)
+		}
+		require.True(t, server.IsRunning(), "Server should be running")
 		assert.True(t, server.IsRunning())
 
 		// Stop server multiple times - should be safe
@@ -301,12 +328,20 @@ func TestServerMethods(t *testing.T) {
 
 		// Start server
 		go server.Start(context.Background())
-		time.Sleep(100 * time.Millisecond)
+
+		// Wait for server to be ready
+		for i := 0; i < 50 && !server.IsRunning(); i++ {
+			time.Sleep(10 * time.Millisecond)
+		}
 		assert.True(t, server.IsRunning())
 
 		// Stop server
 		server.Stop()
-		time.Sleep(100 * time.Millisecond)
+
+		// Wait for server to stop
+		for i := 0; i < 50 && server.IsRunning(); i++ {
+			time.Sleep(10 * time.Millisecond)
+		}
 		assert.False(t, server.IsRunning())
 	})
 }
@@ -800,7 +835,11 @@ func TestBusinessLogicInvariants(t *testing.T) {
 
 		// Start and stop server
 		go server.Start(context.Background())
-		time.Sleep(50 * time.Millisecond)
+
+		// Wait briefly for server to start
+		for i := 0; i < 25 && !server.IsRunning(); i++ {
+			time.Sleep(10 * time.Millisecond)
+		}
 		server.Stop()
 
 		// State should still be consistent

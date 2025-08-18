@@ -31,7 +31,7 @@ type TestSuite struct {
 }
 
 // cleanupIntegrationDatabase removes all database objects to ensure clean state for migrations
-func cleanupIntegrationDatabase(ctx context.Context, testConfig *helpers.DatabaseConfig) {
+func cleanupIntegrationDatabase(ctx context.Context, testConfig *helpers.TestDatabaseConfig) {
 	dbConfig := &db.Config{
 		Host:            testConfig.Host,
 		Port:            testConfig.Port,
@@ -81,6 +81,11 @@ func setupTestSuite(t *testing.T) *TestSuite {
 		t.Skip("Skipping integration tests in short mode")
 	}
 
+	// Skip if database tests are disabled
+	if os.Getenv("SKIP_DB_TESTS") == "true" {
+		t.Skip("Integration tests skipped via SKIP_DB_TESTS environment variable")
+	}
+
 	// Check if nmap is available for discovery tests
 	if _, err := exec.LookPath("nmap"); err != nil {
 		t.Skip("nmap not available - skipping discovery tests")
@@ -88,33 +93,42 @@ func setupTestSuite(t *testing.T) *TestSuite {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Get available test database configuration
-	testConfig, err := helpers.GetAvailableDatabase()
-	require.NoError(t, err, "Failed to get available test database")
+	// Get test database configuration
+	config := helpers.GetTestDatabaseConfig()
+
+	// Check if database is available
+	if !helpers.IsTestDatabaseAvailable() {
+		isCI := os.Getenv("GITHUB_ACTIONS") == "true" || os.Getenv("CI") == "true"
+		if isCI {
+			t.Fatal("No database available in CI environment. Check that PostgreSQL service is running.")
+		} else {
+			t.Skip("No database available for integration tests. Run 'make test-db-up' to start test database.")
+		}
+	}
 
 	// Create database configuration for db.ConnectAndMigrate
 	dbConfig := &db.Config{
-		Host:            testConfig.Host,
-		Port:            testConfig.Port,
-		Database:        testConfig.Database,
-		Username:        testConfig.Username,
-		Password:        testConfig.Password,
-		SSLMode:         testConfig.SSLMode,
+		Host:            config.Host,
+		Port:            config.Port,
+		Database:        config.Database,
+		Username:        config.Username,
+		Password:        config.Password,
+		SSLMode:         config.SSLMode,
 		MaxOpenConns:    5,
 		MaxIdleConns:    2,
 		ConnMaxLifetime: 5 * time.Minute,
-		ConnMaxIdleTime: 2 * time.Minute,
+		ConnMaxIdleTime: time.Minute,
 	}
 
 	// Clean up any existing database objects before migrations
-	cleanupIntegrationDatabase(ctx, testConfig)
+	cleanupIntegrationDatabase(ctx, config)
 
 	// Connect to database and run migrations
 	database, err := db.ConnectAndMigrate(ctx, dbConfig)
 	require.NoError(t, err, "Failed to connect to test database and run migrations")
 
 	t.Logf("Connected to database: %s@%s:%d/%s",
-		testConfig.Username, testConfig.Host, testConfig.Port, testConfig.Database)
+		config.Username, config.Host, config.Port, config.Database)
 
 	return &TestSuite{
 		database: database,

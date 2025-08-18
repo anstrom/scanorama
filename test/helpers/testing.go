@@ -291,24 +291,6 @@ func (tc *TestCleanup) Execute() {
 	}
 }
 
-// SetupTestDatabase is a convenience function for common database test setup
-func SetupTestDatabase(t *testing.T) (*TestDatabase, *TestCleanup) {
-	t.Helper()
-
-	cleanup := NewTestCleanup()
-	db := NewTestDatabase(t)
-	if db == nil {
-		return nil, cleanup
-	}
-
-	cleanup.Add(func() {
-		db.Cleanup(t)
-		db.Close()
-	})
-
-	return db, cleanup
-}
-
 // SetupNetworkTest is a convenience function for network test setup
 func SetupNetworkTest(t *testing.T) (*NetworkTestHelper, *TestCleanup) {
 	t.Helper()
