@@ -27,6 +27,7 @@ const (
 	maxConcurrency        = 20
 	ipv6CIDRBits          = 128
 	defaultTargetCapacity = 10
+	nullMethodValue       = "NULL"
 )
 
 const (
@@ -196,11 +197,6 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 		}
 	}
 
-	// Add host discovery options for better reliability
-	options = append(options,
-		nmap.WithSkipHostDiscovery(), // Skip ping and go straight to port scan
-	)
-
 	// Add performance optimizations
 	if config.Concurrency > 0 {
 		// nmap library doesn't directly expose parallelism, but we can use timing
@@ -209,9 +205,10 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 		}
 	}
 
-	// Add useful scanning options for better results
+	// Add host discovery options for better reliability and useful scanning options
 	options = append(options,
-		nmap.WithVerbosity(1), // Basic verbosity for better debugging
+		nmap.WithSkipHostDiscovery(), // Skip ping and go straight to port scan
+		nmap.WithVerbosity(1),        // Basic verbosity for better debugging
 	)
 
 	return options
@@ -488,7 +485,7 @@ func debugListExistingHosts(ctx context.Context, database *db.DB) {
 	if err := database.SelectContext(ctx, &debugHosts, debugQuery); err == nil {
 		log.Printf("DEBUG: Scan - Current hosts in database:")
 		for _, h := range debugHosts {
-			method := "NULL"
+			method := nullValue
 			if h.Method != nil {
 				method = *h.Method
 			}
