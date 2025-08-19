@@ -1,0 +1,260 @@
+---
+services:
+  postgres:
+    image: postgres:17
+    container_name: scanorama-postgres
+    environment:
+      POSTGRES_DB: scanorama
+      POSTGRES_USER: scanorama
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+    secrets:
+      - postgres_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scanorama -d scanorama"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - scanorama-internal
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+        reservations:
+          memory: 512M
+          cpus: "0.5"
+
+  scanorama:
+    image: scanorama:latest
+    container_name: scanorama-app
+    environment:
+      # Database configuration
+      SCANORAMA_DB_HOST: postgres
+      SCANORAMA_DB_PORT: 5432
+      SCANORAMA_DB_NAME: scanorama
+      SCANORAMA_DB_USER: scanorama
+      SCANORAMA_DB_PASSWORD_FILE: /run/secrets/postgres_password
+      SCANORAMA_DB_SSLMODE: prefer
+
+      # API configuration
+      SCANORAMA_API_ENABLED: "true"
+      SCANORAMA_API_HOST: "0.0.0.0"
+      SCANORAMA_API_PORT: 8080
+      SCANORAMA_API_KEY_FILE: /run/secrets/api_key
+
+      # Daemon configuration
+      SCANORAMA_DAEMON_MODE: "true"
+      SCANORAMA_WORK_DIR: /var/lib/scanorama
+      SCANORAMA_PID_FILE: /var/run/scanorama.pid
+
+      # Logging configuration
+      SCANORAMA_LOG_LEVEL: info
+      SCANORAMA_LOG_FORMAT: json
+      SCANORAMA_LOG_OUTPUT: stdout
+    ports:
+      - "8080:8080"
+    volumes:
+      - scanorama_data:/var/lib/scanorama
+      - scanorama_logs:/var/log/scanorama
+      - /etc/localtime:/etc/localtime:ro
+    secrets:
+      - postgres_password
+      - api_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8080/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - scanorama-internal
+      - scanorama-external
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+        reservations:
+          memory: 512M
+          cpus: "0.5"
+
+  nginx:
+    image: nginx:alpine
+    container_name: scanorama-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      scanorama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - scanorama-external
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+        reservations:
+          memory: 64M
+          cpus: "0.1"
+
+  redis:
+    image: redis:7-alpine
+    container_name: scanorama-redis
+    command: redis-server --requirepass-file /run/secrets/redis_password --appendonly yes
+    volumes:
+      - redis_data:/data
+    secrets:
+      - redis_password
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "--no-auth-warning",
+          "-a",
+          "$(cat /run/secrets/redis_password)",
+          "ping",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - scanorama-internal
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    profiles:
+      - cache
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: scanorama-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--storage.tsdb.retention.time=200h"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - scanorama-internal
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+        reservations:
+          memory: 256M
+          cpus: "0.2"
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: scanorama-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD_FILE: /run/secrets/grafana_password
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    secrets:
+      - grafana_password
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - scanorama-internal
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    profiles:
+      - monitoring
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  redis_password:
+    file: ./secrets/redis_password.txt
+  api_key:
+    file: ./secrets/api_key.txt
+  grafana_password:
+    file: ./secrets/grafana_password.txt
+
+volumes:
+  postgres_data:
+    driver: local
+  scanorama_data:
+    driver: local
+  scanorama_logs:
+    driver: local
+  redis_data:
+    driver: local
+  nginx_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  scanorama-internal:
+    driver: bridge
+    internal: true
+    name: scanorama-internal-network
+  scanorama-external:
+    driver: bridge
+    name: scanorama-external-network
