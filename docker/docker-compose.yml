@@ -132,7 +132,7 @@ services:
           cpus: "0.1"
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: scanorama-redis
     command: redis-server --requirepass-file /run/secrets/redis_password --appendonly yes
     volumes:
