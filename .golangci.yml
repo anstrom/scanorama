@@ -139,6 +139,19 @@ linters:
           - gocyclo # Allow high complexity in comprehensive tests
           - goconst # Don't require constants for test strings
           - mnd # Allow magic numbers in tests
+          - bodyclose # Allow unclosed response bodies in test framework code
+          - govet # Allow unused writes in test data structures
+
+      # Specific gocritic exclusions for test patterns
+      - path: _test\.go
+        linters:
+          - gocritic
+        text: "importShadow.*suite" # Allow 'suite' parameter shadowing in testify
+
+      - path: _test\.go
+        linters:
+          - gocritic
+        text: "httpNoBody" # Allow nil body in test HTTP requests
 
       # ========================
       # SWAGGER/API DOCUMENTATION EXCLUSIONS
