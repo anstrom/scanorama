@@ -2,7 +2,9 @@ package db
 
 import (
 	"database/sql/driver"
+	"encoding/json"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -504,6 +506,672 @@ func TestConfigValidation(t *testing.T) {
 			cfg := &Config{SSLMode: mode}
 			assert.Contains(t, validSSLModes, cfg.SSLMode)
 		}
+	})
+}
+
+// TestBuildWhereClause tests the buildWhereClause utility function behavior.
+func TestBuildWhereClause(t *testing.T) {
+	t.Run("empty_conditions", func(t *testing.T) {
+		whereClause, args := buildWhereClause([]filterCondition{})
+		assert.Empty(t, whereClause)
+		assert.Nil(t, args)
+	})
+
+	t.Run("single_condition", func(t *testing.T) {
+		conditions := []filterCondition{
+			{column: "status", value: "active"},
+		}
+		whereClause, args := buildWhereClause(conditions)
+
+		// Test structure and content, not exact formatting
+		assert.Contains(t, whereClause, "WHERE")
+		assert.Contains(t, whereClause, "status")
+		assert.Contains(t, whereClause, "$1")
+		assert.Len(t, args, 1)
+		assert.Equal(t, "active", args[0])
+	})
+
+	t.Run("multiple_conditions", func(t *testing.T) {
+		conditions := []filterCondition{
+			{column: "status", value: "active"},
+			{column: "type", value: "scan"},
+			{column: "priority", value: 1},
+		}
+		whereClause, args := buildWhereClause(conditions)
+
+		// Test that all conditions are present
+		assert.Contains(t, whereClause, "WHERE")
+		assert.Contains(t, whereClause, "status")
+		assert.Contains(t, whereClause, "type")
+		assert.Contains(t, whereClause, "priority")
+		assert.Contains(t, whereClause, "AND")
+
+		// Test parameter placeholders and values
+		assert.Len(t, args, 3)
+		assert.Contains(t, args, "active")
+		assert.Contains(t, args, "scan")
+		assert.Contains(t, args, 1)
+	})
+
+	t.Run("different_value_types", func(t *testing.T) {
+		conditions := []filterCondition{
+			{column: "name", value: "test"},
+			{column: "count", value: 42},
+			{column: "enabled", value: true},
+		}
+		whereClause, args := buildWhereClause(conditions)
+
+		// Test logical structure
+		assert.Contains(t, whereClause, "WHERE")
+		assert.Len(t, args, 3)
+
+		// Verify all values are preserved correctly
+		assert.Contains(t, args, "test")
+		assert.Contains(t, args, 42)
+		assert.Contains(t, args, true)
+	})
+}
+
+// TestBuildScanFilters tests the buildScanFilters utility function behavior.
+func TestBuildScanFilters(t *testing.T) {
+	t.Run("empty_filters", func(t *testing.T) {
+		filters := ScanFilters{}
+		whereClause, args := buildScanFilters(filters)
+		assert.Empty(t, whereClause)
+		assert.Nil(t, args)
+	})
+
+	t.Run("status_filter_only", func(t *testing.T) {
+		filters := ScanFilters{Status: "running"}
+		whereClause, args := buildScanFilters(filters)
+
+		assert.Contains(t, whereClause, "WHERE")
+		assert.Contains(t, whereClause, "sj.status")
+		assert.Len(t, args, 1)
+		assert.Equal(t, "running", args[0])
+	})
+
+	t.Run("scan_type_filter_only", func(t *testing.T) {
+		filters := ScanFilters{ScanType: "syn"}
+		whereClause, args := buildScanFilters(filters)
+
+		assert.Contains(t, whereClause, "WHERE")
+		assert.Contains(t, whereClause, "scan_type")
+		assert.Len(t, args, 1)
+		assert.Equal(t, "syn", args[0])
+	})
+
+	t.Run("profile_id_filter_only", func(t *testing.T) {
+		profileID := int64(123)
+		filters := ScanFilters{ProfileID: &profileID}
+		whereClause, args := buildScanFilters(filters)
+
+		assert.Contains(t, whereClause, "WHERE")
+		assert.Contains(t, whereClause, "profile_id")
+		assert.Len(t, args, 1)
+		assert.Equal(t, int64(123), args[0])
+	})
+
+	t.Run("all_filters", func(t *testing.T) {
+		profileID := int64(456)
+		filters := ScanFilters{
+			Status:    "completed",
+			ScanType:  "version",
+			ProfileID: &profileID,
+		}
+		whereClause, args := buildScanFilters(filters)
+
+		// Test that all filter conditions are applied
+		assert.Contains(t, whereClause, "WHERE")
+		assert.Contains(t, whereClause, "status")
+		assert.Contains(t, whereClause, "scan_type")
+		assert.Contains(t, whereClause, "profile_id")
+		assert.Contains(t, whereClause, "AND")
+
+		// Verify all values are present
+		assert.Len(t, args, 3)
+		assert.Contains(t, args, "completed")
+		assert.Contains(t, args, "version")
+		assert.Contains(t, args, int64(456))
+	})
+}
+
+// TestBuildHostFilters tests the buildHostFilters utility function behavior.
+func TestBuildHostFilters(t *testing.T) {
+	t.Run("empty_filters", func(t *testing.T) {
+		filters := HostFilters{}
+		whereClause, args := buildHostFilters(filters)
+		assert.Empty(t, whereClause)
+		assert.Nil(t, args)
+	})
+
+	t.Run("status_filter_only", func(t *testing.T) {
+		filters := HostFilters{Status: "up"}
+		whereClause, args := buildHostFilters(filters)
+
+		assert.Contains(t, whereClause, "WHERE")
+		assert.Contains(t, whereClause, "status")
+		assert.Len(t, args, 1)
+		assert.Equal(t, "up", args[0])
+	})
+
+	t.Run("os_family_filter_only", func(t *testing.T) {
+		filters := HostFilters{OSFamily: "linux"}
+		whereClause, args := buildHostFilters(filters)
+
+		assert.Contains(t, whereClause, "WHERE")
+		assert.Contains(t, whereClause, "os_family")
+		assert.Len(t, args, 1)
+		assert.Equal(t, "linux", args[0])
+	})
+
+	t.Run("network_filter_only", func(t *testing.T) {
+		filters := HostFilters{Network: "192.168.1.0/24"}
+		whereClause, args := buildHostFilters(filters)
+
+		assert.Contains(t, whereClause, "WHERE")
+		assert.Contains(t, whereClause, "ip_address")
+		assert.Len(t, args, 1)
+		assert.Equal(t, "192.168.1.0/24", args[0])
+	})
+
+	t.Run("all_filters", func(t *testing.T) {
+		filters := HostFilters{
+			Status:   "up",
+			OSFamily: "windows",
+			Network:  "10.0.0.0/8",
+		}
+		whereClause, args := buildHostFilters(filters)
+
+		// Test that all conditions are included
+		assert.Contains(t, whereClause, "WHERE")
+		assert.Contains(t, whereClause, "status")
+		assert.Contains(t, whereClause, "os_family")
+		assert.Contains(t, whereClause, "ip_address")
+		assert.Contains(t, whereClause, "AND")
+
+		// Verify all values are present
+		assert.Len(t, args, 3)
+		assert.Contains(t, args, "up")
+		assert.Contains(t, args, "windows")
+		assert.Contains(t, args, "10.0.0.0/8")
+	})
+}
+
+// TestExtractScanData tests the extractScanData utility function.
+func TestExtractScanData(t *testing.T) {
+	t.Run("valid_minimal_data", func(t *testing.T) {
+		input := map[string]interface{}{
+			"name":      "Test Scan",
+			"scan_type": "connect",
+			"targets":   []string{"192.168.1.0/24"},
+		}
+
+		result, err := extractScanData(input)
+		require.NoError(t, err)
+		assert.Equal(t, "Test Scan", result.name)
+		assert.Equal(t, "connect", result.scanType)
+		assert.Equal(t, []string{"192.168.1.0/24"}, result.targets)
+		assert.Empty(t, result.description)
+		assert.Empty(t, result.ports)
+		assert.Nil(t, result.profileID)
+	})
+
+	t.Run("valid_complete_data", func(t *testing.T) {
+		profileID := int64(123)
+		input := map[string]interface{}{
+			"name":        "Complete Scan",
+			"description": "A complete scan test",
+			"scan_type":   "syn",
+			"targets":     []string{"10.0.0.0/8", "172.16.0.0/12"},
+			"ports":       "22,80,443",
+			"profile_id":  &profileID,
+		}
+
+		result, err := extractScanData(input)
+		require.NoError(t, err)
+		assert.Equal(t, "Complete Scan", result.name)
+		assert.Equal(t, "A complete scan test", result.description)
+		assert.Equal(t, "syn", result.scanType)
+		assert.Equal(t, []string{"10.0.0.0/8", "172.16.0.0/12"}, result.targets)
+		assert.Equal(t, "22,80,443", result.ports)
+		require.NotNil(t, result.profileID)
+		assert.Equal(t, "123", *result.profileID)
+	})
+
+	t.Run("invalid_input_type", func(t *testing.T) {
+		input := "not a map"
+		result, err := extractScanData(input)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid scan data format")
+		assert.Nil(t, result)
+	})
+
+	t.Run("missing_targets", func(t *testing.T) {
+		input := map[string]interface{}{
+			"name":      "Test Scan",
+			"scan_type": "connect",
+		}
+
+		result, err := extractScanData(input)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "targets must be a string array")
+		assert.Nil(t, result)
+	})
+
+	t.Run("invalid_targets_type", func(t *testing.T) {
+		input := map[string]interface{}{
+			"name":      "Test Scan",
+			"scan_type": "connect",
+			"targets":   "not an array",
+		}
+
+		result, err := extractScanData(input)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "targets must be a string array")
+		assert.Nil(t, result)
+	})
+}
+
+// TestParsePostgreSQLArray tests the parsePostgreSQLArray utility function.
+func TestParsePostgreSQLArray(t *testing.T) {
+	t.Run("nil_input", func(t *testing.T) {
+		result := parsePostgreSQLArray(nil)
+		assert.Nil(t, result)
+	})
+
+	t.Run("empty_array", func(t *testing.T) {
+		input := []interface{}{}
+		result := parsePostgreSQLArray(input)
+		assert.Equal(t, []string{}, result)
+	})
+
+	t.Run("string_array", func(t *testing.T) {
+		input := []interface{}{"one", "two", "three"}
+		result := parsePostgreSQLArray(input)
+		assert.Equal(t, []string{"one", "two", "three"}, result)
+	})
+
+	t.Run("mixed_array_filters_non_strings", func(t *testing.T) {
+		input := []interface{}{"valid", 123, "also_valid", nil, "another"}
+		result := parsePostgreSQLArray(input)
+		assert.Equal(t, []string{"valid", "", "also_valid", "", "another"}, result)
+	})
+
+	t.Run("invalid_input_type", func(t *testing.T) {
+		input := "not an array"
+		result := parsePostgreSQLArray(input)
+		assert.Nil(t, result)
+	})
+}
+
+// TestBuildUpdateQuery tests the buildUpdateQuery utility function behavior.
+func TestBuildUpdateQuery(t *testing.T) {
+	t.Run("empty_data", func(t *testing.T) {
+		data := map[string]interface{}{}
+		fieldMappings := map[string]string{
+			"name":   "name",
+			"status": "status",
+		}
+
+		setParts, args := buildUpdateQuery(data, fieldMappings)
+		assert.Empty(t, setParts)
+		assert.Empty(t, args)
+	})
+
+	t.Run("single_field", func(t *testing.T) {
+		data := map[string]interface{}{
+			"name": "Updated Name",
+		}
+		fieldMappings := map[string]string{
+			"name":   "name",
+			"status": "status",
+		}
+
+		setParts, args := buildUpdateQuery(data, fieldMappings)
+
+		// Test structure rather than exact formatting
+		assert.Len(t, setParts, 1)
+		assert.Len(t, args, 1)
+		assert.Contains(t, setParts[0], "name")
+		assert.Contains(t, setParts[0], "=")
+		assert.Contains(t, setParts[0], "$")
+		assert.Equal(t, "Updated Name", args[0])
+	})
+
+	t.Run("multiple_fields", func(t *testing.T) {
+		data := map[string]interface{}{
+			"name":    "Updated Name",
+			"status":  "active",
+			"count":   42,
+			"enabled": true,
+		}
+		fieldMappings := map[string]string{
+			"name":    "name",
+			"status":  "status",
+			"count":   "total_count",
+			"enabled": "is_enabled",
+		}
+
+		setParts, args := buildUpdateQuery(data, fieldMappings)
+
+		// Test logical structure
+		assert.Len(t, setParts, 4)
+		assert.Len(t, args, 4)
+
+		// Check that mapped fields are present in SET parts
+		setString := strings.Join(setParts, " ")
+		assert.Contains(t, setString, "name")
+		assert.Contains(t, setString, "status")
+		assert.Contains(t, setString, "total_count") // mapped name
+		assert.Contains(t, setString, "is_enabled")  // mapped name
+
+		// Check all expected values are preserved
+		assert.Contains(t, args, "Updated Name")
+		assert.Contains(t, args, "active")
+		assert.Contains(t, args, 42)
+		assert.Contains(t, args, true)
+	})
+
+	t.Run("nil_values_excluded", func(t *testing.T) {
+		data := map[string]interface{}{
+			"name":   "Updated Name",
+			"status": nil,
+			"count":  42,
+		}
+		fieldMappings := map[string]string{
+			"name":   "name",
+			"status": "status",
+			"count":  "total_count",
+		}
+
+		setParts, args := buildUpdateQuery(data, fieldMappings)
+
+		// Should only include non-nil values
+		assert.Len(t, setParts, 2)
+		assert.Len(t, args, 2)
+		assert.Contains(t, args, "Updated Name")
+		assert.Contains(t, args, 42)
+		assert.NotContains(t, args, nil)
+	})
+
+	t.Run("unmapped_fields_ignored", func(t *testing.T) {
+		data := map[string]interface{}{
+			"name":         "Updated Name",
+			"unmapped":     "ignored",
+			"also_ignored": 123,
+		}
+		fieldMappings := map[string]string{
+			"name": "name",
+		}
+
+		setParts, args := buildUpdateQuery(data, fieldMappings)
+
+		// Should only include mapped fields
+		assert.Len(t, setParts, 1)
+		assert.Len(t, args, 1)
+		assert.Contains(t, setParts[0], "name")
+		assert.Equal(t, "Updated Name", args[0])
+	})
+}
+
+// TestAssignmentFunctions tests the various assignment utility functions.
+func TestAssignmentFunctions(t *testing.T) {
+	t.Run("assignStringPtr", func(t *testing.T) {
+		var target *string
+
+		// Test with valid string
+		source := "test value"
+		assignStringPtr(&target, &source)
+		require.NotNil(t, target)
+		assert.Equal(t, "test value", *target)
+
+		// Test with empty string (should not assign)
+		target = nil
+		empty := ""
+		assignStringPtr(&target, &empty)
+		assert.Nil(t, target)
+
+		// Test with nil source
+		target = nil
+		assignStringPtr(&target, nil)
+		assert.Nil(t, target)
+	})
+
+	t.Run("assignMACAddress", func(t *testing.T) {
+		var target *MACAddr
+
+		// Test with valid MAC address
+		validMAC := "aa:bb:cc:dd:ee:ff"
+		assignMACAddress(&target, &validMAC)
+		require.NotNil(t, target)
+		assert.Equal(t, "aa:bb:cc:dd:ee:ff", target.String())
+
+		// Test with invalid MAC address (should not assign)
+		target = nil
+		invalidMAC := "not-a-mac"
+		assignMACAddress(&target, &invalidMAC)
+		assert.Nil(t, target)
+
+		// Test with empty string (should not assign)
+		target = nil
+		empty := ""
+		assignMACAddress(&target, &empty)
+		assert.Nil(t, target)
+
+		// Test with nil source
+		target = nil
+		assignMACAddress(&target, nil)
+		assert.Nil(t, target)
+	})
+
+	t.Run("assignIntPtr", func(t *testing.T) {
+		var target *int
+
+		// Test with valid int
+		source := 42
+		assignIntPtr(&target, &source)
+		require.NotNil(t, target)
+		assert.Equal(t, 42, *target)
+
+		// Test with zero value
+		target = nil
+		zero := 0
+		assignIntPtr(&target, &zero)
+		require.NotNil(t, target)
+		assert.Equal(t, 0, *target)
+
+		// Test with nil source
+		target = nil
+		assignIntPtr(&target, nil)
+		assert.Nil(t, target)
+	})
+
+	t.Run("assignBoolFromPtr", func(t *testing.T) {
+		var target bool
+
+		// Test with true
+		sourceTrue := true
+		assignBoolFromPtr(&target, &sourceTrue)
+		assert.True(t, target)
+
+		// Test with false
+		target = true // Reset to opposite value
+		sourceFalse := false
+		assignBoolFromPtr(&target, &sourceFalse)
+		assert.False(t, target)
+
+		// Test with nil source (should not change target)
+		target = true
+		assignBoolFromPtr(&target, nil)
+		assert.True(t, target) // Should remain unchanged
+	})
+}
+
+// TestHostOSFingerprint tests the Host model OS fingerprint methods.
+func TestHostOSFingerprint(t *testing.T) {
+	t.Run("GetOSFingerprint_nil_family", func(t *testing.T) {
+		host := &Host{}
+		fp := host.GetOSFingerprint()
+		assert.Nil(t, fp)
+	})
+
+	t.Run("GetOSFingerprint_minimal", func(t *testing.T) {
+		family := "linux"
+		host := &Host{
+			OSFamily: &family,
+		}
+
+		fp := host.GetOSFingerprint()
+		require.NotNil(t, fp)
+		assert.Equal(t, "linux", fp.Family)
+		assert.Equal(t, "", fp.Name)
+		assert.Equal(t, "", fp.Version)
+		assert.Equal(t, 0, fp.Confidence)
+		assert.Equal(t, "unknown", fp.Method)
+		assert.Nil(t, fp.Details)
+	})
+
+	t.Run("GetOSFingerprint_complete", func(t *testing.T) {
+		family := "linux"
+		name := "Ubuntu"
+		version := "20.04"
+		confidence := 95
+		method := "tcp_fingerprint"
+		details := JSONB(`{"kernel": "5.4.0", "arch": "x86_64"}`)
+
+		host := &Host{
+			OSFamily:     &family,
+			OSName:       &name,
+			OSVersion:    &version,
+			OSConfidence: &confidence,
+			OSMethod:     &method,
+			OSDetails:    details,
+		}
+
+		fp := host.GetOSFingerprint()
+		require.NotNil(t, fp)
+		assert.Equal(t, "linux", fp.Family)
+		assert.Equal(t, "Ubuntu", fp.Name)
+		assert.Equal(t, "20.04", fp.Version)
+		assert.Equal(t, 95, fp.Confidence)
+		assert.Equal(t, "tcp_fingerprint", fp.Method)
+		require.NotNil(t, fp.Details)
+
+		expectedDetails := map[string]interface{}{
+			"kernel": "5.4.0",
+			"arch":   "x86_64",
+		}
+		assert.Equal(t, expectedDetails, fp.Details)
+	})
+
+	t.Run("GetOSFingerprint_invalid_json_details", func(t *testing.T) {
+		family := "windows"
+		details := JSONB(`{invalid json`)
+
+		host := &Host{
+			OSFamily:  &family,
+			OSDetails: details,
+		}
+
+		fp := host.GetOSFingerprint()
+		require.NotNil(t, fp)
+		assert.Equal(t, "windows", fp.Family)
+		assert.Nil(t, fp.Details) // Should be nil due to invalid JSON
+	})
+
+	t.Run("SetOSFingerprint_nil_input", func(t *testing.T) {
+		host := &Host{}
+		err := host.SetOSFingerprint(nil)
+		assert.NoError(t, err)
+		assert.Nil(t, host.OSFamily)
+	})
+
+	t.Run("SetOSFingerprint_minimal", func(t *testing.T) {
+		host := &Host{}
+		fp := &OSFingerprint{
+			Family: "linux",
+		}
+
+		err := host.SetOSFingerprint(fp)
+		assert.NoError(t, err)
+
+		require.NotNil(t, host.OSFamily)
+		assert.Equal(t, "linux", *host.OSFamily)
+		assert.Equal(t, "", *host.OSName)
+		assert.Equal(t, "", *host.OSVersion)
+		assert.Equal(t, 0, *host.OSConfidence)
+		assert.Equal(t, "", *host.OSMethod)
+		assert.NotNil(t, host.OSDetectedAt)
+		assert.Empty(t, host.OSDetails)
+	})
+
+	t.Run("SetOSFingerprint_complete", func(t *testing.T) {
+		host := &Host{}
+		details := map[string]interface{}{
+			"kernel":     "5.4.0",
+			"arch":       "x86_64",
+			"build_date": "2021-01-01",
+		}
+
+		fp := &OSFingerprint{
+			Family:     "linux",
+			Name:       "Ubuntu",
+			Version:    "20.04",
+			Confidence: 95,
+			Method:     "tcp_fingerprint",
+			Details:    details,
+		}
+
+		err := host.SetOSFingerprint(fp)
+		assert.NoError(t, err)
+
+		require.NotNil(t, host.OSFamily)
+		assert.Equal(t, "linux", *host.OSFamily)
+		assert.Equal(t, "Ubuntu", *host.OSName)
+		assert.Equal(t, "20.04", *host.OSVersion)
+		assert.Equal(t, 95, *host.OSConfidence)
+		assert.Equal(t, "tcp_fingerprint", *host.OSMethod)
+		assert.NotNil(t, host.OSDetectedAt)
+
+		// Verify JSON details
+		var parsedDetails map[string]interface{}
+		err = json.Unmarshal([]byte(host.OSDetails), &parsedDetails)
+		require.NoError(t, err)
+		assert.Equal(t, details, parsedDetails)
+	})
+
+	t.Run("SetOSFingerprint_round_trip", func(t *testing.T) {
+		host := &Host{}
+		originalDetails := map[string]interface{}{
+			"test":    "value",
+			"number":  42.0, // JSON numbers become float64
+			"boolean": true,
+		}
+
+		fp := &OSFingerprint{
+			Family:     "windows",
+			Name:       "Windows 10",
+			Version:    "2004",
+			Confidence: 85,
+			Method:     "banner_grab",
+			Details:    originalDetails,
+		}
+
+		// Set the fingerprint
+		err := host.SetOSFingerprint(fp)
+		require.NoError(t, err)
+
+		// Get it back
+		retrievedFp := host.GetOSFingerprint()
+		require.NotNil(t, retrievedFp)
+
+		assert.Equal(t, fp.Family, retrievedFp.Family)
+		assert.Equal(t, fp.Name, retrievedFp.Name)
+		assert.Equal(t, fp.Version, retrievedFp.Version)
+		assert.Equal(t, fp.Confidence, retrievedFp.Confidence)
+		assert.Equal(t, fp.Method, retrievedFp.Method)
+		assert.Equal(t, originalDetails, retrievedFp.Details)
 	})
 }
 
