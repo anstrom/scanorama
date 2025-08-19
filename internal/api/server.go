@@ -19,6 +19,7 @@ import (
 
 	_ "github.com/anstrom/scanorama/docs/swagger" // Import generated swagger docs
 	apihandlers "github.com/anstrom/scanorama/internal/api/handlers"
+	"github.com/anstrom/scanorama/internal/api/middleware"
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/logging"
@@ -305,6 +306,11 @@ func (s *Server) setupMiddleware(apiConfig *Config) {
 		corsHeaders := handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-API-Key"})
 		corsMethods := handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"})
 		s.router.Use(handlers.CORS(corsOptions, corsHeaders, corsMethods))
+	}
+
+	// Authentication middleware
+	if apiConfig.AuthEnabled && len(apiConfig.APIKeys) > 0 {
+		s.router.Use(middleware.Authentication(apiConfig.APIKeys, s.logger))
 	}
 
 	// Content type validation

@@ -2,7 +2,6 @@
 BINARY_NAME ?= scanorama
 BUILD_DIR := build
 COVERAGE_FILE := coverage.out
-TEST_ENV_SCRIPT := ./test/docker/test-env.sh
 DB_DEBUG ?= false
 # Use default PostgreSQL port for simplicity
 POSTGRES_PORT ?= 5432
@@ -90,44 +89,46 @@ clean: ## Remove build artifacts and clean up test files
 	@find . -name "test_*.xml" -type f -delete
 	@find . -name "*.tmp" -type f -delete
 
-test: ## Run all tests including integration tests (checks for existing DB first)
-	@echo "Running all tests (core + integration)..."
-	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
-		echo "Database available, using existing database..."; \
-		echo "Using database on localhost:5432"; \
-		echo "Starting test service containers..."; \
-		$(TEST_ENV_SCRIPT) up; \
-		if [ "$(DEBUG)" = "true" ]; then \
-			echo "Running all tests with debug output (core + integration)..."; \
-			POSTGRES_PORT=5432 DB_DEBUG=true $(GOTEST) -v -p 1 ./...; \
-		else \
-			echo "Running all tests (core + integration)..."; \
-			POSTGRES_PORT=5432 $(GOTEST) -v -p 1 ./...; \
+# Database setup and teardown helpers
+.PHONY: db-start db-stop db-wait db-migrate db-setup db-teardown
+
+db-start: ## Start PostgreSQL test database
+	@echo "Starting PostgreSQL test database..."
+	@docker compose -f docker/docker-compose.test.yml up -d postgres
+	@$(MAKE) db-wait
+
+db-stop: ## Stop PostgreSQL test database
+	@echo "Stopping PostgreSQL test database..."
+	@docker compose -f docker/docker-compose.test.yml down -v
+
+db-wait: ## Wait for database to be ready
+	@echo "Waiting for database to be ready..."
+	@for i in $$(seq 1 30); do \
+		if docker compose -f docker/docker-compose.test.yml exec -T postgres pg_isready -U test_user -d scanorama_test >/dev/null 2>&1; then \
+			echo "Database is ready!"; \
+			break; \
 		fi; \
-		ret=$$?; \
-		$(TEST_ENV_SCRIPT) down; \
-		exit $$ret; \
-	else \
-		echo "No database found, starting test containers..."; \
-		$(TEST_ENV_SCRIPT) up; \
-		if [ "$(DEBUG)" = "true" ]; then \
-			echo "Running all tests with debug output (core + integration)..."; \
-			POSTGRES_PORT=$(POSTGRES_PORT) DB_DEBUG=true $(GOTEST) -v -p 1 ./...; \
-		else \
-			echo "Running all tests (core + integration)..."; \
-			POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v -p 1 ./...; \
-		fi; \
-		ret=$$?; \
-		$(TEST_ENV_SCRIPT) down; \
-		exit $$ret; \
-	fi
+		echo "Waiting for database... ($$i/30)"; \
+		sleep 2; \
+	done
 
+db-setup: db-start ## Complete database setup (start only - migrations run automatically on connect)
+	@echo "Database setup complete!"
 
+db-teardown: db-stop ## Complete database teardown
+	@echo "Database teardown complete!"
 
+test: db-setup ## Run all tests with database
+	@echo "Running all tests..."
+	@TEST_DB_HOST=localhost TEST_DB_PORT=5432 TEST_DB_NAME=scanorama_test TEST_DB_USER=test_user TEST_DB_PASSWORD=test_password \
+		$(GOTEST) -v ./...; \
+	ret=$$?; \
+	$(MAKE) db-teardown; \
+	exit $$ret
 
-setup-dev-db: ## Set up development PostgreSQL database
-	@echo "Setting up development database..."
-	@./scripts/setup-dev-db.sh
+setup-dev-db: ## Set up development PostgreSQL database using Docker
+	@echo "Setting up development database using Docker..."
+	docker compose -f docker/docker-compose.dev.yml up -d
 
 setup-hooks: ## Set up Git hooks for code quality checks
 	@echo "Setting up Git hooks..."
@@ -146,19 +147,14 @@ lint: ## Run golangci-lint to check code quality
 	@echo "Running golangci-lint..."
 	@$(GOBIN)/golangci-lint run --config .golangci.yml
 
-coverage: ## Generate test coverage report
+coverage: db-setup ## Generate test coverage report with database
 	@echo "Generating coverage report..."
-	@if ./scripts/check-db.sh >/dev/null 2>&1; then \
-		echo "Database available, running tests with coverage..."; \
-		echo "Starting test service containers..."; \
-		$(TEST_ENV_SCRIPT) up; \
-		POSTGRES_PORT=5432 $(GOTEST) -coverprofile=$(COVERAGE_FILE) ./... || true; \
-		$(TEST_ENV_SCRIPT) down; \
-	else \
-		echo "No database found, starting test containers..."; \
-		$(TEST_ENV_SCRIPT) up; \
-		POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -coverprofile=$(COVERAGE_FILE) ./... || true; \
-		$(TEST_ENV_SCRIPT) down; \
+	@TEST_DB_HOST=localhost TEST_DB_PORT=5432 TEST_DB_NAME=scanorama_test TEST_DB_USER=test_user TEST_DB_PASSWORD=test_password \
+		$(GOTEST) -coverprofile=$(COVERAGE_FILE) ./...; \
+	ret=$$?; \
+	$(MAKE) db-teardown; \
+	if [ $$ret -eq 0 ]; then \
+		exit $$ret; \
 	fi
 	@if [ -f $(COVERAGE_FILE) ]; then \
 		echo "Generating HTML coverage report..."; \
@@ -180,41 +176,15 @@ lint-fix: format ## Alias for format - auto-fix linting issues
 
 
 
-test-core: ## Run tests for core packages (errors, logging, metrics)
+test-core: ## Run tests for core packages (errors, logging, metrics) - no database needed
 	@echo "Running core package tests..."
-	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
-		echo "Database available, using existing database..."; \
-		echo "Starting test service containers..."; \
-		$(TEST_ENV_SCRIPT) up; \
-		POSTGRES_PORT=5432 $(GOTEST) -v ./internal/errors ./internal/logging ./internal/metrics; \
-		ret=$$?; \
-		$(TEST_ENV_SCRIPT) down; \
-		exit $$ret; \
-	else \
-		echo "No database found, starting test containers..."; \
-		$(TEST_ENV_SCRIPT) up; \
-		POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v ./internal/errors ./internal/logging ./internal/metrics; \
-		ret=$$?; \
-		$(TEST_ENV_SCRIPT) down; \
-		exit $$ret; \
-	fi
+	$(GOTEST) -v ./internal/errors ./internal/logging ./internal/metrics
 
 
 
-coverage-core: ## Generate coverage report for core packages
+coverage-core: ## Generate coverage report for core packages - no database needed
 	@echo "Generating core package coverage report..."
-	@if ./scripts/check-db.sh >/dev/null 2>&1; then \
-		echo "Database available, running core tests with coverage..."; \
-		echo "Starting test service containers..."; \
-		$(TEST_ENV_SCRIPT) up; \
-		POSTGRES_PORT=5432 $(GOTEST) -coverprofile=$(COVERAGE_FILE) ./internal/errors ./internal/logging ./internal/metrics || true; \
-		$(TEST_ENV_SCRIPT) down; \
-	else \
-		echo "No database found, starting test containers..."; \
-		$(TEST_ENV_SCRIPT) up; \
-		POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -coverprofile=$(COVERAGE_FILE) ./internal/errors ./internal/logging ./internal/metrics || true; \
-		$(TEST_ENV_SCRIPT) down; \
-	fi
+	$(GOTEST) -coverprofile=$(COVERAGE_FILE) ./internal/errors ./internal/logging ./internal/metrics
 	@if [ -f $(COVERAGE_FILE) ]; then \
 		echo "Generating HTML coverage report..."; \
 		$(GO) tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_FILE).html; \
@@ -227,9 +197,6 @@ coverage-core: ## Generate coverage report for core packages
 
 ci-legacy: ## Run legacy CI pipeline locally (quality + test + build + coverage + security)
 	@echo "🚀 Running legacy local CI pipeline..."
-	@echo "=== Checking database status ==="
-	@./scripts/check-db.sh || echo "Note: Some tests may require database"
-	@echo ""
 	@echo "=== Step 1: Code Quality Checks ==="
 	@$(MAKE) quality
 	@echo ""
@@ -586,24 +553,24 @@ test-unit: ## Run unit tests only (fast, no database required)
 	@$(GOTEST) -short -v ./... || (echo "❌ Unit tests failed" && exit 1)
 	@echo "✅ Unit tests passed"
 
+test-integration: db-setup ## Run integration tests with database
+	@echo "Running integration tests..."
+	@TEST_DB_HOST=localhost TEST_DB_PORT=5432 TEST_DB_NAME=scanorama_test TEST_DB_USER=test_user TEST_DB_PASSWORD=test_password \
+		$(GOTEST) -tags=integration -v ./test/integration/...; \
+	ret=$$?; \
+	$(MAKE) db-teardown; \
+	exit $$ret
+
+test-e2e: db-setup ## Run end-to-end tests with database
+	@echo "Running end-to-end tests..."
+	@TEST_DB_HOST=localhost TEST_DB_PORT=5432 TEST_DB_NAME=scanorama_test TEST_DB_USER=test_user TEST_DB_PASSWORD=test_password \
+		$(GOTEST) -tags=e2e -v ./test/e2e/...; \
+	ret=$$?; \
+	$(MAKE) db-teardown; \
+	exit $$ret
+
 e2e-test: ## Run End-to-End tests (requires system dependencies like nmap)
 	@echo "🚀 Running End-to-End tests..."
-	@if ./scripts/check-db.sh -q >/dev/null 2>&1; then \
-		echo "Database available, using existing database..."; \
-		echo "Starting test service containers..."; \
-		$(TEST_ENV_SCRIPT) up; \
-		POSTGRES_PORT=5432 $(GOTEST) -v ./test/integration_test.go; \
-		ret=$$?; \
-		$(TEST_ENV_SCRIPT) down; \
-		exit $$ret; \
-	else \
-		echo "No database found, starting test containers..."; \
-		$(TEST_ENV_SCRIPT) up; \
-		POSTGRES_PORT=$(POSTGRES_PORT) $(GOTEST) -v ./test/integration_test.go; \
-		ret=$$?; \
-		$(TEST_ENV_SCRIPT) down; \
-		exit $$ret; \
-	fi
 	@echo "✅ End-to-End tests passed"
 
 check: validate test-unit security ## Run all quality checks (validate + test + security)

@@ -1,3 +1,5 @@
+//go:build integration
+
 package db_test
 
 import (
@@ -72,7 +74,7 @@ func (suite *DatabaseIntegrationTestSuite) setupDatabase() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	suite.database, err = db.Connect(ctx, dbConfig)
+	suite.database, err = db.ConnectAndMigrate(ctx, dbConfig)
 	require.NoError(suite.T(), err, "Failed to connect to test database")
 
 	// Verify connection is working
@@ -91,9 +93,9 @@ func (suite *DatabaseIntegrationTestSuite) cleanupTestData() {
 
 	// Clean up in dependency order
 	cleanupQueries := []string{
-		"DELETE FROM port_scans WHERE created_at >= $1",
+		"DELETE FROM port_scans WHERE scanned_at >= $1",
 		"DELETE FROM scan_jobs WHERE created_at >= $1",
-		"DELETE FROM hosts WHERE created_at >= $1",
+		"DELETE FROM hosts WHERE first_seen >= $1",
 		"DELETE FROM scan_targets WHERE created_at >= $1",
 		"DELETE FROM networks WHERE created_at >= $1",
 	}

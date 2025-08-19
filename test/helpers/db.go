@@ -104,7 +104,7 @@ func ConnectToTestDatabase(ctx context.Context) (*db.DB, *DatabaseConfig, error)
 			ConnMaxIdleTime: time.Minute,
 		}
 
-		database, err := db.Connect(ctx, dbConfig)
+		database, err := db.ConnectAndMigrate(ctx, dbConfig)
 		if err == nil {
 			return database, &config, nil
 		}

@@ -57,7 +57,7 @@ func TestQueryColumnConsistency(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	db, err := Connect(ctx, &configs[0])
+	db, err := ConnectAndMigrate(ctx, &configs[0])
 	if err != nil {
 		t.Skipf("Cannot connect to test database: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestTableSchemaAssumptions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	db, err := Connect(ctx, &configs[0])
+	db, err := ConnectAndMigrate(ctx, &configs[0])
 	if err != nil {
 		t.Skipf("Cannot connect to test database: %v", err)
 	}

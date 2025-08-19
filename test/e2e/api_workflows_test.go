@@ -1,3 +1,5 @@
+//go:build e2e
+
 // Package e2e provides comprehensive end-to-end tests for Scanorama.
 // These tests verify complete workflows from API requests through
 // the application stack to database persistence and back.
@@ -141,6 +143,7 @@ func (suite *E2ETestSuite) setupConfiguration() {
 			Enabled:     true,
 			Host:        "127.0.0.1",
 			Port:        0, // Let the test server choose the port
+			AuthEnabled: true,
 			APIKeys:     []string{"test-api-key-e2e"},
 			EnableCORS:  true,
 			CORSOrigins: []string{"*"},
@@ -190,9 +193,9 @@ func (suite *E2ETestSuite) cleanupTestData() {
 
 	// Clean up in reverse dependency order
 	cleanupQueries := []string{
-		"DELETE FROM port_scans WHERE host_id IN (SELECT id FROM hosts WHERE created_at >= $1)",
+		"DELETE FROM port_scans WHERE host_id IN (SELECT id FROM hosts WHERE first_seen >= $1)",
 		"DELETE FROM scan_jobs WHERE created_at >= $1",
-		"DELETE FROM hosts WHERE created_at >= $1",
+		"DELETE FROM hosts WHERE first_seen >= $1",
 		"DELETE FROM scan_targets WHERE created_at >= $1",
 		"DELETE FROM discovery_jobs WHERE created_at >= $1",
 		"DELETE FROM scan_profiles WHERE created_at >= $1",
