@@ -19,7 +19,7 @@
   "devDependencies": {
     "@jridgewell/sourcemap-codec": "1.5.5",
     "@quobix/vacuum": "0.17.9",
-    "@redocly/cli": "2.0.6",
+    "@redocly/cli": "2.0.7",
     "js-yaml": "^4.1.0",
     "swagger-ui-dist": "^5.17.0"
   },
