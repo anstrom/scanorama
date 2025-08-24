@@ -195,6 +195,16 @@ coverage-core: ## Generate coverage report for core packages - no database neede
 		echo "No coverage data generated - all tests may have failed"; \
 	fi
 
+test-fast: ## Run optimized tests with no database, minimal logging, and fast timeouts
+	@echo "🚀 Running fast optimized tests..."
+	@$(GOTEST) -short -timeout=30s -race -v ./internal/daemon ./internal/config ./internal/errors ./internal/logging ./internal/metrics
+	@echo "✅ Fast tests completed"
+
+test-optimized: ## Run all tests optimized for speed (no real DB connections, mocked network calls)
+	@echo "⚡ Running optimized test suite..."
+	@$(GOTEST) -short -timeout=1m -count=1 -race ./...
+	@echo "✅ Optimized tests completed"
+
 ci-legacy: ## Run legacy CI pipeline locally (quality + test + build + coverage + security)
 	@echo "🚀 Running legacy local CI pipeline..."
 	@echo "=== Step 1: Code Quality Checks ==="
@@ -550,7 +560,7 @@ validate: ## Quick code validation (format, lint, basic checks)
 
 test-unit: ## Run unit tests only (fast, no database required)
 	@echo "🧪 Running unit tests..."
-	@$(GOTEST) -short -v ./... || (echo "❌ Unit tests failed" && exit 1)
+	@$(GOTEST) -short -timeout=1m -v ./... || (echo "❌ Unit tests failed" && exit 1)
 	@echo "✅ Unit tests passed"
 
 test-integration: db-setup ## Run integration tests with database
