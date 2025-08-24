@@ -19,6 +19,7 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/discovery"
 	"github.com/anstrom/scanorama/internal/profiles"
+	"github.com/anstrom/scanorama/internal/scanning"
 )
 
 // Scheduler manages scheduled discovery and scanning jobs.
@@ -445,23 +446,117 @@ func (s *Scheduler) cleanupJobExecution(jobID uuid.UUID) {
 
 // processHostsForScanning processes each host for scanning with appropriate profiles.
 func (s *Scheduler) processHostsForScanning(ctx context.Context, hosts []*db.Host, config *ScanJobConfig) {
-	// TODO: Implement actual scanning logic here
-	// This would integrate with the existing scan functionality
-	// For now, just log that we would scan these hosts
+	log.Printf("Starting scan of %d hosts", len(hosts))
 
-	for _, host := range hosts {
-		profileID := s.selectProfileForHost(ctx, host, config.ProfileID)
-		if profileID == "" {
-			continue
+	// Process hosts in batches to avoid overwhelming the system
+	batchSize := 10
+	for i := 0; i < len(hosts); i += batchSize {
+		end := i + batchSize
+		if end > len(hosts) {
+			end = len(hosts)
 		}
 
-		osFamily := "unknown"
-		if host.OSFamily != nil {
-			osFamily = *host.OSFamily
+		batch := hosts[i:end]
+		log.Printf("Processing host batch %d-%d of %d", i+1, end, len(hosts))
+
+		// Process each host in the batch
+		for _, host := range batch {
+			select {
+			case <-ctx.Done():
+				log.Println("Scan operation cancelled")
+				return
+			default:
+				// Continue with scanning
+			}
+
+			if err := s.scanSingleHost(ctx, host, config); err != nil {
+				log.Printf("Failed to scan host %s: %v", host.IPAddress, err)
+				continue
+			}
 		}
-		log.Printf("Would scan host %s (%s) with profile %s",
-			host.IPAddress, osFamily, profileID)
 	}
+
+	log.Printf("Completed scan of %d hosts", len(hosts))
+}
+
+// scanSingleHost performs a scan on a single host with the appropriate profile.
+func (s *Scheduler) scanSingleHost(ctx context.Context, host *db.Host, config *ScanJobConfig) error {
+	profileID := s.selectProfileForHost(ctx, host, config.ProfileID)
+	if profileID == "" {
+		log.Printf("No suitable profile found for host %s, skipping", host.IPAddress.String())
+		return nil
+	}
+
+	osFamily := "unknown"
+	if host.OSFamily != nil {
+		osFamily = *host.OSFamily
+	}
+
+	log.Printf("Scanning host %s (%s) with profile %s", host.IPAddress.String(), osFamily, profileID)
+
+	// Get scan profile configuration from database
+	profile, err := s.getScanProfile(ctx, profileID)
+	if err != nil {
+		return fmt.Errorf("failed to get scan profile %s: %w", profileID, err)
+	}
+
+	// Create scan configuration
+	scanConfig := &scanning.ScanConfig{
+		Targets:     []string{host.IPAddress.String()},
+		Ports:       profile.Ports,
+		ScanType:    profile.ScanType,
+		TimeoutSec:  profile.TimeoutSec,
+		Concurrency: 1, // Single host scan
+	}
+
+	// Validate scan configuration
+	if err := scanConfig.Validate(); err != nil {
+		return fmt.Errorf("invalid scan configuration for host %s: %w", host.IPAddress.String(), err)
+	}
+
+	// Run the scan
+	result, err := scanning.RunScanWithContext(ctx, scanConfig, s.db)
+	if err != nil {
+		return fmt.Errorf("scan failed for host %s: %w", host.IPAddress.String(), err)
+	}
+
+	// Log scan results
+	if len(result.Hosts) > 0 {
+		scannedHost := result.Hosts[0]
+		openPorts := 0
+		for _, port := range scannedHost.Ports {
+			if port.State == "open" {
+				openPorts++
+			}
+		}
+		log.Printf("Scan completed for %s: %d open ports found out of %d scanned",
+			host.IPAddress.String(), openPorts, len(scannedHost.Ports))
+	}
+
+	return nil
+}
+
+// getScanProfile retrieves a scan profile from the database.
+func (s *Scheduler) getScanProfile(ctx context.Context, profileID string) (*ScanProfile, error) {
+	// Query the database for the scan profile
+	query := `SELECT id, name, ports, scan_type, timeout_sec FROM scan_profiles WHERE id = $1`
+
+	var profile ScanProfile
+	err := s.db.GetContext(ctx, &profile, query, profileID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query scan profile: %w", err)
+	}
+
+	return &profile, nil
+}
+
+// ScanProfile represents a scan profile configuration.
+type ScanProfile struct {
+	ID         string `db:"id"`
+	Name       string `db:"name"`
+	Ports      string `db:"ports"`
+	ScanType   string `db:"scan_type"`
+	TimeoutSec int    `db:"timeout_sec"`
 }
 
 // selectProfileForHost selects the appropriate profile for a host.
