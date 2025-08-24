@@ -4,92 +4,11 @@ This file tracks outstanding TODO items identified in the codebase. Items are ca
 
 ## High Priority
 
-### Daemon Component (`internal/daemon/daemon.go`)
-
-#### Configuration Reload Support
-- **Location**: `internal/daemon/daemon.go:278`
-- **Description**: Implement configuration reload functionality for SIGHUP signal
-- **Current State**: Signal handler exists but functionality is not implemented
-- **Impact**: High - Would allow runtime configuration changes without service restart
-- **Estimate**: Medium effort
-
-```go
-// TODO: Implement configuration reload
-case syscall.SIGHUP:
-    d.logger.Println("Received SIGHUP - configuration reload not implemented")
-```
-
-#### Database Reconnection Logic
-- **Location**: `internal/daemon/daemon.go:401`
-- **Description**: Implement automatic database reconnection when health checks fail
-- **Current State**: Health check detects failures but doesn't attempt reconnection
-- **Impact**: High - Critical for service reliability
-- **Estimate**: Medium effort
-
-```go
-// TODO: Implement reconnection logic
-if err := d.database.Ping(d.ctx); err != nil {
-    d.logger.Printf("Database health check failed: %v", err)
-    // TODO: Implement reconnection logic
-}
-```
+*All high priority items have been completed. See the Completed Items section below.*
 
 ## Medium Priority
 
-### Daemon Component (`internal/daemon/daemon.go`)
-
-#### Custom Signal Actions
-- **Location**: `internal/daemon/daemon.go:283` and `internal/daemon/daemon.go:285`
-- **Description**: Implement custom actions for SIGUSR1 and SIGUSR2 signals
-- **Current State**: Signal handlers exist but no actions are implemented
-- **Impact**: Medium - Would enhance operational capabilities
-- **Estimate**: Low-Medium effort
-
-**SIGUSR1 - Status Dump**
-```go
-// TODO: Implement custom action (e.g., status dump)
-case syscall.SIGUSR1:
-    d.logger.Println("Received SIGUSR1 - custom action not implemented")
-```
-
-**SIGUSR2 - Debug Mode Toggle**
-```go
-// TODO: Implement custom action (e.g., toggle debug mode)
-case syscall.SIGUSR2:
-    d.logger.Println("Received SIGUSR2 - custom action not implemented")
-```
-
-#### Enhanced Health Checks
-- **Location**: `internal/daemon/daemon.go:405`
-- **Description**: Add comprehensive health checks beyond database connectivity
-- **Current State**: Only database health check is implemented
-- **Impact**: Medium - Would improve monitoring and diagnostics
-- **Estimate**: Medium effort
-
-```go
-// TODO: Add more health checks
-// - Check scanning workers status
-// - Check memory usage
-// - Check disk space
-// - Check network connectivity
-```
-
-### Scheduler Component (`internal/scheduler/scheduler.go`)
-
-#### Scanning Logic Implementation
-- **Location**: `internal/scheduler/scheduler.go:448`
-- **Description**: Implement actual scanning logic integration in the scheduler
-- **Current State**: Placeholder logic that only logs what would be scanned
-- **Impact**: Medium - Required for automated scanning functionality
-- **Estimate**: High effort
-
-```go
-// TODO: Implement actual scanning logic here
-// This would integrate with the existing scan functionality
-func (s *Scheduler) processHostsForScanning(ctx context.Context, hosts []*db.Host, config *ScanJobConfig) {
-    // Currently just logs, needs real implementation
-}
-```
+*All medium priority items have been completed. See the Completed Items section below.*
 
 ## Implementation Guidelines
 
@@ -144,7 +63,60 @@ func (s *Scheduler) processHostsForScanning(ctx context.Context, hosts []*db.Hos
 
 ## Completed Items
 
-*This section will be updated as TODO items are resolved*
+### High Priority - COMPLETED ✅
+
+#### Configuration Reload Support ✅
+- **Status**: **COMPLETED**
+- **Location**: `internal/daemon/daemon.go` - `reloadConfiguration()` method
+- **Description**: Implemented configuration reload functionality for SIGHUP signal
+- **Implementation**: 
+  - Added `reloadConfiguration()` method with validation and rollback support
+  - Handles API server reconfiguration when settings change
+  - Supports database reconnection when database config changes
+  - Includes proper error handling and logging
+
+#### Database Reconnection Logic ✅
+- **Status**: **COMPLETED** 
+- **Location**: `internal/daemon/daemon.go` - `reconnectDatabase()` method
+- **Description**: Implemented automatic database reconnection when health checks fail
+- **Implementation**:
+  - Added exponential backoff retry mechanism (max 5 attempts)
+  - Configurable delays from 2 seconds to 30 seconds maximum
+  - Proper connection cleanup and verification
+  - Comprehensive logging of reconnection attempts
+
+### Medium Priority - COMPLETED ✅
+
+#### Custom Signal Actions ✅
+- **Status**: **COMPLETED**
+- **Location**: `internal/daemon/daemon.go` - `dumpStatus()` and `toggleDebugMode()` methods
+- **Description**: Implemented custom actions for SIGUSR1 and SIGUSR2 signals
+- **Implementation**:
+  - **SIGUSR1**: Status dump functionality showing PID, uptime, database status, API server status, memory usage, goroutine count
+  - **SIGUSR2**: Debug mode toggle with thread-safe implementation and detailed logging
+
+#### Enhanced Health Checks ✅
+- **Status**: **COMPLETED**
+- **Location**: `internal/daemon/daemon.go` - Multiple health check methods
+- **Description**: Added comprehensive health checks beyond database connectivity
+- **Implementation**:
+  - Memory usage monitoring with high usage warnings
+  - Disk space validation in working directory
+  - System resource monitoring (goroutine count, context status)
+  - Network connectivity checking framework
+  - Integrated into periodic health check cycle
+
+#### Scanning Logic Implementation ✅
+- **Status**: **COMPLETED**
+- **Location**: `internal/scheduler/scheduler.go` - `processHostsForScanning()`, `scanSingleHost()` methods
+- **Description**: Implemented actual scanning logic integration in the scheduler
+- **Implementation**:
+  - Batch processing of hosts to avoid system overload
+  - Profile-based scanning with database integration
+  - Full integration with existing `scanning` package
+  - Proper error handling and progress logging
+  - Context-aware cancellation support
+  - Scan result validation and reporting
 
 ---
 
