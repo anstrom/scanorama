@@ -568,8 +568,8 @@ func (d *Daemon) reconnectDatabase() error {
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		// Calculate delay with exponential backoff
-		multiplier := 1 << (attempt - 1)
-		delay := time.Duration(int64(baseDelay) * int64(multiplier))
+		multiplier := int64(1) << (attempt - 1)
+		delay := time.Duration(int64(baseDelay) * multiplier)
 		if delay > maxDelay {
 			delay = maxDelay
 		}
