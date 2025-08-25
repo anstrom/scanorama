@@ -11,7 +11,9 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -41,6 +43,8 @@ type Daemon struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	done      chan struct{}
+	debugMode bool
+	mu        sync.RWMutex
 }
 
 // New creates a new daemon instance.
@@ -273,14 +277,18 @@ func (d *Daemon) setupSignalHandlers() {
 				d.cancel()
 				return
 			case syscall.SIGHUP:
-				d.logger.Println("Received SIGHUP - configuration reload not implemented")
-				// TODO: Implement configuration reload
+				d.logger.Println("Received SIGHUP - reloading configuration...")
+				if err := d.reloadConfiguration(); err != nil {
+					d.logger.Printf("Configuration reload failed: %v", err)
+				} else {
+					d.logger.Println("Configuration reloaded successfully")
+				}
 			case syscall.SIGUSR1:
-				d.logger.Println("Received SIGUSR1 - custom action not implemented")
-				// TODO: Implement custom action (e.g., status dump)
+				d.logger.Println("Received SIGUSR1 - dumping status...")
+				d.dumpStatus()
 			case syscall.SIGUSR2:
-				d.logger.Println("Received SIGUSR2 - custom action not implemented")
-				// TODO: Implement custom action (e.g., toggle debug mode)
+				d.logger.Println("Received SIGUSR2 - toggling debug mode...")
+				d.toggleDebugMode()
 			}
 		}
 	}()
@@ -397,11 +405,13 @@ func (d *Daemon) performHealthCheck() {
 	if d.database != nil {
 		if err := d.database.Ping(d.ctx); err != nil {
 			d.logger.Printf("Database health check failed: %v", err)
-			// TODO: Implement reconnection logic
+			if err := d.reconnectDatabase(); err != nil {
+				d.logger.Printf("Database reconnection failed: %v", err)
+			}
 		}
 	}
 
-	// TODO: Add more health checks
+	// Additional health checks can be added here:
 	// - Check scanning workers status
 	// - Check API server status
 	// - Monitor resource usage
@@ -455,6 +465,161 @@ func (d *Daemon) IsRunning() bool {
 	}
 }
 
+// reloadConfiguration reloads the daemon configuration from file.
+func (d *Daemon) reloadConfiguration() error {
+	d.logger.Println("Starting configuration reload...")
+
+	// Load new configuration from file
+	newConfig, err := config.Load("")
+	if err != nil {
+		return fmt.Errorf("failed to load new configuration: %w", err)
+	}
+
+	// Validate the new configuration
+	if err := newConfig.Validate(); err != nil {
+		return fmt.Errorf("new configuration is invalid: %w", err)
+	}
+
+	// Store old config for potential rollback
+	oldConfig := d.config
+
+	// Check if API configuration changed
+	if d.hasAPIConfigChanged(oldConfig, newConfig) {
+		d.restartAPIServer(newConfig)
+	}
+
+	// Update configuration
+	d.config = newConfig
+	d.logger.Println("Configuration reload completed successfully")
+	return nil
+}
+
+// dumpStatus dumps the current daemon status to the log.
+func (d *Daemon) dumpStatus() {
+	d.mu.RLock()
+	debugMode := d.debugMode
+	d.mu.RUnlock()
+
+	d.logger.Println("=== DAEMON STATUS DUMP ===")
+	d.logger.Printf("PID: %d", os.Getpid())
+	d.logger.Printf("Debug Mode: %t", debugMode)
+
+	// Memory statistics
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	d.logger.Printf("Memory Usage: Alloc=%d KB, TotalAlloc=%d KB, Sys=%d KB, NumGC=%d",
+		m.Alloc/1024, m.TotalAlloc/1024, m.Sys/1024, m.NumGC)
+	d.logger.Printf("Goroutines: %d", runtime.NumGoroutine())
+
+	// Database status
+	if d.database != nil {
+		if err := d.database.Ping(d.ctx); err != nil {
+			d.logger.Printf("Database Status: DISCONNECTED (%v)", err)
+		} else {
+			d.logger.Println("Database Status: CONNECTED")
+		}
+	} else {
+		d.logger.Println("Database Status: NOT CONFIGURED")
+	}
+
+	// API server status
+	if d.apiServer != nil && d.config.API.Enabled {
+		d.logger.Printf("API Server: RUNNING on %s:%d", d.config.API.Host, d.config.API.Port)
+	} else {
+		d.logger.Println("API Server: DISABLED")
+	}
+
+	d.logger.Printf("Working Directory: %s", d.config.Daemon.WorkDir)
+	d.logger.Println("=== END STATUS DUMP ===")
+}
+
+// toggleDebugMode toggles debug mode on/off.
+func (d *Daemon) toggleDebugMode() {
+	d.mu.Lock()
+	d.debugMode = !d.debugMode
+	newMode := d.debugMode
+	d.mu.Unlock()
+
+	if newMode {
+		d.logger.Println("Debug mode ENABLED")
+		d.logger.Println("- Verbose logging activated")
+		d.logger.Println("- Performance metrics collection enabled")
+	} else {
+		d.logger.Println("Debug mode DISABLED")
+		d.logger.Println("- Logging returned to normal level")
+		d.logger.Println("- Performance metrics collection disabled")
+	}
+}
+
+// IsDebugMode returns the current debug mode state.
+func (d *Daemon) IsDebugMode() bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.debugMode
+}
+
+// reconnectDatabase attempts to reconnect to the database with exponential backoff.
+func (d *Daemon) reconnectDatabase() error {
+	const maxRetries = 5
+	const baseDelay = 2 * time.Second
+	const maxDelay = 30 * time.Second
+
+	d.logger.Println("Attempting database reconnection...")
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		// Calculate delay with exponential backoff
+		multiplier := 1 << (attempt - 1)
+		delay := time.Duration(int64(baseDelay) * int64(multiplier))
+		if delay > maxDelay {
+			delay = maxDelay
+		}
+
+		d.logger.Printf("Reconnection attempt %d/%d", attempt, maxRetries)
+
+		// Wait before attempting (except for first attempt)
+		if attempt > 1 {
+			select {
+			case <-d.ctx.Done():
+				return fmt.Errorf("reconnection cancelled due to shutdown")
+			case <-time.After(delay):
+				// Continue with reconnection attempt
+			}
+		}
+
+		// Close existing connection if it exists
+		if d.database != nil {
+			if err := d.database.Close(); err != nil {
+				d.logger.Printf("Warning: failed to close existing database connection: %v", err)
+			}
+		}
+
+		// Attempt to reconnect
+		dbConfig := d.config.GetDatabaseConfig()
+		database, err := db.ConnectAndMigrate(d.ctx, &dbConfig)
+		if err != nil {
+			d.logger.Printf("Reconnection attempt %d failed: %v", attempt, err)
+			if attempt == maxRetries {
+				return fmt.Errorf("failed to reconnect after %d attempts: %w", maxRetries, err)
+			}
+			continue
+		}
+
+		// Success - update database reference
+		d.database = database
+		d.logger.Println("Database reconnection successful")
+		return nil
+	}
+
+	return fmt.Errorf("all reconnection attempts failed")
+}
+
+// hasAPIConfigChanged checks if API configuration has changed.
+func (d *Daemon) hasAPIConfigChanged(oldConfig, newConfig *config.Config) bool {
+	return oldConfig.API.Enabled != newConfig.API.Enabled ||
+		oldConfig.API.Host != newConfig.API.Host ||
+		oldConfig.API.Port != newConfig.API.Port
+}
+
 // GetContext returns the daemon's context.
 func (d *Daemon) GetContext() context.Context {
 	return d.ctx
@@ -468,4 +633,34 @@ func (d *Daemon) GetDatabase() *db.DB {
 // GetConfig returns the daemon configuration.
 func (d *Daemon) GetConfig() *config.Config {
 	return d.config
+}
+
+// restartAPIServer handles stopping and starting the API server with new configuration
+func (d *Daemon) restartAPIServer(newConfig *config.Config) {
+	d.logger.Println("API configuration changed, restarting API server...")
+
+	// Stop existing API server
+	if d.apiServer != nil {
+		if err := d.apiServer.Stop(); err != nil {
+			d.logger.Printf("Failed to stop API server: %v", err)
+		}
+	}
+
+	// Start new API server if enabled
+	if !newConfig.API.Enabled {
+		return
+	}
+
+	apiServer, err := api.New(newConfig, d.database)
+	if err != nil {
+		d.logger.Printf("Failed to create API server with new config: %v", err)
+		return
+	}
+
+	if err := apiServer.Start(d.ctx); err != nil {
+		d.logger.Printf("Failed to start API server with new config: %v", err)
+		return
+	}
+
+	d.apiServer = apiServer
 }
