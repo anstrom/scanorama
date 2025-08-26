@@ -109,8 +109,12 @@ api:
     key_file: "/etc/scanorama/tls/key.pem"
     ca_file: "/etc/scanorama/tls/ca.pem"
 
-  # API key for authentication (leave empty to disable auth)
-  api_key: ""
+  # API key authentication
+  # These keys can be used by any client (apps, CLI tools, dashboards) to authenticate
+  auth_enabled: true
+  api_keys:
+    - "your-api-key-here" # Replace with actual key
+    # Add more keys as needed for different clients
 
   # CORS configuration
   cors:
@@ -123,7 +127,7 @@ api:
   request_timeout: "30s"
 
   # Maximum request size (in bytes)
-  max_request_size: 1048576  # 1MB
+  max_request_size: 1048576 # 1MB
 
 # Logging Configuration
 logging:
@@ -149,7 +153,6 @@ logging:
 
   # Enable API request logging
   request_logging: true
-
 # Example configurations for different environments:
 
 # Development Configuration:
@@ -165,6 +168,25 @@ logging:
 # - Configure TLS for API
 # - Set proper user/group
 
+# API Key Management:
+#
+# API keys authenticate clients (CLI tools, dashboards, monitoring apps) to the server.
+#
+# Creating API keys:
+# - Configure api_keys above, or create dynamically: scanorama apikeys create --name "App Name"
+# - Keys can be managed via CLI commands or stored directly in config
+#
+# Using API keys:
+# - Clients need an API key to authenticate with the server
+# - For CLI: Set SCANORAMA_API_KEY environment variable to one of the valid keys
+# - Example: export SCANORAMA_API_KEY=your-api-key-here
+#
+# Complete setup example:
+# 1. Create/configure API keys (this file or via CLI)
+# 2. Start server: scanorama server start
+# 3. Configure client: export SCANORAMA_API_KEY=your-api-key-here
+# 4. Use CLI: scanorama scan list
+
 # Environment Variables:
 # You can override any configuration value using environment variables:
 #
@@ -175,6 +197,11 @@ logging:
 #   SCANORAMA_DB_USER=scanorama
 #   SCANORAMA_DB_PASSWORD=secret
 #   SCANORAMA_DB_SSLMODE=require
+#
+# API Authentication (for client tools):
+#   SCANORAMA_API_KEY=your-api-key-here
+#   SCANORAMA_CLI_API_KEY=your-cli-specific-key
+#   SCANORAMA_API_KEY_FILE=/path/to/keyfile
 #
 # Daemon:
 #   SCANORAMA_PID_FILE=/var/run/scanorama.pid
@@ -187,4 +214,5 @@ logging:
 #            -e SCANORAMA_DB_NAME=scanorama \
 #            -e SCANORAMA_DB_USER=scanorama \
 #            -e SCANORAMA_DB_PASSWORD=secret \
+#            -e SCANORAMA_API_KEY=your-api-key-here \
 #            scanorama:latest
