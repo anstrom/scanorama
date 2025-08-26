@@ -377,7 +377,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 }
 
 func TestAuthenticationMiddleware(t *testing.T) {
-	validAPIKeys := []string{"key1", "key2", "secret-key-123"}
+	validConfigKeys := []string{"key1", "key2", "secret-key-123"}
 
 	tests := []struct {
 		name           string
@@ -449,8 +449,8 @@ func TestAuthenticationMiddleware(t *testing.T) {
 				w.Write([]byte("authenticated"))
 			})
 
-			// Apply authentication middleware
-			middleware := Authentication(validAPIKeys, logger)
+			// Apply authentication middleware (config-based keys only for this test)
+			middleware := Authentication(validConfigKeys, nil, logger)
 			handler := middleware(testHandler)
 
 			// Create request
@@ -1090,7 +1090,7 @@ func TestMiddleware_EdgeCases(t *testing.T) {
 
 	t.Run("empty API keys", func(t *testing.T) {
 		logger := createTestLogger()
-		middleware := Authentication([]string{}, logger)
+		middleware := Authentication([]string{}, nil, logger)
 		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -1180,7 +1180,7 @@ func TestAuthenticationMiddleware_EdgeCases(t *testing.T) {
 	validKeys := []string{"valid-key-1", "valid-key-2"}
 
 	t.Run("case sensitivity", func(t *testing.T) {
-		middleware := Authentication(validKeys, logger)
+		middleware := Authentication(validKeys, nil, logger)
 		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -1194,7 +1194,7 @@ func TestAuthenticationMiddleware_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("both headers present", func(t *testing.T) {
-		middleware := Authentication(validKeys, logger)
+		middleware := Authentication(validKeys, nil, logger)
 		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
