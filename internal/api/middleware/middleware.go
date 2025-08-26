@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anstrom/scanorama/internal/auth"
+	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
@@ -37,6 +39,8 @@ const (
 	RequestIDKey ContextKey = "request_id"
 	// StartTimeKey is the context key for request start time.
 	StartTimeKey ContextKey = "start_time"
+	// APIKeyInfoKey is the context key for API key information.
+	APIKeyInfoKey ContextKey = "api_key_info"
 	// httpErrorThreshold is the status code threshold for HTTP errors.
 	httpErrorThreshold = 400
 )
@@ -251,11 +255,18 @@ func Recovery(logger *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-// Authentication creates an authentication middleware using API keys.
-func Authentication(apiKeys []string, logger *slog.Logger) func(http.Handler) http.Handler {
-	keySet := make(map[string]bool)
-	for _, key := range apiKeys {
-		keySet[key] = true
+// Authentication creates an authentication middleware supporting both config and database API keys.
+func Authentication(configKeys []string, database *db.DB, logger *slog.Logger) func(http.Handler) http.Handler {
+	// Build config key set for fast lookup
+	configKeySet := make(map[string]bool)
+	for _, key := range configKeys {
+		configKeySet[key] = true
+	}
+
+	// Create database repository if available
+	var keyRepo *auth.APIKeyRepository
+	if database != nil {
+		keyRepo = auth.NewAPIKeyRepository(database)
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -270,9 +281,9 @@ func Authentication(apiKeys []string, logger *slog.Logger) func(http.Handler) ht
 			apiKey := r.Header.Get("X-API-Key")
 			if apiKey == "" {
 				// Try Authorization header as backup
-				auth := r.Header.Get("Authorization")
-				if strings.HasPrefix(auth, "Bearer ") {
-					apiKey = strings.TrimPrefix(auth, "Bearer ")
+				authHeader := r.Header.Get("Authorization")
+				if strings.HasPrefix(authHeader, "Bearer ") {
+					apiKey = strings.TrimPrefix(authHeader, "Bearer ")
 				}
 			}
 
@@ -294,31 +305,53 @@ func Authentication(apiKeys []string, logger *slog.Logger) func(http.Handler) ht
 				return
 			}
 
-			// Validate API key
-			if !keySet[apiKey] {
-				logger.Warn("API request with invalid key",
+			// Try database authentication first (new system)
+			var keyInfo *auth.APIKeyInfo
+			if keyRepo != nil {
+				if dbKeyInfo, err := keyRepo.ValidateAPIKey(apiKey); err == nil {
+					keyInfo = dbKeyInfo
+					logger.Debug("API request authenticated via database",
+						"request_id", GetRequestID(r),
+						"path", r.URL.Path,
+						"key_id", keyInfo.ID,
+						"key_name", keyInfo.Name,
+						"remote_addr", getClientIP(r))
+
+					// Store key info in context for potential use by handlers
+					ctx := r.Context()
+					ctx = context.WithValue(ctx, APIKeyInfoKey, keyInfo)
+					r = r.WithContext(ctx)
+
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			// Fall back to config-based authentication (existing system)
+			if configKeySet[apiKey] {
+				logger.Debug("API request authenticated via config",
 					"request_id", GetRequestID(r),
 					"path", r.URL.Path,
 					"remote_addr", getClientIP(r))
 
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				response := map[string]interface{}{
-					"error":      "Authentication failed: Invalid API key",
-					"request_id": GetRequestID(r),
-					"timestamp":  time.Now().UTC(),
-				}
-				_ = json.NewEncoder(w).Encode(response)
+				next.ServeHTTP(w, r)
 				return
 			}
 
-			// Authentication successful
-			logger.Debug("API request authenticated",
+			// Authentication failed
+			logger.Warn("API request with invalid key",
 				"request_id", GetRequestID(r),
 				"path", r.URL.Path,
 				"remote_addr", getClientIP(r))
 
-			next.ServeHTTP(w, r)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			response := map[string]interface{}{
+				"error":      "Authentication failed: Invalid API key",
+				"request_id": GetRequestID(r),
+				"timestamp":  time.Now().UTC(),
+			}
+			_ = json.NewEncoder(w).Encode(response)
 		})
 	}
 }

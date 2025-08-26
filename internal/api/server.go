@@ -308,9 +308,9 @@ func (s *Server) setupMiddleware(apiConfig *Config) {
 		s.router.Use(handlers.CORS(corsOptions, corsHeaders, corsMethods))
 	}
 
-	// Authentication middleware
-	if apiConfig.AuthEnabled && len(apiConfig.APIKeys) > 0 {
-		s.router.Use(middleware.Authentication(apiConfig.APIKeys, s.logger))
+	// Authentication middleware (supports both config and database keys)
+	if apiConfig.AuthEnabled {
+		s.router.Use(middleware.Authentication(apiConfig.APIKeys, s.database, s.logger))
 	}
 
 	// Content type validation
