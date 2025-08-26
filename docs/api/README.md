@@ -483,6 +483,219 @@ POST /api/v1/schedules
 }
 ```
 
+## API Key Management
+
+### Overview
+
+The Scanorama API uses API key authentication for secure access. API keys support full Unicode characters in names, allowing for international and multilingual key identification.
+
+**Authentication:**
+- Header: `Authorization: Bearer {api_key}`
+- Format: `sk_xxxxxxxxx` (secret key prefix + base32 encoded random data)
+- Unicode Support: ✅ Full Unicode support in API key names
+
+### List API Keys
+```http
+GET /api/v1/auth/keys
+```
+
+**Query Parameters:**
+- `active`: Filter by active status (`true`, `false`)
+- `created_after`: Filter by creation date (RFC3339 format)
+- `expires_before`: Filter by expiration date (RFC3339 format)
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Production API Key 🔑",
+      "key_prefix": "sk_abc123...",
+      "created_at": "2025-01-14T00:00:00Z",
+      "updated_at": "2025-01-14T00:00:00Z",
+      "last_used_at": "2025-01-14T08:30:00Z",
+      "expires_at": "2025-12-31T23:59:59Z",
+      "is_active": true,
+      "usage_count": 1250,
+      "notes": "Main production API access"
+    }
+  ],
+  "pagination": {...}
+}
+```
+
+### Create API Key
+```http
+POST /api/v1/auth/keys
+```
+
+**Request Body:**
+```json
+{
+  "name": "测试密钥 🔑",
+  "expires_at": "2025-12-31T23:59:59Z",
+  "notes": "Unicode test key with emoji and Chinese characters",
+  "permissions": ["read", "write"]
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "测试密钥 🔑",
+  "key": "sk_abcdef1234567890abcdef1234567890",
+  "key_prefix": "sk_abcdef...",
+  "created_at": "2025-01-14T00:00:00Z",
+  "expires_at": "2025-12-31T23:59:59Z",
+  "is_active": true,
+  "notes": "Unicode test key with emoji and Chinese characters"
+}
+```
+
+**⚠️ Important**: The full `key` value is only returned once during creation. Store it securely!
+
+### Get API Key
+```http
+GET /api/v1/auth/keys/{id}
+```
+
+**Response:**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "مفتاح الاختبار",
+  "key_prefix": "sk_abcdef...",
+  "created_at": "2025-01-14T00:00:00Z",
+  "updated_at": "2025-01-14T00:00:00Z",
+  "last_used_at": "2025-01-14T08:30:00Z",
+  "expires_at": "2025-12-31T23:59:59Z",
+  "is_active": true,
+  "usage_count": 1250,
+  "notes": "Arabic API key name example"
+}
+```
+
+### Update API Key
+```http
+PUT /api/v1/auth/keys/{id}
+```
+
+**Request Body:**
+```json
+{
+  "name": "Updated Key Name ✨",
+  "expires_at": "2026-01-31T23:59:59Z",
+  "notes": "Updated notes with emoji",
+  "is_active": false
+}
+```
+
+### Revoke API Key
+```http
+DELETE /api/v1/auth/keys/{id}
+```
+
+**Response (204 No Content)**
+
+### Unicode Support Details
+
+#### Supported Characters
+- ✅ **Full Unicode Support**: All Unicode characters are supported in API key names
+- ✅ **Multilingual**: Chinese (中文), Arabic (العربية), Japanese (日本語), Russian (Русский)
+- ✅ **Emojis**: All emoji characters (🔑, ✨, 🌟, etc.)
+- ✅ **Mathematical Symbols**: ∑, ∆, ∇, ∞, α, β, γ
+- ✅ **Accented Characters**: café, naïve, piñata, résumé
+
+#### Validation Rules
+- **Length**: 1-255 characters (Unicode-aware length counting)
+- **Forbidden**: ASCII control characters (0-31, 127)
+- **Allowed**: All printable Unicode characters, including:
+  - Zero-width spaces (U+200B)
+  - Unicode line/paragraph separators (U+2028, U+2029)
+  - Combining characters and diacritics
+
+#### Examples of Valid Names
+```json
+{
+  "examples": [
+    "Production API 🔑",
+    "测试密钥",
+    "مفتاح API",
+    "テストキー",
+    "Ключ API",
+    "Clé d'API café",
+    "API Key ∑∆∇",
+    "Mixed: Test مفتاح 테스트 🔑"
+  ]
+}
+```
+
+#### Security Considerations
+- API key names are logged and may appear in audit trails
+- Consider data privacy laws when using personal information in key names
+- Unicode normalization is not applied - names are stored exactly as provided
+
+### Authentication Examples
+
+#### JavaScript/Fetch
+```javascript
+const response = await fetch('/api/v1/scans', {
+  headers: {
+    'Authorization': 'Bearer sk_abcdef1234567890abcdef1234567890',
+    'Content-Type': 'application/json'
+  }
+});
+```
+
+#### cURL
+```bash
+curl -H "Authorization: Bearer sk_abcdef1234567890abcdef1234567890" \
+     http://localhost:8080/api/v1/scans
+```
+
+#### Python Requests
+```python
+import requests
+
+headers = {
+    'Authorization': 'Bearer sk_abcdef1234567890abcdef1234567890',
+    'Content-Type': 'application/json'
+}
+
+response = requests.get('http://localhost:8080/api/v1/scans', headers=headers)
+```
+
+### API Key Management Best Practices
+
+1. **Rotation**: Regularly rotate API keys (recommended: every 90 days)
+2. **Least Privilege**: Grant minimal required permissions
+3. **Monitoring**: Monitor `usage_count` and `last_used_at` for anomalies  
+4. **Expiration**: Always set appropriate expiration dates
+5. **Storage**: Store keys securely (environment variables, key vaults)
+6. **Naming**: Use descriptive Unicode names for easy identification
+
+### API Key Data Model
+
+```typescript
+interface APIKey {
+  id: string;
+  name: string;           // Full Unicode support
+  key?: string;           // Only returned during creation
+  key_prefix: string;     // Display prefix (e.g., "sk_abc123...")
+  created_at: string;
+  updated_at: string;
+  last_used_at?: string;
+  expires_at?: string;
+  is_active: boolean;
+  usage_count: number;
+  notes?: string;
+  created_by?: string;
+  permissions?: string[]; // Future: RBAC permissions
+}
+```
+
 ## Error Codes
 
 | Code | Description |
