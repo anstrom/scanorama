@@ -1262,9 +1262,227 @@ func BenchmarkRateLimiter_Allow(b *testing.B) {
 	}
 }
 
-func BenchmarkGenerateRequestID(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		generateRequestID()
+func BenchmarkGenerateRequestID(t *testing.B) {
+	for i := 0; i < t.N; i++ {
+		_ = generateRequestID()
 	}
+}
+
+// TestAuthenticationBehaviors tests the key authentication behaviors
+func TestAuthenticationBehaviors(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
+
+	scenarios := []struct {
+		name         string
+		apiKeys      []string
+		requestPath  string
+		authHeader   string
+		expectAccess bool
+		expectStatus int
+		behaviorDesc string
+	}{
+		{
+			name:         "should allow access with valid API key in X-API-Key header",
+			apiKeys:      []string{"valid-key-123", "another-valid-key"},
+			requestPath:  "/api/v1/hosts",
+			authHeader:   "X-API-Key:valid-key-123",
+			expectAccess: true,
+			expectStatus: http.StatusOK,
+			behaviorDesc: "Valid API key should grant access to protected endpoints",
+		},
+		{
+			name:         "should allow access with valid API key in Authorization header",
+			apiKeys:      []string{"bearer-token-456"},
+			requestPath:  "/api/v1/networks",
+			authHeader:   "Authorization:Bearer bearer-token-456",
+			expectAccess: true,
+			expectStatus: http.StatusOK,
+			behaviorDesc: "Bearer token format should work for authentication",
+		},
+		{
+			name:         "should reject access with invalid API key",
+			apiKeys:      []string{"valid-key"},
+			requestPath:  "/api/v1/scans",
+			authHeader:   "X-API-Key:invalid-key",
+			expectAccess: false,
+			expectStatus: http.StatusUnauthorized,
+			behaviorDesc: "Invalid API key should be rejected with 401",
+		},
+		{
+			name:         "should reject access when no API key provided",
+			apiKeys:      []string{"some-key"},
+			requestPath:  "/api/v1/profiles",
+			authHeader:   "",
+			expectAccess: false,
+			expectStatus: http.StatusUnauthorized,
+			behaviorDesc: "Missing API key should result in authentication failure",
+		},
+		{
+			name:         "should bypass authentication for health endpoints",
+			apiKeys:      []string{"some-key"},
+			requestPath:  "/api/v1/health",
+			authHeader:   "",
+			expectAccess: true,
+			expectStatus: http.StatusOK,
+			behaviorDesc: "Health endpoints should not require authentication",
+		},
+		{
+			name:         "should bypass authentication for version endpoints",
+			apiKeys:      []string{"some-key"},
+			requestPath:  "/api/v1/version",
+			authHeader:   "",
+			expectAccess: true,
+			expectStatus: http.StatusOK,
+			behaviorDesc: "Version endpoints should be publicly accessible",
+		},
+		{
+			name:         "should bypass authentication for liveness endpoints",
+			apiKeys:      []string{"some-key"},
+			requestPath:  "/api/v1/liveness",
+			authHeader:   "",
+			expectAccess: true,
+			expectStatus: http.StatusOK,
+			behaviorDesc: "Liveness endpoints should be publicly accessible for monitoring",
+		},
+	}
+
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			// Create handler that tracks if it was called
+			handlerCalled := false
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handlerCalled = true
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("success"))
+			})
+
+			// Apply authentication middleware
+			authMiddleware := Authentication(scenario.apiKeys, logger)
+			protectedHandler := authMiddleware(handler)
+
+			// Create request
+			req := httptest.NewRequest("GET", scenario.requestPath, nil)
+			if scenario.authHeader != "" {
+				parts := strings.SplitN(scenario.authHeader, ":", 2)
+				req.Header.Set(parts[0], parts[1])
+			}
+
+			// Record response
+			recorder := httptest.NewRecorder()
+			protectedHandler.ServeHTTP(recorder, req)
+
+			// Verify behavior
+			assert.Equal(t, scenario.expectStatus, recorder.Code,
+				"Status code should match expected behavior: %s", scenario.behaviorDesc)
+
+			assert.Equal(t, scenario.expectAccess, handlerCalled,
+				"Handler access should match expectation: %s", scenario.behaviorDesc)
+
+			// Verify response structure for failures
+			if !scenario.expectAccess {
+				var response map[string]interface{}
+				err := json.Unmarshal(recorder.Body.Bytes(), &response)
+				assert.NoError(t, err, "Error response should be valid JSON")
+				assert.Contains(t, response, "error", "Error response should contain error field")
+				assert.Contains(t, response, "request_id", "Error response should contain request ID")
+				assert.Contains(t, response, "timestamp", "Error response should contain timestamp")
+			}
+		})
+	}
+}
+
+// TestAPIKeySecurityBehaviors tests security-related behaviors
+func TestAPIKeySecurityBehaviors(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
+
+	t.Run("should handle malformed API keys safely", func(t *testing.T) {
+		malformedKeys := []string{
+			"key with spaces",
+			"key\nwith\nnewlines",
+			"key\twith\ttabs",
+			"key;with;semicolons",
+			"key\"with\"quotes",
+			"key'with'apostrophes",
+			"key<with>brackets",
+			string([]byte{0x00, 0x01, 0x02}), // non-printable characters
+		}
+
+		apiKeys := []string{"valid-key"}
+		authMiddleware := Authentication(apiKeys, logger)
+
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+
+		for _, malformedKey := range malformedKeys {
+			req := httptest.NewRequest("GET", "/api/v1/test", nil)
+			req.Header.Set("X-API-Key", malformedKey)
+
+			recorder := httptest.NewRecorder()
+			authMiddleware(handler).ServeHTTP(recorder, req)
+
+			assert.Equal(t, http.StatusUnauthorized, recorder.Code,
+				"Malformed key should be rejected: %q", malformedKey)
+		}
+	})
+
+	t.Run("should handle empty API key list gracefully", func(t *testing.T) {
+		authMiddleware := Authentication([]string{}, logger)
+
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Error("Handler should not be called with empty API key list")
+		})
+
+		req := httptest.NewRequest("GET", "/api/v1/test", nil)
+		req.Header.Set("X-API-Key", "any-key")
+
+		recorder := httptest.NewRecorder()
+		authMiddleware(handler).ServeHTTP(recorder, req)
+
+		assert.Equal(t, http.StatusUnauthorized, recorder.Code,
+			"Empty API key list should reject all requests")
+	})
+
+	t.Run("should handle concurrent authentication requests safely", func(t *testing.T) {
+		apiKeys := []string{"concurrent-key"}
+		authMiddleware := Authentication(apiKeys, logger)
+
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+
+		const numRequests = 100
+		var wg sync.WaitGroup
+		results := make(chan int, numRequests)
+
+		// Launch concurrent requests
+		for i := 0; i < numRequests; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				req := httptest.NewRequest("GET", "/api/v1/test", nil)
+				req.Header.Set("X-API-Key", "concurrent-key")
+
+				recorder := httptest.NewRecorder()
+				authMiddleware(handler).ServeHTTP(recorder, req)
+
+				results <- recorder.Code
+			}()
+		}
+
+		wg.Wait()
+		close(results)
+
+		// Verify all requests succeeded
+		successCount := 0
+		for code := range results {
+			if code == http.StatusOK {
+				successCount++
+			}
+		}
+
+		assert.Equal(t, numRequests, successCount,
+			"All concurrent requests with valid API key should succeed")
+	})
 }
