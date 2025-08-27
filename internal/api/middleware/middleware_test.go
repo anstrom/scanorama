@@ -1357,7 +1357,7 @@ func TestAuthenticationBehaviors(t *testing.T) {
 			})
 
 			// Apply authentication middleware
-			authMiddleware := Authentication(scenario.apiKeys, logger)
+			authMiddleware := Authentication(scenario.apiKeys, nil, logger)
 			protectedHandler := authMiddleware(handler)
 
 			// Create request
@@ -1408,7 +1408,7 @@ func TestAPIKeySecurityBehaviors(t *testing.T) {
 		}
 
 		apiKeys := []string{"valid-key"}
-		authMiddleware := Authentication(apiKeys, logger)
+		authMiddleware := Authentication(apiKeys, nil, logger)
 
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -1427,7 +1427,7 @@ func TestAPIKeySecurityBehaviors(t *testing.T) {
 	})
 
 	t.Run("should handle empty API key list gracefully", func(t *testing.T) {
-		authMiddleware := Authentication([]string{}, logger)
+		authMiddleware := Authentication([]string{}, nil, logger)
 
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Error("Handler should not be called with empty API key list")
@@ -1445,7 +1445,7 @@ func TestAPIKeySecurityBehaviors(t *testing.T) {
 
 	t.Run("should handle concurrent authentication requests safely", func(t *testing.T) {
 		apiKeys := []string{"concurrent-key"}
-		authMiddleware := Authentication(apiKeys, logger)
+		authMiddleware := Authentication(apiKeys, nil, logger)
 
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
