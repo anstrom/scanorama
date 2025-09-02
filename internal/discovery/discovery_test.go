@@ -1,14 +1,14 @@
 package discovery
 
 import (
-    "context"
-    "net"
-    "testing"
-    "time"
+	"context"
+	"net"
+	"testing"
+	"time"
 
-    "github.com/Ullaakut/nmap/v3"
-    "github.com/stretchr/testify/assert"
-    "github.com/stretchr/testify/require"
+	"github.com/Ullaakut/nmap/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCalculateDynamicTimeout(t *testing.T) {
@@ -635,30 +635,30 @@ func TestIPAddressGeneration(t *testing.T) {
 }
 
 func TestConvertRunToResults(t *testing.T) {
-    engine := &Engine{}
+	engine := &Engine{}
 
-    run := &nmap.Run{
-        Hosts: []nmap.Host{
-            { // up host with IPv4
-                Status: nmap.Status{State: "up"},
-                Addresses: []nmap.Address{{Addr: "192.168.1.1", AddrType: "ipv4"}},
-            },
-            { // down host should be ignored
-                Status: nmap.Status{State: "down"},
-                Addresses: []nmap.Address{{Addr: "192.168.1.2", AddrType: "ipv4"}},
-            },
-            { // up host with IPv4
-                Status: nmap.Status{State: "up"},
-                Addresses: []nmap.Address{{Addr: "192.168.1.100", AddrType: "ipv4"}},
-            },
-        },
-    }
+	run := &nmap.Run{
+		Hosts: []nmap.Host{
+			{ // up host with IPv4
+				Status:    nmap.Status{State: "up"},
+				Addresses: []nmap.Address{{Addr: "192.168.1.1", AddrType: "ipv4"}},
+			},
+			{ // down host should be ignored
+				Status:    nmap.Status{State: "down"},
+				Addresses: []nmap.Address{{Addr: "192.168.1.2", AddrType: "ipv4"}},
+			},
+			{ // up host with IPv4
+				Status:    nmap.Status{State: "up"},
+				Addresses: []nmap.Address{{Addr: "192.168.1.100", AddrType: "ipv4"}},
+			},
+		},
+	}
 
-    results := engine.convertRunToResults(run, "tcp")
+	results := engine.convertRunToResults(run, "tcp")
 
-    require.Len(t, results, 2)
-    assert.Equal(t, "192.168.1.1", results[0].IPAddress.String())
-    assert.Equal(t, "192.168.1.100", results[1].IPAddress.String())
-    assert.Equal(t, "up", results[0].Status)
-    assert.Equal(t, "tcp", results[0].Method)
+	require.Len(t, results, 2)
+	assert.Equal(t, "192.168.1.1", results[0].IPAddress.String())
+	assert.Equal(t, "192.168.1.100", results[1].IPAddress.String())
+	assert.Equal(t, "up", results[0].Status)
+	assert.Equal(t, "tcp", results[0].Method)
 }

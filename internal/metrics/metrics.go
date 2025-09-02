@@ -287,7 +287,13 @@ const (
 	LabelStatus    = "status"
 	LabelOperation = "operation"
 	LabelError     = "error"
-	LabelComponent = "component"
+    LabelComponent = "component"
+)
+
+// Common status values for metrics
+const (
+    statusSuccess = "success"
+    statusError   = "error"
 )
 
 // Helper functions for common metrics
@@ -337,10 +343,10 @@ func IncrementHostsDiscovered(network, method string, count int) {
 
 // RecordDatabaseQuery records database query metrics.
 func RecordDatabaseQuery(operation string, duration time.Duration, success bool) {
-	status := "success"
-	if !success {
-		status = "error"
-	}
+    status := statusSuccess
+    if !success {
+        status = statusError
+    }
 
 	Counter(MetricDatabaseQueries, Labels{
 		LabelOperation: operation,
