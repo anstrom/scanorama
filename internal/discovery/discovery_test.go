@@ -1,13 +1,14 @@
 package discovery
 
 import (
-	"context"
-	"net"
-	"testing"
-	"time"
+    "context"
+    "net"
+    "testing"
+    "time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+    "github.com/Ullaakut/nmap/v3"
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/require"
 )
 
 func TestCalculateDynamicTimeout(t *testing.T) {
@@ -633,22 +634,31 @@ func TestIPAddressGeneration(t *testing.T) {
 	}
 }
 
-func TestParseNmapOutput(t *testing.T) {
-	engine := &Engine{}
+func TestConvertRunToResults(t *testing.T) {
+    engine := &Engine{}
 
-	// Test parsing nmap output with multiple hosts
-	output := `Starting Nmap 7.80 ( https://nmap.org ) at 2023-01-01 12:00 UTC
-Nmap scan report for 192.168.1.1
-Host is up (0.001s latency).
-Nmap scan report for 192.168.1.100
-Host is up (0.002s latency).
-Nmap done: 254 IP addresses (2 hosts up) scanned in 2.34 seconds`
+    run := &nmap.Run{
+        Hosts: []nmap.Host{
+            { // up host with IPv4
+                Status: nmap.Status{State: "up"},
+                Addresses: []nmap.Address{{Addr: "192.168.1.1", AddrType: "ipv4"}},
+            },
+            { // down host should be ignored
+                Status: nmap.Status{State: "down"},
+                Addresses: []nmap.Address{{Addr: "192.168.1.2", AddrType: "ipv4"}},
+            },
+            { // up host with IPv4
+                Status: nmap.Status{State: "up"},
+                Addresses: []nmap.Address{{Addr: "192.168.1.100", AddrType: "ipv4"}},
+            },
+        },
+    }
 
-	results := engine.parseNmapOutput(output, "tcp")
+    results := engine.convertRunToResults(run, "tcp")
 
-	assert.Equal(t, 2, len(results))
-	assert.Equal(t, "192.168.1.1", results[0].IPAddress.String())
-	assert.Equal(t, "192.168.1.100", results[1].IPAddress.String())
-	assert.Equal(t, "up", results[0].Status)
-	assert.Equal(t, "tcp", results[0].Method)
+    require.Len(t, results, 2)
+    assert.Equal(t, "192.168.1.1", results[0].IPAddress.String())
+    assert.Equal(t, "192.168.1.100", results[1].IPAddress.String())
+    assert.Equal(t, "up", results[0].Status)
+    assert.Equal(t, "tcp", results[0].Method)
 }

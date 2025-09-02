@@ -408,6 +408,41 @@ func (e *Engine) buildNmapOptionsForLibrary(targets []string, config *Config, ti
     return opts
 }
 
+// convertRunToResults converts an nmap.Run result into discovery results.
+func (e *Engine) convertRunToResults(run *nmap.Run, method string) []Result {
+    if run == nil {
+        return nil
+    }
+    var results []Result
+    for i := range run.Hosts {
+        h := run.Hosts[i]
+        if !strings.EqualFold(h.Status.State, "up") {
+            continue
+        }
+        // Prefer IPv4, then IPv6
+        var ipStr string
+        for _, addr := range h.Addresses {
+            if addr.AddrType == addrTypeIPv4 || addr.AddrType == addrTypeIPv6 {
+                ipStr = addr.Addr
+                if addr.AddrType == addrTypeIPv4 {
+                    break
+                }
+            }
+        }
+        if ipStr == "" {
+            continue
+        }
+        if ip := net.ParseIP(ipStr); ip != nil {
+            results = append(results, Result{
+                IPAddress: ip,
+                Status:    "up",
+                Method:    method,
+            })
+        }
+    }
+    return results
+}
+
 // parseNmapOutput parses legacy human-readable nmap output to extract discovery results.
 // Kept for test compatibility; production discovery uses XML parsing.
 func (e *Engine) parseNmapOutput(output, method string) []Result {
