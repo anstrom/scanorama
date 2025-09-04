@@ -813,7 +813,7 @@ func TestConvertNmapResultsEdgeCases(t *testing.T) {
 			expected: 0,
 		},
 		{
-			name: "host down",
+			name: "host down (filtered out)",
 			nmapResult: &nmap.Run{
 				Hosts: []nmap.Host{
 					{
@@ -825,7 +825,7 @@ func TestConvertNmapResultsEdgeCases(t *testing.T) {
 				},
 			},
 			method:   "tcp",
-			expected: 1,
+			expected: 0, // Down hosts are filtered out
 		},
 		{
 			name: "host with OS info",
@@ -858,11 +858,8 @@ func TestConvertNmapResultsEdgeCases(t *testing.T) {
 				result := results[0]
 				assert.Equal(t, tt.method, result.Method)
 
-				if tt.nmapResult.Hosts[0].Status.State == "up" {
-					assert.Equal(t, "up", result.Status)
-				} else {
-					assert.Equal(t, "down", result.Status)
-				}
+				// All returned results should be "up" since down hosts are filtered
+				assert.Equal(t, "up", result.Status)
 
 				if len(tt.nmapResult.Hosts[0].OS.Matches) > 0 {
 					assert.Equal(t, "Linux 4.15", result.OSInfo)
