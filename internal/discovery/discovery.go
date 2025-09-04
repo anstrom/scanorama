@@ -393,15 +393,14 @@ func (e *Engine) convertNmapResultsToDiscovery(nmapResult *nmap.Run, method stri
 			continue
 		}
 
-		// Determine status based on host state
-		status := "down"
-		if host.Status.State == "up" {
-			status = "up"
+		// Only include hosts that are up (filter out down hosts)
+		if host.Status.State != "up" {
+			continue
 		}
 
 		result := Result{
 			IPAddress: ip,
-			Status:    status,
+			Status:    "up", // We know it's up since we filtered above
 			Method:    method,
 		}
 
