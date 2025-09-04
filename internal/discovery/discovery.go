@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os/exec"
 	"strings"
 	"time"
 
+	"github.com/Ullaakut/nmap/v3"
 	"github.com/google/uuid"
 
 	"github.com/anstrom/scanorama/internal/db"
@@ -303,52 +303,63 @@ func (e *Engine) nmapDiscoveryWithTargets(ctx context.Context, targets []string,
 		return []Result{}, nil
 	}
 
-	// Build nmap command
-	args := e.buildNmapOptionsForTargets(targets, config, timeout)
+	// Build nmap options using the library
+	options := e.buildNmapLibraryOptions(targets, config, timeout)
 
-	// Create command with context for timeout handling
-	cmd := exec.CommandContext(ctx, "nmap", args...) // #nosec G204
-
-	// Execute nmap
-	output, err := cmd.Output()
+	// Create scanner with context
+	scanner, err := nmap.NewScanner(ctx, options...)
 	if err != nil {
-		return nil, fmt.Errorf("nmap execution failed: %w", err)
+		return nil, fmt.Errorf("failed to create nmap scanner: %w", err)
 	}
 
-	// Parse nmap output
-	results := e.parseNmapOutput(string(output), config.Method)
+	// Execute nmap scan
+	result, warnings, err := scanner.Run()
+	if err != nil {
+		return nil, fmt.Errorf("nmap scan failed: %w", err)
+	}
+
+	if warnings != nil && len(*warnings) > 0 {
+		log.Printf("Discovery scan completed with warnings: %v", *warnings)
+	}
+
+	// Convert nmap results to discovery results
+	results := e.convertNmapResultsToDiscovery(result, config.Method)
 
 	return results, nil
 }
 
-// buildNmapOptionsForTargets constructs nmap arguments for target discovery.
-func (e *Engine) buildNmapOptionsForTargets(targets []string, config *Config, timeout time.Duration) []string {
-	args := []string{
-		"-sn", // Ping scan (no port scan)
+// buildNmapLibraryOptions constructs nmap options using the library for target discovery.
+func (e *Engine) buildNmapLibraryOptions(targets []string, config *Config, timeout time.Duration) []nmap.Option {
+	options := []nmap.Option{
+		nmap.WithTargets(targets...),
+		nmap.WithPingScan(), // Host discovery only (equivalent to -sn)
 	}
 
 	// Add method-specific options
 	switch config.Method {
 	case "tcp":
-		args = append(args, "-PS22,80,443,8080,8022,8379") // TCP SYN ping (includes CI service ports)
+		// TCP SYN ping (includes CI service ports)
+		options = append(options, nmap.WithSYNDiscovery("22", "80", "443", "8080", "8022", "8379"))
 	case "ping":
-		args = append(args, "-PE") // ICMP echo ping
+		// ICMP echo ping
+		options = append(options, nmap.WithICMPEchoDiscovery())
 	case "arp":
-		args = append(args, "-PR") // ARP ping
+		// ARP ping for local networks - no direct library equivalent available
+		options = append(options, nmap.WithCustomArguments("-PR")) //nolint:staticcheck
 	}
 
 	// Add OS detection if requested
 	if config.DetectOS {
-		args = append(args, "-O")
+		options = append(options, nmap.WithOSDetection())
 	}
 
 	// Add timing template based on timeout
 	if timeout <= 30*time.Second {
-		args = append(args, "-T4") // Aggressive
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive)) // T4
 	} else if timeout <= 120*time.Second {
-		args = append(args, "-T3") // Normal
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingNormal)) // T3
 	} else {
-		args = append(args, "-T2") // Polite
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingPolite)) // T2
 	}
 
 	// Add host timeout
@@ -356,38 +367,50 @@ func (e *Engine) buildNmapOptionsForTargets(targets []string, config *Config, ti
 	if hostTimeout < time.Second {
 		hostTimeout = time.Second
 	}
-	args = append(args, "--host-timeout", fmt.Sprintf("%ds", int(hostTimeout.Seconds())))
+	// Use library's host timeout option
+	options = append(options, nmap.WithHostTimeout(hostTimeout))
 
-	// Add targets
-	args = append(args, targets...)
-
-	return args
+	return options
 }
 
-// parseNmapOutput parses nmap output to extract discovery results.
-func (e *Engine) parseNmapOutput(output, method string) []Result {
-	var results []Result
+// convertNmapResultsToDiscovery converts nmap library results to discovery results.
+func (e *Engine) convertNmapResultsToDiscovery(nmapResult *nmap.Run, method string) []Result {
+	if nmapResult == nil {
+		return []Result{}
+	}
 
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
+	results := make([]Result, 0, len(nmapResult.Hosts))
 
-		// Look for "Nmap scan report" lines
-		if strings.HasPrefix(line, "Nmap scan report for ") {
-			parts := strings.Fields(line)
-			if len(parts) >= minNmapOutputFields {
-				// Extract IP from "Nmap scan report for <ip>"
-				ipStr := parts[4]
-				if ip := net.ParseIP(ipStr); ip != nil {
-					result := Result{
-						IPAddress: ip,
-						Status:    "up",
-						Method:    method,
-					}
-					results = append(results, result)
-				}
-			}
+	for i := range nmapResult.Hosts {
+		host := &nmapResult.Hosts[i]
+		if len(host.Addresses) == 0 {
+			continue
 		}
+
+		// Get the first IP address
+		ip := net.ParseIP(host.Addresses[0].Addr)
+		if ip == nil {
+			continue
+		}
+
+		// Determine status based on host state
+		status := "down"
+		if host.Status.State == "up" {
+			status = "up"
+		}
+
+		result := Result{
+			IPAddress: ip,
+			Status:    status,
+			Method:    method,
+		}
+
+		// Add OS information if available
+		if len(host.OS.Matches) > 0 {
+			result.OSInfo = host.OS.Matches[0].Name
+		}
+
+		results = append(results, result)
 	}
 
 	return results
