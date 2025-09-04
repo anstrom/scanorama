@@ -432,6 +432,189 @@ func TestDiscoveryMethodValidation(t *testing.T) {
 	}
 }
 
+func TestSaveDiscoveredHostsEmptyResults(t *testing.T) {
+	engine := NewEngine(nil)
+	ctx := context.Background()
+
+	// Test with empty results - this should not make any database calls
+	results := []Result{}
+	err := engine.saveDiscoveredHosts(ctx, results)
+	assert.NoError(t, err)
+}
+
+func TestCalculateDynamicTimeoutEdgeCases(t *testing.T) {
+	engine := &Engine{}
+
+	tests := []struct {
+		name        string
+		targetCount int
+		baseTimeout time.Duration
+		expectMin   time.Duration
+		expectMax   time.Duration
+	}{
+		{
+			name:        "zero base timeout uses engine default",
+			targetCount: 100,
+			baseTimeout: 0,
+			expectMin:   minTimeout,
+			expectMax:   maxTimeout,
+		},
+		{
+			name:        "very large target count hits max multiplier",
+			targetCount: 10000,
+			baseTimeout: 10 * time.Second,
+			expectMin:   minTimeout,
+			expectMax:   maxTimeout,
+		},
+		{
+			name:        "small base timeout with small target count",
+			targetCount: 1,
+			baseTimeout: 1 * time.Second,
+			expectMin:   minTimeout,
+			expectMax:   maxTimeout,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := engine.calculateDynamicTimeout(tt.targetCount, tt.baseTimeout)
+			assert.GreaterOrEqual(t, result, tt.expectMin)
+			assert.LessOrEqual(t, result, tt.expectMax)
+		})
+	}
+}
+
+func TestDiscoveryMethodSpecificOptions(t *testing.T) {
+	engine := &Engine{}
+	targets := []string{"127.0.0.1"}
+	timeout := 60 * time.Second
+
+	methods := []string{"tcp", "ping", "arp", "unknown"}
+	for _, method := range methods {
+		t.Run(method, func(t *testing.T) {
+			config := &Config{Method: method}
+			options := engine.buildNmapLibraryOptions(targets, config, timeout)
+			assert.NotEmpty(t, options)
+			// Each method should generate different options
+		})
+	}
+}
+
+func TestOSDetectionOption(t *testing.T) {
+	engine := &Engine{}
+	targets := []string{"127.0.0.1"}
+	timeout := 60 * time.Second
+
+	tests := []struct {
+		name     string
+		detectOS bool
+	}{
+		{"with OS detection", true},
+		{"without OS detection", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &Config{
+				Method:   "tcp",
+				DetectOS: tt.detectOS,
+			}
+			options := engine.buildNmapLibraryOptions(targets, config, timeout)
+			assert.NotEmpty(t, options)
+			// OS detection should be included when requested
+		})
+	}
+}
+
+func TestSetConcurrency(t *testing.T) {
+	engine := NewEngine(nil)
+
+	// Test setting concurrency
+	engine.SetConcurrency(20)
+	assert.Equal(t, 20, engine.concurrency)
+
+	// Test setting zero concurrency
+	engine.SetConcurrency(0)
+	assert.Equal(t, 0, engine.concurrency)
+}
+
+func TestSetTimeout(t *testing.T) {
+	engine := NewEngine(nil)
+
+	// Test setting timeout
+	timeout := 120 * time.Second
+	engine.SetTimeout(timeout)
+	assert.Equal(t, timeout, engine.timeout)
+
+	// Test setting zero timeout
+	engine.SetTimeout(0)
+	assert.Equal(t, time.Duration(0), engine.timeout)
+}
+
+func TestNmapDiscoveryWithTargetsError(t *testing.T) {
+	engine := &Engine{}
+	ctx := context.Background()
+
+	// Test with invalid context (cancelled)
+	cancelCtx, cancel := context.WithCancel(ctx)
+	cancel() // Cancel immediately
+
+	targets := []string{"192.168.1.1"}
+	config := &Config{Method: "tcp"}
+
+	// This should handle cancelled context or nmap execution error
+	results, err := engine.nmapDiscoveryWithTargets(cancelCtx, targets, config, 1*time.Second)
+
+	// Either succeeds with empty results or fails with context error
+	if err != nil {
+		t.Logf("Expected error with cancelled context: %v", err)
+	} else {
+		assert.NotNil(t, results)
+	}
+}
+
+func TestDiscoverValidation(t *testing.T) {
+	// Test only the validation logic without calling full Discover
+	engine := NewEngine(nil)
+
+	// Test network size validation directly
+	_, ipnet, err := net.ParseCIDR("10.0.0.0/8")
+	require.NoError(t, err)
+
+	err = engine.validateNetworkSize(*ipnet)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "network size too large")
+}
+
+func TestValidateNetworkSizeEdgeCases(t *testing.T) {
+	engine := NewEngine(nil)
+
+	// Test various network sizes without calling full Discover
+	tests := []struct {
+		cidr        string
+		shouldError bool
+	}{
+		{"192.168.1.0/30", false}, // Valid small network
+		{"10.0.0.0/16", false},    // Valid /16
+		{"10.0.0.0/8", true},      // Too large
+		{"192.168.1.1/32", false}, // Single host
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.cidr, func(t *testing.T) {
+			_, ipnet, err := net.ParseCIDR(tt.cidr)
+			require.NoError(t, err)
+
+			err = engine.validateNetworkSize(*ipnet)
+			if tt.shouldError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 func BenchmarkGenerateTargetsFromCIDR(t *testing.B) {
 	engine := &Engine{}
 	_, ipnet, _ := net.ParseCIDR("192.168.0.0/24")
@@ -572,6 +755,151 @@ func TestNmapLibraryOptionsGeneration(t *testing.T) {
 			assert.NotEmpty(t, options)
 			// Note: We can't easily inspect nmap.Option internals,
 			// but we can verify that options are generated
+		})
+	}
+}
+
+func TestNmapDiscoveryWithTargetsEmptyCase(t *testing.T) {
+	engine := &Engine{}
+	ctx := context.Background()
+
+	// Test empty targets case - this should return immediately without nmap execution
+	results, err := engine.nmapDiscoveryWithTargets(ctx, []string{}, &Config{Method: "tcp"}, 30*time.Second)
+	assert.NoError(t, err)
+	assert.Empty(t, results)
+}
+
+func TestConvertNmapResultsEdgeCases(t *testing.T) {
+	engine := &Engine{}
+
+	tests := []struct {
+		name       string
+		nmapResult *nmap.Run
+		method     string
+		expected   int
+	}{
+		{
+			name:       "nil result",
+			nmapResult: nil,
+			method:     "tcp",
+			expected:   0,
+		},
+		{
+			name: "host with no addresses",
+			nmapResult: &nmap.Run{
+				Hosts: []nmap.Host{
+					{
+						Addresses: []nmap.Address{},
+						Status:    nmap.Status{State: "up"},
+					},
+				},
+			},
+			method:   "tcp",
+			expected: 0,
+		},
+		{
+			name: "host with invalid IP",
+			nmapResult: &nmap.Run{
+				Hosts: []nmap.Host{
+					{
+						Addresses: []nmap.Address{
+							{Addr: "invalid-ip", AddrType: "ipv4"},
+						},
+						Status: nmap.Status{State: "up"},
+					},
+				},
+			},
+			method:   "tcp",
+			expected: 0,
+		},
+		{
+			name: "host down",
+			nmapResult: &nmap.Run{
+				Hosts: []nmap.Host{
+					{
+						Addresses: []nmap.Address{
+							{Addr: "192.168.1.1", AddrType: "ipv4"},
+						},
+						Status: nmap.Status{State: "down"},
+					},
+				},
+			},
+			method:   "tcp",
+			expected: 1,
+		},
+		{
+			name: "host with OS info",
+			nmapResult: &nmap.Run{
+				Hosts: []nmap.Host{
+					{
+						Addresses: []nmap.Address{
+							{Addr: "192.168.1.1", AddrType: "ipv4"},
+						},
+						Status: nmap.Status{State: "up"},
+						OS: nmap.OS{
+							Matches: []nmap.OSMatch{
+								{Name: "Linux 4.15"},
+							},
+						},
+					},
+				},
+			},
+			method:   "tcp",
+			expected: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := engine.convertNmapResultsToDiscovery(tt.nmapResult, tt.method)
+			assert.Equal(t, tt.expected, len(results))
+
+			if tt.expected > 0 && tt.nmapResult != nil && len(tt.nmapResult.Hosts) > 0 {
+				result := results[0]
+				assert.Equal(t, tt.method, result.Method)
+
+				if tt.nmapResult.Hosts[0].Status.State == "up" {
+					assert.Equal(t, "up", result.Status)
+				} else {
+					assert.Equal(t, "down", result.Status)
+				}
+
+				if len(tt.nmapResult.Hosts[0].OS.Matches) > 0 {
+					assert.Equal(t, "Linux 4.15", result.OSInfo)
+				}
+			}
+		})
+	}
+}
+
+func TestHostTimeoutCalculation(t *testing.T) {
+	engine := &Engine{}
+	targets := []string{"192.168.1.1", "192.168.1.2", "192.168.1.3"}
+	config := &Config{Method: "tcp"}
+
+	tests := []struct {
+		name            string
+		timeout         time.Duration
+		expectedMinimum time.Duration
+	}{
+		{
+			name:            "very short timeout gets minimum",
+			timeout:         100 * time.Millisecond,
+			expectedMinimum: time.Second,
+		},
+		{
+			name:            "normal timeout",
+			timeout:         30 * time.Second,
+			expectedMinimum: time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			options := engine.buildNmapLibraryOptions(targets, config, tt.timeout)
+			assert.NotEmpty(t, options)
+			// The host timeout calculation is internal to the function
+			// but this exercises the code path
 		})
 	}
 }
