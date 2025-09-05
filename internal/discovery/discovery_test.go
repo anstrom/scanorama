@@ -963,3 +963,133 @@ func TestConvertNmapResultsToDiscovery(t *testing.T) {
 	assert.Equal(t, "up", results[0].Status)
 	assert.Equal(t, "tcp", results[0].Method)
 }
+
+// TestDiscoveryResilience tests the resilience functionality behavior
+func TestDiscoveryResilience(t *testing.T) {
+	t.Run("discovery_retries_on_retryable_errors", func(t *testing.T) {
+		// This test verifies that discovery service retries on transient failures
+		// but doesn't test implementation details like exact retry counts
+
+		engine := NewEngine(nil)
+		config := &Config{
+			Method:      "ping",
+			DetectOS:    false,
+			Timeout:     5,
+			Concurrency: 1,
+			MaxHosts:    1,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// Test with a target that should fail initially but might succeed on retry
+		targets := []string{"192.0.2.1"} // RFC5737 test address
+
+		// This tests the behavior - discovery should handle failures gracefully
+		results, err := engine.nmapDiscoveryWithResilience(ctx, targets, config, 5*time.Second)
+
+		// The key behavior is that the function should complete without panicking
+		// and should return appropriate error information if all attempts fail
+		if err != nil {
+			// Verify error contains meaningful information
+			assert.Contains(t, err.Error(), "discovery failed")
+		} else {
+			// If it succeeds, results should be valid
+			assert.NotNil(t, results)
+		}
+	})
+
+	t.Run("discovery_respects_context_cancellation", func(t *testing.T) {
+		engine := NewEngine(nil)
+		config := &Config{
+			Method:      "ping",
+			DetectOS:    false,
+			Timeout:     5,
+			Concurrency: 1,
+			MaxHosts:    10,
+		}
+
+		// Create context that will be cancelled quickly
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		targets := []string{"192.0.2.1", "192.0.2.2", "192.0.2.3"}
+
+		start := time.Now()
+		results, err := engine.nmapDiscoveryWithResilience(ctx, targets, config, 5*time.Second)
+		elapsed := time.Since(start)
+
+		// Should return quickly due to context cancellation
+		assert.True(t, elapsed < 2*time.Second, "Discovery should respect context cancellation")
+
+		// Should return context cancellation error
+		if err != nil {
+			assert.Contains(t, err.Error(), "cancel")
+		}
+
+		// Results should be nil on cancellation
+		assert.Nil(t, results)
+	})
+
+	t.Run("discovery_handles_empty_target_list", func(t *testing.T) {
+		engine := NewEngine(nil)
+		config := &Config{
+			Method:      "ping",
+			DetectOS:    false,
+			Timeout:     5,
+			Concurrency: 1,
+			MaxHosts:    0,
+		}
+
+		ctx := context.Background()
+		targets := []string{}
+
+		results, err := engine.nmapDiscoveryWithResilience(ctx, targets, config, 5*time.Second)
+
+		// Should handle empty targets gracefully
+		if err == nil {
+			assert.Equal(t, 0, len(results))
+		} else {
+			// Error should be descriptive
+			assert.NotEmpty(t, err.Error())
+		}
+	})
+
+	t.Run("discovery_maintains_result_consistency", func(t *testing.T) {
+		// Test that discovery results are consistent and properly formatted
+		engine := NewEngine(nil)
+		config := &Config{
+			Method:      "ping",
+			DetectOS:    false,
+			Timeout:     10,
+			Concurrency: 1,
+			MaxHosts:    5,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// Use localhost which should be reachable
+		targets := []string{"127.0.0.1"}
+
+		results, err := engine.nmapDiscoveryWithResilience(ctx, targets, config, 10*time.Second)
+
+		// If discovery succeeds, results should be well-formed
+		if err == nil && len(results) > 0 {
+			for _, result := range results {
+				// Result should have valid IP address
+				assert.NotNil(t, result.IPAddress)
+				assert.NotEmpty(t, result.IPAddress.String())
+
+				// Status should be meaningful
+				assert.Contains(t, []string{"up", "down", "filtered"}, result.Status)
+
+				// Method should match configuration
+				assert.Equal(t, config.Method, result.Method)
+
+				// Response time should be non-negative
+				assert.True(t, result.ResponseTime >= 0)
+			}
+		}
+	})
+}

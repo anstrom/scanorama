@@ -305,7 +305,8 @@ func IsConflict(err error) bool {
 func IsRetryable(err error) bool {
 	code := GetCode(err)
 	switch code {
-	case CodeTimeout, CodeNetworkUnreachable, CodeServiceTimeout, CodeDatabaseTimeout:
+	case CodeTimeout, CodeNetworkUnreachable, CodeServiceTimeout, CodeDatabaseTimeout,
+		CodeHostUnreachable, CodeScanFailed, CodeDiscoveryFailed, CodeServiceUnavailable:
 		return true
 	default:
 		return false

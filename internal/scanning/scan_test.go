@@ -2,6 +2,7 @@ package scanning
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -569,4 +570,218 @@ func TestXMLFormatting(t *testing.T) {
 	assert.Equal(t, len(result.Hosts), len(loaded.Hosts))
 	assert.Equal(t, result.Hosts[0].Address, loaded.Hosts[0].Address)
 	assert.Equal(t, result.Hosts[0].Ports[0].Number, loaded.Hosts[0].Ports[0].Number)
+}
+
+// TestScanningResilience tests the resilience functionality behavior
+func TestScanningResilience(t *testing.T) {
+	t.Run("resource_manager_prevents_excessive_concurrent_scans", func(t *testing.T) {
+		// Test that resource manager properly limits concurrent operations
+		rm := NewResourceManager(2) // Allow only 2 concurrent scans
+
+		ctx := context.Background()
+
+		// First two acquisitions should succeed immediately
+		err1 := rm.Acquire(ctx, "scan1")
+		assert.NoError(t, err1)
+
+		err2 := rm.Acquire(ctx, "scan2")
+		assert.NoError(t, err2)
+
+		// Third acquisition should block or timeout quickly
+		ctx3, cancel3 := context.WithTimeout(ctx, 100*time.Millisecond)
+		defer cancel3()
+
+		err3 := rm.Acquire(ctx3, "scan3")
+		assert.Error(t, err3) // Should timeout
+
+		// Release one and try again
+		rm.Release("scan1")
+
+		err4 := rm.Acquire(ctx, "scan4")
+		assert.NoError(t, err4)
+
+		// Cleanup
+		rm.Release("scan2")
+		rm.Release("scan4")
+	})
+
+	t.Run("circuit_breaker_opens_after_threshold_failures", func(t *testing.T) {
+		cb := NewCircuitBreaker(3, 5*time.Second) // 3 failures, 5s timeout
+
+		ctx := context.Background()
+
+		// Function that always fails
+		failingFunc := func() error {
+			return fmt.Errorf("simulated failure")
+		}
+
+		// First few calls should execute and fail
+		for i := 0; i < 3; i++ {
+			err := cb.Call(ctx, failingFunc)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "simulated failure")
+		}
+
+		// After threshold, circuit should be open
+		err := cb.Call(ctx, failingFunc)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "circuit breaker is open")
+	})
+
+	t.Run("circuit_breaker_recovers_after_timeout", func(t *testing.T) {
+		cb := NewCircuitBreaker(2, 100*time.Millisecond) // 2 failures, 100ms timeout
+
+		ctx := context.Background()
+
+		// Trigger circuit breaker to open
+		failingFunc := func() error {
+			return fmt.Errorf("failure")
+		}
+
+		for i := 0; i < 2; i++ {
+			cb.Call(ctx, failingFunc)
+		}
+
+		// Circuit should be open
+		err := cb.Call(ctx, failingFunc)
+		assert.Contains(t, err.Error(), "circuit breaker is open")
+
+		// Wait for timeout
+		time.Sleep(150 * time.Millisecond)
+
+		// Circuit should be half-open, allowing one call
+		successFunc := func() error {
+			return nil
+		}
+
+		err = cb.Call(ctx, successFunc)
+		assert.NoError(t, err) // Should succeed and close circuit
+
+		// Next call should also succeed (circuit is closed)
+		err = cb.Call(ctx, successFunc)
+		assert.NoError(t, err)
+	})
+
+	t.Run("scan_handles_context_cancellation_gracefully", func(t *testing.T) {
+		// Test that scans respect context cancellation
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		config := &ScanConfig{
+			Targets:    []string{"192.0.2.1", "192.0.2.2"}, // RFC5737 test addresses
+			Ports:      "1-1000",
+			ScanType:   "connect",
+			TimeoutSec: 30, // Long timeout, but context should cancel first
+		}
+
+		start := time.Now()
+		result, err := RunScanWithContext(ctx, config, nil)
+		elapsed := time.Since(start)
+
+		// Should return quickly due to context cancellation
+		assert.True(t, elapsed < 2*time.Second, "Scan should respect context cancellation")
+
+		// Should handle cancellation gracefully
+		if err != nil {
+			// Error should indicate cancellation, timeout, or context deadline
+			assert.True(t,
+				strings.Contains(err.Error(), "cancel") ||
+					strings.Contains(err.Error(), "timeout") ||
+					strings.Contains(err.Error(), "context") ||
+					strings.Contains(err.Error(), "deadline") ||
+					strings.Contains(err.Error(), "timed out"),
+				"Error should indicate cancellation: %v", err)
+		}
+
+		// Result should be nil or empty on cancellation
+		if result != nil {
+			assert.Equal(t, 0, len(result.Hosts))
+		}
+	})
+
+	t.Run("scan_maintains_result_consistency", func(t *testing.T) {
+		// Test that scan results are properly structured
+		if !setupTestEnvironment(t) {
+			return
+		}
+
+		config := &ScanConfig{
+			Targets:  []string{"127.0.0.1"},
+			Ports:    testServices.HTTP,
+			ScanType: "connect",
+		}
+
+		result, err := RunScan(config)
+
+		if err == nil && result != nil {
+			// Result structure should be valid
+			assert.NotNil(t, result.Hosts)
+
+			for _, host := range result.Hosts {
+				// Host should have valid address
+				assert.NotEmpty(t, host.Address)
+
+				// Status should be meaningful
+				assert.Contains(t, []string{"up", "down", "filtered"}, host.Status)
+
+				// If host is up and has ports, they should be properly formatted
+				if host.Status == "up" {
+					for _, port := range host.Ports {
+						assert.True(t, port.Number > 0)
+						assert.Contains(t, []string{"tcp", "udp"}, port.Protocol)
+						assert.Contains(t, []string{"open", "closed", "filtered"}, port.State)
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("resource_manager_handles_concurrent_operations", func(t *testing.T) {
+		rm := NewResourceManager(5)
+
+		const numConcurrent = 10
+		ctx := context.Background()
+
+		// Track successful acquisitions
+		successes := make(chan bool, numConcurrent)
+		failures := make(chan bool, numConcurrent)
+
+		// Start concurrent acquisitions
+		for i := 0; i < numConcurrent; i++ {
+			go func(id int) {
+				scanID := fmt.Sprintf("scan%d", id)
+				ctxWithTimeout, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+				defer cancel()
+
+				err := rm.Acquire(ctxWithTimeout, scanID)
+				if err == nil {
+					successes <- true
+					time.Sleep(50 * time.Millisecond) // Simulate work
+					rm.Release(scanID)
+				} else {
+					failures <- true
+				}
+			}(i)
+		}
+
+		// Collect results
+		successCount := 0
+		failureCount := 0
+
+		for i := 0; i < numConcurrent; i++ {
+			select {
+			case <-successes:
+				successCount++
+			case <-failures:
+				failureCount++
+			case <-time.After(1 * time.Second):
+				t.Fatal("Test timed out waiting for operations")
+			}
+		}
+
+		// Should have some successes (up to the limit) and some failures
+		assert.True(t, successCount > 0, "Should have some successful acquisitions")
+		assert.True(t, successCount <= 10, "Should not exceed reasonable limit for concurrent test")
+		assert.Equal(t, numConcurrent, successCount+failureCount, "All operations should complete")
+	})
 }

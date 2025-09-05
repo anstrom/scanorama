@@ -526,19 +526,39 @@ type ScanProfile struct {
 
 // getProfileConfig retrieves profile configuration
 func (s *Scheduler) getProfileConfig(ctx context.Context, profileID string) (*ScanProfile, error) {
-	query := `SELECT id, name, ports, scan_type, timeout_seconds FROM profiles WHERE id = $1`
+	query := `SELECT id, name, ports, scan_type, timing FROM scan_profiles WHERE id = $1`
 
 	var profile ScanProfile
+	var timing *string
 	err := s.db.QueryRowContext(ctx, query, profileID).Scan(
 		&profile.ID,
 		&profile.Name,
 		&profile.Ports,
 		&profile.ScanType,
-		&profile.TimeoutSec,
+		&timing,
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query profile: %w", err)
+		return nil, fmt.Errorf("failed to get profile: %w", err)
+	}
+
+	// Convert timing to timeout seconds (default to 30 if not set)
+	profile.TimeoutSec = 30
+	if timing != nil {
+		switch *timing {
+		case "0", "paranoid":
+			profile.TimeoutSec = 300
+		case "1", "sneaky":
+			profile.TimeoutSec = 180
+		case "2", "polite":
+			profile.TimeoutSec = 120
+		case "3", "normal":
+			profile.TimeoutSec = 60
+		case "4", "aggressive":
+			profile.TimeoutSec = 30
+		case "5", "insane":
+			profile.TimeoutSec = 15
+		}
 	}
 
 	return &profile, nil
