@@ -19,6 +19,7 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/discovery"
 	"github.com/anstrom/scanorama/internal/profiles"
+	"github.com/anstrom/scanorama/internal/scanning"
 )
 
 // Scheduler manages scheduled discovery and scanning jobs.
@@ -445,23 +446,119 @@ func (s *Scheduler) cleanupJobExecution(jobID uuid.UUID) {
 
 // processHostsForScanning processes each host for scanning with appropriate profiles.
 func (s *Scheduler) processHostsForScanning(ctx context.Context, hosts []*db.Host, config *ScanJobConfig) {
-	// TODO: Implement actual scanning logic here
-	// This would integrate with the existing scan functionality
-	// For now, just log that we would scan these hosts
+	if len(hosts) == 0 {
+		return
+	}
 
+	log.Printf("Starting scan of %d hosts with scheduler", len(hosts))
+
+	// Process hosts in batches to avoid overwhelming the system
+	batchSize := 10
+	for i := 0; i < len(hosts); i += batchSize {
+		end := i + batchSize
+		if end > len(hosts) {
+			end = len(hosts)
+		}
+
+		batch := hosts[i:end]
+		s.processBatchScan(ctx, batch, config)
+	}
+}
+
+// processBatchScan processes a batch of hosts for scanning
+func (s *Scheduler) processBatchScan(ctx context.Context, hosts []*db.Host, config *ScanJobConfig) {
 	for _, host := range hosts {
 		profileID := s.selectProfileForHost(ctx, host, config.ProfileID)
 		if profileID == "" {
+			log.Printf("Skipping host %s - no suitable profile found", host.IPAddress.String())
 			continue
 		}
 
-		osFamily := "unknown"
-		if host.OSFamily != nil {
-			osFamily = *host.OSFamily
+		// Get profile configuration
+		profile, err := s.getProfileConfig(ctx, profileID)
+		if err != nil {
+			log.Printf("Failed to get profile %s for host %s: %v", profileID, host.IPAddress.String(), err)
+			continue
 		}
-		log.Printf("Would scan host %s (%s) with profile %s",
-			host.IPAddress, osFamily, profileID)
+
+		// Execute scan for this host
+		if err := s.executeHostScan(ctx, host, profile); err != nil {
+			log.Printf("Failed to scan host %s: %v", host.IPAddress.String(), err)
+			continue
+		}
+
+		log.Printf("Successfully initiated scan for host %s with profile %s", host.IPAddress.String(), profileID)
 	}
+}
+
+// executeHostScan executes a scan for a single host
+func (s *Scheduler) executeHostScan(ctx context.Context, host *db.Host, profile *ScanProfile) error {
+	// Create scan configuration based on profile
+	scanConfig := &scanning.ScanConfig{
+		Targets:    []string{host.IPAddress.String()},
+		Ports:      profile.Ports,
+		ScanType:   profile.ScanType,
+		TimeoutSec: profile.TimeoutSec,
+	}
+
+	// Execute the scan
+	result, err := scanning.RunScanWithContext(ctx, scanConfig, s.db)
+	if err != nil {
+		return fmt.Errorf("scan execution failed: %w", err)
+	}
+
+	// Update host record with scan results
+	if err := s.updateHostWithScanResults(ctx, host, result); err != nil {
+		log.Printf("Failed to update host %s with scan results: %v", host.IPAddress.String(), err)
+	}
+
+	return nil
+}
+
+// ScanProfile represents a scanning profile configuration
+type ScanProfile struct {
+	ID         string
+	Name       string
+	Ports      string
+	ScanType   string
+	TimeoutSec int
+}
+
+// getProfileConfig retrieves profile configuration
+func (s *Scheduler) getProfileConfig(ctx context.Context, profileID string) (*ScanProfile, error) {
+	query := `SELECT id, name, ports, scan_type, timeout_seconds FROM profiles WHERE id = $1`
+
+	var profile ScanProfile
+	err := s.db.QueryRowContext(ctx, query, profileID).Scan(
+		&profile.ID,
+		&profile.Name,
+		&profile.Ports,
+		&profile.ScanType,
+		&profile.TimeoutSec,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query profile: %w", err)
+	}
+
+	return &profile, nil
+}
+
+// updateHostWithScanResults updates the host record with scan results
+func (s *Scheduler) updateHostWithScanResults(ctx context.Context, host *db.Host, result *scanning.ScanResult) error {
+	if result == nil || len(result.Hosts) == 0 {
+		return nil
+	}
+
+	// Update last scanned time
+	query := `UPDATE hosts SET last_scanned = NOW(), scan_count = COALESCE(scan_count, 0) + 1 WHERE ip_address = $1`
+	_, err := s.db.ExecContext(ctx, query, host.IPAddress.String())
+	if err != nil {
+		return fmt.Errorf("failed to update host scan timestamp: %w", err)
+	}
+
+	// Store scan results (handled by scanning package)
+	return nil
 }
 
 // selectProfileForHost selects the appropriate profile for a host.

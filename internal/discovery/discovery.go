@@ -15,6 +15,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/errors"
+	"github.com/anstrom/scanorama/internal/logging"
 )
 
 const (
@@ -36,6 +38,10 @@ const (
 	rfc3021NetworkSize    = 31
 	singleHostNetworkSize = 32
 	minNmapOutputFields   = 5
+	// Retry configuration
+	maxRetryAttempts = 3
+	baseRetryDelay   = 2 * time.Second
+	maxRetryDelay    = 30 * time.Second
 )
 
 // Engine handles network discovery operations.
@@ -176,11 +182,13 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 	fmt.Printf("Starting nmap discovery with %d targets, method=%s, timeout=%v\n",
 		len(targets), config.Method, dynamicTimeout)
 
-	// Use nmap for host discovery with generated targets
-	discoveredHosts, err := e.nmapDiscoveryWithTargets(ctx, targets, config, dynamicTimeout)
+	// Use nmap for host discovery with generated targets with retry logic
+	discoveredHosts, err := e.nmapDiscoveryWithResilience(ctx, targets, config, dynamicTimeout)
 	if err != nil {
 		job.Status = db.DiscoveryJobStatusFailed
-		fmt.Printf("Discovery failed: %v\n", err)
+		logging.ErrorDiscovery("Discovery failed", job.Network.String(), err,
+			"method", config.Method,
+			"target_count", len(targets))
 		return
 	}
 
@@ -309,23 +317,92 @@ func (e *Engine) nmapDiscoveryWithTargets(ctx context.Context, targets []string,
 	// Create scanner with context
 	scanner, err := nmap.NewScanner(ctx, options...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create nmap scanner: %w", err)
+		return nil, errors.WrapDiscoveryError(errors.CodeScanFailed, "failed to create nmap scanner", err)
 	}
 
 	// Execute nmap scan
 	result, warnings, err := scanner.Run()
 	if err != nil {
-		return nil, fmt.Errorf("nmap scan failed: %w", err)
+		return nil, errors.WrapDiscoveryError(errors.CodeScanFailed, "nmap scan failed", err)
 	}
 
 	if warnings != nil && len(*warnings) > 0 {
-		log.Printf("Discovery scan completed with warnings: %v", *warnings)
+		logging.Warn("Discovery scan completed with warnings", "warnings", *warnings, "target_count", len(targets))
 	}
 
 	// Convert nmap results to discovery results
 	results := e.convertNmapResultsToDiscovery(result, config.Method)
 
 	return results, nil
+}
+
+// nmapDiscoveryWithResilience performs discovery with retry logic and better error handling.
+func (e *Engine) nmapDiscoveryWithResilience(ctx context.Context, targets []string, config *Config,
+	timeout time.Duration) ([]Result, error) {
+	var lastError error
+	retryDelay := baseRetryDelay
+
+	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
+		// Check context cancellation before each attempt
+		select {
+		case <-ctx.Done():
+			return nil, errors.WrapDiscoveryError(errors.CodeCanceled, "discovery cancelled", ctx.Err())
+		default:
+		}
+
+		logging.Info("Starting discovery attempt",
+			"attempt", attempt,
+			"max_attempts", maxRetryAttempts,
+			"target_count", len(targets),
+			"method", config.Method)
+
+		results, err := e.nmapDiscoveryWithTargets(ctx, targets, config, timeout)
+		if err == nil {
+			logging.Info("Discovery completed successfully",
+				"attempt", attempt,
+				"hosts_found", len(results),
+				"target_count", len(targets))
+			return results, nil
+		}
+
+		lastError = err
+
+		// Check if error is retryable
+		if !errors.IsRetryable(err) {
+			logging.Error("Discovery failed with non-retryable error",
+				"attempt", attempt,
+				"error", err,
+				"target_count", len(targets))
+			break
+		}
+
+		// Don't retry on last attempt
+		if attempt == maxRetryAttempts {
+			break
+		}
+
+		logging.Warn("Discovery attempt failed, retrying",
+			"attempt", attempt,
+			"error", err,
+			"retry_delay", retryDelay,
+			"next_attempt", attempt+1)
+
+		// Wait before retrying with exponential backoff
+		select {
+		case <-ctx.Done():
+			return nil, errors.WrapDiscoveryError(errors.CodeCanceled, "discovery cancelled during retry", ctx.Err())
+		case <-time.After(retryDelay):
+		}
+
+		// Exponential backoff with jitter
+		retryDelay *= 2
+		if retryDelay > maxRetryDelay {
+			retryDelay = maxRetryDelay
+		}
+	}
+
+	return nil, errors.WrapDiscoveryError(errors.CodeDiscoveryFailed,
+		fmt.Sprintf("discovery failed after %d attempts", maxRetryAttempts), lastError)
 }
 
 // buildNmapLibraryOptions constructs nmap options using the library for target discovery.
@@ -503,7 +580,7 @@ func (e *Engine) saveDiscoveredHosts(ctx context.Context, results []Result) erro
 		return nil
 	}
 
-	var errors []string
+	var errs []string
 
 	for _, result := range results {
 		// Check if host already exists
@@ -514,7 +591,7 @@ func (e *Engine) saveDiscoveredHosts(ctx context.Context, results []Result) erro
 		if err != nil && err.Error() != sqlNoRowsError {
 			// Some other error occurred
 			log.Printf("Error checking existing host %s: %v", result.IPAddress, err)
-			errors = append(errors, fmt.Sprintf("failed to check host %s: %v", result.IPAddress, err))
+			errs = append(errs, fmt.Sprintf("failed to check host %s: %v", result.IPAddress, err))
 			continue
 		}
 
@@ -535,7 +612,7 @@ func (e *Engine) saveDiscoveredHosts(ctx context.Context, results []Result) erro
 
 			if err != nil {
 				log.Printf("Failed to update host %s: %v", result.IPAddress, err)
-				errors = append(errors, fmt.Sprintf("failed to update host %s: %v", result.IPAddress, err))
+				errs = append(errs, fmt.Sprintf("failed to update host %s: %v", result.IPAddress, err))
 			}
 		} else {
 			// Host doesn't exist, create it
@@ -550,13 +627,13 @@ func (e *Engine) saveDiscoveredHosts(ctx context.Context, results []Result) erro
 
 			if err != nil {
 				log.Printf("Failed to insert host %s: %v", result.IPAddress, err)
-				errors = append(errors, fmt.Sprintf("failed to insert host %s: %v", result.IPAddress, err))
+				errs = append(errs, fmt.Sprintf("failed to insert host %s: %v", result.IPAddress, err))
 			}
 		}
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("errors saving hosts: %s", strings.Join(errors, "; "))
+	if len(errs) > 0 {
+		return fmt.Errorf("errors saving hosts: %s", strings.Join(errs, "; "))
 	}
 
 	return nil
