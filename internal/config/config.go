@@ -34,9 +34,9 @@ const (
 	defaultBurstSize            = 200
 
 	// Default API configuration.
-	defaultAPIPort          = 8080
-	defaultMaxRequestSizeMB = 1024
-	bytesPerMB              = 1024
+	defaultAPIPort = 8080
+	// default max request size: 1 MiB
+	defaultMaxRequestSizeBytes = 1 << 20
 
 	// Default logging configuration.
 	defaultMaxSizeMB  = 100
@@ -409,7 +409,7 @@ func defaultAPIConfig() APIConfig {
 		RateLimitRequests: 100,
 		RateLimitWindow:   time.Minute,
 		RequestTimeout:    defaultRequestTimeoutSec * time.Second,
-		MaxRequestSize:    defaultMaxRequestSizeMB * bytesPerMB, // 1MB
+		MaxRequestSize:    defaultMaxRequestSizeBytes,
 	}
 }
 
