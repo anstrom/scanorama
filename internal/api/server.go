@@ -153,14 +153,14 @@ func (s *Server) Start(ctx context.Context) error {
 		"read_timeout", s.httpServer.ReadTimeout,
 		"write_timeout", s.httpServer.WriteTimeout)
 
-    // Start background Prometheus system metrics updates
-    if s.prom != nil {
-        mctx, cancel := context.WithCancel(context.Background())
-        s.mu.Lock()
-        s.metricsCancel = cancel
-        s.mu.Unlock()
-        go s.prom.StartPeriodicUpdates(mctx, prometheusUpdateInterval)
-    }
+	// Start background Prometheus system metrics updates
+	if s.prom != nil {
+		mctx, cancel := context.WithCancel(context.Background())
+		s.mu.Lock()
+		s.metricsCancel = cancel
+		s.mu.Unlock()
+		go s.prom.StartPeriodicUpdates(mctx, prometheusUpdateInterval)
+	}
 
 	// Start server in goroutine
 	errChan := make(chan error, 1)
@@ -203,14 +203,14 @@ func (s *Server) Stop() error {
 
 	s.logger.Info("Stopping API server")
 
-    // Stop background metrics updates if running (guarded by mutex)
-    s.mu.Lock()
-    cancel := s.metricsCancel
-    s.metricsCancel = nil
-    s.mu.Unlock()
-    if cancel != nil {
-        cancel()
-    }
+	// Stop background metrics updates if running (guarded by mutex)
+	s.mu.Lock()
+	cancel := s.metricsCancel
+	s.metricsCancel = nil
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 	defer cancel()
