@@ -5,6 +5,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -47,6 +48,9 @@ const (
 	maxContentSize  = 5 * 1024 * 1024  // Maximum config content size (5MB)
 	maxPathLength   = 4096             // Maximum file path length
 	permissionsMask = 0o777            // File permissions mask for validation
+
+	// Hot-reload configuration constants.
+	configCheckInterval = 5 * time.Second // Check config file for changes every 5 seconds
 )
 
 // Default configuration values.
@@ -79,6 +83,11 @@ type Config struct {
 
 	// Logging configuration
 	Logging LoggingConfig `yaml:"logging" json:"logging"`
+
+	// Hot-reload fields (not serialized)
+	filePath     string        `yaml:"-" json:"-"`
+	lastModified time.Time     `yaml:"-" json:"-"`
+	reloadChan   chan struct{} `yaml:"-" json:"-"`
 }
 
 // DaemonConfig holds daemon-specific settings.
@@ -545,7 +554,81 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	// Initialize hot-reload fields
+	config.filePath = path
+	config.reloadChan = make(chan struct{}, 1)
+	if stat, err := os.Stat(path); err == nil {
+		config.lastModified = stat.ModTime()
+	}
+
 	return config, nil
+}
+
+// WatchForReload monitors the configuration file for changes and triggers reloads.
+func (c *Config) WatchForReload(ctx context.Context) error {
+	if c.filePath == "" {
+		return fmt.Errorf("no file path set for configuration watching")
+	}
+
+	ticker := time.NewTicker(configCheckInterval) // Check every 5 seconds
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := c.checkForChanges(); err != nil {
+				// Log error but continue watching
+				continue
+			}
+		}
+	}
+}
+
+// checkForChanges checks if the configuration file has been modified.
+func (c *Config) checkForChanges() error {
+	stat, err := os.Stat(c.filePath)
+	if err != nil {
+		return fmt.Errorf("failed to stat config file: %w", err)
+	}
+
+	if stat.ModTime().After(c.lastModified) {
+		c.lastModified = stat.ModTime()
+		select {
+		case c.reloadChan <- struct{}{}:
+		default: // Channel is full, skip this reload signal
+		}
+	}
+
+	return nil
+}
+
+// ReloadChannel returns a channel that receives reload signals.
+func (c *Config) ReloadChannel() <-chan struct{} {
+	return c.reloadChan
+}
+
+// Reload reloads the configuration from the file.
+func (c *Config) Reload() error {
+	if c.filePath == "" {
+		return fmt.Errorf("no file path set for configuration reload")
+	}
+
+	newConfig, err := Load(c.filePath)
+	if err != nil {
+		return fmt.Errorf("failed to reload configuration: %w", err)
+	}
+
+	// Copy the new configuration values to the current config
+	c.Daemon = newConfig.Daemon
+	c.Database = newConfig.Database
+	c.Scanning = newConfig.Scanning
+	c.API = newConfig.API
+	c.Discovery = newConfig.Discovery
+	c.Logging = newConfig.Logging
+
+	return nil
 }
 
 // Save saves configuration to a file.
