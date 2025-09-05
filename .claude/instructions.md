@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Project**: Scanorama - Network scanning and discovery tool
-- **Language**: Go 1.24.6
+- **Language**: Go 1.25.1
 - **Current Version**: 0.2.0 (API refactoring in progress)
 - **Root Directory**: `scanorama/`
 

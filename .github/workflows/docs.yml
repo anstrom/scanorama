@@ -4,27 +4,27 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - 'docs/**'
-      - 'internal/api/**'
-      - 'cmd/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/docs.yml'
-      - '**/*.go'
+      - "docs/**"
+      - "internal/api/**"
+      - "cmd/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/docs.yml"
+      - "**/*.go"
   pull_request:
     branches: [main]
     paths:
-      - 'docs/**'
-      - 'internal/api/**'
-      - 'cmd/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/docs.yml'
-      - '**/*.go'
+      - "docs/**"
+      - "internal/api/**"
+      - "cmd/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/docs.yml"
+      - "**/*.go"
   workflow_dispatch:
 
 env:
-  GO_VERSION: "1.24.6"
+  GO_VERSION: "1.25.1"
   NODE_VERSION: "22"
 
 permissions:
@@ -185,7 +185,13 @@ jobs:
   docs-summary:
     name: Documentation Summary
     runs-on: ubuntu-latest
-    needs: [validate-openapi, generate-docs, test-client-generation, check-docs-coverage]
+    needs:
+      [
+        validate-openapi,
+        generate-docs,
+        test-client-generation,
+        check-docs-coverage,
+      ]
     if: always()
     steps:
       - name: Documentation pipeline summary

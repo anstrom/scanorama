@@ -143,7 +143,7 @@ quality: ## Run comprehensive code quality checks (lint + format + security)
 
 lint: ## Run golangci-lint to check code quality
 	@echo "Installing latest golangci-lint..."
-	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) v2.1.5
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) v2.4.0
 	@echo "Running golangci-lint..."
 	@$(GOBIN)/golangci-lint run --config .golangci.yml
 
