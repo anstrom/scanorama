@@ -52,11 +52,11 @@ func RunScanWithDB(config *ScanConfig, database *db.DB) (*ScanResult, error) {
 // It uses nmap to scan the specified targets and ports, returning detailed results
 // about discovered hosts and services. If database is provided, results are stored.
 func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB) (*ScanResult, error) {
-	// Start timing for metrics
-	timer := metrics.NewTimer(metrics.MetricScanDuration, metrics.Labels{
-		metrics.LabelScanType: config.ScanType,
-	})
-	defer timer.Stop()
+    // Start timing for Prometheus metrics
+    scanStart := time.Now()
+    defer func() {
+        metrics.GetGlobalMetrics().RecordScanDuration(config.ScanType, time.Since(scanStart))
+    }()
 
 	// Log scan start
 	logging.Info("Starting scan operation",
@@ -66,8 +66,8 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 
 	// Validate the configuration
 	if err := validateScanConfig(config); err != nil {
-		metrics.IncrementScanErrors(config.ScanType, "validation", "config_invalid")
-		return nil, errors.WrapScanError(errors.CodeValidation, "invalid configuration", err)
+        metrics.GetGlobalMetrics().IncrementScanErrors(config.ScanType, "config_invalid")
+        return nil, errors.WrapScanError(errors.CodeValidation, "invalid configuration", err)
 	}
 
 	// Apply timeout if specified
@@ -82,11 +82,11 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 	defer func() {
 		scanResult.Complete()
 		// Record scan completion metrics
-		status := "success"
-		if scanResult.Error != nil {
-			status = "error"
-		}
-		metrics.IncrementScanTotal(config.ScanType, status)
+        status := "success"
+        if scanResult.Error != nil {
+            status = "error"
+        }
+        metrics.GetGlobalMetrics().IncrementScansTotal(config.ScanType, status)
 		logging.Info("Scan operation completed",
 			"scan_type", config.ScanType,
 			"duration", scanResult.Duration,
@@ -99,12 +99,12 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 	if err != nil {
 		// Check if this is a timeout error and preserve that information
 		if strings.Contains(err.Error(), "timed out") || ctx.Err() == context.DeadlineExceeded {
-			metrics.IncrementScanErrors(config.ScanType, "scanner", "timeout")
+            metrics.GetGlobalMetrics().IncrementScanErrors(config.ScanType, "timeout")
 			logging.Error("Scanner execution timed out", "scan_type", config.ScanType, "error", err)
 			return nil, errors.WrapScanError(errors.CodeTimeout, "scan operation timed out", err)
 		}
 
-		metrics.IncrementScanErrors(config.ScanType, "scanner", "execution_failed")
+        metrics.GetGlobalMetrics().IncrementScanErrors(config.ScanType, "execution_failed")
 		logging.Error("Scanner execution failed", "scan_type", config.ScanType, "error", err)
 		return nil, errors.WrapScanError(errors.CodeScanFailed, "scanner execution failed", err)
 	}

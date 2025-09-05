@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
 
 	_ "github.com/anstrom/scanorama/docs/swagger" // Import generated swagger docs
 	apihandlers "github.com/anstrom/scanorama/internal/api/handlers"
@@ -28,23 +29,33 @@ import (
 
 // Server timeout constants.
 const (
-	serverShutdownTimeout = 30 * time.Second
-	healthCheckTimeout    = 5 * time.Second
+    serverShutdownTimeout = 30 * time.Second
+    healthCheckTimeout    = 5 * time.Second
+)
+
+// Metrics constants.
+const (
+    prometheusUpdateInterval = 5 * time.Second
+    statusServerErrorMin     = 500
 )
 
 // Server represents the API server.
 type Server struct {
-	httpServer *http.Server
-	router     *mux.Router
-	config     *config.Config
-	database   *db.DB
-	logger     *slog.Logger
-	metrics    *metrics.Registry
-	startTime  time.Time
+    httpServer *http.Server
+    router     *mux.Router
+    config     *config.Config
+    database   *db.DB
+    logger     *slog.Logger
+    metrics    *metrics.Registry
+    prom       *metrics.PrometheusMetrics
+    startTime  time.Time
 
-	// State management
-	mu      sync.RWMutex
-	running bool
+    // State management
+    mu      sync.RWMutex
+    running bool
+
+    // background metrics updater
+    metricsCancel context.CancelFunc
 }
 
 // Config holds API server configuration.
@@ -85,10 +96,12 @@ func DefaultConfig() Config {
 
 // New creates a new API server instance.
 func New(cfg *config.Config, database *db.DB) (*Server, error) {
-	logger := logging.Default().With("component", "api")
+    logger := logging.Default().With("component", "api")
 
-	// Create metrics registry
-	metricsManager := metrics.NewRegistry()
+    // Create metrics registry
+    metricsManager := metrics.NewRegistry()
+    // Create Prometheus metrics (global instance)
+    promMetrics := metrics.GetGlobalMetrics()
 
 	// Create router
 	router := mux.NewRouter()
@@ -96,14 +109,15 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 	// Get API config from main config
 	apiConfig := getAPIConfigFromConfig(cfg)
 
-	server := &Server{
-		router:    router,
-		config:    cfg,
-		database:  database,
-		logger:    logger,
-		metrics:   metricsManager,
-		startTime: time.Now(),
-	}
+    server := &Server{
+        router:    router,
+        config:    cfg,
+        database:  database,
+        logger:    logger,
+        metrics:   metricsManager,
+        prom:      promMetrics,
+        startTime: time.Now(),
+    }
 
 	// Setup routes
 	server.setupRoutes()
@@ -139,8 +153,15 @@ func (s *Server) Start(ctx context.Context) error {
 		"read_timeout", s.httpServer.ReadTimeout,
 		"write_timeout", s.httpServer.WriteTimeout)
 
-	// Start server in goroutine
-	errChan := make(chan error, 1)
+    // Start background Prometheus system metrics updates
+    if s.prom != nil {
+        mctx, cancel := context.WithCancel(context.Background())
+        s.metricsCancel = cancel
+        go s.prom.StartPeriodicUpdates(mctx, prometheusUpdateInterval)
+    }
+
+    // Start server in goroutine
+    errChan := make(chan error, 1)
 	go func() {
 		err := s.httpServer.ListenAndServe()
 		// Mark as not running when server stops for any reason
@@ -178,10 +199,15 @@ func (s *Server) Stop() error {
 	s.running = false
 	s.mu.Unlock()
 
-	s.logger.Info("Stopping API server")
+    s.logger.Info("Stopping API server")
 
-	ctx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
-	defer cancel()
+    // Stop background metrics updates if running
+    if s.metricsCancel != nil {
+        s.metricsCancel()
+    }
+
+    ctx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
+    defer cancel()
 
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		s.logger.Error("API server shutdown error", "error", err)
@@ -204,7 +230,9 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/health", s.healthHandler).Methods("GET")
 	api.HandleFunc("/status", s.statusHandler).Methods("GET")
 	api.HandleFunc("/version", s.versionHandler).Methods("GET")
-	api.HandleFunc("/metrics", s.metricsHandler).Methods("GET")
+    api.HandleFunc("/metrics", s.metricsHandler).Methods("GET")
+    // Root-level Prometheus scrape endpoint (common convention)
+    s.router.Handle("/metrics", promhttp.HandlerFor(s.prom.GetRegistry(), promhttp.HandlerOpts{})).Methods("GET")
 
 	// Create handler instances
 	scanHandler := apihandlers.NewScanHandler(s.database, s.logger, s.metrics)
@@ -531,14 +559,12 @@ func (s *Server) versionHandler(w http.ResponseWriter, r *http.Request) {
 // @Failure 404 {object} handlers.ErrorResponse
 // @Router /metrics [get]
 func (s *Server) metricsHandler(w http.ResponseWriter, r *http.Request) {
-	metricsData := s.metrics.GetMetrics()
-
-	response := map[string]interface{}{
-		"metrics":   metricsData,
-		"timestamp": time.Now().UTC(),
-	}
-
-	s.WriteJSON(w, r, http.StatusOK, response)
+    if s.prom == nil {
+        http.Error(w, "metrics unavailable", http.StatusNotFound)
+        return
+    }
+    // Serve Prometheus exposition format
+    promhttp.HandlerFor(s.prom.GetRegistry(), promhttp.HandlerOpts{}).ServeHTTP(w, r)
 }
 
 // notImplementedHandler returns a not implemented response.
@@ -631,8 +657,8 @@ func (s *Server) recoveryMiddleware(next http.Handler) http.Handler {
 
 // loggingMiddleware logs HTTP requests.
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        start := time.Now()
 
 		// Wrap response writer to capture status code
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: 200}
@@ -658,7 +684,22 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		s.metrics.Histogram("http_request_duration_seconds", duration.Seconds(), map[string]string{
 			"method": r.Method,
 		})
-	})
+
+        // Prometheus HTTP metrics (use route template to avoid high cardinality)
+        if s.prom != nil {
+            pathLabel := r.URL.Path
+            if route := mux.CurrentRoute(r); route != nil {
+                if tmpl, err := route.GetPathTemplate(); err == nil && tmpl != "" {
+                    pathLabel = tmpl
+                }
+            }
+            s.prom.IncrementHTTPRequests(r.Method, pathLabel, fmt.Sprintf("%d", wrapped.statusCode))
+            s.prom.RecordHTTPDuration(r.Method, pathLabel, duration)
+            if wrapped.statusCode >= statusServerErrorMin {
+                s.prom.IncrementHTTPErrors(r.Method, pathLabel, "server_error")
+            }
+        }
+    })
 }
 
 // contentTypeMiddleware validates content type for POST/PUT requests.
