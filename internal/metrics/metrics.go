@@ -1,12 +1,19 @@
-// Package metrics provides basic monitoring and metrics collection for scanorama.
+// Package metrics provides enhanced monitoring and metrics collection for scanorama.
 // It supports counters, gauges, and histograms with label support for tracking
-// application performance and operational metrics.
+// application performance and operational metrics, including resource usage.
 package metrics
 
 import (
+	"fmt"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
+)
+
+const (
+	// Percentage calculation constant
+	percentageMultiplier = 100
 )
 
 // MetricType represents the type of metric.
@@ -43,6 +50,94 @@ func NewRegistry() *Registry {
 		metrics: make(map[string]*Metric),
 		enabled: true,
 	}
+}
+
+// PerformanceMetrics tracks resource usage and performance counters.
+type PerformanceMetrics struct {
+	mu              sync.RWMutex
+	startTime       time.Time
+	totalScans      int64
+	successfulScans int64
+	failedScans     int64
+	activeScans     int64
+	memoryUsage     uint64
+	goroutineCount  int
+	lastCollection  time.Time
+}
+
+// NewPerformanceMetrics creates a new performance metrics tracker.
+func NewPerformanceMetrics() *PerformanceMetrics {
+	return &PerformanceMetrics{
+		startTime:      time.Now(),
+		lastCollection: time.Now(),
+	}
+}
+
+// UpdateResourceMetrics updates memory and goroutine metrics.
+func (pm *PerformanceMetrics) UpdateResourceMetrics() {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	pm.memoryUsage = m.Alloc
+	pm.goroutineCount = runtime.NumGoroutine()
+	pm.lastCollection = time.Now()
+}
+
+// IncrementScans increments scan counters.
+func (pm *PerformanceMetrics) IncrementScans(success bool) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	pm.totalScans++
+	if success {
+		pm.successfulScans++
+	} else {
+		pm.failedScans++
+	}
+}
+
+// SetActiveScans sets the number of currently active scans.
+func (pm *PerformanceMetrics) SetActiveScans(count int64) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	pm.activeScans = count
+}
+
+// GetStats returns a snapshot of current performance statistics.
+func (pm *PerformanceMetrics) GetStats() map[string]interface{} {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	uptime := time.Since(pm.startTime)
+	successRate := float64(0)
+	if pm.totalScans > 0 {
+		successRate = float64(pm.successfulScans) / float64(pm.totalScans) * percentageMultiplier
+	}
+
+	return map[string]interface{}{
+		"uptime_seconds":     uptime.Seconds(),
+		"total_scans":        pm.totalScans,
+		"successful_scans":   pm.successfulScans,
+		"failed_scans":       pm.failedScans,
+		"active_scans":       pm.activeScans,
+		"success_rate":       fmt.Sprintf("%.2f%%", successRate),
+		"memory_usage_bytes": pm.memoryUsage,
+		"memory_usage_mb":    pm.memoryUsage / 1024 / 1024,
+		"goroutine_count":    pm.goroutineCount,
+		"last_collection":    pm.lastCollection.Format(time.RFC3339),
+	}
+}
+
+// Global performance metrics instance
+var globalPerformanceMetrics = NewPerformanceMetrics()
+
+// GetGlobalPerformanceMetrics returns the global performance metrics instance.
+func GetGlobalPerformanceMetrics() *PerformanceMetrics {
+	return globalPerformanceMetrics
 }
 
 // SetEnabled enables or disables metrics collection.
