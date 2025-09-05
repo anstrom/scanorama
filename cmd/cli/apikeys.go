@@ -6,6 +6,7 @@ package cli
 // Trigger diagnostics refresh
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -297,8 +298,14 @@ func displayAPIKeysTable(keys []auth.APIKeyInfo) {
 			expires = key.ExpiresAt.Format("2006-01-02 15:04")
 		}
 
+		// Format ID - truncate if longer than 8 characters
+		displayID := key.ID
+		if len(key.ID) > 8 {
+			displayID = key.ID[:8] + "..."
+		}
+
 		_ = table.Append([]string{
-			key.ID[:8] + "...", // Short ID
+			displayID,
 			key.Name,
 			key.KeyPrefix,
 			status,
@@ -313,8 +320,21 @@ func displayAPIKeysTable(keys []auth.APIKeyInfo) {
 
 // displayAPIKeysJSON displays API keys in JSON format
 func displayAPIKeysJSON(keys []auth.APIKeyInfo) {
-	// TODO: Implement JSON marshaling and output
-	fmt.Println("JSON output not implemented yet")
+	output := struct {
+		APIKeys []auth.APIKeyInfo `json:"api_keys"`
+		Count   int               `json:"count"`
+	}{
+		APIKeys: keys,
+		Count:   len(keys),
+	}
+
+	jsonData, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error marshaling JSON: %v\n", err)
+		return
+	}
+
+	fmt.Println(string(jsonData))
 }
 
 // queryAPIKeys retrieves API keys from database with filters
