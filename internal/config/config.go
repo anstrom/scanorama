@@ -4,14 +4,15 @@
 package config
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strconv"
-	"time"
+    "bytes"
+    "context"
+    "encoding/json"
+    "fmt"
+    "os"
+    "path/filepath"
+    "strconv"
+    "sync"
+    "time"
 
 	"gopkg.in/yaml.v3"
 
@@ -85,6 +86,7 @@ type Config struct {
 	Logging LoggingConfig `yaml:"logging" json:"logging"`
 
 	// Hot-reload fields (not serialized)
+	mu           sync.RWMutex  `yaml:"-" json:"-"`
 	filePath     string        `yaml:"-" json:"-"`
 	lastModified time.Time     `yaml:"-" json:"-"`
 	reloadChan   chan struct{} `yaml:"-" json:"-"`
@@ -588,11 +590,16 @@ func (c *Config) WatchForReload(ctx context.Context) error {
 
 // checkForChanges checks if the configuration file has been modified.
 func (c *Config) checkForChanges() error {
-	stat, err := os.Stat(c.filePath)
+	c.mu.RLock()
+	path := c.filePath
+	c.mu.RUnlock()
+
+	stat, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("failed to stat config file: %w", err)
 	}
 
+	c.mu.Lock()
 	if stat.ModTime().After(c.lastModified) {
 		c.lastModified = stat.ModTime()
 		select {
@@ -600,6 +607,7 @@ func (c *Config) checkForChanges() error {
 		default: // Channel is full, skip this reload signal
 		}
 	}
+	c.mu.Unlock()
 
 	return nil
 }
@@ -611,22 +619,28 @@ func (c *Config) ReloadChannel() <-chan struct{} {
 
 // Reload reloads the configuration from the file.
 func (c *Config) Reload() error {
-	if c.filePath == "" {
+	c.mu.RLock()
+	path := c.filePath
+	c.mu.RUnlock()
+
+	if path == "" {
 		return fmt.Errorf("no file path set for configuration reload")
 	}
 
-	newConfig, err := Load(c.filePath)
+	newConfig, err := Load(path)
 	if err != nil {
 		return fmt.Errorf("failed to reload configuration: %w", err)
 	}
 
 	// Copy the new configuration values to the current config
+	c.mu.Lock()
 	c.Daemon = newConfig.Daemon
 	c.Database = newConfig.Database
 	c.Scanning = newConfig.Scanning
 	c.API = newConfig.API
 	c.Discovery = newConfig.Discovery
 	c.Logging = newConfig.Logging
+	c.mu.Unlock()
 
 	return nil
 }
@@ -919,25 +933,35 @@ func (c *Config) validateLogging() error {
 
 // GetDatabaseConfig returns the database configuration.
 func (c *Config) GetDatabaseConfig() db.Config {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.Database
 }
 
 // IsDaemonMode returns true if running in daemon mode.
 func (c *Config) IsDaemonMode() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.Daemon.Daemonize
 }
 
 // GetAPIAddress returns the full API address.
 func (c *Config) GetAPIAddress() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return fmt.Sprintf("%s:%d", c.API.Host, c.API.Port)
 }
 
 // IsAPIEnabled returns true if API server is enabled.
 func (c *Config) IsAPIEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.API.Enabled
 }
 
 // GetLogOutput returns the log output destination.
 func (c *Config) GetLogOutput() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.Logging.Output
 }
