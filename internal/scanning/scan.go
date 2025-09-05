@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Ullaakut/nmap/v3"
@@ -28,6 +29,14 @@ const (
 	ipv6CIDRBits          = 128
 	defaultTargetCapacity = 10
 	nullMethodValue       = "NULL"
+	// Resource management constants
+	maxSemaphoreSize        = 50
+	circuitBreakerThreshold = 5
+	circuitBreakerTimeout   = 30 * time.Second
+	// Circuit breaker states
+	stateOpen     = "open"
+	stateClosed   = "closed"
+	stateHalfOpen = "half-open"
 )
 
 const (
@@ -125,23 +134,143 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 	return scanResult, nil
 }
 
-// createAndRunScanner creates an nmap scanner with the given config and runs it.
-func createAndRunScanner(ctx context.Context, config *ScanConfig) (*nmap.Run, error) {
-	options := buildScanOptions(config)
+// ResourceManager manages scan resources and prevents resource exhaustion.
+type ResourceManager struct {
+	semaphore      chan struct{}
+	activeScans    sync.Map
+	circuitBreaker *CircuitBreaker
+}
 
-	scanner, err := nmap.NewScanner(ctx, options...)
-	if err != nil {
-		return nil, &ScanError{Op: "create scanner", Err: err}
+// NewResourceManager creates a new resource manager.
+func NewResourceManager(maxConcurrent int) *ResourceManager {
+	if maxConcurrent <= 0 {
+		maxConcurrent = maxSemaphoreSize
+	}
+	return &ResourceManager{
+		semaphore:      make(chan struct{}, maxConcurrent),
+		circuitBreaker: NewCircuitBreaker(circuitBreakerThreshold, circuitBreakerTimeout),
+	}
+}
+
+// Acquire acquires resources for a scan operation.
+func (rm *ResourceManager) Acquire(ctx context.Context, scanID string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case rm.semaphore <- struct{}{}:
+		rm.activeScans.Store(scanID, time.Now())
+		return nil
+	}
+}
+
+// Release releases resources after a scan operation.
+func (rm *ResourceManager) Release(scanID string) {
+	rm.activeScans.Delete(scanID)
+	select {
+	case <-rm.semaphore:
+	default:
+	}
+}
+
+// CircuitBreaker implements the circuit breaker pattern for scan operations.
+type CircuitBreaker struct {
+	mu           sync.RWMutex
+	failures     int
+	threshold    int
+	timeout      time.Duration
+	lastFailTime time.Time
+	state        string // stateClosed, stateOpen, stateHalfOpen
+}
+
+// NewCircuitBreaker creates a new circuit breaker.
+func NewCircuitBreaker(threshold int, timeout time.Duration) *CircuitBreaker {
+	return &CircuitBreaker{
+		threshold: threshold,
+		timeout:   timeout,
+		state:     stateClosed,
+	}
+}
+
+// Call executes a function through the circuit breaker.
+func (cb *CircuitBreaker) Call(ctx context.Context, fn func() error) error {
+	cb.mu.RLock()
+	state := cb.state
+	lastFailTime := cb.lastFailTime
+	cb.mu.RUnlock()
+
+	// Check if circuit should be closed after timeout
+	if state == stateOpen && time.Since(lastFailTime) > cb.timeout {
+		cb.mu.Lock()
+		cb.state = stateHalfOpen
+		cb.mu.Unlock()
+		state = stateHalfOpen
 	}
 
-	// Run the scan
-	result, warnings, err := scanner.Run()
+	// Reject if circuit is open
+	if state == stateOpen {
+		return errors.NewScanError(errors.CodeServiceUnavailable, "circuit breaker is open")
+	}
+
+	err := fn()
+
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
 	if err != nil {
-		return nil, &ScanError{Op: "run scan", Err: err}
+		cb.failures++
+		cb.lastFailTime = time.Now()
+		if cb.failures >= cb.threshold {
+			cb.state = stateOpen
+		}
+		return err
+	}
+
+	// Success - reset on half-open or keep closed
+	cb.failures = 0
+	cb.state = stateClosed
+	return nil
+}
+
+var globalResourceManager = NewResourceManager(maxConcurrency)
+
+func createAndRunScanner(ctx context.Context, config *ScanConfig) (*nmap.Run, error) {
+	scanID := fmt.Sprintf("scan-%d", time.Now().UnixNano())
+
+	// Acquire resources
+	if err := globalResourceManager.Acquire(ctx, scanID); err != nil {
+		return nil, &ScanError{Op: "acquire resources", Err: err}
+	}
+	defer globalResourceManager.Release(scanID)
+
+	// Use circuit breaker for scan execution
+	var result *nmap.Run
+	var warnings *[]string
+
+	err := globalResourceManager.circuitBreaker.Call(ctx, func() error {
+		options := buildScanOptions(config)
+
+		scanner, err := nmap.NewScanner(ctx, options...)
+		if err != nil {
+			return &ScanError{Op: "create scanner", Err: err}
+		}
+
+		result, warnings, err = scanner.Run()
+		if err != nil {
+			return &ScanError{Op: "run scan", Err: err}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	if warnings != nil && len(*warnings) > 0 {
-		log.Printf("Scan completed with warnings: %v", *warnings)
+		logging.Warn("Scan completed with warnings",
+			"scan_id", scanID,
+			"warnings", *warnings,
+			"scan_type", config.ScanType)
 	}
 
 	return result, nil
