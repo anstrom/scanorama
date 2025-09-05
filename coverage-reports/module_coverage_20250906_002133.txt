@@ -1,0 +1,10 @@
+internal/errors:60.6
+internal/logging:98.4
+internal/config:66.1
+internal/auth:18.3
+internal/db:15.7
+internal/discovery:51.0
+internal/scanning:36.8
+internal/workers:86.0
+internal/api:84.6
+internal/daemon:32.3

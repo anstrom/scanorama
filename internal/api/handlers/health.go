@@ -5,15 +5,14 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // DatabasePinger defines the interface for database health checking.
@@ -301,29 +300,8 @@ func (h *HealthHandler) Version(w http.ResponseWriter, r *http.Request) {
 // Metrics provides metrics endpoint (Prometheus format).
 func (h *HealthHandler) Metrics(w http.ResponseWriter, r *http.Request) {
 	h.logger.Debug("Metrics requested", "remote_addr", r.RemoteAddr)
-
-	if h.metrics == nil {
-		http.Error(w, "Metrics not available", http.StatusNotFound)
-		return
-	}
-
-	// Export metrics in simple format (Prometheus format would need additional implementation)
-	metricsData := h.metrics.GetMetrics()
-	w.Header().Set("Content-Type", "text/plain")
-	for _, metric := range metricsData {
-		_, _ = fmt.Fprintf(w, "# TYPE %s %s\n", metric.Name, string(metric.Type))
-		labelStr := ""
-		if len(metric.Labels) > 0 {
-			labelParts := make([]string, 0, len(metric.Labels))
-			for k, v := range metric.Labels {
-				labelParts = append(labelParts, fmt.Sprintf("%s=%q", k, v))
-			}
-			labelStr = "{" + strings.Join(labelParts, ",") + "}"
-		}
-		_, _ = fmt.Fprintf(w, "%s%s %g %d\n", metric.Name, labelStr, metric.Value, metric.Timestamp.Unix())
-	}
-
-	// Record metrics (don't count this in the metrics to avoid recursion)
+	// Serve Prometheus metrics via the global registry
+	promhttp.HandlerFor(metrics.GetGlobalMetrics().GetRegistry(), promhttp.HandlerOpts{}).ServeHTTP(w, r)
 }
 
 // getSystemInfo gathers system information.
