@@ -541,6 +541,104 @@ database:
 	})
 }
 
+func TestValidateHelpersAndSave(t *testing.T) {
+	t.Run("validateConfigPath rejects traversal and bad ext", func(t *testing.T) {
+		if err := validateConfigPath("../etc/passwd"); err == nil {
+			t.Error("expected error for path traversal")
+		}
+		if err := validateConfigPath("config.exe"); err == nil {
+			t.Error("expected error for unsupported extension")
+		}
+		if err := validateConfigPath("config.yaml"); err != nil {
+			t.Errorf("unexpected error for valid path: %v", err)
+		}
+	})
+
+	t.Run("validateConfigPermissions detects insecure perms", func(t *testing.T) {
+		dir := t.TempDir()
+		p := filepath.Join(dir, "cfg.yaml")
+		if err := os.WriteFile(p, []byte("a: b"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validateConfigPermissions(fi); err == nil {
+			t.Error("expected error for world-readable file")
+		}
+		if err := os.Chmod(p, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fi, _ = os.Stat(p)
+		if err := validateConfigPermissions(fi); err != nil {
+			t.Errorf("unexpected error for secure perms: %v", err)
+		}
+	})
+
+	t.Run("validateConfigContent edge cases", func(t *testing.T) {
+		if err := validateConfigContent([]byte{}); err == nil {
+			t.Error("expected error for empty content")
+		}
+		big := make([]byte, maxContentSize+1)
+		if err := validateConfigContent(big); err == nil {
+			t.Error("expected error for oversized content")
+		}
+		// 2% null bytes triggers binary heuristic
+		data := make([]byte, 200)
+		for i := 0; i < 10; i++ { // 10/200 = 5%
+			data[i] = 0
+		}
+		if err := validateConfigContent(data); err == nil {
+			t.Error("expected error for binary-like content")
+		}
+	})
+
+	t.Run("safeJSONUnmarshal unknown fields cause error", func(t *testing.T) {
+		var out struct {
+			A int `json:"a"`
+		}
+		err := safeJSONUnmarshal([]byte(`{"a":1,"b":2}`), &out)
+		if err == nil {
+			t.Error("expected error for unknown field")
+		}
+	})
+
+	t.Run("safeYAMLUnmarshal malformed yaml returns error", func(t *testing.T) {
+		var out struct {
+			A int `yaml:"a"`
+		}
+		if err := safeYAMLUnmarshal([]byte("a: [1,2"), &out); err == nil {
+			t.Error("expected YAML decode error")
+		}
+	})
+
+	t.Run("Save writes file successfully", func(t *testing.T) {
+		cfg := Default()
+		dir := t.TempDir()
+		p := filepath.Join(dir, "out.yaml")
+		if err := cfg.Save(p); err != nil {
+			t.Fatalf("Save() error: %v", err)
+		}
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("expected file to exist: %v", err)
+		}
+	})
+}
+
+func TestAccessorsAndDefaults(t *testing.T) {
+	cfg := Default()
+	if cfg == nil {
+		t.Fatal("Default() returned nil")
+	}
+	// Accessors
+	_ = cfg.GetDatabaseConfig()
+	_ = cfg.IsDaemonMode()
+	_ = cfg.IsAPIEnabled()
+	_ = cfg.GetLogOutput()
+	_ = cfg.GetAPIAddress()
+}
+
 func TestLoadWithEnv(t *testing.T) {
 	t.Run("override database config", func(t *testing.T) {
 		env := map[string]string{
