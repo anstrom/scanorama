@@ -484,6 +484,33 @@ func TestServerHelperMethods(t *testing.T) {
 	})
 }
 
+func TestMetricsExporter_ExposesHTTPMetricsWithRouteTemplate(t *testing.T) {
+    cfg := createTestConfig()
+    server, err := New(cfg, nil)
+    require.NoError(t, err)
+
+    // 1) Hit a real route to exercise loggingMiddleware and metrics
+    req := httptest.NewRequest(http.MethodGet, "/api/v1/version", http.NoBody)
+    rec := httptest.NewRecorder()
+    server.router.ServeHTTP(rec, req)
+    require.Equal(t, http.StatusOK, rec.Code)
+
+    // 2) Fetch Prometheus metrics
+    mreq := httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody)
+    mrec := httptest.NewRecorder()
+    server.router.ServeHTTP(mrec, mreq)
+    require.Equal(t, http.StatusOK, mrec.Code)
+
+    body := mrec.Body.String()
+    // Ensure our API request counter is present with templated path
+    require.Contains(t, body, "scanorama_api_requests_total")
+    require.Contains(t, body, "path=\"/api/v1/version\"")
+    require.Contains(t, body, "method=\"GET\"")
+
+    // Standard Go collector should be registered
+    require.Contains(t, body, "go_goroutines")
+}
+
 func TestPaginatedResponse(t *testing.T) {
 	cfg := createTestConfig()
 	server, err := New(cfg, nil)
