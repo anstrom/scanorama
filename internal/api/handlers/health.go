@@ -3,16 +3,16 @@
 package handlers
 
 import (
-    "context"
-    "encoding/json"
-    "log/slog"
-    "net/http"
-    "os"
-    "runtime"
-    "time"
+	"context"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"os"
+	"runtime"
+	"time"
 
 	"github.com/anstrom/scanorama/internal/metrics"
-    "github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // DatabasePinger defines the interface for database health checking.
@@ -299,9 +299,9 @@ func (h *HealthHandler) Version(w http.ResponseWriter, r *http.Request) {
 
 // Metrics provides metrics endpoint (Prometheus format).
 func (h *HealthHandler) Metrics(w http.ResponseWriter, r *http.Request) {
-    h.logger.Debug("Metrics requested", "remote_addr", r.RemoteAddr)
-    // Serve Prometheus metrics via the global registry
-    promhttp.HandlerFor(metrics.GetGlobalMetrics().GetRegistry(), promhttp.HandlerOpts{}).ServeHTTP(w, r)
+	h.logger.Debug("Metrics requested", "remote_addr", r.RemoteAddr)
+	// Serve Prometheus metrics via the global registry
+	promhttp.HandlerFor(metrics.GetGlobalMetrics().GetRegistry(), promhttp.HandlerOpts{}).ServeHTTP(w, r)
 }
 
 // getSystemInfo gathers system information.

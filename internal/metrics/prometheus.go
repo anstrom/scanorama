@@ -4,13 +4,13 @@
 package metrics
 
 import (
-    "context"
-    "runtime"
-    "sync"
-    "time"
+	"context"
+	"runtime"
+	"sync"
+	"time"
 
-    "github.com/prometheus/client_golang/prometheus"
-    "github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
 const (
@@ -68,7 +68,7 @@ type PrometheusMetrics struct {
 
 // NewPrometheusMetrics creates a new Prometheus metrics instance with all collectors
 func NewPrometheusMetrics() *PrometheusMetrics {
-    registry := prometheus.NewRegistry()
+	registry := prometheus.NewRegistry()
 
 	pm := &PrometheusMetrics{
 		startTime: time.Now(),
@@ -82,12 +82,12 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 	pm.initAPIMetrics()
 	pm.initSystemMetrics()
 
-    // Register all metrics with the registry
-    pm.registerMetrics()
+	// Register all metrics with the registry
+	pm.registerMetrics()
 
-    // Register standard Go and process collectors for runtime visibility
-    registry.MustRegister(collectors.NewGoCollector())
-    registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	// Register standard Go and process collectors for runtime visibility
+	registry.MustRegister(collectors.NewGoCollector())
+	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	return pm
 }
