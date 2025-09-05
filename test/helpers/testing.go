@@ -16,6 +16,8 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+
+	"github.com/anstrom/scanorama/internal/db"
 )
 
 const (
@@ -50,21 +52,21 @@ func NewTestDatabase(t *testing.T) *TestDatabase {
 	dsn := fmt.Sprintf("host=%s port=%s dbname=%s user=%s password=%s sslmode=%s",
 		host, port, dbname, user, password, sslmode)
 
-	db, err := sqlx.Connect("postgres", dsn)
+	sqlDB, err := sqlx.Connect("postgres", dsn)
 	if err != nil {
 		t.Skipf("Skipping test requiring database: %v", err)
 		return nil
 	}
 
 	// Test the connection
-	if err := db.Ping(); err != nil {
-		_ = db.Close()
+	if err := sqlDB.Ping(); err != nil {
+		_ = sqlDB.Close()
 		t.Skipf("Skipping test - database not responding: %v", err)
 		return nil
 	}
 
 	return &TestDatabase{
-		DB:       db,
+		DB:       sqlDB,
 		URL:      dsn,
 		Host:     host,
 		Port:     port,
@@ -146,6 +148,35 @@ func NewNetworkTestHelper() *NetworkTestHelper {
 		OpenPorts:   []int{},
 		ClosedPorts: []int{},
 		MockServers: []*MockHTTPServer{},
+	}
+}
+
+// SetupTestDB sets up a test database connection for integration tests
+func SetupTestDB(t testing.TB) *db.DB {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	database, _, err := ConnectToTestDatabase(ctx)
+	if err != nil {
+		t.Fatalf("Failed to setup test database: %v", err)
+	}
+
+	// Ensure schema is ready
+	if err := EnsureTestSchema(ctx, database); err != nil {
+		t.Fatalf("Failed to ensure test schema: %v", err)
+	}
+
+	return database
+}
+
+// CleanupTestDB cleans up test database resources
+func CleanupTestDB(t testing.TB, database *db.DB) {
+	t.Helper()
+
+	if database != nil {
+		_ = database.Close()
 	}
 }
 
@@ -296,17 +327,16 @@ func SetupTestDatabase(t *testing.T) (*TestDatabase, *TestCleanup) {
 	t.Helper()
 
 	cleanup := NewTestCleanup()
-	db := NewTestDatabase(t)
-	if db == nil {
+	testDB := NewTestDatabase(t)
+	if testDB == nil {
 		return nil, cleanup
 	}
 
 	cleanup.Add(func() {
-		db.Cleanup(t)
-		db.Close()
+		testDB.Close()
 	})
 
-	return db, cleanup
+	return testDB, cleanup
 }
 
 // SetupNetworkTest is a convenience function for network test setup
