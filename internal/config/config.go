@@ -4,19 +4,20 @@
 package config
 
 import (
-    "bytes"
-    "context"
-    "encoding/json"
-    "fmt"
-    "os"
-    "path/filepath"
-    "strconv"
-    "sync"
-    "time"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/fsnotify/fsnotify"
 )
 
 const (
@@ -572,20 +573,73 @@ func (c *Config) WatchForReload(ctx context.Context) error {
 		return fmt.Errorf("no file path set for configuration watching")
 	}
 
-	ticker := time.NewTicker(configCheckInterval) // Check every 5 seconds
-	defer ticker.Stop()
+	// Prefer fsnotify for responsiveness; fallback to polling
+    if tryFsnotifyWatch(ctx, c) == nil {
+        return nil
+    }
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := c.checkForChanges(); err != nil {
-				// Log error but continue watching
-				continue
-			}
-		}
-	}
+    ticker := time.NewTicker(configCheckInterval)
+    defer ticker.Stop()
+    for {
+        select {
+        case <-ctx.Done():
+            return ctx.Err()
+        case <-ticker.C:
+            _ = c.checkForChanges()
+        }
+    }
+}
+
+// tryFsnotifyWatch starts an fsnotify watcher loop with debounce. Returns an
+// error if fsnotify cannot be initialized or the directory cannot be watched.
+func tryFsnotifyWatch(ctx context.Context, c *Config) error {
+    watcher, err := fsnotify.NewWatcher()
+    if err != nil {
+        return err
+    }
+    defer func() { _ = watcher.Close() }()
+
+    c.mu.RLock()
+    path := c.filePath
+    c.mu.RUnlock()
+
+    // Watch parent dir to catch atomic renames
+    dir := filepath.Dir(path)
+    if werr := watcher.Add(dir); werr != nil {
+        return werr
+    }
+
+    // Debounce timer (constant chosen for editor write bursts)
+    var timer *time.Timer
+    var timerC <-chan time.Time
+    const debounce = 300 * time.Millisecond
+
+    for {
+        select {
+        case <-ctx.Done():
+            return ctx.Err()
+        case ev := <-watcher.Events:
+            if ev.Name != path {
+                continue
+            }
+            if timer != nil {
+                if !timer.Stop() {
+                    <-timerC
+                }
+            }
+            timer = time.NewTimer(debounce)
+            timerC = timer.C
+        case <-timerC:
+            _ = c.checkForChanges()
+            timer = nil
+            timerC = nil
+        case werr := <-watcher.Errors:
+            if werr != nil {
+                // Continue; polling will catch changes even if watcher is noisy
+                continue
+            }
+        }
+    }
 }
 
 // checkForChanges checks if the configuration file has been modified.
