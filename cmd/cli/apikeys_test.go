@@ -443,3 +443,51 @@ func TestAPIKeysJSONFormat(t *testing.T) {
 		}
 	})
 }
+
+func TestExecuteListAPIKeys_EmptyJSONOutput(t *testing.T) {
+	// This test verifies that when no API keys exist, JSON output still produces valid JSON
+	// rather than plain text "No API keys found." message
+	t.Run("empty_list_produces_valid_json", func(t *testing.T) {
+		// Capture stdout
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		require.NoError(t, err)
+		os.Stdout = w
+
+		// Set JSON output mode
+		originalOutput := apiKeyOutput
+		apiKeyOutput = "json"
+		defer func() {
+			apiKeyOutput = originalOutput
+		}()
+
+		// Test with empty slice (simulating no API keys in database)
+		displayAPIKeysJSON([]auth.APIKeyInfo{})
+
+		// Restore stdout
+		w.Close()
+		os.Stdout = oldStdout
+
+		// Read the output
+		var buf bytes.Buffer
+		_, err = buf.ReadFrom(r)
+		require.NoError(t, err)
+
+		output := buf.String()
+		require.NotEmpty(t, output)
+
+		// Verify it's valid JSON
+		var result struct {
+			APIKeys []auth.APIKeyInfo `json:"api_keys"`
+			Count   int               `json:"count"`
+		}
+
+		err = json.Unmarshal([]byte(output), &result)
+		require.NoError(t, err, "Output should be valid JSON even when empty: %s", output)
+
+		// Verify structure
+		assert.Equal(t, 0, result.Count)
+		assert.Len(t, result.APIKeys, 0)
+		assert.NotNil(t, result.APIKeys) // Should be empty array, not null
+	})
+}

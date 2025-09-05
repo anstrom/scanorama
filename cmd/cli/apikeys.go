@@ -381,14 +381,13 @@ func executeListAPIKeys() error {
 		return fmt.Errorf("failed to query API keys: %w", err)
 	}
 
-	if len(keys) == 0 {
-		fmt.Println("No API keys found.")
-		return nil
-	}
-
 	if apiKeyOutput == "json" {
 		displayAPIKeysJSON(keys)
 	} else {
+		if len(keys) == 0 {
+			fmt.Println("No API keys found.")
+			return nil
+		}
 		displayAPIKeysTable(keys)
 	}
 	return nil
