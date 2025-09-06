@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	cfgpkg "github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
@@ -16,6 +17,7 @@ type HandlerManager struct {
 	database *db.DB
 	logger   *slog.Logger
 	metrics  *metrics.Registry
+	config   *cfgpkg.Config
 
 	// Individual handler groups
 	health    *HealthHandler
@@ -34,6 +36,7 @@ func New(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry)
 		database: database,
 		logger:   logger,
 		metrics:  metricsManager,
+		config:   cfgpkg.GetCurrent(),
 	}
 
 	// Initialize individual handler groups
@@ -43,7 +46,7 @@ func New(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry)
 	hm.discovery = NewDiscoveryHandler(database, logger, metricsManager)
 	hm.profile = NewProfileHandler(database, logger, metricsManager)
 	hm.schedule = NewScheduleHandler(database, logger, metricsManager)
-	hm.admin = NewAdminHandler(database, logger, metricsManager)
+	hm.admin = NewAdminHandler(database, logger, metricsManager, hm.config)
 	hm.websocket = NewWebSocketHandler(database, logger, metricsManager)
 
 	return hm
@@ -67,6 +70,11 @@ func (hm *HandlerManager) Version(w http.ResponseWriter, r *http.Request) {
 // Metrics handles GET /metrics - get application metrics.
 func (hm *HandlerManager) Metrics(w http.ResponseWriter, r *http.Request) {
 	hm.health.Metrics(w, r)
+}
+
+// ReloadConfig handles POST /api/v1/admin/config/reload - trigger config reload.
+func (hm *HandlerManager) ReloadConfig(w http.ResponseWriter, r *http.Request) {
+	hm.admin.ReloadConfig(w, r)
 }
 
 // ListScans handles GET /api/v1/scans - list all scans.

@@ -32,7 +32,7 @@ func TestAdminHandler_ConfigSecurity(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	metricsRegistry := metrics.NewRegistry()
 
-	handler := NewAdminHandler(mockDB, logger, metricsRegistry)
+    handler := NewAdminHandler(mockDB, logger, metricsRegistry, nil)
 
 	t.Run("typed configuration prevents unsafe deserialization", func(t *testing.T) {
 		// This test demonstrates that the new typed approach prevents

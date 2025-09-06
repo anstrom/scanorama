@@ -85,10 +85,13 @@ func DefaultConfig() Config {
 
 // New creates a new API server instance.
 func New(cfg *config.Config, database *db.DB) (*Server, error) {
-	logger := logging.Default().With("component", "api")
+    logger := logging.Default().With("component", "api")
 
-	// Create metrics registry
-	metricsManager := metrics.NewRegistry()
+    // Create metrics registry
+    metricsManager := metrics.NewRegistry()
+
+    // Publish current config for admin operations and reloads
+    config.SetCurrent(cfg)
 
 	// Create router
 	router := mux.NewRouter()
@@ -213,6 +216,7 @@ func (s *Server) setupRoutes() {
 	profileHandler := apihandlers.NewProfileHandler(s.database, s.logger, s.metrics)
 	scheduleHandler := apihandlers.NewScheduleHandler(s.database, s.logger, s.metrics)
 	networkHandler := apihandlers.NewNetworkHandler(s.database, s.logger, s.metrics)
+	adminHandler := apihandlers.NewAdminHandler(s.database, s.logger, s.metrics, s.config)
 
 	// Scan endpoints
 	api.HandleFunc("/scans", scanHandler.ListScans).Methods("GET")
@@ -275,6 +279,7 @@ func (s *Server) setupRoutes() {
 
 	// Admin endpoints
 	api.HandleFunc("/admin/status", s.adminStatusHandler).Methods("GET")
+	api.HandleFunc("/admin/config/reload", adminHandler.ReloadConfig).Methods("POST")
 
 	// Swagger documentation endpoints
 	s.router.PathPrefix("/swagger/").Handler(httpSwagger.Handler(

@@ -17,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -91,6 +92,40 @@ type Config struct {
 	filePath     string        `yaml:"-" json:"-"`
 	lastModified time.Time     `yaml:"-" json:"-"`
 	reloadChan   chan struct{} `yaml:"-" json:"-"`
+}
+
+// ReloadCallback is a function invoked after a successful reload.
+type ReloadCallback func(*Config)
+
+var (
+	cbMu       sync.RWMutex
+	callbacks  []ReloadCallback
+	currentMu  sync.RWMutex
+	currentCfg *Config
+)
+
+// RegisterReloadCallback registers a callback to be invoked after a successful Reload.
+func RegisterReloadCallback(cb ReloadCallback) {
+	if cb == nil {
+		return
+	}
+	cbMu.Lock()
+	callbacks = append(callbacks, cb)
+	cbMu.Unlock()
+}
+
+// SetCurrent sets the current process-wide configuration reference.
+func SetCurrent(c *Config) {
+	currentMu.Lock()
+	currentCfg = c
+	currentMu.Unlock()
+}
+
+// GetCurrent returns the current process-wide configuration reference.
+func GetCurrent() *Config {
+	currentMu.RLock()
+	defer currentMu.RUnlock()
+	return currentCfg
 }
 
 // DaemonConfig holds daemon-specific settings.
@@ -574,72 +609,72 @@ func (c *Config) WatchForReload(ctx context.Context) error {
 	}
 
 	// Prefer fsnotify for responsiveness; fallback to polling
-    if tryFsnotifyWatch(ctx, c) == nil {
-        return nil
-    }
+	if tryFsnotifyWatch(ctx, c) == nil {
+		return nil
+	}
 
-    ticker := time.NewTicker(configCheckInterval)
-    defer ticker.Stop()
-    for {
-        select {
-        case <-ctx.Done():
-            return ctx.Err()
-        case <-ticker.C:
-            _ = c.checkForChanges()
-        }
-    }
+	ticker := time.NewTicker(configCheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			_ = c.checkForChanges()
+		}
+	}
 }
 
 // tryFsnotifyWatch starts an fsnotify watcher loop with debounce. Returns an
 // error if fsnotify cannot be initialized or the directory cannot be watched.
 func tryFsnotifyWatch(ctx context.Context, c *Config) error {
-    watcher, err := fsnotify.NewWatcher()
-    if err != nil {
-        return err
-    }
-    defer func() { _ = watcher.Close() }()
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = watcher.Close() }()
 
-    c.mu.RLock()
-    path := c.filePath
-    c.mu.RUnlock()
+	c.mu.RLock()
+	path := c.filePath
+	c.mu.RUnlock()
 
-    // Watch parent dir to catch atomic renames
-    dir := filepath.Dir(path)
-    if werr := watcher.Add(dir); werr != nil {
-        return werr
-    }
+	// Watch parent dir to catch atomic renames
+	dir := filepath.Dir(path)
+	if werr := watcher.Add(dir); werr != nil {
+		return werr
+	}
 
-    // Debounce timer (constant chosen for editor write bursts)
-    var timer *time.Timer
-    var timerC <-chan time.Time
-    const debounce = 300 * time.Millisecond
+	// Debounce timer (constant chosen for editor write bursts)
+	var timer *time.Timer
+	var timerC <-chan time.Time
+	const debounce = 300 * time.Millisecond
 
-    for {
-        select {
-        case <-ctx.Done():
-            return ctx.Err()
-        case ev := <-watcher.Events:
-            if ev.Name != path {
-                continue
-            }
-            if timer != nil {
-                if !timer.Stop() {
-                    <-timerC
-                }
-            }
-            timer = time.NewTimer(debounce)
-            timerC = timer.C
-        case <-timerC:
-            _ = c.checkForChanges()
-            timer = nil
-            timerC = nil
-        case werr := <-watcher.Errors:
-            if werr != nil {
-                // Continue; polling will catch changes even if watcher is noisy
-                continue
-            }
-        }
-    }
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case ev := <-watcher.Events:
+			if ev.Name != path {
+				continue
+			}
+			if timer != nil {
+				if !timer.Stop() {
+					<-timerC
+				}
+			}
+			timer = time.NewTimer(debounce)
+			timerC = timer.C
+		case <-timerC:
+			_ = c.checkForChanges()
+			timer = nil
+			timerC = nil
+		case werr := <-watcher.Errors:
+			if werr != nil {
+				// Continue; polling will catch changes even if watcher is noisy
+				continue
+			}
+		}
+	}
 }
 
 // checkForChanges checks if the configuration file has been modified.
@@ -695,6 +730,28 @@ func (c *Config) Reload() error {
 	c.Discovery = newConfig.Discovery
 	c.Logging = newConfig.Logging
 	c.mu.Unlock()
+
+	// Notify callbacks outside lock
+	cbMu.RLock()
+	cbs := append([]ReloadCallback(nil), callbacks...)
+	cbMu.RUnlock()
+	for _, cb := range cbs {
+		// Guard callback panics to keep system stable
+		func() {
+			defer func() { _ = recover() }()
+			cb(c)
+		}()
+	}
+
+	// Built-in logging reconfiguration using the updated logging settings
+	lgCfg := logging.Config{
+		Level:  logging.LogLevel(c.Logging.Level),
+		Format: logging.LogFormat(c.Logging.Format),
+		Output: c.Logging.Output,
+	}
+	if newLogger, err := logging.New(lgCfg); err == nil {
+		logging.SetDefault(newLogger)
+	}
 
 	return nil
 }
