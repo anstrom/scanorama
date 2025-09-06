@@ -5,16 +5,20 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/logging"
+	"github.com/fsnotify/fsnotify"
 )
 
 const (
@@ -33,9 +37,9 @@ const (
 	defaultBurstSize            = 200
 
 	// Default API configuration.
-	defaultAPIPort          = 8080
-	defaultMaxRequestSizeMB = 1024
-	bytesPerMB              = 1024
+	defaultAPIPort = 8080
+	// default max request size: 1 MiB
+	defaultMaxRequestSizeBytes = 1 << 20
 
 	// Default logging configuration.
 	defaultMaxSizeMB  = 100
@@ -47,6 +51,9 @@ const (
 	maxContentSize  = 5 * 1024 * 1024  // Maximum config content size (5MB)
 	maxPathLength   = 4096             // Maximum file path length
 	permissionsMask = 0o777            // File permissions mask for validation
+
+	// Hot-reload configuration constants.
+	configCheckInterval = 5 * time.Second // Check config file for changes every 5 seconds
 )
 
 // Default configuration values.
@@ -79,6 +86,46 @@ type Config struct {
 
 	// Logging configuration
 	Logging LoggingConfig `yaml:"logging" json:"logging"`
+
+	// Hot-reload fields (not serialized)
+	mu           sync.RWMutex  `yaml:"-" json:"-"`
+	filePath     string        `yaml:"-" json:"-"`
+	lastModified time.Time     `yaml:"-" json:"-"`
+	reloadChan   chan struct{} `yaml:"-" json:"-"`
+}
+
+// ReloadCallback is a function invoked after a successful reload.
+type ReloadCallback func(*Config)
+
+var (
+	cbMu       sync.RWMutex
+	callbacks  []ReloadCallback
+	currentMu  sync.RWMutex
+	currentCfg *Config
+)
+
+// RegisterReloadCallback registers a callback to be invoked after a successful Reload.
+func RegisterReloadCallback(cb ReloadCallback) {
+	if cb == nil {
+		return
+	}
+	cbMu.Lock()
+	callbacks = append(callbacks, cb)
+	cbMu.Unlock()
+}
+
+// SetCurrent sets the current process-wide configuration reference.
+func SetCurrent(c *Config) {
+	currentMu.Lock()
+	currentCfg = c
+	currentMu.Unlock()
+}
+
+// GetCurrent returns the current process-wide configuration reference.
+func GetCurrent() *Config {
+	currentMu.RLock()
+	defer currentMu.RUnlock()
+	return currentCfg
 }
 
 // DaemonConfig holds daemon-specific settings.
@@ -400,7 +447,7 @@ func defaultAPIConfig() APIConfig {
 		RateLimitRequests: 100,
 		RateLimitWindow:   time.Minute,
 		RequestTimeout:    defaultRequestTimeoutSec * time.Second,
-		MaxRequestSize:    defaultMaxRequestSizeMB * bytesPerMB, // 1MB
+		MaxRequestSize:    defaultMaxRequestSizeBytes,
 	}
 }
 
@@ -545,7 +592,168 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	// Initialize hot-reload fields
+	config.filePath = path
+	config.reloadChan = make(chan struct{}, 1)
+	if stat, err := os.Stat(path); err == nil {
+		config.lastModified = stat.ModTime()
+	}
+
 	return config, nil
+}
+
+// WatchForReload monitors the configuration file for changes and triggers reloads.
+func (c *Config) WatchForReload(ctx context.Context) error {
+	if c.filePath == "" {
+		return fmt.Errorf("no file path set for configuration watching")
+	}
+
+	// Prefer fsnotify for responsiveness; fallback to polling
+	if tryFsnotifyWatch(ctx, c) == nil {
+		return nil
+	}
+
+	ticker := time.NewTicker(configCheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			_ = c.checkForChanges()
+		}
+	}
+}
+
+// tryFsnotifyWatch starts an fsnotify watcher loop with debounce. Returns an
+// error if fsnotify cannot be initialized or the directory cannot be watched.
+func tryFsnotifyWatch(ctx context.Context, c *Config) error {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = watcher.Close() }()
+
+	c.mu.RLock()
+	path := c.filePath
+	c.mu.RUnlock()
+
+	// Watch parent dir to catch atomic renames
+	dir := filepath.Dir(path)
+	if werr := watcher.Add(dir); werr != nil {
+		return werr
+	}
+
+	// Debounce timer (constant chosen for editor write bursts)
+	var timer *time.Timer
+	var timerC <-chan time.Time
+	const debounce = 300 * time.Millisecond
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case ev := <-watcher.Events:
+			if ev.Name != path {
+				continue
+			}
+			if timer != nil {
+				if !timer.Stop() {
+					<-timerC
+				}
+			}
+			timer = time.NewTimer(debounce)
+			timerC = timer.C
+		case <-timerC:
+			_ = c.checkForChanges()
+			timer = nil
+			timerC = nil
+		case werr := <-watcher.Errors:
+			if werr != nil {
+				// Continue; polling will catch changes even if watcher is noisy
+				continue
+			}
+		}
+	}
+}
+
+// checkForChanges checks if the configuration file has been modified.
+func (c *Config) checkForChanges() error {
+	c.mu.RLock()
+	path := c.filePath
+	c.mu.RUnlock()
+
+	stat, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("failed to stat config file: %w", err)
+	}
+
+	c.mu.Lock()
+	if stat.ModTime().After(c.lastModified) {
+		c.lastModified = stat.ModTime()
+		select {
+		case c.reloadChan <- struct{}{}:
+		default: // Channel is full, skip this reload signal
+		}
+	}
+	c.mu.Unlock()
+
+	return nil
+}
+
+// ReloadChannel returns a channel that receives reload signals.
+func (c *Config) ReloadChannel() <-chan struct{} {
+	return c.reloadChan
+}
+
+// Reload reloads the configuration from the file.
+func (c *Config) Reload() error {
+	c.mu.RLock()
+	path := c.filePath
+	c.mu.RUnlock()
+
+	if path == "" {
+		return fmt.Errorf("no file path set for configuration reload")
+	}
+
+	newConfig, err := Load(path)
+	if err != nil {
+		return fmt.Errorf("failed to reload configuration: %w", err)
+	}
+
+	// Copy the new configuration values to the current config
+	c.mu.Lock()
+	c.Daemon = newConfig.Daemon
+	c.Database = newConfig.Database
+	c.Scanning = newConfig.Scanning
+	c.API = newConfig.API
+	c.Discovery = newConfig.Discovery
+	c.Logging = newConfig.Logging
+	c.mu.Unlock()
+
+	// Notify callbacks outside lock
+	cbMu.RLock()
+	cbs := append([]ReloadCallback(nil), callbacks...)
+	cbMu.RUnlock()
+	for _, cb := range cbs {
+		// Guard callback panics to keep system stable
+		func() {
+			defer func() { _ = recover() }()
+			cb(c)
+		}()
+	}
+
+	// Built-in logging reconfiguration using the updated logging settings
+	lgCfg := logging.Config{
+		Level:  logging.LogLevel(c.Logging.Level),
+		Format: logging.LogFormat(c.Logging.Format),
+		Output: c.Logging.Output,
+	}
+	if newLogger, err := logging.New(lgCfg); err == nil {
+		logging.SetDefault(newLogger)
+	}
+
+	return nil
 }
 
 // Save saves configuration to a file.
@@ -836,25 +1044,35 @@ func (c *Config) validateLogging() error {
 
 // GetDatabaseConfig returns the database configuration.
 func (c *Config) GetDatabaseConfig() db.Config {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.Database
 }
 
 // IsDaemonMode returns true if running in daemon mode.
 func (c *Config) IsDaemonMode() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.Daemon.Daemonize
 }
 
 // GetAPIAddress returns the full API address.
 func (c *Config) GetAPIAddress() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return fmt.Sprintf("%s:%d", c.API.Host, c.API.Port)
 }
 
 // IsAPIEnabled returns true if API server is enabled.
 func (c *Config) IsAPIEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.API.Enabled
 }
 
 // GetLogOutput returns the log output destination.
 func (c *Config) GetLogOutput() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.Logging.Output
 }

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	cfgpkg "github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/go-playground/validator/v10"
@@ -51,15 +52,22 @@ type AdminHandler struct {
 	logger    *slog.Logger
 	metrics   *metrics.Registry
 	validator *validator.Validate
+	config    *cfgpkg.Config
 }
 
 // NewAdminHandler creates a new admin handler.
-func NewAdminHandler(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry) *AdminHandler {
+func NewAdminHandler(
+	database *db.DB,
+	logger *slog.Logger,
+	metricsManager *metrics.Registry,
+	cfg *cfgpkg.Config,
+) *AdminHandler {
 	return &AdminHandler{
 		database:  database,
 		logger:    logger.With("handler", "admin"),
 		metrics:   metricsManager,
 		validator: validator.New(),
+		config:    cfg,
 	}
 }
 
@@ -399,6 +407,30 @@ func (h *AdminHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 			"section": req.Section,
 		})
 	}
+}
+
+// ReloadConfig handles POST /api/v1/admin/config/reload - manual config reload.
+func (h *AdminHandler) ReloadConfig(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
+	h.logger.Info("Manual configuration reload requested", "request_id", requestID)
+
+	cfg := h.config
+	if cfg == nil {
+		cfg = cfgpkg.GetCurrent()
+	}
+	if cfg == nil {
+		writeError(w, r, http.StatusServiceUnavailable, fmt.Errorf("configuration not initialized"))
+		return
+	}
+	if err := cfg.Reload(); err != nil {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("reload failed: %w", err))
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]interface{}{
+		"status":     "reloaded",
+		"timestamp":  time.Now().UTC(),
+		"request_id": requestID,
+	})
 }
 
 // GetLogs handles GET /api/v1/admin/logs - retrieve system logs.
