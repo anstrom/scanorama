@@ -2,11 +2,13 @@ package discovery
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/Ullaakut/nmap/v3"
+	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1092,4 +1094,232 @@ func TestDiscoveryResilience(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestClassifyNmapError tests the error classification logic for nmap failures.
+func TestClassifyNmapError(t *testing.T) {
+	engine := &Engine{}
+
+	tests := []struct {
+		name         string
+		message      string
+		nmapError    error
+		expectedCode errors.ErrorCode
+	}{
+		{
+			name:         "timeout error",
+			message:      "scan operation failed",
+			nmapError:    fmt.Errorf("connection timed out"),
+			expectedCode: errors.CodeTimeout,
+		},
+		{
+			name:         "network unreachable",
+			message:      "scan failed",
+			nmapError:    fmt.Errorf("network unreachable"),
+			expectedCode: errors.CodeNetworkUnreachable,
+		},
+		{
+			name:         "host unreachable",
+			message:      "scan failed",
+			nmapError:    fmt.Errorf("destination host unreachable"),
+			expectedCode: errors.CodeHostUnreachable,
+		},
+		{
+			name:         "permission denied",
+			message:      "scanner creation failed",
+			nmapError:    fmt.Errorf("permission denied"),
+			expectedCode: errors.CodePermission,
+		},
+		{
+			name:         "invalid target",
+			message:      "scan failed",
+			nmapError:    fmt.Errorf("bad target specification"),
+			expectedCode: errors.CodeTargetInvalid,
+		},
+		{
+			name:         "context canceled",
+			message:      "scan interrupted",
+			nmapError:    fmt.Errorf("context canceled"),
+			expectedCode: errors.CodeCanceled,
+		},
+		{
+			name:         "context deadline exceeded",
+			message:      "scan timeout",
+			nmapError:    fmt.Errorf("context deadline exceeded"),
+			expectedCode: errors.CodeTimeout,
+		},
+		{
+			name:         "unknown error defaults to discovery failed",
+			message:      "unexpected failure",
+			nmapError:    fmt.Errorf("mysterious nmap error"),
+			expectedCode: errors.CodeDiscoveryFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := engine.classifyNmapError(tt.message, tt.nmapError)
+
+			assert.Error(t, err)
+			assert.Equal(t, tt.expectedCode, errors.GetCode(err))
+			assert.Contains(t, err.Error(), tt.message)
+		})
+	}
+}
+
+// TestDiscoveryRetryBehaviorWithClassification tests that retry logic works correctly
+// with the new error classification system.
+func TestDiscoveryRetryBehaviorWithClassification(t *testing.T) {
+	tests := []struct {
+		name             string
+		errorType        string
+		shouldRetry      bool
+		expectedAttempts int
+	}{
+		{
+			name:             "timeout errors are retryable",
+			errorType:        "timeout",
+			shouldRetry:      true,
+			expectedAttempts: 3, // Should retry up to max attempts
+		},
+		{
+			name:             "network unreachable errors are retryable",
+			errorType:        "network_unreachable",
+			shouldRetry:      true,
+			expectedAttempts: 3,
+		},
+		{
+			name:             "permission errors are not retryable",
+			errorType:        "permission",
+			shouldRetry:      false,
+			expectedAttempts: 1, // Should fail immediately
+		},
+		{
+			name:             "invalid target errors are not retryable",
+			errorType:        "invalid_target",
+			shouldRetry:      false,
+			expectedAttempts: 1,
+		},
+		{
+			name:             "unknown errors default to retryable",
+			errorType:        "unknown",
+			shouldRetry:      true,
+			expectedAttempts: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine := &Engine{}
+			ctx := context.Background()
+			config := &Config{Method: "ping"}
+
+			var attemptCount int
+
+			// Create test function that simulates nmap errors
+			testNmapFunc := func(ctx context.Context, targets []string, config *Config,
+				timeout time.Duration) ([]Result, error) {
+				attemptCount++
+
+				// Simulate different types of nmap errors
+				var mockError error
+				switch tt.errorType {
+				case "timeout":
+					mockError = fmt.Errorf("connection timed out")
+				case "network_unreachable":
+					mockError = fmt.Errorf("network unreachable")
+				case "permission":
+					mockError = fmt.Errorf("permission denied")
+				case "invalid_target":
+					mockError = fmt.Errorf("invalid target specification")
+				default:
+					mockError = fmt.Errorf("unknown nmap error")
+				}
+
+				return nil, engine.classifyNmapError("mock nmap error", mockError)
+			}
+
+			// Create a wrapper engine for testing
+			testEngine := &testDiscoveryEngine{
+				Engine:   engine,
+				testFunc: testNmapFunc,
+			}
+
+			start := time.Now()
+			_, err := testEngine.testDiscoveryWithResilience(ctx, []string{"192.168.1.1"}, config, 5*time.Second)
+			elapsed := time.Since(start)
+
+			// Verify the error occurred
+			assert.Error(t, err)
+
+			// Verify the correct number of attempts were made
+			assert.Equal(t, tt.expectedAttempts, attemptCount,
+				"Expected %d attempts but got %d for error type %s",
+				tt.expectedAttempts, attemptCount, tt.errorType)
+
+			// Verify retry behavior timing
+			if tt.shouldRetry && tt.expectedAttempts > 1 {
+				// Should take some time due to retry delays (at least 2s for first retry)
+				assert.Greater(t, elapsed, 1500*time.Millisecond,
+					"Retryable error should have retry delays")
+			} else {
+				// Non-retryable errors should fail quickly
+				assert.Less(t, elapsed, 500*time.Millisecond,
+					"Non-retryable error should fail immediately")
+			}
+
+			// Verify error code is preserved through retry logic
+			expectedRetryable := errors.IsRetryable(err)
+			assert.Equal(t, tt.shouldRetry, expectedRetryable,
+				"Error retryability should match expected behavior")
+		})
+	}
+}
+
+// testDiscoveryEngine wraps Engine for testing purposes
+type testDiscoveryEngine struct {
+	*Engine
+	testFunc func(context.Context, []string, *Config, time.Duration) ([]Result, error)
+}
+
+// testDiscoveryWithResilience is a test version of nmapDiscoveryWithResilience that uses testFunc
+func (e *testDiscoveryEngine) testDiscoveryWithResilience(ctx context.Context,
+	targets []string, config *Config, timeout time.Duration) ([]Result, error) {
+	var lastError error
+	retryDelay := baseRetryDelay
+
+	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
+		// Check context cancellation before each attempt
+		select {
+		case <-ctx.Done():
+			return nil, errors.WrapDiscoveryError(errors.CodeCanceled, "discovery cancelled", ctx.Err())
+		default:
+		}
+
+		results, err := e.testFunc(ctx, targets, config, timeout)
+		if err == nil {
+			return results, nil
+		}
+
+		lastError = err
+
+		// Check if error is retryable
+		if !errors.IsRetryable(err) {
+			break
+		}
+
+		// Don't retry on last attempt
+		if attempt == maxRetryAttempts {
+			break
+		}
+
+		// Sleep with exponential backoff
+		time.Sleep(retryDelay)
+		retryDelay *= 2
+		if retryDelay > maxRetryDelay {
+			retryDelay = maxRetryDelay
+		}
+	}
+
+	return nil, lastError
 }

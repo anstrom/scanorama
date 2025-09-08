@@ -317,13 +317,13 @@ func (e *Engine) nmapDiscoveryWithTargets(ctx context.Context, targets []string,
 	// Create scanner with context
 	scanner, err := nmap.NewScanner(ctx, options...)
 	if err != nil {
-		return nil, errors.WrapDiscoveryError(errors.CodeScanFailed, "failed to create nmap scanner", err)
+		return nil, e.classifyNmapError("failed to create nmap scanner", err)
 	}
 
 	// Execute nmap scan
 	result, warnings, err := scanner.Run()
 	if err != nil {
-		return nil, errors.WrapDiscoveryError(errors.CodeScanFailed, "nmap scan failed", err)
+		return nil, e.classifyNmapError("nmap scan failed", err)
 	}
 
 	if warnings != nil && len(*warnings) > 0 {
@@ -334,6 +334,50 @@ func (e *Engine) nmapDiscoveryWithTargets(ctx context.Context, targets []string,
 	results := e.convertNmapResultsToDiscovery(result, config.Method)
 
 	return results, nil
+}
+
+// classifyNmapError analyzes nmap errors and wraps them with appropriate error codes
+// to ensure proper retry behavior in resilience patterns.
+//
+// Error classification categories:
+//   - Timeout errors (retryable): network timeouts, context deadline exceeded
+//   - Network errors (retryable): network/host unreachable
+//   - Permission errors (non-retryable): permission denied, operation not permitted
+//   - Configuration errors (non-retryable): invalid targets, bad specifications
+//   - Context errors: canceled operations, deadline exceeded
+//   - Unknown errors (retryable): defaults to CodeDiscoveryFailed for safety
+//
+// This ensures transient issues are retried while configuration/permission
+// errors fail fast without unnecessary retry attempts.
+func (e *Engine) classifyNmapError(message string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	// Classify based on error content to determine retry behavior
+	switch {
+	case strings.Contains(errStr, "timeout") || strings.Contains(errStr, "timed out"):
+		return errors.WrapDiscoveryError(errors.CodeTimeout, message, err)
+	case strings.Contains(errStr, "network unreachable") || strings.Contains(errStr, "no route to host"):
+		return errors.WrapDiscoveryError(errors.CodeNetworkUnreachable, message, err)
+	case strings.Contains(errStr, "host unreachable") || strings.Contains(errStr, "destination host unreachable"):
+		return errors.WrapDiscoveryError(errors.CodeHostUnreachable, message, err)
+	case strings.Contains(errStr, "permission denied") || strings.Contains(errStr, "operation not permitted"):
+		return errors.WrapDiscoveryError(errors.CodePermission, message, err)
+	case strings.Contains(errStr, "invalid target") || strings.Contains(errStr, "bad target"):
+		return errors.WrapDiscoveryError(errors.CodeTargetInvalid, message, err)
+	case strings.Contains(errStr, "context canceled") || strings.Contains(errStr, "context cancelled"):
+		return errors.WrapDiscoveryError(errors.CodeCanceled, message, err)
+	case strings.Contains(errStr, "context deadline exceeded"):
+		return errors.WrapDiscoveryError(errors.CodeTimeout, message, err)
+	default:
+		// For unknown nmap errors, use discovery failed which is retryable
+		// This ensures we retry on transient issues while still providing
+		// proper error classification for known failure types
+		return errors.WrapDiscoveryError(errors.CodeDiscoveryFailed, message, err)
+	}
 }
 
 // nmapDiscoveryWithResilience performs discovery with retry logic and better error handling.
