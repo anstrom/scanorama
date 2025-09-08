@@ -17,14 +17,18 @@
     "test:clients": "npm run openapi:validate-for-codegen && npm run openapi:check-schema"
   },
   "devDependencies": {
-    "@jridgewell/sourcemap-codec": "1.5.5",
-    "@quobix/vacuum": "0.17.11",
-    "@redocly/cli": "2.0.8",
-    "js-yaml": "^4.1.0",
-    "swagger-ui-dist": "^5.17.0"
+    "@quobix/vacuum": "0.17.8",
+    "@redocly/cli": "1.34.5",
+    "js-yaml": "^4.1.0"
   },
   "overrides": {
-    "glob": "^11.0.0"
+    "glob": "^11.0.0",
+    "debug": "^4.3.5",
+    "color-name": "^1.1.4",
+    "color-convert": "^2.0.1",
+    "chalk": "^4.1.2",
+    "ansi-styles": "^4.3.0",
+    "yargs": "^17.7.2"
   },
   "engines": {
     "node": ">=18.0.0",
