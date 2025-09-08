@@ -12,6 +12,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,11 +29,25 @@ const (
 	defaultMaxIdleConns    = 5
 	defaultConnMaxLifetime = 5
 	defaultConnMaxIdleTime = 5
+
+	// Health check and reconnection constants
+	healthCheckInterval  = 30 * time.Second
+	maxReconnectAttempts = 5
+	baseReconnectDelay   = 2 * time.Second
+	maxReconnectDelay    = 30 * time.Second
+	connectionTimeout    = 10 * time.Second
 )
 
-// DB wraps sqlx.DB with additional functionality.
+// DB wraps sqlx.DB with additional functionality including health monitoring and reconnection.
 type DB struct {
 	*sqlx.DB
+	config          Config
+	healthTicker    *time.Ticker
+	reconnectMutex  sync.RWMutex
+	isHealthy       bool
+	lastHealthCheck time.Time
+	reconnectCount  int
+	stopHealthCheck chan struct{}
 }
 
 // Config holds database configuration.
@@ -90,7 +105,18 @@ func Connect(ctx context.Context, config *Config) (*DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	return &DB{DB: db}, nil
+	dbWrapper := &DB{
+		DB:              db,
+		config:          *config,
+		isHealthy:       true,
+		lastHealthCheck: time.Now(),
+		stopHealthCheck: make(chan struct{}),
+	}
+
+	// Start health monitoring
+	dbWrapper.startHealthMonitoring()
+
+	return dbWrapper, nil
 }
 
 // Repository provides database operations.
@@ -2329,9 +2355,128 @@ func (db *DB) DisableSchedule(ctx context.Context, id uuid.UUID) error {
 	return errors.ErrNotFoundWithID("schedule", id.String())
 }
 
-// Close closes the database connection.
+// Close closes the database connection and stops health monitoring.
 func (db *DB) Close() error {
+	// Stop health monitoring
+	if db.healthTicker != nil {
+		db.healthTicker.Stop()
+	}
+	close(db.stopHealthCheck)
+
 	return db.DB.Close()
+}
+
+// startHealthMonitoring begins periodic health checks.
+func (db *DB) startHealthMonitoring() {
+	db.healthTicker = time.NewTicker(healthCheckInterval)
+
+	go func() {
+		for {
+			select {
+			case <-db.healthTicker.C:
+				db.performHealthCheck()
+			case <-db.stopHealthCheck:
+				return
+			}
+		}
+	}()
+}
+
+// performHealthCheck checks database connectivity and attempts reconnection if needed.
+func (db *DB) performHealthCheck() {
+	ctx, cancel := context.WithTimeout(context.Background(), connectionTimeout)
+	defer cancel()
+
+	err := db.PingContext(ctx)
+
+	db.reconnectMutex.Lock()
+	defer db.reconnectMutex.Unlock()
+
+	if err != nil {
+		log.Printf("Database health check failed: %v", err)
+		db.isHealthy = false
+
+		// Attempt reconnection
+		if db.reconnectCount < maxReconnectAttempts {
+			go db.attemptReconnection()
+		}
+	} else {
+		if !db.isHealthy {
+			log.Println("Database connection restored")
+		}
+		db.isHealthy = true
+		db.reconnectCount = 0
+	}
+
+	db.lastHealthCheck = time.Now()
+}
+
+// attemptReconnection tries to reestablish database connection.
+func (db *DB) attemptReconnection() {
+	db.reconnectMutex.Lock()
+	defer db.reconnectMutex.Unlock()
+
+	db.reconnectCount++
+	delay := baseReconnectDelay * time.Duration(db.reconnectCount)
+	if delay > maxReconnectDelay {
+		delay = maxReconnectDelay
+	}
+
+	log.Printf("Attempting database reconnection %d/%d after %v delay",
+		db.reconnectCount, maxReconnectAttempts, delay)
+
+	time.Sleep(delay)
+
+	// Build connection string
+	dsn := fmt.Sprintf(
+		"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
+		db.config.Host, db.config.Port, db.config.Database,
+		db.config.Username, db.config.Password, db.config.SSLMode)
+
+	// Attempt new connection
+	newDB, err := sqlx.Connect("postgres", dsn)
+	if err != nil {
+		log.Printf("Database reconnection attempt %d failed: %v", db.reconnectCount, err)
+		return
+	}
+
+	// Configure connection pool
+	newDB.SetMaxOpenConns(db.config.MaxOpenConns)
+	newDB.SetMaxIdleConns(db.config.MaxIdleConns)
+	newDB.SetConnMaxLifetime(db.config.ConnMaxLifetime)
+	newDB.SetConnMaxIdleTime(db.config.ConnMaxIdleTime)
+
+	// Close old connection
+	if db.DB != nil {
+		_ = db.DB.Close()
+	}
+
+	// Replace with new connection
+	db.DB = newDB
+	db.isHealthy = true
+
+	log.Printf("Database reconnection successful on attempt %d", db.reconnectCount)
+}
+
+// IsHealthy returns the current health status of the database connection.
+func (db *DB) IsHealthy() bool {
+	db.reconnectMutex.RLock()
+	defer db.reconnectMutex.RUnlock()
+	return db.isHealthy
+}
+
+// GetHealthStatus returns detailed health information.
+func (db *DB) GetHealthStatus() map[string]interface{} {
+	db.reconnectMutex.RLock()
+	defer db.reconnectMutex.RUnlock()
+
+	return map[string]interface{}{
+		"healthy":           db.isHealthy,
+		"last_health_check": db.lastHealthCheck.Format(time.RFC3339),
+		"reconnect_count":   db.reconnectCount,
+		"max_open_conns":    db.config.MaxOpenConns,
+		"max_idle_conns":    db.config.MaxIdleConns,
+	}
 }
 
 // Helper functions for nullable field handling
