@@ -24,7 +24,7 @@
   "overrides": {
     "glob": "^11.0.0",
     "debug": "^4.3.5",
-    "color-name": "^1.1.4",
+    "color-name": "^2.0.0",
     "color-convert": "^2.0.1",
     "chalk": "^4.1.2",
     "ansi-styles": "^4.3.0",
