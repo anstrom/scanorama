@@ -269,6 +269,11 @@ func (hm *HandlerManager) DiscoveryWebSocket(w http.ResponseWriter, r *http.Requ
 	hm.websocket.DiscoveryWebSocket(w, r)
 }
 
+// GeneralWebSocket handles general WebSocket connections for all updates.
+func (hm *HandlerManager) GeneralWebSocket(w http.ResponseWriter, r *http.Request) {
+	hm.websocket.GeneralWebSocket(w, r)
+}
+
 // GetDatabase returns the database instance.
 func (hm *HandlerManager) GetDatabase() *db.DB {
 	return hm.database
