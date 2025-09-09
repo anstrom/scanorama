@@ -249,6 +249,9 @@ func (s *Server) setupRoutes() {
 	scheduleHandler := apihandlers.NewScheduleHandler(s.database, s.logger, s.metrics)
 	networkHandler := apihandlers.NewNetworkHandler(s.database, s.logger, s.metrics)
 
+	// Create handler manager for WebSocket endpoints
+	handlerManager := apihandlers.New(s.database, s.logger, s.metrics)
+
 	// Scan endpoints
 	api.HandleFunc("/scans", scanHandler.ListScans).Methods("GET")
 	api.HandleFunc("/scans", scanHandler.CreateScan).Methods("POST")
@@ -307,6 +310,9 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/exclusions", networkHandler.ListGlobalExclusions).Methods("GET")
 	api.HandleFunc("/exclusions", networkHandler.CreateGlobalExclusion).Methods("POST")
 	api.HandleFunc("/exclusions/{id}", networkHandler.DeleteExclusion).Methods("DELETE")
+
+	// WebSocket endpoints
+	api.HandleFunc("/ws", handlerManager.GeneralWebSocket).Methods("GET")
 
 	// Admin endpoints
 	api.HandleFunc("/admin/status", s.adminStatusHandler).Methods("GET")

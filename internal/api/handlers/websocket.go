@@ -153,6 +153,39 @@ func (h *WebSocketHandler) DiscoveryWebSocket(w http.ResponseWriter, r *http.Req
 	h.setupConnection(conn, "discovery", requestID)
 }
 
+// GeneralWebSocket handles general WebSocket connections for all updates.
+func (h *WebSocketHandler) GeneralWebSocket(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
+	h.logger.Info("New general WebSocket connection", "request_id", requestID, "remote_addr", r.RemoteAddr)
+
+	conn, err := h.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		h.logger.Error("Failed to upgrade WebSocket connection", "request_id", requestID, "error", err)
+		return
+	}
+
+	// Register the new client for both scan and discovery updates
+	h.setupGeneralConnection(conn, requestID)
+}
+
+// setupGeneralConnection configures a WebSocket connection for both scan and discovery updates.
+func (h *WebSocketHandler) setupGeneralConnection(conn *websocket.Conn, requestID string) {
+	defer func() {
+		h.unregister <- conn
+		if err := conn.Close(); err != nil {
+			h.logger.Error("Error closing WebSocket connection", "request_id", requestID, "error", err)
+		}
+	}()
+
+	// Register for both scan and discovery updates
+	h.register <- &clientRegistration{conn: conn, connType: "scan"}
+	h.register <- &clientRegistration{conn: conn, connType: "discovery"}
+
+	// Start read and write pumps
+	go h.writePump(conn, "general", requestID)
+	h.readPump(conn, requestID)
+}
+
 // setupConnection configures a WebSocket connection and starts read/write pumps.
 func (h *WebSocketHandler) setupConnection(conn *websocket.Conn, connType, requestID string) {
 	defer func() {
