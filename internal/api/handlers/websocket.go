@@ -122,14 +122,8 @@ func (h *WebSocketHandler) ScanWebSocket(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Register the new client
-	h.register <- &clientRegistration{
-		conn:     conn,
-		connType: "scan",
-	}
-
-	// Set up the connection
-	h.setupConnection(conn, "scan", requestID)
+	// Set up the connection for scan updates only
+	h.setupConnection(conn, []string{"scan"}, requestID)
 }
 
 // DiscoveryWebSocket handles WebSocket connections for discovery updates.
@@ -143,14 +137,8 @@ func (h *WebSocketHandler) DiscoveryWebSocket(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Register the new client
-	h.register <- &clientRegistration{
-		conn:     conn,
-		connType: "discovery",
-	}
-
-	// Set up the connection
-	h.setupConnection(conn, "discovery", requestID)
+	// Set up the connection for discovery updates only
+	h.setupConnection(conn, []string{"discovery"}, requestID)
 }
 
 // GeneralWebSocket handles general WebSocket connections for all updates.
@@ -164,12 +152,12 @@ func (h *WebSocketHandler) GeneralWebSocket(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Register the new client for both scan and discovery updates
-	h.setupGeneralConnection(conn, requestID)
+	// Set up the connection for both scan and discovery updates
+	h.setupConnection(conn, []string{"scan", "discovery"}, requestID)
 }
 
-// setupGeneralConnection configures a WebSocket connection for both scan and discovery updates.
-func (h *WebSocketHandler) setupGeneralConnection(conn *websocket.Conn, requestID string) {
+// setupConnection configures a WebSocket connection for the specified connection types and starts read/write pumps.
+func (h *WebSocketHandler) setupConnection(conn *websocket.Conn, connTypes []string, requestID string) {
 	defer func() {
 		h.unregister <- conn
 		if err := conn.Close(); err != nil {
@@ -177,25 +165,12 @@ func (h *WebSocketHandler) setupGeneralConnection(conn *websocket.Conn, requestI
 		}
 	}()
 
-	// Register for both scan and discovery updates
-	h.register <- &clientRegistration{conn: conn, connType: "scan"}
-	h.register <- &clientRegistration{conn: conn, connType: "discovery"}
-
-	// Start read and write pumps
-	go h.writePump(conn, "general", requestID)
-	h.readPump(conn, requestID)
-}
-
-// setupConnection configures a WebSocket connection and starts read/write pumps.
-func (h *WebSocketHandler) setupConnection(conn *websocket.Conn, connType, requestID string) {
-	defer func() {
-		h.unregister <- conn
-		if err := conn.Close(); err != nil {
-			h.logger.Error("Error closing WebSocket connection", "request_id", requestID, "error", err)
-		}
-	}()
-
-	// Configure connection settings
+	// Configure connection settings for security and resource management.
+	// These settings are critical to prevent resource exhaustion and ensure proper cleanup:
+	// - SetReadLimit prevents oversized messages from consuming excessive memory
+	// - SetReadDeadline establishes initial timeout to prevent stalled connections
+	// - SetPongHandler refreshes deadlines when pings are acknowledged, maintaining active connections
+	// Without these, malicious or broken clients can linger indefinitely and consume resources.
 	conn.SetReadLimit(maxMessageSize)
 	if err := conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
 		h.logger.Error("Failed to set read deadline", "request_id", requestID, "error", err)
@@ -205,8 +180,21 @@ func (h *WebSocketHandler) setupConnection(conn *websocket.Conn, connType, reque
 		return conn.SetReadDeadline(time.Now().Add(pongWait))
 	})
 
+	// Register client for all specified connection types
+	for _, connType := range connTypes {
+		h.register <- &clientRegistration{conn: conn, connType: connType}
+	}
+
+	// Determine connection type label for logging
+	connTypeLabel := "single"
+	if len(connTypes) > 1 {
+		connTypeLabel = "general"
+	} else if len(connTypes) == 1 {
+		connTypeLabel = connTypes[0]
+	}
+
 	// Start write pump in goroutine
-	go h.writePump(conn, connType, requestID)
+	go h.writePump(conn, connTypeLabel, requestID)
 
 	// Start read pump (blocks until connection closes)
 	h.readPump(conn, requestID)
