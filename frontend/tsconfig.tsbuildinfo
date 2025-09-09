@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/websocketstatus.tsx","./src/hooks/useapi.ts","./src/pages/jobs.tsx","./src/services/api.ts","./src/services/websocket.ts","./src/types/index.ts","./src/utils/logger.ts","./vite.config.ts"],"errors":true,"version":"5.8.3"}
