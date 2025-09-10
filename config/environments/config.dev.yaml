@@ -17,7 +17,7 @@ daemon:
   daemonize: false
 
   # Graceful shutdown timeout
-  shutdown_timeout: "10s"
+  shutdown_timeout: "30s"
 
 # Database Configuration - Local PostgreSQL
 database:
@@ -26,7 +26,7 @@ database:
   database: "scanorama_dev"
   username: "scanorama_dev"
   password: "dev_password"
-  ssl_mode: "disable"  # Disable SSL for local development
+  ssl_mode: "disable" # Disable SSL for local development
 
   # Smaller connection pool for development
   max_open_conns: 10
