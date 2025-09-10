@@ -24,6 +24,17 @@ const (
 	timeoutBufferSeconds    = 30 // extra timeout buffer for operations
 	tableHeaderSeparatorLen = 70 // length of table header separator
 
+	// Dynamic timeout calculation constants (matching discovery engine)
+	maxTimeout            = 300 * time.Second
+	minTimeout            = 30 * time.Second
+	minTimeoutSeconds     = 30  // minimum timeout in seconds
+	maxTimeoutSeconds     = 300 // maximum timeout in seconds
+	timeoutMultiplierBase = 6.0
+	timeoutMultiplierStep = 2.0
+	timeoutMultiplierMax  = 50.0
+	timeoutDivisor        = 100.0
+	defaultNetworkSize    = 254 // default network size estimate for /24 network
+
 	// SQL error constants.
 	sqlNoRowsError = "sql: no rows in result set"
 )
@@ -181,6 +192,63 @@ func waitForDiscoveryCompletion(ctx context.Context, database *db.DB, jobID inte
 
 	return fmt.Errorf("discovery job did not complete within %v", timeout)
 }
+
+// calculateDiscoveryTimeout calculates dynamic timeout based on network size and base timeout.
+func calculateDiscoveryTimeout(network string, baseTimeoutSeconds int) time.Duration {
+	baseTimeout := time.Duration(baseTimeoutSeconds) * time.Second
+
+	// Estimate target count from CIDR
+	targetCount := estimateNetworkTargets(network)
+
+	// Calculate multiplier: 6x for small networks, scaling up to 50x for large networks
+	// Formula: multiplier = 6 + (targetCount / 100) * 2
+	multiplier := timeoutMultiplierBase + (float64(targetCount)/timeoutDivisor)*timeoutMultiplierStep
+	if multiplier > timeoutMultiplierMax {
+		multiplier = timeoutMultiplierMax
+	}
+
+	calculatedTimeout := time.Duration(float64(baseTimeout) * multiplier)
+
+	// Apply bounds
+	minTimeout := time.Duration(minTimeoutSeconds) * time.Second
+	maxTimeout := time.Duration(maxTimeoutSeconds) * time.Second
+
+	if calculatedTimeout < minTimeout {
+		calculatedTimeout = minTimeout
+	}
+	if calculatedTimeout > maxTimeout {
+		calculatedTimeout = maxTimeout
+	}
+
+	return calculatedTimeout
+}
+
+// estimateNetworkTargets estimates the number of hosts in a network for timeout calculation.
+func estimateNetworkTargets(network string) int {
+	_, ipNet, err := net.ParseCIDR(network)
+	if err != nil {
+		// If we can't parse, assume a reasonable default for timeout calculation
+		return defaultNetworkSize
+	}
+
+	ones, bits := ipNet.Mask.Size()
+	hostBits := bits - ones
+
+	// For very large networks, cap the estimate to avoid excessive timeouts
+	if hostBits > 16 {
+		hostBits = 16
+	}
+
+	targetCount := (1 << hostBits) - 2 // Subtract network and broadcast addresses
+	if targetCount < 1 {
+		targetCount = 1
+	}
+
+	return targetCount
+}
+
+// calculateDynamicTimeout calculates timeout based on network size and base timeout.
+// This mirrors the logic
 
 // showDiscoveryResults displays the results of a completed discovery job.
 func showDiscoveryResults(database *db.DB, jobID interface{}) {
@@ -363,8 +431,12 @@ func runDiscovery(cmd *cobra.Command, args []string) {
 
 			fmt.Printf("Discovery job started (ID: %s)\n", job.ID)
 
+			// Calculate dynamic timeout based on network size
+			dynamicTimeout := calculateDiscoveryTimeout(network, discoverTimeout)
+			fmt.Printf("Estimated discovery time: %v (based on network size)\n", dynamicTimeout)
+
 			// Wait for completion with progress updates
-			err = waitForDiscoveryCompletion(ctx, database, job.ID, time.Duration(discoverTimeout)*time.Second)
+			err = waitForDiscoveryCompletion(ctx, database, job.ID, dynamicTimeout)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: Discovery failed for %s: %v\n", network, err)
 				continue
