@@ -623,11 +623,12 @@ func processScanRow(rows *sql.Rows) (*Scan, error) {
 	scan := &Scan{}
 	var targetsStr string
 	var profileID *string
+	var description sql.NullString
 
 	err := rows.Scan(
 		&scan.ID,
 		&scan.Name,
-		&scan.Description,
+		&description,
 		&targetsStr,
 		&scan.ScanType,
 		&scan.Ports,
@@ -639,6 +640,13 @@ func processScanRow(rows *sql.Rows) (*Scan, error) {
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan row: %w", err)
+	}
+
+	// Handle nullable description
+	if description.Valid {
+		scan.Description = description.String
+	} else {
+		scan.Description = ""
 	}
 
 	// Parse targets from CIDR string
