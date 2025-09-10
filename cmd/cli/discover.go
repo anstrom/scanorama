@@ -390,14 +390,23 @@ func runDiscovery(cmd *cobra.Command, args []string) {
 		if discoverAdd && len(args) > 0 {
 			addNetworkFromDiscovery(database, args[0])
 		}
-		// Create discovery engine
+		// Calculate maximum dynamic timeout across all networks for engine and context setup
+		var maxDynamicTimeout time.Duration
+		for _, network := range networks {
+			networkTimeout := calculateDiscoveryTimeout(network, discoverTimeout)
+			if networkTimeout > maxDynamicTimeout {
+				maxDynamicTimeout = networkTimeout
+			}
+		}
+
+		// Create discovery engine with dynamic timeout
 		engine := discovery.NewEngine(database)
 		engine.SetConcurrency(defaultConcurrency)
-		engine.SetTimeout(time.Duration(discoverTimeout) * time.Second)
+		engine.SetTimeout(maxDynamicTimeout)
 
-		// Create context with timeout
+		// Create context with dynamic timeout (plus buffer for overhead)
 		ctx, cancel := context.WithTimeout(context.Background(),
-			time.Duration(discoverTimeout+timeoutBufferSeconds)*time.Second)
+			maxDynamicTimeout+time.Duration(timeoutBufferSeconds)*time.Second)
 		defer cancel()
 
 		// Process each network
@@ -406,12 +415,16 @@ func runDiscovery(cmd *cobra.Command, args []string) {
 				fmt.Printf("\n=== Discovering Network %d/%d: %s ===\n", i+1, len(networks), network)
 			}
 
-			// Create discovery configuration
+			// Calculate dynamic timeout for this specific network
+			dynamicTimeout := calculateDiscoveryTimeout(network, discoverTimeout)
+			fmt.Printf("Estimated discovery time: %v (based on network size)\n", dynamicTimeout)
+
+			// Create discovery configuration with dynamic timeout
 			discoverConfig := &discovery.Config{
 				Network:     network,
 				Method:      discoverMethod,
 				DetectOS:    discoverDetectOS,
-				Timeout:     time.Duration(discoverTimeout) * time.Second,
+				Timeout:     dynamicTimeout,
 				Concurrency: defaultConcurrency,
 				MaxHosts:    10000,
 			}
@@ -431,11 +444,7 @@ func runDiscovery(cmd *cobra.Command, args []string) {
 
 			fmt.Printf("Discovery job started (ID: %s)\n", job.ID)
 
-			// Calculate dynamic timeout based on network size
-			dynamicTimeout := calculateDiscoveryTimeout(network, discoverTimeout)
-			fmt.Printf("Estimated discovery time: %v (based on network size)\n", dynamicTimeout)
-
-			// Wait for completion with progress updates
+			// Wait for completion with progress updates (using the same dynamic timeout)
 			err = waitForDiscoveryCompletion(ctx, database, job.ID, dynamicTimeout)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: Discovery failed for %s: %v\n", network, err)
