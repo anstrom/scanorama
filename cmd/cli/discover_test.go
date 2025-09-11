@@ -17,47 +17,47 @@ func TestCalculateDiscoveryTimeout(t *testing.T) {
 		{
 			name:               "single host /32",
 			network:            "192.168.1.1/32",
-			baseTimeoutSeconds: 30, // unused but kept for test structure
-			expectedMin:        15 * time.Second,
-			expectedMax:        16 * time.Second,
-			description:        "Single host should get minimum reasonable timeout",
+			baseTimeoutSeconds: 30,
+			expectedMin:        30 * time.Second,
+			expectedMax:        31 * time.Second,
+			description:        "Single host should use user timeout as base",
 		},
 		{
 			name:               "small network /30",
 			network:            "192.168.1.0/30",
-			baseTimeoutSeconds: 30, // unused but kept for test structure
-			expectedMin:        15 * time.Second,
-			expectedMax:        17 * time.Second,
-			description:        "Small network should get minimal timeout",
+			baseTimeoutSeconds: 30,
+			expectedMin:        31 * time.Second,
+			expectedMax:        32 * time.Second,
+			description:        "Small network should scale from user timeout",
 		},
 		{
 			name:               "medium network /28",
 			network:            "192.168.1.0/28",
-			baseTimeoutSeconds: 30, // unused but kept for test structure
-			expectedMin:        20 * time.Second,
-			expectedMax:        25 * time.Second,
-			description:        "Medium network should scale reasonably",
+			baseTimeoutSeconds: 30,
+			expectedMin:        37 * time.Second,
+			expectedMax:        38 * time.Second,
+			description:        "Medium network should scale from user timeout",
 		},
 		{
 			name:               "standard /24 network",
 			network:            "192.168.1.0/24",
-			baseTimeoutSeconds: 30,                // unused but kept for test structure
-			expectedMin:        140 * time.Second, // ~2.3 minutes
-			expectedMax:        160 * time.Second,
-			description:        "Standard /24 network should get reasonable timeout",
+			baseTimeoutSeconds: 30,
+			expectedMin:        165 * time.Second, // ~2.75 minutes
+			expectedMax:        170 * time.Second,
+			description:        "Standard /24 network should scale from user timeout",
 		},
 		{
 			name:               "large /20 network",
 			network:            "192.168.0.0/20",
-			baseTimeoutSeconds: 30,                 // unused but kept for test structure
-			expectedMin:        1700 * time.Second, // ~28 minutes
-			expectedMax:        1800 * time.Second, // capped at 30 minutes
-			description:        "Large /20 network should approach maximum timeout",
+			baseTimeoutSeconds: 30,
+			expectedMin:        1800 * time.Second, // Should hit max timeout (30 minutes)
+			expectedMax:        1800 * time.Second,
+			description:        "Large /20 network should hit maximum timeout ceiling",
 		},
 		{
 			name:               "very large /16 network",
 			network:            "192.168.0.0/16",
-			baseTimeoutSeconds: 30,                 // unused but kept for test structure
+			baseTimeoutSeconds: 30,
 			expectedMin:        1800 * time.Second, // Should hit max timeout (30 minutes)
 			expectedMax:        1800 * time.Second,
 			description:        "Very large network should hit maximum timeout limit",
@@ -65,7 +65,7 @@ func TestCalculateDiscoveryTimeout(t *testing.T) {
 		{
 			name:               "huge /8 network capped",
 			network:            "10.0.0.0/8",
-			baseTimeoutSeconds: 30,                 // unused but kept for test structure
+			baseTimeoutSeconds: 30,
 			expectedMin:        1800 * time.Second, // Should hit max timeout
 			expectedMax:        1800 * time.Second,
 			description:        "Huge network should be capped at maximum",
@@ -73,24 +73,32 @@ func TestCalculateDiscoveryTimeout(t *testing.T) {
 		{
 			name:               "invalid network fallback",
 			network:            "invalid-network",
-			baseTimeoutSeconds: 30,                // unused but kept for test structure
-			expectedMin:        140 * time.Second, // Uses default network size (254)
-			expectedMax:        160 * time.Second,
+			baseTimeoutSeconds: 30,
+			expectedMin:        165 * time.Second, // Uses default network size (254), same as /24
+			expectedMax:        170 * time.Second,
 			description:        "Invalid network should fallback to default calculation",
 		},
 		{
 			name:               "very small timeout gets minimum",
 			network:            "192.168.1.1/32",
-			baseTimeoutSeconds: 1,                // unused but kept for test structure
+			baseTimeoutSeconds: 1,
 			expectedMin:        10 * time.Second, // Should be clamped to minimum
-			expectedMax:        16 * time.Second,
+			expectedMax:        11 * time.Second,
 			description:        "Very low base timeout should be clamped to minimum",
+		},
+		{
+			name:               "user timeout overrides maximum ceiling",
+			network:            "192.168.0.0/16", // Large network that would normally hit 30min ceiling
+			baseTimeoutSeconds: 3600,             // 1 hour - exceeds normal 30min ceiling
+			expectedMin:        10 * time.Hour,   // Should get much longer timeout
+			expectedMax:        11 * time.Hour,
+			description:        "High user timeout should override 30-minute ceiling for large networks",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := calculateDiscoveryTimeout(tt.network)
+			result := calculateDiscoveryTimeout(tt.network, tt.baseTimeoutSeconds)
 
 			if result < tt.expectedMin {
 				t.Errorf("calculateDiscoveryTimeout() = %v, expected >= %v (%s)",
@@ -107,8 +115,11 @@ func TestCalculateDiscoveryTimeout(t *testing.T) {
 				t.Errorf("calculateDiscoveryTimeout() = %v, should never be less than 10s", result)
 			}
 
-			if result > 1800*time.Second {
-				t.Errorf("calculateDiscoveryTimeout() = %v, should never be more than 1800s (30m)", result)
+			// Only enforce 30-minute maximum if user timeout is within normal range
+			// Users can override the ceiling by setting --timeout higher than 30 minutes
+			if result > 1800*time.Second && tt.baseTimeoutSeconds <= 1800 {
+				t.Errorf("calculateDiscoveryTimeout() = %v, should not exceed 1800s (30m) for normal user timeouts",
+					result)
 			}
 		})
 	}
@@ -249,7 +260,7 @@ func TestDiscoveryTimeoutRealism(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			timeout := calculateDiscoveryTimeout(tt.network)
+			timeout := calculateDiscoveryTimeout(tt.network, 30)
 
 			if timeout > tt.maxReasonable {
 				t.Errorf("Timeout %v exceeds reasonable maximum %v for %s (%s)",
@@ -279,7 +290,7 @@ func TestDiscoveryTimeoutScaling(t *testing.T) {
 
 	var previousTimeout time.Duration
 	for i, network := range networks {
-		timeout := calculateDiscoveryTimeout(network.cidr)
+		timeout := calculateDiscoveryTimeout(network.cidr, 30)
 
 		// Each larger network should get at least as much time as smaller ones
 		// (unless hitting the maximum cap)
@@ -303,14 +314,14 @@ func TestDiscoveryTimeoutEdgeCases(t *testing.T) {
 		{
 			name:               "zero base timeout",
 			network:            "192.168.1.0/24",
-			baseTimeoutSeconds: 0,                // unused but kept for test structure
+			baseTimeoutSeconds: 0,
 			expectedTimeout:    10 * time.Second, // Should be clamped to minimum
 			description:        "Zero base timeout should result in minimum timeout",
 		},
 		{
 			name:               "negative base timeout",
 			network:            "192.168.1.0/24",
-			baseTimeoutSeconds: -10,              // unused but kept for test structure
+			baseTimeoutSeconds: -10,
 			expectedTimeout:    10 * time.Second, // Should be clamped to minimum
 			description:        "Negative base timeout should result in minimum timeout",
 		},
@@ -318,12 +329,12 @@ func TestDiscoveryTimeoutEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := calculateDiscoveryTimeout(tt.network)
+			result := calculateDiscoveryTimeout(tt.network, tt.baseTimeoutSeconds)
 
 			// Allow some tolerance since the actual calculation involves more than just the minimum
 			if result < tt.expectedTimeout {
-				t.Errorf("calculateDiscoveryTimeout(%q) = %v, expected >= %v (%s)",
-					tt.network, result, tt.expectedTimeout, tt.description)
+				t.Errorf("calculateDiscoveryTimeout(%q, %d) = %v, expected >= %v (%s)",
+					tt.network, tt.baseTimeoutSeconds, result, tt.expectedTimeout, tt.description)
 			}
 		})
 	}
@@ -369,7 +380,7 @@ func BenchmarkCalculateDiscoveryTimeout(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		network := networks[i%len(networks)]
-		calculateDiscoveryTimeout(network)
+		calculateDiscoveryTimeout(network, 30)
 	}
 }
 
@@ -425,7 +436,7 @@ func TestRealisticTimeoutExamples(t *testing.T) {
 
 	for _, example := range examples {
 		t.Run(example.description, func(t *testing.T) {
-			timeout := calculateDiscoveryTimeout(example.network)
+			timeout := calculateDiscoveryTimeout(example.network, 30)
 
 			if timeout < example.minExpected {
 				t.Errorf("%s (%s): timeout %v is less than expected minimum %v",

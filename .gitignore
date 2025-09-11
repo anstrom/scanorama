@@ -12,12 +12,20 @@ coverage*.html
 api_coverage.*
 handlers_coverage.*
 *.coverage
+websocket_coverage.html
 
 # Scan results
 *.xml
 result.*
 scan_output.*
 scan_results.*
+
+# Development and runtime files
+*.pid
+api-server.pid
+scanorama.pid
+config/environments/*.working.yaml
+docker/data/
 
 # Test artifacts
 coverage.out

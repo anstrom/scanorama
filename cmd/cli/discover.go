@@ -191,14 +191,15 @@ func waitForDiscoveryCompletion(ctx context.Context, database *db.DB, jobID inte
 	return fmt.Errorf("discovery job did not complete within %v", timeout)
 }
 
-// calculateDiscoveryTimeout calculates realistic timeout based on network size.
-func calculateDiscoveryTimeout(network string) time.Duration {
+// calculateDiscoveryTimeout calculates realistic timeout based on network size and user timeout.
+func calculateDiscoveryTimeout(network string, baseTimeoutSeconds int) time.Duration {
 	// Estimate target count from CIDR
 	targetCount := estimateNetworkTargets(network)
 
-	// Calculate timeout: base time + time per host batch
-	// Formula: batchTimeout + (targetCount * baseTimeoutPerHost) + buffer for concurrency
-	timeoutSeconds := batchTimeoutSeconds + int(float64(targetCount)*baseTimeoutPerHost)
+	// Calculate timeout: user base timeout + scaled time per host batch
+	// Formula: baseTimeout + (targetCount * baseTimeoutPerHost) + buffer for concurrency
+	// Use user's baseTimeout as the foundation, then add per-host scaling
+	timeoutSeconds := baseTimeoutSeconds + int(float64(targetCount)*baseTimeoutPerHost)
 
 	// Add buffer for network latency and processing overhead
 	if targetCount > batchOverheadThreshold {
@@ -209,7 +210,10 @@ func calculateDiscoveryTimeout(network string) time.Duration {
 	if timeoutSeconds < minTimeoutSeconds {
 		timeoutSeconds = minTimeoutSeconds
 	}
-	if timeoutSeconds > maxTimeoutSeconds {
+
+	// Only apply maximum timeout if user hasn't explicitly set a higher timeout
+	// This allows users to override the 30-minute ceiling with --timeout flag
+	if timeoutSeconds > maxTimeoutSeconds && baseTimeoutSeconds <= maxTimeoutSeconds {
 		timeoutSeconds = maxTimeoutSeconds
 	}
 
@@ -386,7 +390,7 @@ func runDiscovery(cmd *cobra.Command, args []string) {
 		// Calculate maximum dynamic timeout across all networks for engine and context setup
 		var maxDynamicTimeout time.Duration
 		for _, network := range networks {
-			networkTimeout := calculateDiscoveryTimeout(network)
+			networkTimeout := calculateDiscoveryTimeout(network, discoverTimeout)
 			if networkTimeout > maxDynamicTimeout {
 				maxDynamicTimeout = networkTimeout
 			}
@@ -409,7 +413,7 @@ func runDiscovery(cmd *cobra.Command, args []string) {
 			}
 
 			// Calculate dynamic timeout for this specific network
-			networkTimeout := calculateDiscoveryTimeout(network)
+			networkTimeout := calculateDiscoveryTimeout(network, discoverTimeout)
 			fmt.Printf("Estimated discovery time: %v (based on network size)\n", networkTimeout)
 
 			// Create discovery configuration with dynamic timeout
