@@ -32,6 +32,7 @@ const (
 	timeoutConcurrency     = 50   // default concurrency for timeout calculation
 	batchOverheadThreshold = 100  // threshold above which to add batch overhead
 	defaultNetworkSize     = 254  // default network size estimate for /24 network
+	maxBatchBufferSeconds  = 3600 // maximum batch buffer: 1 hour
 
 	// SQL error constants.
 	sqlNoRowsError = "sql: no rows in result set"
@@ -192,26 +193,59 @@ func waitForDiscoveryCompletion(ctx context.Context, database *db.DB, jobID inte
 }
 
 // calculateDiscoveryTimeout calculates realistic timeout based on network size and user timeout.
+// It uses the user's specified timeout as a foundation and adds intelligent scaling based on
+// the estimated number of hosts in the target network.
+//
+// Parameters:
+//   - network: CIDR notation network (e.g., "192.168.1.0/24")
+//   - baseTimeoutSeconds: User-specified timeout in seconds (must be >= 0)
+//
+// Returns:
+//   - time.Duration representing the calculated timeout
+//
+// Examples:
+//   - Single host (/32): baseTimeout + ~0.5s = ~30s for baseTimeout=30
+//   - Small network (/28): baseTimeout + ~8s = ~38s for baseTimeout=30
+//   - Standard /24: baseTimeout + ~127s = ~157s for baseTimeout=30
+//   - Large network (/16): May reach hours for high user timeouts
 func calculateDiscoveryTimeout(network string, baseTimeoutSeconds int) time.Duration {
+	// Validate input parameters
+	if baseTimeoutSeconds < 0 {
+		baseTimeoutSeconds = 0 // Treat negative values as zero
+	}
+
 	// Estimate target count from CIDR
 	targetCount := estimateNetworkTargets(network)
 
 	// Calculate timeout: user base timeout + scaled time per host batch
 	// Formula: baseTimeout + (targetCount * baseTimeoutPerHost) + buffer for concurrency
 	// Use user's baseTimeout as the foundation, then add per-host scaling
-	timeoutSeconds := baseTimeoutSeconds + int(float64(targetCount)*baseTimeoutPerHost)
+	scalingTime := int(float64(targetCount) * baseTimeoutPerHost)
+
+	// Prevent integer overflow by capping scaling time
+	const maxScalingTime = 1000000 // ~11.5 days max scaling
+	if scalingTime > maxScalingTime {
+		scalingTime = maxScalingTime
+	}
+
+	timeoutSeconds := baseTimeoutSeconds + scalingTime
 
 	// Add buffer for network latency and processing overhead
 	if targetCount > batchOverheadThreshold {
-		timeoutSeconds += (targetCount / timeoutConcurrency) * 2 // 2 seconds per batch of hosts
+		batchBuffer := (targetCount / timeoutConcurrency) * 2 // 2 seconds per batch of hosts
+		// Cap batch buffer to prevent excessive timeouts
+		if batchBuffer > maxBatchBufferSeconds { // Max 1 hour batch buffer
+			batchBuffer = maxBatchBufferSeconds
+		}
+		timeoutSeconds += batchBuffer
 	}
 
-	// Apply reasonable bounds
+	// Apply reasonable minimum bound
 	if timeoutSeconds < minTimeoutSeconds {
 		timeoutSeconds = minTimeoutSeconds
 	}
 
-	// Only apply maximum timeout if user hasn't explicitly set a higher timeout
+	// Only apply maximum timeout ceiling if user hasn't explicitly set a higher timeout
 	// This allows users to override the 30-minute ceiling with --timeout flag
 	if timeoutSeconds > maxTimeoutSeconds && baseTimeoutSeconds <= maxTimeoutSeconds {
 		timeoutSeconds = maxTimeoutSeconds
@@ -221,22 +255,55 @@ func calculateDiscoveryTimeout(network string, baseTimeoutSeconds int) time.Dura
 }
 
 // estimateNetworkTargets estimates the number of hosts in a network for timeout calculation.
+// It parses CIDR notation and calculates the theoretical host count, applying safety caps
+// to prevent excessive timeout calculations for very large networks.
+//
+// Parameters:
+//   - network: CIDR notation string (e.g., "192.168.1.0/24", "10.0.0.0/8")
+//
+// Returns:
+//   - int: Estimated number of targetable hosts (excludes network/broadcast addresses)
+//
+// Examples:
+//   - "192.168.1.1/32" -> 1 host
+//   - "192.168.1.0/24" -> 254 hosts
+//   - "10.0.0.0/8" -> 65534 hosts (capped at /16 equivalent)
+//   - "invalid" -> 254 hosts (default fallback)
 func estimateNetworkTargets(network string) int {
+	// Validate input - empty strings should use default
+	if network == "" {
+		return defaultNetworkSize
+	}
+
 	_, ipNet, err := net.ParseCIDR(network)
 	if err != nil {
-		// If we can't parse, assume a reasonable default for timeout calculation
+		// If we can't parse the CIDR (invalid format, malformed network, etc.),
+		// assume a reasonable default equivalent to /24 network for timeout calculation
 		return defaultNetworkSize
 	}
 
 	ones, bits := ipNet.Mask.Size()
-	hostBits := bits - ones
 
-	// For very large networks, cap the estimate to avoid excessive timeouts
-	if hostBits > 16 {
-		hostBits = 16
+	// Sanity check: ensure we have valid mask data
+	if ones < 0 || bits <= 0 || ones > bits {
+		return defaultNetworkSize
 	}
 
-	targetCount := (1 << hostBits) - 2 // Subtract network and broadcast addresses
+	hostBits := bits - ones
+
+	// Safety cap: For very large networks (>/16), limit to /16 equivalent
+	// This prevents timeout calculations from becoming unreasonably long
+	// while still scaling appropriately for realistic network sizes
+	const maxHostBits = 16 // Equivalent to /16 network (65534 hosts)
+	if hostBits > maxHostBits {
+		hostBits = maxHostBits
+	}
+
+	// Calculate target count: 2^hostBits - 2 (subtract network and broadcast addresses)
+	// Use bit shifting for efficient power-of-2 calculation
+	targetCount := (1 << hostBits) - 2
+
+	// Ensure minimum of 1 host (handles /31 and /32 networks)
 	if targetCount < 1 {
 		targetCount = 1
 	}
