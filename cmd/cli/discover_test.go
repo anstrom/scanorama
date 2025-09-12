@@ -94,6 +94,30 @@ func TestCalculateDiscoveryTimeout(t *testing.T) {
 			expectedMax:        11 * time.Hour,
 			description:        "High user timeout should override 30-minute ceiling for large networks",
 		},
+		{
+			name:               "negative timeout treated as zero",
+			network:            "192.168.1.1/32",
+			baseTimeoutSeconds: -100,             // Negative timeout
+			expectedMin:        10 * time.Second, // Should be clamped to minimum
+			expectedMax:        11 * time.Second,
+			description:        "Negative timeout should be treated as zero and clamped to minimum",
+		},
+		{
+			name:               "empty network string fallback",
+			network:            "", // Empty network
+			baseTimeoutSeconds: 30,
+			expectedMin:        165 * time.Second, // Should use default network size (254) like /24
+			expectedMax:        170 * time.Second,
+			description:        "Empty network should fallback to default network size",
+		},
+		{
+			name:               "extremely large timeout with overflow protection",
+			network:            "10.0.0.0/8",   // Very large network
+			baseTimeoutSeconds: 86400,          // 24 hours
+			expectedMin:        24 * time.Hour, // Should handle large timeouts safely
+			expectedMax:        35 * time.Hour, // Accounts for scaling + batch buffer for capped /16 equivalent
+			description:        "Very large timeout should be handled safely without integer overflow",
+		},
 	}
 
 	for _, tt := range tests {
