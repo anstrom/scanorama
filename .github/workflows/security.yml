@@ -38,7 +38,8 @@ jobs:
       - name: Run Go vulnerability check
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          # Run govulncheck and only fail on actual vulnerabilities affecting the code
+          govulncheck -mode=source ./...
 
       - name: Check for known vulnerabilities in dependencies
         run: |
