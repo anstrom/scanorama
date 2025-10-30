@@ -26,27 +26,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: Download dependencies
-        run: go mod download
-
       - name: Run Go vulnerability check
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          # Run govulncheck and only fail on actual vulnerabilities affecting the code
-          govulncheck -mode=source ./...
-
-      - name: Check for known vulnerabilities in dependencies
-        run: |
-          go list -json -deps ./... | jq -r '.Module | select(.Path != null) | .Path + "@" + .Version' | sort -u > deps.txt
-          echo "📦 Dependencies scanned:"
-          cat deps.txt
-          echo "✅ Vulnerability scan completed"
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: ${{ env.GO_VERSION }}
+          go-package: ./...
 
   codeql-analysis:
     name: CodeQL Analysis
