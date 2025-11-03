@@ -17,7 +17,7 @@
     "test:clients": "npm run openapi:validate-for-codegen && npm run openapi:check-schema"
   },
   "devDependencies": {
-    "@quobix/vacuum": "0.19.4",
+    "@quobix/vacuum": "0.19.5",
     "@redocly/cli": "2.10.0",
     "js-yaml": "^4.1.0"
   },
