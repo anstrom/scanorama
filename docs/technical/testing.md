@@ -33,7 +33,7 @@ Tests are primarily written using Go's standard testing package and follow these
 
 ### Prerequisites
 
-- Go 1.25.1 or higher
+- Go 1.25.3 or higher
 - Docker and Docker Compose (optional, for full test environment)
 - Make (optional, for using Makefile commands)
 

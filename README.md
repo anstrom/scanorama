@@ -31,7 +31,7 @@ Scanorama is an advanced network scanning and discovery tool built on nmap for c
 
 ## Requirements
 
-- Go 1.25.1+
+- Go 1.25.3+
 - **nmap 7.0+** (required - provides core scanning functionality)
 - PostgreSQL (for database storage)
 
