@@ -6,7 +6,7 @@ package scanning
 import (
 	"context"
 	"fmt"
-	"log"
+
 	"net"
 	"strings"
 	"time"
@@ -141,7 +141,7 @@ func createAndRunScanner(ctx context.Context, config *ScanConfig) (*nmap.Run, er
 	}
 
 	if warnings != nil && len(*warnings) > 0 {
-		log.Printf("Scan completed with warnings: %v", *warnings)
+		logging.Warn("Scan completed with warnings", "warnings", *warnings)
 	}
 
 	return result, nil
@@ -315,15 +315,15 @@ func PrintResults(result *ScanResult) {
 
 // storeScanResults stores scan results in the database.
 func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, result *ScanResult) error {
-	log.Printf("DEBUG: Scan storing results for targets %v", config.Targets)
+	logging.Debug("Storing scan results", "targets", config.Targets)
 
 	// Create a scan job record - for now we'll create a minimal scan target
 	scanTarget, err := createOrGetScanTarget(ctx, database, config)
 	if err != nil {
-		log.Printf("DEBUG: Scan failed to create scan target: %v", err)
+		logging.Error("Failed to create scan target", "error", err)
 		return fmt.Errorf("failed to create scan target: %w", err)
 	}
-	log.Printf("DEBUG: Scan created/retrieved scan target ID=%s, name=%s", scanTarget.ID, scanTarget.Name)
+	logging.Debug("Created/retrieved scan target", "target_id", scanTarget.ID, "target_name", scanTarget.Name)
 
 	// Create scan job
 	scanJob := &db.ScanJob{
@@ -331,7 +331,7 @@ func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, 
 		TargetID: scanTarget.ID,
 		Status:   db.ScanJobStatusCompleted,
 	}
-	log.Printf("DEBUG: Scan creating scan job ID=%s for target ID=%s", scanJob.ID, scanJob.TargetID)
+	logging.Debug("Creating scan job", "job_id", scanJob.ID, "target_id", scanJob.TargetID)
 
 	now := time.Now()
 	scanJob.StartedAt = &result.StartTime
@@ -344,19 +344,19 @@ func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, 
 
 	jobRepo := db.NewScanJobRepository(database)
 	if err := jobRepo.Create(ctx, scanJob); err != nil {
-		log.Printf("DEBUG: Scan failed to create scan job: %v", err)
+		logging.Error("Failed to create scan job", "error", err)
 		return fmt.Errorf("failed to create scan job: %w", err)
 	}
-	log.Printf("DEBUG: Scan successfully created scan job ID=%s", scanJob.ID)
+	logging.Debug("Successfully created scan job", "job_id", scanJob.ID)
 
 	// Store host and port scan results
-	log.Printf("DEBUG: Scan storing results for %d hosts", len(result.Hosts))
+	logging.Debug("Storing host results", "host_count", len(result.Hosts))
 	err = storeHostResults(ctx, database, scanJob.ID, result.Hosts)
 	if err != nil {
-		log.Printf("DEBUG: Scan failed to store host results: %v", err)
+		logging.Error("Failed to store host results", "error", err)
 		return err
 	}
-	log.Printf("DEBUG: Scan successfully stored all results")
+	logging.Debug("Successfully stored all scan results")
 	return nil
 }
 
@@ -423,15 +423,15 @@ func parseTargetAddress(target string) (db.NetworkAddr, error) {
 // createAdhocScanTarget creates a temporary scan target for ad-hoc scans.
 func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetRepository,
 	target string, config *ScanConfig) (*db.ScanTarget, error) {
-	log.Printf("DEBUG: Scan creating ad-hoc scan target for %s", target)
+	logging.Debug("Creating ad-hoc scan target", "target", target)
 
 	// Parse target address
 	networkAddr, err := parseTargetAddress(target)
 	if err != nil {
-		log.Printf("DEBUG: Scan failed to parse target address %s: %v", target, err)
+		logging.Error("Failed to parse target address", "target", target, "error", err)
 		return nil, err
 	}
-	log.Printf("DEBUG: Scan parsed target %s as network %s", target, networkAddr.String())
+	logging.Debug("Parsed target address", "target", target, "network", networkAddr.String())
 
 	// Map scan types to database-compatible values
 	dbScanType := config.ScanType
@@ -453,24 +453,23 @@ func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetReposit
 	}
 
 	if err := targetRepo.Create(ctx, scanTarget); err != nil {
-		log.Printf("DEBUG: Scan failed to create scan target: %v", err)
+		logging.Error("Failed to create scan target", "error", err)
 		return nil, fmt.Errorf("failed to create scan target: %w", err)
 	}
-	log.Printf("DEBUG: Scan successfully created scan target ID=%s, name=%s", scanTarget.ID, scanTarget.Name)
+	logging.Debug("Successfully created scan target", "target_id", scanTarget.ID, "target_name", scanTarget.Name)
 
 	return scanTarget, nil
 }
 
 // debugHostLookup performs detailed debugging of host lookup process.
 func debugHostLookup(ctx context.Context, database *db.DB, hostAddress string, ipAddr db.IPAddr) {
-	log.Printf("DEBUG: Scan looking up host %s with parsed IP %v (type: %T)",
-		hostAddress, ipAddr.IP, ipAddr.IP)
+	logging.Debug("Looking up host", "address", hostAddress, "ip", ipAddr.IP)
 
 	// Debug: Check what hosts actually exist in database
 	var hostCount int
 	countQuery := `SELECT COUNT(*) FROM hosts WHERE ip_address::text LIKE '%' || $1 || '%'`
 	if err := database.QueryRowContext(ctx, countQuery, hostAddress).Scan(&hostCount); err == nil {
-		log.Printf("DEBUG: Scan found %d hosts containing IP %s", hostCount, hostAddress)
+		logging.Debug("Found hosts with IP", "count", hostCount, "address", hostAddress)
 	}
 }
 
@@ -483,13 +482,13 @@ func debugListExistingHosts(ctx context.Context, database *db.DB) {
 	}
 	debugQuery := `SELECT ip_address::text, discovery_method, id::text FROM hosts LIMIT 5`
 	if err := database.SelectContext(ctx, &debugHosts, debugQuery); err == nil {
-		log.Printf("DEBUG: Scan - Current hosts in database:")
+		logging.Debug("Current hosts in database", "count", len(debugHosts))
 		for _, h := range debugHosts {
 			method := nullValue
 			if h.Method != nil {
 				method = *h.Method
 			}
-			log.Printf("DEBUG: Scan -   Host IP=%s, Method=%s, ID=%s", h.IP, method, h.ID)
+			logging.Debug("Database host", "ip", h.IP, "method", method, "id", h.ID)
 		}
 	}
 }
@@ -507,9 +506,10 @@ func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostR
 		return nil, fmt.Errorf("failed to get or create host %s: %w", host.Address, err)
 	}
 
-	log.Printf("DEBUG: Scan using host %s (ID=%s) with discovery_method=%v",
-		host.Address, dbHost.ID.String(),
-		func() string {
+	logging.Debug("Using host for scan",
+		"address", host.Address,
+		"id", dbHost.ID.String(),
+		"discovery_method", func() string {
 			if dbHost.DiscoveryMethod != nil {
 				return *dbHost.DiscoveryMethod
 			}
@@ -557,12 +557,12 @@ func getOrCreateHostSafely(ctx context.Context, database *db.DB, hostRepo *db.Ho
 	const retryDelay = 100 * time.Millisecond
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		log.Printf("DEBUG: Scan attempting host lookup %s (attempt %d/%d)", ipAddr.String(), attempt, maxRetries)
+		logging.Debug("Attempting host lookup", "ip", ipAddr.String(), "attempt", attempt, "max_retries", maxRetries)
 
 		// Use explicit transaction for consistent reads
 		tx, err := database.BeginTx(ctx)
 		if err != nil {
-			log.Printf("DEBUG: Scan failed to begin transaction for %s: %v", ipAddr.String(), err)
+			logging.Error("Failed to begin transaction", "ip", ipAddr.String(), "error", err)
 			if attempt == maxRetries {
 				return nil, fmt.Errorf("failed to begin transaction after %d attempts: %w", maxRetries, err)
 			}
@@ -597,12 +597,12 @@ func getOrCreateHostSafely(ctx context.Context, database *db.DB, hostRepo *db.Ho
 
 		// Host not found - rollback read transaction
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			log.Printf("DEBUG: Scan failed to rollback read transaction for %s: %v", ipAddr.String(), rollbackErr)
+			logging.Error("Failed to rollback read transaction", "ip", ipAddr.String(), "error", rollbackErr)
 		}
 
 		if attempt == maxRetries {
 			// Create new host if all retries exhausted
-			log.Printf("DEBUG: Scan creating new host for %s after %d lookup attempts", ipAddr.String(), maxRetries)
+			logging.Debug("Creating new host after lookup attempts", "ip", ipAddr.String(), "attempts", maxRetries)
 			debugListExistingHosts(ctx, database)
 
 			newHost := &db.Host{
@@ -617,11 +617,11 @@ func getOrCreateHostSafely(ctx context.Context, database *db.DB, hostRepo *db.Ho
 				return nil, fmt.Errorf("failed to create new host: %w", createErr)
 			}
 
-			log.Printf("DEBUG: Scan successfully created new host %s", ipAddr.String())
+			logging.Debug("Successfully created new host", "ip", ipAddr.String())
 			return newHost, nil
 		}
 
-		log.Printf("DEBUG: Scan host lookup attempt %d failed for %s, retrying...", attempt, ipAddr.String())
+		logging.Debug("Host lookup attempt failed, retrying", "attempt", attempt, "ip", ipAddr.String())
 		time.Sleep(retryDelay)
 	}
 
@@ -643,24 +643,24 @@ func verifyHostExists(ctx context.Context, database *db.DB, hostID uuid.UUID) er
 		return fmt.Errorf("host with ID %s does not exist", hostID.String())
 	}
 
-	log.Printf("DEBUG: Scan verified host %s exists in database", hostID.String())
+	logging.Debug("Verified host exists in database", "host_id", hostID.String())
 	return nil
 }
 
 // handleHostCommit handles the transaction commit for found hosts.
 func handleHostCommit(tx *sqlx.Tx, existingHost *db.Host, host Host, ipAddr db.IPAddr) (*db.Host, error) {
 	if commitErr := tx.Commit(); commitErr != nil {
-		log.Printf("DEBUG: Scan failed to commit read transaction for %s: %v", ipAddr.String(), commitErr)
+		logging.Error("Failed to commit read transaction", "ip", ipAddr.String(), "error", commitErr)
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			log.Printf("DEBUG: Scan failed to rollback after commit error for %s: %v",
-				ipAddr.String(), rollbackErr)
+			logging.Error("Failed to rollback after commit error", "ip", ipAddr.String(), "error", rollbackErr)
 		}
 		return nil, fmt.Errorf("failed to commit read transaction: %w", commitErr)
 	}
 
-	log.Printf("DEBUG: Scan found existing host %s (ID=%s) with discovery_method=%v",
-		ipAddr.String(), existingHost.ID.String(),
-		func() string {
+	logging.Debug("Found existing host",
+		"ip", ipAddr.String(),
+		"id", existingHost.ID.String(),
+		"discovery_method", func() string {
 			if existingHost.DiscoveryMethod != nil {
 				return *existingHost.DiscoveryMethod
 			}
@@ -682,7 +682,7 @@ func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hos
 	for _, host := range hosts {
 		portScans, err := processHostForScan(ctx, database, hostRepo, host, jobID)
 		if err != nil {
-			log.Printf("Failed to process host %s: %v", host.Address, err)
+			logging.Error("Failed to process host", "address", host.Address, "error", err)
 			continue
 		}
 		allPortScans = append(allPortScans, portScans...)
