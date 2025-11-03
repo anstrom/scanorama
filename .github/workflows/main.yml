@@ -217,8 +217,18 @@ jobs:
 
       - name: Run integration tests
         run: |
-          # Run all tests (including integration tests that need database)
-          go test -v -p 1 ./...
+          # Run all tests (including integration tests that need database) with coverage
+          go test -v -p 1 -coverprofile=integration_coverage.out -covermode=atomic ./...
+          go tool cover -func=integration_coverage.out | tail -1
+
+      - name: Upload integration coverage
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./integration_coverage.out
+          flags: integration
+          name: codecov-integration
 
       - name: Run database migration tests
         run: |
