@@ -7,6 +7,52 @@
 
 A network scanning and discovery tool built on nmap with database persistence, REST API, and automated scheduling capabilities.
 
+## Quick Start
+
+### Running Tests
+
+```bash
+# Start test database and run all tests
+make test
+
+# Run only unit tests (no database needed)
+make test-unit
+
+# Generate coverage report
+make coverage
+
+# Start database manually (for development)
+make db-up
+
+# Stop database
+make db-down
+```
+
+### Database Management
+
+The test database runs in Docker and is managed automatically:
+- `make test` - Starts DB, runs tests, stops DB
+- `make db-up` - Start test database
+- `make db-down` - Stop test database
+- `make db-reset` - Reset database (down + up)
+- `make db-shell` - Connect with psql
+
+### Development
+
+```bash
+# Format code
+make fmt
+
+# Run linter
+make lint
+
+# Build binary
+make build
+
+# See all targets
+make help
+```
+
 ## Features
 
 - **Network Discovery**: Host discovery and port scanning using nmap
