@@ -5,6 +5,7 @@ package auth
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,7 +78,7 @@ func TestAPIKeyRepository_CreateAPIKey(t *testing.T) {
 		{
 			name:        "create_key_with_long_notes",
 			keyName:     "Test Long Notes Key",
-			notes:       "This is a very long note. " + string(make([]byte, 500)),
+			notes:       "This is a very long note. " + strings.Repeat("Lorem ipsum dolor sit amet. ", 20),
 			expectError: false,
 		},
 	}
