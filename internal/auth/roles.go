@@ -146,6 +146,11 @@ func (r *Role) HasPermission(resource, action string) bool {
 		return true
 	}
 
+	// Check wildcard resource for specific action
+	if r.hasResourcePermission(ResourceAll, action) {
+		return true
+	}
+
 	// Check specific resource permissions
 	return r.hasResourcePermission(resource, action)
 }
