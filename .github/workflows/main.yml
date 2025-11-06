@@ -82,14 +82,8 @@ jobs:
           go test -short -race -coverprofile=coverage.out -covermode=atomic ./...
           go tool cover -func=coverage.out | tail -1
 
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v5
-        continue-on-error: true
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.out
-          flags: unittests
-          name: codecov-umbrella
+      # Note: Unit test coverage not uploaded to avoid partial coverage reports.
+      # Integration tests run all tests (including unit tests) and upload complete coverage.
 
   # Stage 3: Integration Tests (requires database and services)
   integration-tests:
@@ -221,14 +215,13 @@ jobs:
           go test -v -p 1 -coverprofile=integration_coverage.out -covermode=atomic ./...
           go tool cover -func=integration_coverage.out | tail -1
 
-      - name: Upload integration coverage
+      - name: Upload complete coverage to Codecov
         uses: codecov/codecov-action@v5
         continue-on-error: true
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./integration_coverage.out
-          flags: integration
-          name: codecov-integration
+          name: codecov-umbrella
 
       - name: Run database migration tests
         run: |
