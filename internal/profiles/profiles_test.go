@@ -274,9 +274,9 @@ func setupTestDB(t *testing.T) (database *db.DB, cleanup func()) {
 
 	ctx := context.Background()
 	var err error
-	database, err = db.Connect(ctx, dbConfig)
+	database, err = db.ConnectAndMigrate(ctx, dbConfig)
 	if err != nil {
-		t.Skipf("Failed to connect to test database: %v", err)
+		t.Skipf("Failed to connect to test database and run migrations: %v", err)
 	}
 
 	cleanup = func() {
