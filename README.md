@@ -1,5 +1,51 @@
 # Scanorama
 
+## Quick Start
+
+### Running Tests
+
+```bash
+# Start test database and run all tests
+make test
+
+# Run only unit tests (no database needed)
+make test-unit
+
+# Generate coverage report
+make coverage
+
+# Start database manually (for development)
+make db-up
+
+# Stop database
+make db-down
+```
+
+### Database Management
+
+The test database runs in Docker and is managed automatically:
+- `make test` - Starts DB, runs tests, stops DB
+- `make db-up` - Start test database
+- `make db-down` - Stop test database
+- `make db-reset` - Reset database (down + up)
+- `make db-shell` - Connect with psql
+
+### Development
+
+```bash
+# Format code
+make fmt
+
+# Run linter
+make lint
+
+# Build binary
+make build
+
+# See all targets
+make help
+```
+
 [![CI](https://github.com/anstrom/scanorama/actions/workflows/main.yml/badge.svg)](https://github.com/anstrom/scanorama/actions/workflows/main.yml)
 [![Security](https://github.com/anstrom/scanorama/actions/workflows/security.yml/badge.svg)](https://github.com/anstrom/scanorama/actions/workflows/security.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/anstrom/scanorama)](https://goreportcard.com/report/github.com/anstrom/scanorama)
