@@ -235,3 +235,18 @@ dev-setup: deps ## Setup development environment
 .PHONY: all
 all: clean deps build test ## Build everything from scratch
 	@echo "✓ Build complete"
+
+# =============================================================================
+# Documentation (for CI compatibility)
+# =============================================================================
+
+.PHONY: docs-generate
+docs-generate: ## Generate API documentation (placeholder for CI)
+	@echo "Generating API documentation..."
+	@if command -v swag >/dev/null 2>&1; then \
+		cd docs && swag init -g swagger_docs.go -o ./swagger --parseDependency --parseInternal; \
+		echo "✓ API documentation generated"; \
+	else \
+		echo "⚠ swag not installed, skipping documentation generation"; \
+		echo "Install with: go install github.com/swaggo/swag/cmd/swag@latest"; \
+	fi
