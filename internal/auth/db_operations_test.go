@@ -16,6 +16,11 @@ import (
 
 // setupTestRepository creates a test repository with database connection
 func setupTestRepository(t *testing.T) (repo *APIKeyRepository, cleanup func()) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test in short mode")
+		return nil, nil
+	}
+
 	ctx := context.Background()
 
 	database, _, err := helpers.ConnectToTestDatabase(ctx)
@@ -36,6 +41,10 @@ func setupTestRepository(t *testing.T) (repo *APIKeyRepository, cleanup func()) 
 }
 
 func TestNewAPIKeyRepository(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping database integration test in short mode")
+	}
+
 	ctx := context.Background()
 
 	database, _, err := helpers.ConnectToTestDatabase(ctx)
