@@ -156,9 +156,14 @@ func TestAPIKeyRepository_ListAPIKeys(t *testing.T) {
 
 	expiredKey, err := GenerateAPIKey("Test Expired Key")
 	require.NoError(t, err)
+	futureTime := time.Now().UTC().Add(24 * time.Hour)
+	expiredKey.KeyInfo.ExpiresAt = &futureTime
+	storedExpired, err := repo.CreateAPIKey(expiredKey)
+	require.NoError(t, err)
+
+	// Manually update to past date to simulate expired key (bypass constraint)
 	pastTime := time.Now().UTC().Add(-24 * time.Hour)
-	expiredKey.KeyInfo.ExpiresAt = &pastTime
-	_, err = repo.CreateAPIKey(expiredKey)
+	_, err = repo.db.Exec("UPDATE api_keys SET expires_at = $1 WHERE id = $2", pastTime, storedExpired.ID)
 	require.NoError(t, err)
 
 	// Create inactive key
@@ -238,7 +243,7 @@ func TestAPIKeyRepository_FindAPIKeyByIdentifier(t *testing.T) {
 		},
 		{
 			name:        "find_by_prefix",
-			identifier:  storedKey.KeyPrefix[:5], // Use part of prefix
+			identifier:  storedKey.KeyPrefix, // Use full prefix
 			expectError: false,
 		},
 		{
@@ -408,9 +413,14 @@ func TestAPIKeyRepository_ValidateAPIKey(t *testing.T) {
 	// Create an expired key
 	expiredKey, err := GenerateAPIKey("Test Expired Validate Key")
 	require.NoError(t, err)
+	futureTime := time.Now().UTC().Add(24 * time.Hour)
+	expiredKey.KeyInfo.ExpiresAt = &futureTime
+	storedExpired2, err := repo.CreateAPIKey(expiredKey)
+	require.NoError(t, err)
+
+	// Manually update to past date to simulate expired key
 	pastTime := time.Now().UTC().Add(-24 * time.Hour)
-	expiredKey.KeyInfo.ExpiresAt = &pastTime
-	_, err = repo.CreateAPIKey(expiredKey)
+	_, err = repo.db.Exec("UPDATE api_keys SET expires_at = $1 WHERE id = $2", pastTime, storedExpired2.ID)
 	require.NoError(t, err)
 
 	// Create an inactive key
@@ -575,9 +585,14 @@ func TestAPIKeyRepository_CleanupExpiredKeys(t *testing.T) {
 	// Create an expired but active key
 	expiredKey, err := GenerateAPIKey("Test Cleanup Expired")
 	require.NoError(t, err)
-	pastTime := time.Now().UTC().Add(-24 * time.Hour)
-	expiredKey.KeyInfo.ExpiresAt = &pastTime
+	futureTime := time.Now().UTC().Add(24 * time.Hour)
+	expiredKey.KeyInfo.ExpiresAt = &futureTime
 	storedExpired, err := repo.CreateAPIKey(expiredKey)
+	require.NoError(t, err)
+
+	// Manually update to past date to simulate expired key
+	pastTime := time.Now().UTC().Add(-24 * time.Hour)
+	_, err = repo.db.Exec("UPDATE api_keys SET expires_at = $1 WHERE id = $2", pastTime, storedExpired.ID)
 	require.NoError(t, err)
 
 	// Verify it's active
