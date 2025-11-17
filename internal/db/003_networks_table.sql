@@ -67,13 +67,13 @@ RETURNS TABLE(
 BEGIN
     RETURN QUERY
     SELECT
-        network(network_cidr) as network_addr,
-        broadcast(network_cidr) as broadcast_addr,
-        netmask(network_cidr) as netmask,
+        network(network_cidr)::INET as network_addr,
+        broadcast(network_cidr)::INET as broadcast_addr,
+        netmask(network_cidr)::INET as netmask,
         -- First usable host (network + 1)
-        (network(network_cidr) + 1) as host_min,
+        (network(network_cidr) + 1)::INET as host_min,
         -- Last usable host (broadcast - 1)
-        (broadcast(network_cidr) - 1) as host_max,
+        (broadcast(network_cidr) - 1)::INET as host_max,
         -- Total usable hosts (excluding network and broadcast)
         CASE
             WHEN masklen(network_cidr) >= 31 THEN

@@ -277,9 +277,22 @@ func cleanupDB(db *DB) error {
 
 	// Truncate all found tables with CASCADE to handle dependencies
 	for _, table := range tables {
-		_, err := db.ExecContext(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table))
+		// Check if table still exists before truncating (in case it was dropped by another operation)
+		var exists bool
+		checkQuery := `SELECT EXISTS (
+			SELECT FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = $1
+		)`
+		err := db.QueryRowContext(ctx, checkQuery, table).Scan(&exists)
 		if err != nil {
-			return fmt.Errorf("failed to truncate table %s: %w", table, err)
+			return fmt.Errorf("failed to check if table %s exists: %w", table, err)
+		}
+
+		if exists {
+			_, err := db.ExecContext(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table))
+			if err != nil {
+				return fmt.Errorf("failed to truncate table %s: %w", table, err)
+			}
 		}
 	}
 
