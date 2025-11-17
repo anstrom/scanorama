@@ -48,18 +48,30 @@ func setupNetworkHandlerTest(t *testing.T) (*NetworkHandler, *db.DB, func()) {
 	metricsRegistry := metrics.NewRegistry()
 	handler := NewNetworkHandler(database, logger, metricsRegistry)
 
-	// Clean up any leftover test data from previous runs
-	_, _ = database.Exec(
-		"DELETE FROM network_exclusions WHERE network_id IN " +
-			"(SELECT id FROM networks WHERE name LIKE 'Test%' OR name LIKE 'Updated%' OR name = '')")
-	_, _ = database.Exec("DELETE FROM networks WHERE name LIKE 'Test%' OR name LIKE 'Updated%' OR name = ''")
+	// Clean up any leftover test data from previous runs (handler-specific prefix)
+	_, _ = database.Exec(`
+		DELETE FROM network_exclusions
+		WHERE network_id IN (
+			SELECT id
+			FROM networks
+			WHERE name LIKE 'HandlerTest%' OR name LIKE 'HandlerUpdated%'
+		)`)
+	_, _ = database.Exec(`
+		DELETE FROM networks
+		WHERE name LIKE 'HandlerTest%' OR name LIKE 'HandlerUpdated%'`)
 
 	cleanup := func() {
-		// Clean up test data
-		_, _ = database.Exec(
-			"DELETE FROM network_exclusions WHERE network_id IN " +
-				"(SELECT id FROM networks WHERE name LIKE 'Test%' OR name LIKE 'Updated%' OR name = '')")
-		_, _ = database.Exec("DELETE FROM networks WHERE name LIKE 'Test%' OR name LIKE 'Updated%' OR name = ''")
+		// Clean up test data (handler-specific prefix)
+		_, _ = database.Exec(`
+			DELETE FROM network_exclusions
+			WHERE network_id IN (
+				SELECT id
+				FROM networks
+				WHERE name LIKE 'HandlerTest%' OR name LIKE 'HandlerUpdated%'
+			)`)
+		_, _ = database.Exec(`
+			DELETE FROM networks
+			WHERE name LIKE 'HandlerTest%' OR name LIKE 'HandlerUpdated%'`)
 		database.Close()
 	}
 
@@ -86,9 +98,9 @@ func TestNetworkHandler_ListNetworks(t *testing.T) {
 	defer cleanup()
 
 	// Create test networks with unique names
-	activeNetworkName := generateUniqueNetworkName("Test Active Network")
-	inactiveNetworkName := generateUniqueNetworkName("Test Inactive Network")
-	anotherActiveNetworkName := generateUniqueNetworkName("Test Another Active")
+	activeNetworkName := generateUniqueNetworkName("HandlerTest Active Network")
+	inactiveNetworkName := generateUniqueNetworkName("HandlerTest Inactive Network")
+	anotherActiveNetworkName := generateUniqueNetworkName("HandlerTest Another Active")
 
 	testNetworks := []struct {
 		name            string
@@ -207,7 +219,7 @@ func TestNetworkHandler_CreateNetwork(t *testing.T) {
 		{
 			name: "create valid network",
 			request: CreateNetworkRequest{
-				Name:            generateUniqueNetworkName("Test Valid Network"),
+				Name:            generateUniqueNetworkName("HandlerTest Valid Network"),
 				CIDR:            generateUniqueCIDR(16),
 				DiscoveryMethod: "ping",
 			},
@@ -217,7 +229,7 @@ func TestNetworkHandler_CreateNetwork(t *testing.T) {
 				err := json.Unmarshal(body, &network)
 				require.NoError(t, err)
 
-				assert.Contains(t, network["name"], "Test Valid Network")
+				assert.Contains(t, network["name"], "HandlerTest Valid Network")
 				assert.NotEmpty(t, network["cidr"])
 				assert.NotEmpty(t, network["id"])
 			},
@@ -225,10 +237,10 @@ func TestNetworkHandler_CreateNetwork(t *testing.T) {
 		{
 			name: "create network with description",
 			request: CreateNetworkRequest{
-				Name:            generateUniqueNetworkName("Test Network With Description"),
+				Name:            generateUniqueNetworkName("HandlerTest Network With Description"),
 				CIDR:            generateUniqueCIDR(17),
 				DiscoveryMethod: "tcp",
-				Description:     stringPtr("Test description"),
+				Description:     stringPtr("HandlerTest description"),
 			},
 			expectedStatus: http.StatusCreated,
 			checkResponse: func(t *testing.T, body []byte) {
@@ -236,14 +248,14 @@ func TestNetworkHandler_CreateNetwork(t *testing.T) {
 				err := json.Unmarshal(body, &network)
 				require.NoError(t, err)
 
-				assert.Contains(t, network["name"], "Test Network With Description")
-				assert.Equal(t, "Test description", network["description"])
+				assert.Contains(t, network["name"], "HandlerTest Network With Description")
+				assert.Equal(t, "HandlerTest description", network["description"])
 			},
 		},
 		{
 			name: "create network with inactive status",
 			request: CreateNetworkRequest{
-				Name:            generateUniqueNetworkName("Test Inactive Network Create"),
+				Name:            generateUniqueNetworkName("HandlerTest Inactive Network Create"),
 				CIDR:            generateUniqueCIDR(18),
 				DiscoveryMethod: "arp",
 				IsActive:        boolPtr(false),
@@ -263,7 +275,7 @@ func TestNetworkHandler_CreateNetwork(t *testing.T) {
 			// TODO: Handler should validate CIDR before calling service
 			name: "invalid CIDR",
 			request: CreateNetworkRequest{
-				Name:            generateUniqueNetworkName("Test Invalid CIDR"),
+				Name:            generateUniqueNetworkName("HandlerTest Invalid CIDR"),
 				CIDR:            "not-a-cidr",
 				DiscoveryMethod: "ping",
 			},
@@ -273,7 +285,7 @@ func TestNetworkHandler_CreateNetwork(t *testing.T) {
 			// TODO: Handler should validate discovery method before calling service
 			name: "invalid discovery method",
 			request: CreateNetworkRequest{
-				Name:            generateUniqueNetworkName("Test Invalid Method"),
+				Name:            generateUniqueNetworkName("HandlerTest Invalid Method"),
 				CIDR:            generateUniqueCIDR(20),
 				DiscoveryMethod: "invalid",
 			},
@@ -313,7 +325,7 @@ func TestNetworkHandler_GetNetwork(t *testing.T) {
 
 	// Create a test network
 	var networkID string
-	networkName := generateUniqueNetworkName("Test Get Network")
+	networkName := generateUniqueNetworkName("HandlerTest Get Network")
 
 	query := `
 		INSERT INTO networks (
@@ -341,7 +353,7 @@ func TestNetworkHandler_GetNetwork(t *testing.T) {
 				require.NoError(t, err)
 
 				assert.Equal(t, networkID, network["id"])
-				assert.Contains(t, network["name"], "Test Get Network")
+				assert.Contains(t, network["name"], "HandlerTest Get Network")
 			},
 			expectedStatus: http.StatusOK,
 		},
@@ -383,7 +395,7 @@ func TestNetworkHandler_UpdateNetwork(t *testing.T) {
 
 	// Create a test network
 	var networkID string
-	networkName := generateUniqueNetworkName("Test Update Network")
+	networkName := generateUniqueNetworkName("HandlerTest Update Network")
 
 	query := `
 		INSERT INTO networks (
@@ -506,7 +518,7 @@ func TestNetworkHandler_DeleteNetwork(t *testing.T) {
 					RETURNING id`
 
 				err := database.QueryRow(query,
-					generateUniqueNetworkName("Test Delete Network 1"),
+					generateUniqueNetworkName("HandlerTest Delete Network 1"),
 					generateUniqueCIDR(30), "ping", true, true).Scan(&id)
 				require.NoError(t, err)
 				return id
@@ -570,9 +582,9 @@ func TestNetworkHandler_GetNetworkStats(t *testing.T) {
 			($3, '10.0.42.0/24', 'arp', false, true)`
 
 	_, err := database.Exec(query,
-		generateUniqueNetworkName("Test Stats Network 1"),
-		generateUniqueNetworkName("Test Stats Network 2"),
-		generateUniqueNetworkName("Test Stats Network 3"))
+		generateUniqueNetworkName("HandlerTest Stats Network 1"),
+		generateUniqueNetworkName("HandlerTest Stats Network 2"),
+		generateUniqueNetworkName("HandlerTest Stats Network 3"))
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/networks/stats", nil)

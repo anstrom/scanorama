@@ -234,8 +234,8 @@ func TestNetworkService_CreateGetUpdateDelete_Integration(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, network)
 	assert.Equal(t, "Test Network", network.Name)
-	assert.Equal(t, "10.0.0.0/24", network.CIDR)
-	assert.Equal(t, "A test network", network.Description)
+	assert.Equal(t, "10.0.0.0/24", network.CIDR.String())
+	assert.Equal(t, "A test network", *network.Description)
 	assert.Equal(t, "ping", network.DiscoveryMethod)
 	assert.True(t, network.IsActive)
 
@@ -264,8 +264,8 @@ func TestNetworkService_CreateGetUpdateDelete_Integration(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "Updated Network", updated.Name)
-	assert.Equal(t, "10.0.1.0/24", updated.CIDR)
-	assert.Equal(t, "Updated description", updated.Description)
+	assert.Equal(t, "10.0.1.0/24", updated.CIDR.String())
+	assert.Equal(t, "Updated description", *updated.Description)
 	assert.Equal(t, "tcp", updated.DiscoveryMethod)
 	assert.False(t, updated.IsActive)
 
@@ -575,10 +575,19 @@ func TestNetworkService_GetNetworkStats_Integration(t *testing.T) {
 	stats, err := service.GetNetworkStats(ctx)
 	require.NoError(t, err)
 	assert.NotNil(t, stats)
-	// Stats is a map, check keys exist
-	assert.Contains(t, stats, "total_networks")
-	assert.Contains(t, stats, "active_networks")
-	assert.Contains(t, stats, "total_hosts")
+	// Stats is a nested map, check structure
+	assert.Contains(t, stats, "networks")
+	assert.Contains(t, stats, "hosts")
+	assert.Contains(t, stats, "exclusions")
+
+	// Check nested maps
+	networks := stats["networks"].(map[string]interface{})
+	assert.Contains(t, networks, "total")
+	assert.Contains(t, networks, "active")
+
+	hosts := stats["hosts"].(map[string]interface{})
+	assert.Contains(t, hosts, "total")
+	assert.Contains(t, hosts, "active")
 }
 
 func TestNetworkService_GenerateTargetsForNetwork_Integration(t *testing.T) {
