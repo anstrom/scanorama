@@ -1,0 +1,60 @@
+# Codecov Configuration
+# https://docs.codecov.io/docs/codecov-yaml
+
+# Coverage settings
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
+
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        if_ci_failed: error
+
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+        if_ci_failed: error
+
+# Ignore patterns - exclude test files from coverage
+ignore:
+  - "**/*_test.go"           # All test files
+  - "**/test/**"             # Test helper packages
+  - "**/mocks/**"            # Mock implementations
+  - "**/testdata/**"         # Test data directories
+  - "**/*.pb.go"             # Generated protobuf files
+  - "**/vendor/**"           # Vendored dependencies
+  - "cmd/**"                 # Command-line entry points (optional)
+  - "scripts/**"             # Build and utility scripts
+  - "build/**"               # Build artifacts
+  - "dist/**"                # Distribution files
+  - "frontend/**"            # Frontend code (if not Go)
+  - "docs/**"                # Documentation
+
+# Comment settings
+comment:
+  layout: "reach,diff,flags,tree,files"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+
+# GitHub checks
+github_checks:
+  annotations: true
+
+# Flags for different test types (optional - can be used in CI)
+flags:
+  unit:
+    paths:
+      - internal/
+    carryforward: true
+
+  integration:
+    paths:
+      - internal/
+    carryforward: true
