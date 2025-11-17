@@ -453,3 +453,264 @@ func TestHealthHandler_LivenessVsHealthPerformance(t *testing.T) {
 	t.Logf("Liveness duration: %v, Health duration: %v",
 		livenessDuration, healthDuration)
 }
+
+func TestHealthHandler_Status(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	tests := []struct {
+		name           string
+		setupDB        func() *MockDB
+		setupMetrics   func() *mocks.MockMetricsRegistry
+		expectedStatus int
+	}{
+		{
+			name: "status with healthy database",
+			setupDB: func() *MockDB {
+				db := &MockDB{}
+				db.On("Ping", mock.Anything).Return(nil)
+				return db
+			},
+			setupMetrics: func() *mocks.MockMetricsRegistry {
+				m := mocks.NewMockMetricsRegistry(ctrl)
+				m.EXPECT().Counter("api_status_checks_total", gomock.Any()).AnyTimes()
+				m.EXPECT().GetMetrics().Return(nil).AnyTimes()
+				return m
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "status with database error",
+			setupDB: func() *MockDB {
+				db := &MockDB{}
+				db.On("Ping", mock.Anything).Return(errors.New("connection failed"))
+				return db
+			},
+			setupMetrics: func() *mocks.MockMetricsRegistry {
+				m := mocks.NewMockMetricsRegistry(ctrl)
+				m.EXPECT().Counter("api_status_checks_total", gomock.Any()).AnyTimes()
+				m.EXPECT().GetMetrics().Return(nil).AnyTimes()
+				return m
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "status without database",
+			setupDB: func() *MockDB {
+				return nil
+			},
+			setupMetrics: func() *mocks.MockMetricsRegistry {
+				m := mocks.NewMockMetricsRegistry(ctrl)
+				m.EXPECT().Counter("api_status_checks_total", gomock.Any()).AnyTimes()
+				m.EXPECT().GetMetrics().Return(nil).AnyTimes()
+				return m
+			},
+			expectedStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := createTestLogger()
+			var db DatabasePinger
+			if setupDB := tt.setupDB(); setupDB != nil {
+				db = setupDB
+			}
+			testMetrics := tt.setupMetrics()
+
+			handler := NewHealthHandler(db, logger, testMetrics)
+
+			req := httptest.NewRequest("GET", "/status", http.NoBody)
+			w := httptest.NewRecorder()
+
+			handler.Status(w, req)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			var response StatusResponse
+			err := json.Unmarshal(w.Body.Bytes(), &response)
+			require.NoError(t, err)
+
+			// Verify service information
+			assert.NotEmpty(t, response.Service.Name)
+			assert.NotEmpty(t, response.Service.Version)
+			assert.NotZero(t, response.Service.StartTime)
+			assert.NotEmpty(t, response.Service.Uptime)
+			assert.NotZero(t, response.Service.PID)
+
+			// Verify system information
+			assert.NotNil(t, response.System)
+			assert.NotZero(t, response.System.Memory.Allocated)
+
+			// Verify database information
+			assert.NotNil(t, response.Database)
+
+			// Verify metrics information
+			assert.NotNil(t, response.Metrics)
+
+			// Verify health information
+			assert.NotNil(t, response.Health)
+			assert.NotEmpty(t, response.Health.Status)
+		})
+	}
+}
+
+func TestHealthHandler_Version(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	tests := []struct {
+		name           string
+		setupMetrics   func() *mocks.MockMetricsRegistry
+		expectedStatus int
+	}{
+		{
+			name: "version with metrics",
+			setupMetrics: func() *mocks.MockMetricsRegistry {
+				metrics := mocks.NewMockMetricsRegistry(ctrl)
+				metrics.EXPECT().Counter("api_version_requests_total", nil).Times(1)
+				return metrics
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "version without metrics",
+			setupMetrics:   nil,
+			expectedStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := createTestLogger()
+			var testMetrics metrics.MetricsRegistry
+			if tt.setupMetrics != nil {
+				testMetrics = tt.setupMetrics()
+			}
+
+			handler := NewHealthHandler(nil, logger, testMetrics)
+
+			req := httptest.NewRequest("GET", "/version", http.NoBody)
+			w := httptest.NewRecorder()
+
+			handler.Version(w, req)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+			assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+			var response VersionResponse
+			err := json.Unmarshal(w.Body.Bytes(), &response)
+			require.NoError(t, err)
+
+			assert.NotEmpty(t, response.Version)
+			assert.NotEmpty(t, response.GoVersion)
+			assert.NotZero(t, response.Timestamp)
+
+			// Verify timestamp is recent
+			assert.True(t, time.Since(response.Timestamp) < time.Minute)
+		})
+	}
+}
+
+func TestHealthHandler_Metrics(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewHealthHandler(nil, logger, nil)
+
+	req := httptest.NewRequest("GET", "/metrics", http.NoBody)
+	w := httptest.NewRecorder()
+
+	handler.Metrics(w, req)
+
+	// Metrics endpoint should return 200 and prometheus format
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Response should contain prometheus metrics format markers
+	body := w.Body.String()
+	assert.NotEmpty(t, body)
+}
+
+func TestHealthHandler_SetBuildInfo(t *testing.T) {
+	// Test setting build info
+	testVersion := "1.2.3"
+	testCommit := "abc123"
+	testBuildTime := "2024-01-01T00:00:00Z"
+
+	SetBuildInfo(testVersion, testCommit, testBuildTime)
+
+	// Create handler and verify version info is used
+	logger := createTestLogger()
+	handler := NewHealthHandler(nil, logger, nil)
+
+	req := httptest.NewRequest("GET", "/version", http.NoBody)
+	w := httptest.NewRecorder()
+
+	handler.Version(w, req)
+
+	var response VersionResponse
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	assert.Equal(t, testVersion, response.Version)
+	assert.Equal(t, testCommit, response.Commit)
+	assert.Equal(t, testBuildTime, response.BuildTime)
+}
+
+func TestHealthHandler_StatusResponseStructure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	logger := createTestLogger()
+	mockDB := &MockDB{}
+	mockDB.On("Ping", mock.Anything).Return(nil)
+	mockMetrics := mocks.NewMockMetricsRegistry(ctrl)
+	mockMetrics.EXPECT().Counter(gomock.Any(), gomock.Any()).AnyTimes()
+	mockMetrics.EXPECT().GetMetrics().Return(nil).AnyTimes()
+
+	handler := NewHealthHandler(mockDB, logger, mockMetrics)
+
+	req := httptest.NewRequest("GET", "/status", http.NoBody)
+	w := httptest.NewRecorder()
+
+	handler.Status(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response StatusResponse
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	// Verify all major sections are present
+	assert.NotEmpty(t, response.Service.Name)
+	assert.NotEmpty(t, response.Service.Version)
+	assert.NotZero(t, response.Service.PID)
+	assert.NotEmpty(t, response.Service.Uptime)
+
+	assert.NotZero(t, response.System.Memory.Allocated)
+	assert.NotZero(t, response.System.Memory.System)
+	assert.NotEmpty(t, response.System.OS)
+	assert.NotEmpty(t, response.System.Architecture)
+	assert.Greater(t, response.System.CPUs, 0)
+	assert.Greater(t, response.System.Goroutines, 0)
+
+	assert.NotEmpty(t, response.Health.Status)
+	assert.NotZero(t, response.Timestamp)
+}
+
+func TestHealthHandler_MemoryInfoAccuracy(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewHealthHandler(nil, logger, nil)
+
+	req := httptest.NewRequest("GET", "/status", http.NoBody)
+	w := httptest.NewRecorder()
+
+	handler.Status(w, req)
+
+	var response StatusResponse
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	// Memory values should be reasonable
+	assert.Greater(t, response.System.Memory.Allocated, uint64(0))
+	assert.Greater(t, response.System.Memory.System, uint64(0))
+	assert.GreaterOrEqual(t, response.System.Memory.TotalAlloc, response.System.Memory.Allocated)
+}
