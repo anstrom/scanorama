@@ -37,7 +37,7 @@ make setup-hooks   # Set up git hooks for quality checks
 make setup-dev-db  # Set up development database
 ```
 
-### 3. Diagnostics Tool (Backup/Comprehensive)
+### 3. Diagnostics Tool (Backup)
 Use when Zed is not available or for project-wide checks:
 ```bash
 diagnostics()                                    # Check entire project
@@ -55,7 +55,7 @@ go test ./...      # Test execution
 ## Code Quality Standards
 
 ### Linting Configuration
-- **Tool**: golangci-lint with comprehensive rule set
+- **Tool**: golangci-lint with extensive rule set
 - **Config**: `.golangci.yml` (120 char line limit, cyclomatic complexity 15)
 - **Enabled linters**: errcheck, gosec, govet, staticcheck, gocritic, and more
 - **Auto-fix capability**: `make format` fixes many issues automatically
@@ -274,6 +274,11 @@ chore(deps): update golang.org/x/net to v0.17.0
 - `api`, `db`, `scanner`, `config`, `metrics`, `handlers`, `middleware`
 
 ### Commit Message Style Guidelines
+
+#### Writing Style Rules
+- **Never use marketing language or adjectives** (see examples below)
+- **Avoid vague words**: comprehensive, robust, improved, enhanced, better, streamlined
+- **Use concrete, specific technical terms** that describe what changed
 
 #### Use Precise, Technical Language
 ```bash
@@ -555,7 +560,7 @@ make build         # Compilation check
 
 # If all pass, commit confidently
 git add .
-git commit -m "feat(api): add comprehensive error handling"
+git commit -m "feat(api): add error handling for nil requests"
 
 # If issues remain, fix incrementally
 # Use --fixup to avoid noise commits
