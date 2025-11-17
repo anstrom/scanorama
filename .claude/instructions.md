@@ -37,7 +37,7 @@ make setup-hooks   # Set up git hooks for quality checks
 make setup-dev-db  # Set up development database
 ```
 
-### 3. Diagnostics Tool (Backup/Comprehensive)
+### 3. Diagnostics Tool (Backup)
 Use when Zed is not available or for project-wide checks:
 ```bash
 diagnostics()                                    # Check entire project
@@ -55,7 +55,7 @@ go test ./...      # Test execution
 ## Code Quality Standards
 
 ### Linting Configuration
-- **Tool**: golangci-lint with comprehensive rule set
+- **Tool**: golangci-lint with extensive rule set
 - **Config**: `.golangci.yml` (120 char line limit, cyclomatic complexity 15)
 - **Enabled linters**: errcheck, gosec, govet, staticcheck, gocritic, and more
 - **Auto-fix capability**: `make format` fixes many issues automatically
@@ -145,16 +145,58 @@ make ci            # Full pipeline validation
 ## Database Development
 
 ### Testing with Database
+
+The test suite requires a PostgreSQL database. The Makefile provides targets to manage the test database:
+
 ```bash
-# The Makefile automatically handles database setup
-make test          # Will start containers if needed
-make setup-dev-db  # Manual database setup
+# Quick start - run all tests (automatically starts/stops database)
+make test          # Starts DB, runs all tests, stops DB
+
+# Manual database management
+make db-up         # Start test database container
+make db-down       # Stop test database container
+make db-reset      # Stop and start fresh (clears all data)
+
+# Database utilities
+make db-logs       # Show database logs
+make db-shell      # Connect to database with psql
+
+# Running tests with persistent database
+make db-up         # Start database once
+go test ./...      # Run tests multiple times
+make db-down       # Stop when done
+```
+
+#### Database Configuration
+
+The test database uses these default environment variables:
+- `TEST_DB_HOST=localhost`
+- `TEST_DB_PORT=5432`
+- `TEST_DB_NAME=scanorama_test`
+- `TEST_DB_USER=test_user`
+- `TEST_DB_PASSWORD=test_password`
+
+These are automatically exported by the Makefile and available to all test commands.
+
+#### Coverage with Database
+
+```bash
+# Generate coverage report (manages database automatically)
+make coverage
+
+# Keep database running after coverage
+make coverage-keep-db
+
+# View coverage in browser
+make coverage-show
 ```
 
 ### Database-related Issues
 - Check `internal/db/database.go` for missing methods
 - Repository pattern: Use `*Repository` structs for data access
 - Migrations: SQL files in `internal/db/`
+- Integration tests require database - use `make db-up` before running
+- Unit tests should not require database - they're run separately with `make test-unit`
 
 ## Error Handling Patterns
 
@@ -232,6 +274,11 @@ chore(deps): update golang.org/x/net to v0.17.0
 - `api`, `db`, `scanner`, `config`, `metrics`, `handlers`, `middleware`
 
 ### Commit Message Style Guidelines
+
+#### Writing Style Rules
+- **Never use marketing language or adjectives** (see examples below)
+- **Avoid vague words**: comprehensive, robust, improved, enhanced, better, streamlined
+- **Use concrete, specific technical terms** that describe what changed
 
 #### Use Precise, Technical Language
 ```bash
@@ -513,7 +560,7 @@ make build         # Compilation check
 
 # If all pass, commit confidently
 git add .
-git commit -m "feat(api): add comprehensive error handling"
+git commit -m "feat(api): add error handling for nil requests"
 
 # If issues remain, fix incrementally
 # Use --fixup to avoid noise commits
