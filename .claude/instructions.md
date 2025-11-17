@@ -145,16 +145,58 @@ make ci            # Full pipeline validation
 ## Database Development
 
 ### Testing with Database
+
+The test suite requires a PostgreSQL database. The Makefile provides targets to manage the test database:
+
 ```bash
-# The Makefile automatically handles database setup
-make test          # Will start containers if needed
-make setup-dev-db  # Manual database setup
+# Quick start - run all tests (automatically starts/stops database)
+make test          # Starts DB, runs all tests, stops DB
+
+# Manual database management
+make db-up         # Start test database container
+make db-down       # Stop test database container
+make db-reset      # Stop and start fresh (clears all data)
+
+# Database utilities
+make db-logs       # Show database logs
+make db-shell      # Connect to database with psql
+
+# Running tests with persistent database
+make db-up         # Start database once
+go test ./...      # Run tests multiple times
+make db-down       # Stop when done
+```
+
+#### Database Configuration
+
+The test database uses these default environment variables:
+- `TEST_DB_HOST=localhost`
+- `TEST_DB_PORT=5432`
+- `TEST_DB_NAME=scanorama_test`
+- `TEST_DB_USER=test_user`
+- `TEST_DB_PASSWORD=test_password`
+
+These are automatically exported by the Makefile and available to all test commands.
+
+#### Coverage with Database
+
+```bash
+# Generate coverage report (manages database automatically)
+make coverage
+
+# Keep database running after coverage
+make coverage-keep-db
+
+# View coverage in browser
+make coverage-show
 ```
 
 ### Database-related Issues
 - Check `internal/db/database.go` for missing methods
 - Repository pattern: Use `*Repository` structs for data access
 - Migrations: SQL files in `internal/db/`
+- Integration tests require database - use `make db-up` before running
+- Unit tests should not require database - they're run separately with `make test-unit`
 
 ## Error Handling Patterns
 
