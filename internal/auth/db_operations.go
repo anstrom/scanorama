@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/google/uuid"
 )
 
 // APIKeyRepository provides database operations for API keys
@@ -144,18 +145,37 @@ func (r *APIKeyRepository) ListAPIKeys(showExpired, showInactive bool) ([]APIKey
 
 // FindAPIKeyByIdentifier finds an API key by ID or prefix
 func (r *APIKeyRepository) FindAPIKeyByIdentifier(identifier string) (*APIKeyInfo, error) {
-	query := `
-		SELECT id, name, key_prefix, created_at, updated_at, last_used_at,
-		       expires_at, is_active, usage_count, permissions,
-		       created_by, notes
-		FROM api_keys
-		WHERE id = $1 OR key_prefix LIKE $2 || '%'
-		LIMIT 1`
+	var query string
+	var args []interface{}
+
+	// Try to parse as UUID first, if it fails, search by prefix
+	_, err := uuid.Parse(identifier)
+	if err == nil {
+		// Valid UUID - search by ID only
+		query = `
+			SELECT id, name, key_prefix, created_at, updated_at, last_used_at,
+			       expires_at, is_active, usage_count, permissions,
+			       created_by, notes
+			FROM api_keys
+			WHERE id = $1
+			LIMIT 1`
+		args = []interface{}{identifier}
+	} else {
+		// Not a valid UUID - search by prefix
+		query = `
+			SELECT id, name, key_prefix, created_at, updated_at, last_used_at,
+			       expires_at, is_active, usage_count, permissions,
+			       created_by, notes
+			FROM api_keys
+			WHERE key_prefix LIKE $1 || '%'
+			LIMIT 1`
+		args = []interface{}{identifier}
+	}
 
 	var key APIKeyInfo
 	var permissionsJSON []byte
 
-	err := r.db.QueryRow(query, identifier, identifier).Scan(
+	err = r.db.QueryRow(query, args...).Scan(
 		&key.ID, &key.Name, &key.KeyPrefix, &key.CreatedAt, &key.UpdatedAt,
 		&key.LastUsedAt, &key.ExpiresAt, &key.IsActive, &key.UsageCount,
 		&permissionsJSON, &key.CreatedBy, &key.Notes,
