@@ -419,7 +419,7 @@ func TestNetworkHandler_UpdateNetwork(t *testing.T) {
 			name:      "update network name",
 			networkID: networkID,
 			request: UpdateNetworkRequest{
-				Name: stringPtr(generateUniqueNetworkName("Updated Network Name")),
+				Name: stringPtr(generateUniqueNetworkName("HandlerUpdated Network Name")),
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, body []byte) {
@@ -427,7 +427,7 @@ func TestNetworkHandler_UpdateNetwork(t *testing.T) {
 				err := json.Unmarshal(body, &network)
 				require.NoError(t, err)
 
-				assert.Contains(t, network["name"], "Updated Network Name")
+				assert.Contains(t, network["name"], "HandlerUpdated Network Name")
 			},
 		},
 		{
