@@ -303,7 +303,7 @@ func (h *WebSocketHandler) broadcastToClients(clients map[*websocket.Conn]bool, 
 			if err := conn.Close(); err != nil {
 				h.logger.Error("Error closing timed out connection", "error", err)
 			}
-			delete(clients, conn)
+			h.unregister <- conn
 		default:
 			if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
 				h.logger.Error("Failed to set write deadline", "error", err)
@@ -314,7 +314,7 @@ func (h *WebSocketHandler) broadcastToClients(clients map[*websocket.Conn]bool, 
 				if err := conn.Close(); err != nil {
 					h.logger.Error("Error closing failed connection", "error", err)
 				}
-				delete(clients, conn)
+				h.unregister <- conn
 			}
 		}
 	}
