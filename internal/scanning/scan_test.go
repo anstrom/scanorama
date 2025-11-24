@@ -244,12 +244,12 @@ func TestScanTimeout(t *testing.T) {
 		wantError bool
 	}{
 		{
-			name: "Full Port Range With Short Timeout",
+			name: "Unreachable Host With Short Timeout",
 			config: ScanConfig{
-				Targets:    []string{"127.0.0.1"}, // Use IP to avoid DNS lookup
-				Ports:      "1-65535",
+				Targets:    []string{"192.0.2.1"}, // TEST-NET-1 (RFC 5737) - guaranteed unreachable
+				Ports:      "80,443",
 				ScanType:   "connect",
-				TimeoutSec: 1, // Very short timeout to force error
+				TimeoutSec: 1, // Short timeout for unreachable host
 			},
 			wantError: true,
 		},
@@ -283,7 +283,7 @@ func TestScanTimeout(t *testing.T) {
 
 			if tt.wantError {
 				assert.Error(t, err, "Expected error for %s", tt.name)
-				if err != nil && tt.name == "Full Port Range With Short Timeout" {
+				if err != nil {
 					assert.Contains(t, err.Error(), "timed out", "Expected timeout error")
 					assert.LessOrEqual(t, duration.Seconds(), float64(tt.config.TimeoutSec)+1.0,
 						"Scan should not exceed timeout by more than 1 second")
