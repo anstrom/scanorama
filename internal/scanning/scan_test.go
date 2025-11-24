@@ -290,7 +290,8 @@ func TestScanTimeout(t *testing.T) {
 				// nmap may return immediately with exit code 0 (no error). On other systems,
 				// it may timeout. Both behaviors are acceptable for this test case.
 				if err == nil && tt.allowNoError {
-					t.Logf("Scan completed without error (network immediately unreachable) - duration: %.2fs", duration.Seconds())
+					t.Logf("Scan completed without error (network immediately unreachable) - duration: %.2fs",
+						duration.Seconds())
 					// This is acceptable - the system recognized the network as unreachable immediately
 					return
 				}
