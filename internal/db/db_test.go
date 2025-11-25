@@ -464,7 +464,12 @@ func TestConnect(t *testing.T) {
 
 			// If we expect success but couldn't connect, handle gracefully
 			if err != nil {
-				if strings.Contains(err.Error(), "connection refused") ||
+				// Check if it's our sanitized database connection error
+				if strings.Contains(err.Error(), "DATABASE_CONNECTION") ||
+					strings.Contains(err.Error(), "Failed to connect to database") ||
+					strings.Contains(err.Error(), "Failed to verify database connection") {
+					t.Skipf("Skipping test - database not available with this config: %v", err)
+				} else if strings.Contains(err.Error(), "connection refused") ||
 					strings.Contains(err.Error(), "connect: network is unreachable") ||
 					strings.Contains(err.Error(), "password authentication failed") ||
 					strings.Contains(err.Error(), "database") && strings.Contains(err.Error(), "does not exist") {

@@ -21,6 +21,46 @@ import (
 	"github.com/anstrom/scanorama/internal/errors"
 )
 
+// sanitizeDBError converts raw database errors into safe, sanitized errors
+// that don't expose internal SQL details or credentials to API clients.
+func sanitizeDBError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// Handle specific known database errors
+	if err == sql.ErrNoRows {
+		return errors.NewDatabaseError(errors.CodeNotFound, "Resource not found")
+	}
+
+	// Check for PostgreSQL-specific errors
+	if pqErr, ok := err.(*pq.Error); ok {
+		switch pqErr.Code {
+		case "23505": // unique_violation
+			return errors.NewDatabaseError(errors.CodeConflict, "Resource already exists")
+		case "23503": // foreign_key_violation
+			return errors.NewDatabaseError(errors.CodeValidation, "Referenced resource does not exist")
+		case "23502": // not_null_violation
+			return errors.NewDatabaseError(errors.CodeValidation, "Required field is missing")
+		case "23514": // check_violation
+			return errors.NewDatabaseError(errors.CodeValidation, "Data validation failed")
+		case "57014": // query_canceled
+			return errors.NewDatabaseError(errors.CodeCanceled, "Database operation was canceled")
+		case "57P01": // admin_shutdown
+			return errors.NewDatabaseError(errors.CodeDatabaseConnection, "Database connection lost")
+		case "08000", "08003", "08006": // connection errors
+			return errors.NewDatabaseError(errors.CodeDatabaseConnection, "Database connection error")
+		}
+	}
+
+	// For all other errors, return a generic sanitized error without details
+	dbErr := errors.NewDatabaseError(errors.CodeDatabaseQuery, fmt.Sprintf("Database operation failed: %s", operation))
+	dbErr.Operation = operation
+	// Store the original error as Cause for internal logging, but it won't be exposed to API
+	dbErr.Cause = err
+	return dbErr
+}
+
 const (
 	// Default database configuration values.
 	defaultPostgresPort    = 5432
@@ -67,7 +107,10 @@ func DefaultConfig() Config {
 }
 
 // Connect establishes a connection to PostgreSQL.
+// Returns sanitized errors that don't leak credentials or DSN details.
 func Connect(ctx context.Context, config *Config) (*DB, error) {
+	// Build DSN - PostgreSQL lib/pq handles special characters in values correctly
+	// when using key=value format (values with spaces/special chars are auto-escaped)
 	dsn := fmt.Sprintf(
 		"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
 		config.Host, config.Port, config.Database,
@@ -76,7 +119,8 @@ func Connect(ctx context.Context, config *Config) (*DB, error) {
 
 	db, err := sqlx.ConnectContext(ctx, "postgres", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		// Return sanitized error without DSN to prevent credential leakage in logs
+		return nil, errors.ErrDatabaseConnection(err)
 	}
 
 	// Configure connection pool
@@ -87,9 +131,15 @@ func Connect(ctx context.Context, config *Config) (*DB, error) {
 
 	// Test connection
 	if err := db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+		// Close the connection before returning error
+		if closeErr := db.Close(); closeErr != nil {
+			log.Printf("Failed to close database connection after ping failure: %v", closeErr)
+		}
+		return nil, errors.WrapDatabaseError(errors.CodeDatabaseConnection, "Failed to verify database connection", err)
 	}
 
+	// Log success without credentials - only safe connection details
+	log.Printf("Successfully connected to database at %s:%d/%s", config.Host, config.Port, config.Database)
 	return &DB{DB: db}, nil
 }
 
@@ -126,7 +176,7 @@ func (r *ScanTargetRepository) Create(ctx context.Context, target *ScanTarget) e
 
 	rows, err := r.db.NamedQueryContext(ctx, query, target)
 	if err != nil {
-		return fmt.Errorf("failed to create scan target: %w", err)
+		return sanitizeDBError("create scan target", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -136,7 +186,7 @@ func (r *ScanTargetRepository) Create(ctx context.Context, target *ScanTarget) e
 
 	if rows.Next() {
 		if err := rows.Scan(&target.CreatedAt, &target.UpdatedAt); err != nil {
-			return fmt.Errorf("failed to scan created scan target: %w", err)
+			return sanitizeDBError("scan created scan target", err)
 		}
 	}
 
@@ -150,9 +200,9 @@ func (r *ScanTargetRepository) GetByID(ctx context.Context, id uuid.UUID) (*Scan
 
 	if err := r.db.GetContext(ctx, &target, query, id); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("scan target not found: %w", err)
+			return nil, sanitizeDBError("get scan target", err)
 		}
-		return nil, fmt.Errorf("failed to get scan target: %w", err)
+		return nil, sanitizeDBError("get scan target", err)
 	}
 
 	return &target, nil
@@ -164,7 +214,7 @@ func (r *ScanTargetRepository) GetAll(ctx context.Context) ([]*ScanTarget, error
 	query := `SELECT * FROM scan_targets ORDER BY name`
 
 	if err := r.db.SelectContext(ctx, &targets, query); err != nil {
-		return nil, fmt.Errorf("failed to get scan targets: %w", err)
+		return nil, sanitizeDBError("get scan targets", err)
 	}
 
 	return targets, nil
@@ -176,7 +226,7 @@ func (r *ScanTargetRepository) GetEnabled(ctx context.Context) ([]*ScanTarget, e
 	query := `SELECT * FROM scan_targets WHERE enabled = true ORDER BY name`
 
 	if err := r.db.SelectContext(ctx, &targets, query); err != nil {
-		return nil, fmt.Errorf("failed to get enabled scan targets: %w", err)
+		return nil, sanitizeDBError("get enabled scan targets", err)
 	}
 
 	return targets, nil
@@ -194,7 +244,7 @@ func (r *ScanTargetRepository) Update(ctx context.Context, target *ScanTarget) e
 
 	rows, err := r.db.NamedQueryContext(ctx, query, target)
 	if err != nil {
-		return fmt.Errorf("failed to update scan target: %w", err)
+		return sanitizeDBError("update scan target", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -204,7 +254,7 @@ func (r *ScanTargetRepository) Update(ctx context.Context, target *ScanTarget) e
 
 	if rows.Next() {
 		if err := rows.Scan(&target.UpdatedAt); err != nil {
-			return fmt.Errorf("failed to scan updated scan target: %w", err)
+			return sanitizeDBError("scan updated scan target", err)
 		}
 	}
 
@@ -217,16 +267,16 @@ func (r *ScanTargetRepository) Delete(ctx context.Context, id uuid.UUID) error {
 
 	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
-		return fmt.Errorf("failed to delete scan target: %w", err)
+		return sanitizeDBError("delete scan target", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
+		return sanitizeDBError("get rows affected", err)
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("scan target not found")
+		return errors.NewDatabaseError(errors.CodeNotFound, "Scan target not found")
 	}
 
 	return nil
