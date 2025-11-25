@@ -177,8 +177,14 @@ func NewScanTargetRepository(db *DB) *ScanTargetRepository {
 // Create creates a new scan target.
 func (r *ScanTargetRepository) Create(ctx context.Context, target *ScanTarget) error {
 	query := `
-		INSERT INTO scan_targets (id, name, network, description, scan_interval_seconds, scan_ports, scan_type, enabled)
-		VALUES (:id, :name, :network, :description, :scan_interval_seconds, :scan_ports, :scan_type, :enabled)
+		INSERT INTO scan_targets (
+			id, name, network, description,
+			scan_interval_seconds, scan_ports, scan_type, enabled
+		)
+		VALUES (
+			:id, :name, :network, :description,
+			:scan_interval_seconds, :scan_ports, :scan_type, :enabled
+		)
 		RETURNING created_at, updated_at`
 
 	if target.ID == uuid.Nil {
@@ -207,7 +213,10 @@ func (r *ScanTargetRepository) Create(ctx context.Context, target *ScanTarget) e
 // GetByID retrieves a scan target by ID.
 func (r *ScanTargetRepository) GetByID(ctx context.Context, id uuid.UUID) (*ScanTarget, error) {
 	var target ScanTarget
-	query := `SELECT * FROM scan_targets WHERE id = $1`
+	query := `
+		SELECT *
+		FROM scan_targets
+		WHERE id = $1`
 
 	if err := r.db.GetContext(ctx, &target, query, id); err != nil {
 		if err == sql.ErrNoRows {
@@ -222,7 +231,10 @@ func (r *ScanTargetRepository) GetByID(ctx context.Context, id uuid.UUID) (*Scan
 // GetAll retrieves all scan targets.
 func (r *ScanTargetRepository) GetAll(ctx context.Context) ([]*ScanTarget, error) {
 	var targets []*ScanTarget
-	query := `SELECT * FROM scan_targets ORDER BY name`
+	query := `
+		SELECT *
+		FROM scan_targets
+		ORDER BY name`
 
 	if err := r.db.SelectContext(ctx, &targets, query); err != nil {
 		return nil, sanitizeDBError("get scan targets", err)
@@ -234,7 +246,11 @@ func (r *ScanTargetRepository) GetAll(ctx context.Context) ([]*ScanTarget, error
 // GetEnabled retrieves all enabled scan targets.
 func (r *ScanTargetRepository) GetEnabled(ctx context.Context) ([]*ScanTarget, error) {
 	var targets []*ScanTarget
-	query := `SELECT * FROM scan_targets WHERE enabled = true ORDER BY name`
+	query := `
+		SELECT *
+		FROM scan_targets
+		WHERE enabled = true
+		ORDER BY name`
 
 	if err := r.db.SelectContext(ctx, &targets, query); err != nil {
 		return nil, sanitizeDBError("get enabled scan targets", err)
@@ -247,9 +263,14 @@ func (r *ScanTargetRepository) GetEnabled(ctx context.Context) ([]*ScanTarget, e
 func (r *ScanTargetRepository) Update(ctx context.Context, target *ScanTarget) error {
 	query := `
 		UPDATE scan_targets
-		SET name = :name, network = :network, description = :description,
-		    scan_interval_seconds = :scan_interval_seconds, scan_ports = :scan_ports,
-		    scan_type = :scan_type, enabled = :enabled
+		SET
+			name = :name,
+			network = :network,
+			description = :description,
+			scan_interval_seconds = :scan_interval_seconds,
+			scan_ports = :scan_ports,
+			scan_type = :scan_type,
+			enabled = :enabled
 		WHERE id = :id
 		RETURNING updated_at`
 
@@ -274,7 +295,9 @@ func (r *ScanTargetRepository) Update(ctx context.Context, target *ScanTarget) e
 
 // Delete deletes a scan target.
 func (r *ScanTargetRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	query := `DELETE FROM scan_targets WHERE id = $1`
+	query := `
+		DELETE FROM scan_targets
+		WHERE id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
@@ -306,8 +329,14 @@ func NewScanJobRepository(db *DB) *ScanJobRepository {
 // Create creates a new scan job.
 func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 	query := `
-		INSERT INTO scan_jobs (id, target_id, status, started_at, completed_at, scan_stats)
-		VALUES (:id, :target_id, :status, :started_at, :completed_at, :scan_stats)
+		INSERT INTO scan_jobs (
+			id, target_id, status,
+			started_at, completed_at, scan_stats
+		)
+		VALUES (
+			:id, :target_id, :status,
+			:started_at, :completed_at, :scan_stats
+		)
 		RETURNING created_at`
 
 	if job.ID == uuid.Nil {
@@ -368,7 +397,10 @@ func (r *ScanJobRepository) UpdateStatus(ctx context.Context, id uuid.UUID, stat
 // GetByID retrieves a scan job by ID.
 func (r *ScanJobRepository) GetByID(ctx context.Context, id uuid.UUID) (*ScanJob, error) {
 	var job ScanJob
-	query := `SELECT * FROM scan_jobs WHERE id = $1`
+	query := `
+		SELECT *
+		FROM scan_jobs
+		WHERE id = $1`
 
 	if err := r.db.GetContext(ctx, &job, query, id); err != nil {
 		if err == sql.ErrNoRows {
@@ -405,17 +437,18 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 		)
 		ON CONFLICT (ip_address)
 		DO UPDATE SET
-			hostname = COALESCE(EXCLUDED.hostname, hosts.hostname),
+			hostname = EXCLUDED.hostname,
 			mac_address = COALESCE(EXCLUDED.mac_address, hosts.mac_address),
 			vendor = COALESCE(EXCLUDED.vendor, hosts.vendor),
 			os_family = COALESCE(EXCLUDED.os_family, hosts.os_family),
 			os_version = COALESCE(EXCLUDED.os_version, hosts.os_version),
 			status = EXCLUDED.status,
-			discovery_method = COALESCE(EXCLUDED.discovery_method, hosts.discovery_method),
-			response_time_ms = COALESCE(EXCLUDED.response_time_ms, hosts.response_time_ms),
-			discovery_count = COALESCE(EXCLUDED.discovery_count, hosts.discovery_count),
+			discovery_method = EXCLUDED.discovery_method,
+			response_time_ms = EXCLUDED.response_time_ms,
+			discovery_count = hosts.discovery_count + 1,
 			last_seen = NOW()
-		RETURNING id, first_seen, last_seen`
+		RETURNING
+			first_seen, last_seen`
 
 	if host.ID == uuid.Nil {
 		host.ID = uuid.New()
@@ -443,7 +476,10 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 // GetByIP retrieves a host by IP address.
 func (r *HostRepository) GetByIP(ctx context.Context, ip IPAddr) (*Host, error) {
 	var host Host
-	query := `SELECT * FROM hosts WHERE ip_address = $1`
+	query := `
+		SELECT *
+		FROM hosts
+		WHERE ip_address = $1`
 
 	if err := r.db.GetContext(ctx, &host, query, ip); err != nil {
 		if err == sql.ErrNoRows {
@@ -458,7 +494,10 @@ func (r *HostRepository) GetByIP(ctx context.Context, ip IPAddr) (*Host, error) 
 // GetActiveHosts retrieves all active hosts.
 func (r *HostRepository) GetActiveHosts(ctx context.Context) ([]*ActiveHost, error) {
 	var hosts []*ActiveHost
-	query := `SELECT * FROM active_hosts ORDER BY ip_address`
+	query := `
+		SELECT *
+		FROM active_hosts
+		ORDER BY ip_address`
 
 	if err := r.db.SelectContext(ctx, &hosts, query); err != nil {
 		return nil, sanitizeDBError("get active hosts", err)
@@ -546,7 +585,11 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 // GetByHost retrieves all port scans for a host.
 func (r *PortScanRepository) GetByHost(ctx context.Context, hostID uuid.UUID) ([]*PortScan, error) {
 	var scans []*PortScan
-	query := `SELECT * FROM port_scans WHERE host_id = $1 ORDER BY port`
+	query := `
+		SELECT *
+		FROM port_scans
+		WHERE host_id = $1
+		ORDER BY port`
 
 	if err := r.db.SelectContext(ctx, &scans, query, hostID); err != nil {
 		return nil, sanitizeDBError("get port scans", err)
@@ -566,9 +609,13 @@ func NewNetworkSummaryRepository(db *DB) *NetworkSummaryRepository {
 }
 
 // GetAll retrieves network summary for all targets.
+// GetAll retrieves all network summaries.
 func (r *NetworkSummaryRepository) GetAll(ctx context.Context) ([]*NetworkSummary, error) {
 	var summaries []*NetworkSummary
-	query := `SELECT * FROM network_summary ORDER BY target_name`
+	query := `
+		SELECT *
+		FROM network_summary
+		ORDER BY target_name`
 
 	if err := r.db.SelectContext(ctx, &summaries, query); err != nil {
 		return nil, sanitizeDBError("get network summaries", err)
