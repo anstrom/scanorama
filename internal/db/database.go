@@ -31,7 +31,10 @@ func sanitizeDBError(operation string, err error) error {
 
 	// Handle specific known database errors
 	if err == sql.ErrNoRows {
-		return errors.NewDatabaseError(errors.CodeNotFound, "Resource not found")
+		dbErr := errors.NewDatabaseError(errors.CodeNotFound, "Resource not found")
+		dbErr.Operation = operation
+		dbErr.Cause = err
+		return dbErr
 	}
 
 	// Check for PostgreSQL-specific errors

@@ -972,6 +972,90 @@ func TestConnectionErrorSanitization(t *testing.T) {
 	}
 }
 
+// TestSanitizeDBErrorPreservesCause verifies that sanitizeDBError preserves
+// the original error in the Cause field for internal debugging.
+func TestSanitizeDBErrorPreservesCause(t *testing.T) {
+	tests := []struct {
+		name      string
+		operation string
+		inputErr  error
+	}{
+		{
+			name:      "PostgreSQL unique violation preserves cause",
+			operation: "create record",
+			inputErr:  &pq.Error{Code: "23505", Message: "duplicate key value"},
+		},
+		{
+			name:      "PostgreSQL foreign key violation preserves cause",
+			operation: "insert record",
+			inputErr: &pq.Error{
+				Code:    "23503",
+				Message: "foreign key constraint violation",
+			},
+		},
+		{
+			name:      "sql.ErrNoRows preserves cause",
+			operation: "get record",
+			inputErr:  sql.ErrNoRows,
+		},
+		{
+			name:      "generic error preserves cause",
+			operation: "query",
+			inputErr:  fmt.Errorf("connection timeout"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeDBError(tt.operation, tt.inputErr)
+
+			if result == nil {
+				t.Fatal("Expected error but got nil")
+			}
+
+			// Verify it's a DatabaseError
+			dbErr, ok := result.(*errors.DatabaseError)
+			if !ok {
+				t.Fatalf("Expected *errors.DatabaseError, got %T", result)
+			}
+
+			// Verify Operation is set
+			if dbErr.Operation != tt.operation {
+				t.Errorf("Expected operation %q, got %q", tt.operation, dbErr.Operation)
+			}
+
+			// Verify Cause is preserved
+			if dbErr.Cause == nil {
+				t.Error("Expected Cause to be preserved, but it was nil")
+			}
+
+			// Verify we can unwrap to get the original error
+			unwrapped := dbErr.Unwrap()
+			if unwrapped == nil {
+				t.Error("Expected to unwrap original error, but got nil")
+			}
+
+			// For PostgreSQL errors, verify we can still access the original pq.Error
+			if pqErr, ok := tt.inputErr.(*pq.Error); ok {
+				unwrappedPQ, ok := unwrapped.(*pq.Error)
+				if !ok {
+					t.Errorf("Expected unwrapped error to be *pq.Error, got %T", unwrapped)
+				} else if unwrappedPQ.Code != pqErr.Code {
+					t.Errorf("Expected error code %s, got %s", pqErr.Code, unwrappedPQ.Code)
+				}
+			}
+
+			// Verify the error message is sanitized (doesn't contain SQL details)
+			errMsg := result.Error()
+			if strings.Contains(strings.ToLower(errMsg), "duplicate key") ||
+				strings.Contains(strings.ToLower(errMsg), "constraint") ||
+				strings.Contains(strings.ToLower(errMsg), "foreign key") {
+				t.Errorf("Error message not sanitized, contains SQL details: %s", errMsg)
+			}
+		})
+	}
+}
+
 func TestTransaction(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
