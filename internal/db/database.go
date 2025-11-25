@@ -23,6 +23,7 @@ import (
 
 // sanitizeDBError converts raw database errors into safe, sanitized errors
 // that don't expose internal SQL details or credentials to API clients.
+// The original error is preserved in the Cause field for internal debugging.
 func sanitizeDBError(operation string, err error) error {
 	if err == nil {
 		return nil
@@ -35,22 +36,31 @@ func sanitizeDBError(operation string, err error) error {
 
 	// Check for PostgreSQL-specific errors
 	if pqErr, ok := err.(*pq.Error); ok {
+		var dbErr *errors.DatabaseError
 		switch pqErr.Code {
 		case "23505": // unique_violation
-			return errors.NewDatabaseError(errors.CodeConflict, "Resource already exists")
+			dbErr = errors.NewDatabaseError(errors.CodeConflict, "Resource already exists")
 		case "23503": // foreign_key_violation
-			return errors.NewDatabaseError(errors.CodeValidation, "Referenced resource does not exist")
+			dbErr = errors.NewDatabaseError(errors.CodeValidation, "Referenced resource does not exist")
 		case "23502": // not_null_violation
-			return errors.NewDatabaseError(errors.CodeValidation, "Required field is missing")
+			dbErr = errors.NewDatabaseError(errors.CodeValidation, "Required field is missing")
 		case "23514": // check_violation
-			return errors.NewDatabaseError(errors.CodeValidation, "Data validation failed")
+			dbErr = errors.NewDatabaseError(errors.CodeValidation, "Data validation failed")
 		case "57014": // query_canceled
-			return errors.NewDatabaseError(errors.CodeCanceled, "Database operation was canceled")
+			dbErr = errors.NewDatabaseError(errors.CodeCanceled, "Database operation was canceled")
 		case "57P01": // admin_shutdown
-			return errors.NewDatabaseError(errors.CodeDatabaseConnection, "Database connection lost")
+			dbErr = errors.NewDatabaseError(errors.CodeDatabaseConnection, "Database connection lost")
 		case "08000", "08003", "08006": // connection errors
-			return errors.NewDatabaseError(errors.CodeDatabaseConnection, "Database connection error")
+			dbErr = errors.NewDatabaseError(errors.CodeDatabaseConnection, "Database connection error")
+		default:
+			// Unknown PostgreSQL error - use generic sanitized error
+			msg := fmt.Sprintf("Database operation failed: %s", operation)
+			dbErr = errors.NewDatabaseError(errors.CodeDatabaseQuery, msg)
 		}
+		// Preserve original error for internal logging
+		dbErr.Operation = operation
+		dbErr.Cause = err
+		return dbErr
 	}
 
 	// For all other errors, return a generic sanitized error without details
@@ -133,7 +143,8 @@ func Connect(ctx context.Context, config *Config) (*DB, error) {
 	if err := db.PingContext(ctx); err != nil {
 		// Close the connection before returning error
 		if closeErr := db.Close(); closeErr != nil {
-			log.Printf("Failed to close database connection after ping failure: %v", closeErr)
+			// Don't log raw error - it might contain connection details
+			log.Printf("Failed to close database connection after ping failure")
 		}
 		return nil, errors.WrapDatabaseError(errors.CodeDatabaseConnection, "Failed to verify database connection", err)
 	}
@@ -305,7 +316,7 @@ func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 
 	rows, err := r.db.NamedQueryContext(ctx, query, job)
 	if err != nil {
-		return fmt.Errorf("failed to create scan job: %w", err)
+		return sanitizeDBError("create scan job", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -315,7 +326,7 @@ func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 
 	if rows.Next() {
 		if err := rows.Scan(&job.CreatedAt); err != nil {
-			return fmt.Errorf("failed to scan created scan job: %w", err)
+			return sanitizeDBError("scan created scan job", err)
 		}
 	}
 
@@ -348,7 +359,7 @@ func (r *ScanJobRepository) UpdateStatus(ctx context.Context, id uuid.UUID, stat
 
 	_, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
-		return fmt.Errorf("failed to update scan job status: %w", err)
+		return sanitizeDBError("update scan job status", err)
 	}
 
 	return nil
@@ -361,9 +372,9 @@ func (r *ScanJobRepository) GetByID(ctx context.Context, id uuid.UUID) (*ScanJob
 
 	if err := r.db.GetContext(ctx, &job, query, id); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("scan job not found: %w", err)
+			return nil, sanitizeDBError("get scan job", err)
 		}
-		return nil, fmt.Errorf("failed to get scan job: %w", err)
+		return nil, sanitizeDBError("get scan job", err)
 	}
 
 	return &job, nil
@@ -412,7 +423,7 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 
 	rows, err := r.db.NamedQueryContext(ctx, query, host)
 	if err != nil {
-		return fmt.Errorf("failed to create or update host: %w", err)
+		return sanitizeDBError("create or update host", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -421,8 +432,8 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 	}()
 
 	if rows.Next() {
-		if err := rows.Scan(&host.ID, &host.FirstSeen, &host.LastSeen); err != nil {
-			return fmt.Errorf("failed to scan created/updated host: %w", err)
+		if err := rows.Scan(&host.FirstSeen, &host.LastSeen); err != nil {
+			return sanitizeDBError("scan created/updated host", err)
 		}
 	}
 
@@ -436,9 +447,9 @@ func (r *HostRepository) GetByIP(ctx context.Context, ip IPAddr) (*Host, error) 
 
 	if err := r.db.GetContext(ctx, &host, query, ip); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("host not found: %w", err)
+			return nil, sanitizeDBError("get host", err)
 		}
-		return nil, fmt.Errorf("failed to get host: %w", err)
+		return nil, sanitizeDBError("get host", err)
 	}
 
 	return &host, nil
@@ -450,7 +461,7 @@ func (r *HostRepository) GetActiveHosts(ctx context.Context) ([]*ActiveHost, err
 	query := `SELECT * FROM active_hosts ORDER BY ip_address`
 
 	if err := r.db.SelectContext(ctx, &hosts, query); err != nil {
-		return nil, fmt.Errorf("failed to get active hosts: %w", err)
+		return nil, sanitizeDBError("get active hosts", err)
 	}
 
 	return hosts, nil
@@ -474,7 +485,7 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return sanitizeDBError("begin transaction", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -521,12 +532,12 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 
 		_, err := tx.NamedExecContext(ctx, query, scan)
 		if err != nil {
-			return fmt.Errorf("failed to create port scan: %w", err)
+			return sanitizeDBError("insert port scan", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+		return sanitizeDBError("commit transaction", err)
 	}
 
 	return nil
@@ -538,7 +549,7 @@ func (r *PortScanRepository) GetByHost(ctx context.Context, hostID uuid.UUID) ([
 	query := `SELECT * FROM port_scans WHERE host_id = $1 ORDER BY port`
 
 	if err := r.db.SelectContext(ctx, &scans, query, hostID); err != nil {
-		return nil, fmt.Errorf("failed to get port scans: %w", err)
+		return nil, sanitizeDBError("get port scans", err)
 	}
 
 	return scans, nil
@@ -560,7 +571,7 @@ func (r *NetworkSummaryRepository) GetAll(ctx context.Context) ([]*NetworkSummar
 	query := `SELECT * FROM network_summary ORDER BY target_name`
 
 	if err := r.db.SelectContext(ctx, &summaries, query); err != nil {
-		return nil, fmt.Errorf("failed to get network summaries: %w", err)
+		return nil, sanitizeDBError("get network summaries", err)
 	}
 
 	return summaries, nil
