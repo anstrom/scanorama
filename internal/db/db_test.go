@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net"
 	"os"
@@ -11,8 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"gopkg.in/yaml.v3"
 )
 
@@ -679,6 +681,294 @@ func TestExec(t *testing.T) {
 
 	if affected != 0 {
 		t.Errorf("RowsAffected() = %v, want %v", affected, 0)
+	}
+}
+
+// TestSanitizeDBError tests the error sanitization function.
+func TestSanitizeDBError(t *testing.T) {
+	tests := []struct {
+		name           string
+		operation      string
+		inputErr       error
+		wantCode       errors.ErrorCode
+		wantContains   string
+		wantNotContain string
+	}{
+		{
+			name:         "nil error returns nil",
+			operation:    "test operation",
+			inputErr:     nil,
+			wantCode:     "",
+			wantContains: "",
+		},
+		{
+			name:         "sql.ErrNoRows returns NotFound",
+			operation:    "get record",
+			inputErr:     sql.ErrNoRows,
+			wantCode:     errors.CodeNotFound,
+			wantContains: "Resource not found",
+		},
+		{
+			name:           "unique_violation (23505) returns Conflict",
+			operation:      "create scan target",
+			inputErr:       &pq.Error{Code: "23505", Message: "duplicate key value violates unique constraint"},
+			wantCode:       errors.CodeConflict,
+			wantContains:   "Resource already exists",
+			wantNotContain: "duplicate key",
+		},
+		{
+			name:      "foreign_key_violation (23503) returns Validation",
+			operation: "create record",
+			inputErr: &pq.Error{
+				Code:    "23503",
+				Message: "insert or update on table violates foreign key constraint",
+			},
+			wantCode:       errors.CodeValidation,
+			wantContains:   "Referenced resource does not exist",
+			wantNotContain: "foreign key constraint",
+		},
+		{
+			name:           "not_null_violation (23502) returns Validation",
+			operation:      "insert record",
+			inputErr:       &pq.Error{Code: "23502", Message: "null value in column violates not-null constraint"},
+			wantCode:       errors.CodeValidation,
+			wantContains:   "Required field is missing",
+			wantNotContain: "null value",
+		},
+		{
+			name:           "check_violation (23514) returns Validation",
+			operation:      "update record",
+			inputErr:       &pq.Error{Code: "23514", Message: "new row violates check constraint"},
+			wantCode:       errors.CodeValidation,
+			wantContains:   "Data validation failed",
+			wantNotContain: "check constraint",
+		},
+		{
+			name:         "query_canceled (57014) returns Canceled",
+			operation:    "query",
+			inputErr:     &pq.Error{Code: "57014", Message: "canceling statement due to user request"},
+			wantCode:     errors.CodeCanceled,
+			wantContains: "Database operation was canceled",
+		},
+		{
+			name:         "admin_shutdown (57P01) returns DatabaseConnection",
+			operation:    "query",
+			inputErr:     &pq.Error{Code: "57P01", Message: "terminating connection due to administrator command"},
+			wantCode:     errors.CodeDatabaseConnection,
+			wantContains: "Database connection lost",
+		},
+		{
+			name:         "connection error (08000) returns DatabaseConnection",
+			operation:    "connect",
+			inputErr:     &pq.Error{Code: "08000", Message: "connection exception"},
+			wantCode:     errors.CodeDatabaseConnection,
+			wantContains: "Database connection error",
+		},
+		{
+			name:           "generic error is sanitized",
+			operation:      "complex query",
+			inputErr:       fmt.Errorf("pq: syntax error at or near SELECT"),
+			wantCode:       errors.CodeDatabaseQuery,
+			wantContains:   "Database operation failed: complex query",
+			wantNotContain: "syntax error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeDBError(tt.operation, tt.inputErr)
+
+			if tt.inputErr == nil {
+				if result != nil {
+					t.Errorf("Expected nil for nil input, got: %v", result)
+				}
+				return
+			}
+
+			if result == nil {
+				t.Fatal("Expected error but got nil")
+			}
+
+			// Check error code
+			if tt.wantCode != "" {
+				if !errors.IsCode(result, tt.wantCode) {
+					t.Errorf("Expected error code %s, got code %s", tt.wantCode, errors.GetCode(result))
+				}
+			}
+
+			// Check error message contains expected text
+			errMsg := result.Error()
+			if tt.wantContains != "" && !strings.Contains(errMsg, tt.wantContains) {
+				t.Errorf("Expected error to contain %q, got: %s", tt.wantContains, errMsg)
+			}
+
+			// Check that sensitive details are NOT in the error
+			if tt.wantNotContain != "" && strings.Contains(errMsg, tt.wantNotContain) {
+				t.Errorf("Error message should NOT contain %q, but got: %s", tt.wantNotContain, errMsg)
+			}
+		})
+	}
+}
+
+// TestRepositoryErrorSanitization tests that repository methods return sanitized errors.
+func TestRepositoryErrorSanitization(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	if db == nil {
+		return // Test was skipped
+	}
+
+	ctx := context.Background()
+	repo := NewScanTargetRepository(db)
+
+	t.Run("Create with duplicate returns sanitized conflict error", func(t *testing.T) {
+		// Create a scan target
+		network := NetworkAddr{}
+		_, ipnet, _ := net.ParseCIDR("192.168.1.0/24")
+		network.IPNet = *ipnet
+
+		target1 := &ScanTarget{
+			ID:      uuid.New(),
+			Name:    "duplicate-test-target",
+			Network: network,
+		}
+
+		err := repo.Create(ctx, target1)
+		if err != nil {
+			t.Skipf("Could not create initial target: %v", err)
+		}
+
+		// Try to create another with the same name
+		target2 := &ScanTarget{
+			ID:      uuid.New(),
+			Name:    "duplicate-test-target",
+			Network: network,
+		}
+
+		err = repo.Create(ctx, target2)
+		if err == nil {
+			t.Fatal("Expected conflict error for duplicate name")
+		}
+
+		// Check that error is sanitized
+		errMsg := err.Error()
+		if !strings.Contains(errMsg, "CONFLICT") && !strings.Contains(errMsg, "Resource already exists") {
+			t.Errorf("Expected sanitized conflict error, got: %s", errMsg)
+		}
+
+		// Verify SQL details are NOT exposed
+		if strings.Contains(strings.ToLower(errMsg), "constraint") ||
+			strings.Contains(strings.ToLower(errMsg), "duplicate key") ||
+			strings.Contains(strings.ToLower(errMsg), "unique_violation") {
+			t.Errorf("Error message contains SQL details that should be sanitized: %s", errMsg)
+		}
+	})
+
+	t.Run("GetByID with non-existent ID returns sanitized not found error", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		target, err := repo.GetByID(ctx, nonExistentID)
+
+		if err == nil {
+			t.Fatal("Expected not found error")
+		}
+
+		if target != nil {
+			t.Error("Expected nil target for not found error")
+		}
+
+		// Check that error is sanitized
+		errMsg := err.Error()
+		if !strings.Contains(errMsg, "NOT_FOUND") && !strings.Contains(errMsg, "Resource not found") {
+			t.Errorf("Expected sanitized not found error, got: %s", errMsg)
+		}
+	})
+
+	t.Run("Delete non-existent returns sanitized not found error", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		err := repo.Delete(ctx, nonExistentID)
+
+		if err == nil {
+			t.Fatal("Expected not found error")
+		}
+
+		// Check that error is sanitized
+		errMsg := err.Error()
+		if !strings.Contains(errMsg, "NOT_FOUND") && !strings.Contains(errMsg, "not found") {
+			t.Errorf("Expected sanitized not found error, got: %s", errMsg)
+		}
+	})
+}
+
+// TestConnectionErrorSanitization tests that connection errors don't leak credentials.
+func TestConnectionErrorSanitization(t *testing.T) {
+	tests := []struct {
+		name       string
+		config     Config
+		wantErrMsg string
+		noContain  []string
+	}{
+		{
+			name: "invalid host connection error is sanitized",
+			config: Config{
+				Host:            "invalid-nonexistent-host-12345",
+				Port:            5432,
+				Database:        "testdb",
+				Username:        "testuser",
+				Password:        "supersecretpassword123",
+				SSLMode:         "disable",
+				MaxOpenConns:    1,
+				MaxIdleConns:    1,
+				ConnMaxLifetime: time.Minute,
+				ConnMaxIdleTime: time.Minute,
+			},
+			wantErrMsg: "DATABASE_CONNECTION",
+			noContain:  []string{"supersecretpassword123", "testuser", "testdb"},
+		},
+		{
+			name: "invalid port connection error is sanitized",
+			config: Config{
+				Host:            "localhost",
+				Port:            1,
+				Database:        "testdb",
+				Username:        "testuser",
+				Password:        "mypassword",
+				SSLMode:         "disable",
+				MaxOpenConns:    1,
+				MaxIdleConns:    1,
+				ConnMaxLifetime: time.Minute,
+				ConnMaxIdleTime: time.Minute,
+			},
+			wantErrMsg: "DATABASE_CONNECTION",
+			noContain:  []string{"mypassword", "testuser"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			_, err := Connect(ctx, &tt.config)
+
+			if err == nil {
+				t.Skip("Expected connection error but succeeded - database might be available")
+			}
+
+			errMsg := err.Error()
+
+			// Check that error contains expected code
+			if !strings.Contains(errMsg, tt.wantErrMsg) {
+				t.Errorf("Expected error to contain %q, got: %s", tt.wantErrMsg, errMsg)
+			}
+
+			// Check that credentials are NOT in the error message
+			for _, forbidden := range tt.noContain {
+				if strings.Contains(errMsg, forbidden) {
+					t.Errorf("Error message contains sensitive data %q: %s", forbidden, errMsg)
+				}
+			}
+		})
 	}
 }
 
