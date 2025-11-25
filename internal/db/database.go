@@ -21,6 +21,59 @@ import (
 	"github.com/anstrom/scanorama/internal/errors"
 )
 
+// sanitizeDBError converts raw database errors into safe, sanitized errors
+// that don't expose internal SQL details or credentials to API clients.
+// The original error is preserved in the Cause field for internal debugging.
+func sanitizeDBError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// Handle specific known database errors
+	if err == sql.ErrNoRows {
+		dbErr := errors.NewDatabaseError(errors.CodeNotFound, "Resource not found")
+		dbErr.Operation = operation
+		dbErr.Cause = err
+		return dbErr
+	}
+
+	// Check for PostgreSQL-specific errors
+	if pqErr, ok := err.(*pq.Error); ok {
+		var dbErr *errors.DatabaseError
+		switch pqErr.Code {
+		case "23505": // unique_violation
+			dbErr = errors.NewDatabaseError(errors.CodeConflict, "Resource already exists")
+		case "23503": // foreign_key_violation
+			dbErr = errors.NewDatabaseError(errors.CodeValidation, "Referenced resource does not exist")
+		case "23502": // not_null_violation
+			dbErr = errors.NewDatabaseError(errors.CodeValidation, "Required field is missing")
+		case "23514": // check_violation
+			dbErr = errors.NewDatabaseError(errors.CodeValidation, "Data validation failed")
+		case "57014": // query_canceled
+			dbErr = errors.NewDatabaseError(errors.CodeCanceled, "Database operation was canceled")
+		case "57P01": // admin_shutdown
+			dbErr = errors.NewDatabaseError(errors.CodeDatabaseConnection, "Database connection lost")
+		case "08000", "08003", "08006": // connection errors
+			dbErr = errors.NewDatabaseError(errors.CodeDatabaseConnection, "Database connection error")
+		default:
+			// Unknown PostgreSQL error - use generic sanitized error
+			msg := fmt.Sprintf("Database operation failed: %s", operation)
+			dbErr = errors.NewDatabaseError(errors.CodeDatabaseQuery, msg)
+		}
+		// Preserve original error for internal logging
+		dbErr.Operation = operation
+		dbErr.Cause = err
+		return dbErr
+	}
+
+	// For all other errors, return a generic sanitized error without details
+	dbErr := errors.NewDatabaseError(errors.CodeDatabaseQuery, fmt.Sprintf("Database operation failed: %s", operation))
+	dbErr.Operation = operation
+	// Store the original error as Cause for internal logging, but it won't be exposed to API
+	dbErr.Cause = err
+	return dbErr
+}
+
 const (
 	// Default database configuration values.
 	defaultPostgresPort    = 5432
@@ -67,7 +120,10 @@ func DefaultConfig() Config {
 }
 
 // Connect establishes a connection to PostgreSQL.
+// Returns sanitized errors that don't leak credentials or DSN details.
 func Connect(ctx context.Context, config *Config) (*DB, error) {
+	// Build DSN - PostgreSQL lib/pq handles special characters in values correctly
+	// when using key=value format (values with spaces/special chars are auto-escaped)
 	dsn := fmt.Sprintf(
 		"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
 		config.Host, config.Port, config.Database,
@@ -76,7 +132,8 @@ func Connect(ctx context.Context, config *Config) (*DB, error) {
 
 	db, err := sqlx.ConnectContext(ctx, "postgres", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		// Return sanitized error without DSN to prevent credential leakage in logs
+		return nil, errors.ErrDatabaseConnection(err)
 	}
 
 	// Configure connection pool
@@ -87,9 +144,16 @@ func Connect(ctx context.Context, config *Config) (*DB, error) {
 
 	// Test connection
 	if err := db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+		// Close the connection before returning error
+		if closeErr := db.Close(); closeErr != nil {
+			// Don't log raw error - it might contain connection details
+			log.Printf("Failed to close database connection after ping failure")
+		}
+		return nil, errors.WrapDatabaseError(errors.CodeDatabaseConnection, "Failed to verify database connection", err)
 	}
 
+	// Log success without credentials - only safe connection details
+	log.Printf("Successfully connected to database at %s:%d/%s", config.Host, config.Port, config.Database)
 	return &DB{DB: db}, nil
 }
 
@@ -116,8 +180,14 @@ func NewScanTargetRepository(db *DB) *ScanTargetRepository {
 // Create creates a new scan target.
 func (r *ScanTargetRepository) Create(ctx context.Context, target *ScanTarget) error {
 	query := `
-		INSERT INTO scan_targets (id, name, network, description, scan_interval_seconds, scan_ports, scan_type, enabled)
-		VALUES (:id, :name, :network, :description, :scan_interval_seconds, :scan_ports, :scan_type, :enabled)
+		INSERT INTO scan_targets (
+			id, name, network, description,
+			scan_interval_seconds, scan_ports, scan_type, enabled
+		)
+		VALUES (
+			:id, :name, :network, :description,
+			:scan_interval_seconds, :scan_ports, :scan_type, :enabled
+		)
 		RETURNING created_at, updated_at`
 
 	if target.ID == uuid.Nil {
@@ -126,7 +196,7 @@ func (r *ScanTargetRepository) Create(ctx context.Context, target *ScanTarget) e
 
 	rows, err := r.db.NamedQueryContext(ctx, query, target)
 	if err != nil {
-		return fmt.Errorf("failed to create scan target: %w", err)
+		return sanitizeDBError("create scan target", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -136,7 +206,7 @@ func (r *ScanTargetRepository) Create(ctx context.Context, target *ScanTarget) e
 
 	if rows.Next() {
 		if err := rows.Scan(&target.CreatedAt, &target.UpdatedAt); err != nil {
-			return fmt.Errorf("failed to scan created scan target: %w", err)
+			return sanitizeDBError("scan created scan target", err)
 		}
 	}
 
@@ -146,13 +216,16 @@ func (r *ScanTargetRepository) Create(ctx context.Context, target *ScanTarget) e
 // GetByID retrieves a scan target by ID.
 func (r *ScanTargetRepository) GetByID(ctx context.Context, id uuid.UUID) (*ScanTarget, error) {
 	var target ScanTarget
-	query := `SELECT * FROM scan_targets WHERE id = $1`
+	query := `
+		SELECT *
+		FROM scan_targets
+		WHERE id = $1`
 
 	if err := r.db.GetContext(ctx, &target, query, id); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("scan target not found: %w", err)
+			return nil, sanitizeDBError("get scan target", err)
 		}
-		return nil, fmt.Errorf("failed to get scan target: %w", err)
+		return nil, sanitizeDBError("get scan target", err)
 	}
 
 	return &target, nil
@@ -161,10 +234,13 @@ func (r *ScanTargetRepository) GetByID(ctx context.Context, id uuid.UUID) (*Scan
 // GetAll retrieves all scan targets.
 func (r *ScanTargetRepository) GetAll(ctx context.Context) ([]*ScanTarget, error) {
 	var targets []*ScanTarget
-	query := `SELECT * FROM scan_targets ORDER BY name`
+	query := `
+		SELECT *
+		FROM scan_targets
+		ORDER BY name`
 
 	if err := r.db.SelectContext(ctx, &targets, query); err != nil {
-		return nil, fmt.Errorf("failed to get scan targets: %w", err)
+		return nil, sanitizeDBError("get scan targets", err)
 	}
 
 	return targets, nil
@@ -173,10 +249,14 @@ func (r *ScanTargetRepository) GetAll(ctx context.Context) ([]*ScanTarget, error
 // GetEnabled retrieves all enabled scan targets.
 func (r *ScanTargetRepository) GetEnabled(ctx context.Context) ([]*ScanTarget, error) {
 	var targets []*ScanTarget
-	query := `SELECT * FROM scan_targets WHERE enabled = true ORDER BY name`
+	query := `
+		SELECT *
+		FROM scan_targets
+		WHERE enabled = true
+		ORDER BY name`
 
 	if err := r.db.SelectContext(ctx, &targets, query); err != nil {
-		return nil, fmt.Errorf("failed to get enabled scan targets: %w", err)
+		return nil, sanitizeDBError("get enabled scan targets", err)
 	}
 
 	return targets, nil
@@ -186,15 +266,20 @@ func (r *ScanTargetRepository) GetEnabled(ctx context.Context) ([]*ScanTarget, e
 func (r *ScanTargetRepository) Update(ctx context.Context, target *ScanTarget) error {
 	query := `
 		UPDATE scan_targets
-		SET name = :name, network = :network, description = :description,
-		    scan_interval_seconds = :scan_interval_seconds, scan_ports = :scan_ports,
-		    scan_type = :scan_type, enabled = :enabled
+		SET
+			name = :name,
+			network = :network,
+			description = :description,
+			scan_interval_seconds = :scan_interval_seconds,
+			scan_ports = :scan_ports,
+			scan_type = :scan_type,
+			enabled = :enabled
 		WHERE id = :id
 		RETURNING updated_at`
 
 	rows, err := r.db.NamedQueryContext(ctx, query, target)
 	if err != nil {
-		return fmt.Errorf("failed to update scan target: %w", err)
+		return sanitizeDBError("update scan target", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -204,7 +289,7 @@ func (r *ScanTargetRepository) Update(ctx context.Context, target *ScanTarget) e
 
 	if rows.Next() {
 		if err := rows.Scan(&target.UpdatedAt); err != nil {
-			return fmt.Errorf("failed to scan updated scan target: %w", err)
+			return sanitizeDBError("scan updated scan target", err)
 		}
 	}
 
@@ -213,20 +298,22 @@ func (r *ScanTargetRepository) Update(ctx context.Context, target *ScanTarget) e
 
 // Delete deletes a scan target.
 func (r *ScanTargetRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	query := `DELETE FROM scan_targets WHERE id = $1`
+	query := `
+		DELETE FROM scan_targets
+		WHERE id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
-		return fmt.Errorf("failed to delete scan target: %w", err)
+		return sanitizeDBError("delete scan target", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
+		return sanitizeDBError("get rows affected", err)
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("scan target not found")
+		return errors.NewDatabaseError(errors.CodeNotFound, "Scan target not found")
 	}
 
 	return nil
@@ -245,8 +332,14 @@ func NewScanJobRepository(db *DB) *ScanJobRepository {
 // Create creates a new scan job.
 func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 	query := `
-		INSERT INTO scan_jobs (id, target_id, status, started_at, completed_at, scan_stats)
-		VALUES (:id, :target_id, :status, :started_at, :completed_at, :scan_stats)
+		INSERT INTO scan_jobs (
+			id, target_id, status,
+			started_at, completed_at, scan_stats
+		)
+		VALUES (
+			:id, :target_id, :status,
+			:started_at, :completed_at, :scan_stats
+		)
 		RETURNING created_at`
 
 	if job.ID == uuid.Nil {
@@ -255,7 +348,7 @@ func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 
 	rows, err := r.db.NamedQueryContext(ctx, query, job)
 	if err != nil {
-		return fmt.Errorf("failed to create scan job: %w", err)
+		return sanitizeDBError("create scan job", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -265,7 +358,7 @@ func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 
 	if rows.Next() {
 		if err := rows.Scan(&job.CreatedAt); err != nil {
-			return fmt.Errorf("failed to scan created scan job: %w", err)
+			return sanitizeDBError("scan created scan job", err)
 		}
 	}
 
@@ -298,7 +391,7 @@ func (r *ScanJobRepository) UpdateStatus(ctx context.Context, id uuid.UUID, stat
 
 	_, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
-		return fmt.Errorf("failed to update scan job status: %w", err)
+		return sanitizeDBError("update scan job status", err)
 	}
 
 	return nil
@@ -307,13 +400,16 @@ func (r *ScanJobRepository) UpdateStatus(ctx context.Context, id uuid.UUID, stat
 // GetByID retrieves a scan job by ID.
 func (r *ScanJobRepository) GetByID(ctx context.Context, id uuid.UUID) (*ScanJob, error) {
 	var job ScanJob
-	query := `SELECT * FROM scan_jobs WHERE id = $1`
+	query := `
+		SELECT *
+		FROM scan_jobs
+		WHERE id = $1`
 
 	if err := r.db.GetContext(ctx, &job, query, id); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("scan job not found: %w", err)
+			return nil, sanitizeDBError("get scan job", err)
 		}
-		return nil, fmt.Errorf("failed to get scan job: %w", err)
+		return nil, sanitizeDBError("get scan job", err)
 	}
 
 	return &job, nil
@@ -344,17 +440,18 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 		)
 		ON CONFLICT (ip_address)
 		DO UPDATE SET
-			hostname = COALESCE(EXCLUDED.hostname, hosts.hostname),
+			hostname = EXCLUDED.hostname,
 			mac_address = COALESCE(EXCLUDED.mac_address, hosts.mac_address),
 			vendor = COALESCE(EXCLUDED.vendor, hosts.vendor),
 			os_family = COALESCE(EXCLUDED.os_family, hosts.os_family),
 			os_version = COALESCE(EXCLUDED.os_version, hosts.os_version),
 			status = EXCLUDED.status,
-			discovery_method = COALESCE(EXCLUDED.discovery_method, hosts.discovery_method),
-			response_time_ms = COALESCE(EXCLUDED.response_time_ms, hosts.response_time_ms),
-			discovery_count = COALESCE(EXCLUDED.discovery_count, hosts.discovery_count),
+			discovery_method = EXCLUDED.discovery_method,
+			response_time_ms = EXCLUDED.response_time_ms,
+			discovery_count = hosts.discovery_count + 1,
 			last_seen = NOW()
-		RETURNING id, first_seen, last_seen`
+		RETURNING
+			first_seen, last_seen`
 
 	if host.ID == uuid.Nil {
 		host.ID = uuid.New()
@@ -362,7 +459,7 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 
 	rows, err := r.db.NamedQueryContext(ctx, query, host)
 	if err != nil {
-		return fmt.Errorf("failed to create or update host: %w", err)
+		return sanitizeDBError("create or update host", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -371,8 +468,8 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 	}()
 
 	if rows.Next() {
-		if err := rows.Scan(&host.ID, &host.FirstSeen, &host.LastSeen); err != nil {
-			return fmt.Errorf("failed to scan created/updated host: %w", err)
+		if err := rows.Scan(&host.FirstSeen, &host.LastSeen); err != nil {
+			return sanitizeDBError("scan created/updated host", err)
 		}
 	}
 
@@ -382,13 +479,16 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 // GetByIP retrieves a host by IP address.
 func (r *HostRepository) GetByIP(ctx context.Context, ip IPAddr) (*Host, error) {
 	var host Host
-	query := `SELECT * FROM hosts WHERE ip_address = $1`
+	query := `
+		SELECT *
+		FROM hosts
+		WHERE ip_address = $1`
 
 	if err := r.db.GetContext(ctx, &host, query, ip); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("host not found: %w", err)
+			return nil, sanitizeDBError("get host", err)
 		}
-		return nil, fmt.Errorf("failed to get host: %w", err)
+		return nil, sanitizeDBError("get host", err)
 	}
 
 	return &host, nil
@@ -397,10 +497,13 @@ func (r *HostRepository) GetByIP(ctx context.Context, ip IPAddr) (*Host, error) 
 // GetActiveHosts retrieves all active hosts.
 func (r *HostRepository) GetActiveHosts(ctx context.Context) ([]*ActiveHost, error) {
 	var hosts []*ActiveHost
-	query := `SELECT * FROM active_hosts ORDER BY ip_address`
+	query := `
+		SELECT *
+		FROM active_hosts
+		ORDER BY ip_address`
 
 	if err := r.db.SelectContext(ctx, &hosts, query); err != nil {
-		return nil, fmt.Errorf("failed to get active hosts: %w", err)
+		return nil, sanitizeDBError("get active hosts", err)
 	}
 
 	return hosts, nil
@@ -424,7 +527,7 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return sanitizeDBError("begin transaction", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -471,12 +574,12 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 
 		_, err := tx.NamedExecContext(ctx, query, scan)
 		if err != nil {
-			return fmt.Errorf("failed to create port scan: %w", err)
+			return sanitizeDBError("insert port scan", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+		return sanitizeDBError("commit transaction", err)
 	}
 
 	return nil
@@ -485,10 +588,14 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 // GetByHost retrieves all port scans for a host.
 func (r *PortScanRepository) GetByHost(ctx context.Context, hostID uuid.UUID) ([]*PortScan, error) {
 	var scans []*PortScan
-	query := `SELECT * FROM port_scans WHERE host_id = $1 ORDER BY port`
+	query := `
+		SELECT *
+		FROM port_scans
+		WHERE host_id = $1
+		ORDER BY port`
 
 	if err := r.db.SelectContext(ctx, &scans, query, hostID); err != nil {
-		return nil, fmt.Errorf("failed to get port scans: %w", err)
+		return nil, sanitizeDBError("get port scans", err)
 	}
 
 	return scans, nil
@@ -505,12 +612,16 @@ func NewNetworkSummaryRepository(db *DB) *NetworkSummaryRepository {
 }
 
 // GetAll retrieves network summary for all targets.
+// GetAll retrieves all network summaries.
 func (r *NetworkSummaryRepository) GetAll(ctx context.Context) ([]*NetworkSummary, error) {
 	var summaries []*NetworkSummary
-	query := `SELECT * FROM network_summary ORDER BY target_name`
+	query := `
+		SELECT *
+		FROM network_summary
+		ORDER BY target_name`
 
 	if err := r.db.SelectContext(ctx, &summaries, query); err != nil {
-		return nil, fmt.Errorf("failed to get network summaries: %w", err)
+		return nil, sanitizeDBError("get network summaries", err)
 	}
 
 	return summaries, nil
