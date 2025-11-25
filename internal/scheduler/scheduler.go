@@ -184,7 +184,24 @@ func (s *Scheduler) addJobToCron(cronExpr string, job *db.ScheduledJob, executeF
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	cronID, err := s.cron.AddFunc(cronExpr, executeFunc)
+	// Wrap the execute function with panic recovery
+	wrappedFunc := func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("PANIC in scheduled job '%s' (ID: %s, Type: %s): %v",
+					job.Name, job.ID, job.Type, r)
+				// Mark job as not running in case panic happened during execution
+				s.mu.Lock()
+				if scheduledJob, exists := s.jobs[job.ID]; exists {
+					scheduledJob.Running = false
+				}
+				s.mu.Unlock()
+			}
+		}()
+		executeFunc()
+	}
+
+	cronID, err := s.cron.AddFunc(cronExpr, wrappedFunc)
 	if err != nil {
 		return fmt.Errorf("failed to add cron job: %w", err)
 	}
@@ -327,6 +344,18 @@ func (s *Scheduler) setJobEnabled(ctx context.Context, jobID uuid.UUID, enabled 
 
 // executeDiscoveryJob executes a discovery job.
 func (s *Scheduler) executeDiscoveryJob(jobID uuid.UUID, config DiscoveryJobConfig) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("PANIC in executeDiscoveryJob (jobID: %s): %v", jobID, r)
+			// Ensure job is marked as not running
+			s.mu.Lock()
+			if job, exists := s.jobs[jobID]; exists {
+				job.Running = false
+			}
+			s.mu.Unlock()
+		}
+	}()
+
 	s.mu.RLock()
 	job, exists := s.jobs[jobID]
 	if !exists || !job.Config.Enabled {
@@ -379,6 +408,14 @@ func (s *Scheduler) executeDiscoveryJob(jobID uuid.UUID, config DiscoveryJobConf
 
 // executeScanJob executes a scan job.
 func (s *Scheduler) executeScanJob(jobID uuid.UUID, config *ScanJobConfig) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("PANIC in executeScanJob (jobID: %s): %v", jobID, r)
+			// Ensure job is marked as not running
+			s.cleanupJobExecution(jobID)
+		}
+	}()
+
 	job, shouldContinue := s.prepareJobExecution(jobID)
 	if !shouldContinue {
 		return
