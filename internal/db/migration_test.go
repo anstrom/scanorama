@@ -750,6 +750,11 @@ func ExtractSQLQueries() ([]SQLQuery, error) {
 					continue
 				}
 
+				// Skip strings passed to sanitizeDBError() - these are operation descriptions, not SQL
+				if strings.Contains(fileContent, fmt.Sprintf(`sanitizeDBError(%q`, sql)) {
+					continue
+				}
+
 				// Clean up the SQL
 				sql = cleanSQL(sql)
 
