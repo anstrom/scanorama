@@ -34,8 +34,8 @@ github.com/go-openapi/jsonreference v0.21.3/go.mod h1:RqkUP0MrLf37HqxZxrIAtTWW4Z
 github.com/go-openapi/spec v0.22.1 h1:beZMa5AVQzRspNjvhe5aG1/XyBSMeX1eEOs7dMoXh/k=
 github.com/go-openapi/spec v0.22.1/go.mod h1:c7aeIQT175dVowfp7FeCvXXnjN/MrpaONStibD2WtDA=
 github.com/go-openapi/swag v0.19.15 h1:D2NRCBzS9/pEY3gP9Nl8aDqGUcPFrwG2p+CNFrLyrCM=
-github.com/go-openapi/swag/conv v0.25.3 h1:PcB18wwfba7MN5BVlBIV+VxvUUeC2kEuCEyJ2/t2X7E=
-github.com/go-openapi/swag/conv v0.25.3/go.mod h1:n4Ibfwhn8NJnPXNRhBO5Cqb9ez7alBR40JS4rbASUPU=
+github.com/go-openapi/swag/conv v0.25.4 h1:/Dd7p0LZXczgUcC/Ikm1+YqVzkEeCc9LnOWjfkpkfe4=
+github.com/go-openapi/swag/conv v0.25.4/go.mod h1:3LXfie/lwoAv0NHoEuY1hjoFAYkvlqI/Bn5EQDD3PPU=
 github.com/go-openapi/swag/jsonname v0.25.1 h1:Sgx+qbwa4ej6AomWC6pEfXrA6uP2RkaNjA9BR8a1RJU=
 github.com/go-openapi/swag/jsonname v0.25.1/go.mod h1:71Tekow6UOLBD3wS7XhdT98g5J5GR13NOTQ9/6Q11Zo=
 github.com/go-openapi/swag/jsonutils v0.25.3 h1:kV7wer79KXUM4Ea4tBdAVTU842Rg6tWstX3QbM4fGdw=
@@ -46,8 +46,8 @@ github.com/go-openapi/swag/loading v0.25.3 h1:Nn65Zlzf4854MY6Ft0JdNrtnHh2bdcS/tX
 github.com/go-openapi/swag/loading v0.25.3/go.mod h1:xajJ5P4Ang+cwM5gKFrHBgkEDWfLcsAKepIuzTmOb/c=
 github.com/go-openapi/swag/stringutils v0.25.1 h1:Xasqgjvk30eUe8VKdmyzKtjkVjeiXx1Iz0zDfMNpPbw=
 github.com/go-openapi/swag/stringutils v0.25.1/go.mod h1:JLdSAq5169HaiDUbTvArA2yQxmgn4D6h4A+4HqVvAYg=
-github.com/go-openapi/swag/typeutils v0.25.3 h1:2w4mEEo7DQt3V4veWMZw0yTPQibiL3ri2fdDV4t2TQc=
-github.com/go-openapi/swag/typeutils v0.25.3/go.mod h1:Ou7g//Wx8tTLS9vG0UmzfCsjZjKhpjxayRKTHXf2pTE=
+github.com/go-openapi/swag/typeutils v0.25.4 h1:1/fbZOUN472NTc39zpa+YGHn3jzHWhv42wAJSN91wRw=
+github.com/go-openapi/swag/typeutils v0.25.4/go.mod h1:Ou7g//Wx8tTLS9vG0UmzfCsjZjKhpjxayRKTHXf2pTE=
 github.com/go-openapi/swag/yamlutils v0.25.3 h1:LKTJjCn/W1ZfMec0XDL4Vxh8kyAnv1orH5F2OREDUrg=
 github.com/go-openapi/swag/yamlutils v0.25.3/go.mod h1:Y7QN6Wc5DOBXK14/xeo1cQlq0EA0wvLoSv13gDQoCao=
 github.com/go-openapi/testify/enable/yaml/v2 v2.0.2 h1:0+Y41Pz1NkbTHz8NngxTuAXxEodtNSI1WG1c/m5Akw4=
