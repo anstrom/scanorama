@@ -36,8 +36,8 @@ github.com/go-openapi/spec v0.22.1/go.mod h1:c7aeIQT175dVowfp7FeCvXXnjN/MrpaONSt
 github.com/go-openapi/swag v0.19.15 h1:D2NRCBzS9/pEY3gP9Nl8aDqGUcPFrwG2p+CNFrLyrCM=
 github.com/go-openapi/swag/conv v0.25.4 h1:/Dd7p0LZXczgUcC/Ikm1+YqVzkEeCc9LnOWjfkpkfe4=
 github.com/go-openapi/swag/conv v0.25.4/go.mod h1:3LXfie/lwoAv0NHoEuY1hjoFAYkvlqI/Bn5EQDD3PPU=
-github.com/go-openapi/swag/jsonname v0.25.1 h1:Sgx+qbwa4ej6AomWC6pEfXrA6uP2RkaNjA9BR8a1RJU=
-github.com/go-openapi/swag/jsonname v0.25.1/go.mod h1:71Tekow6UOLBD3wS7XhdT98g5J5GR13NOTQ9/6Q11Zo=
+github.com/go-openapi/swag/jsonname v0.25.4 h1:bZH0+MsS03MbnwBXYhuTttMOqk+5KcQ9869Vye1bNHI=
+github.com/go-openapi/swag/jsonname v0.25.4/go.mod h1:GPVEk9CWVhNvWhZgrnvRA6utbAltopbKwDu8mXNUMag=
 github.com/go-openapi/swag/jsonutils v0.25.3 h1:kV7wer79KXUM4Ea4tBdAVTU842Rg6tWstX3QbM4fGdw=
 github.com/go-openapi/swag/jsonutils v0.25.3/go.mod h1:ILcKqe4HC1VEZmJx51cVuZQ6MF8QvdfXsQfiaCs0z9o=
 github.com/go-openapi/swag/jsonutils/fixtures_test v0.25.3 h1:/i3E9hBujtXfHy91rjtwJ7Fgv5TuDHgnSrYjhFxwxOw=
