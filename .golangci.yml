@@ -153,6 +153,12 @@ linters:
           - gocritic
         text: "httpNoBody" # Allow nil body in test HTTP requests
 
+      # SA5011 false positives - staticcheck doesn't understand t.Fatal() exits
+      - path: _test\.go
+        linters:
+          - staticcheck
+        text: "SA5011"
+
       # ========================
       # SWAGGER/API DOCUMENTATION EXCLUSIONS
       # ========================
