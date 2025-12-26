@@ -957,8 +957,11 @@ func TestWebSocketHandler_CloseWithActiveConnections(t *testing.T) {
 		conns[i] = conn
 	}
 
-	// Give time for registration
-	time.Sleep(200 * time.Millisecond)
+	// Wait for all clients to be registered with proper synchronization
+	require.Eventually(t, func() bool {
+		clients := handler.GetConnectedClients()
+		return clients["scan"] == 3
+	}, 2*time.Second, 50*time.Millisecond, "should have 3 scan clients")
 
 	// Verify clients are registered
 	clients := handler.GetConnectedClients()
