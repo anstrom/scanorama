@@ -3,7 +3,7 @@ module github.com/anstrom/scanorama
 go 1.25.5
 
 require (
-	github.com/Ullaakut/nmap/v3 v3.0.6
+	github.com/Ullaakut/nmap/v3 v3.1.0
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/handlers v1.5.2
