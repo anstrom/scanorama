@@ -3,12 +3,15 @@ package scheduler
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/robfig/cron/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1005,4 +1008,623 @@ func TestScheduler_AddHostScanFilters(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestScheduler_AddDiscoveryJob tests adding a discovery job.
+func TestScheduler_AddDiscoveryJob(t *testing.T) {
+	tests := []struct {
+		name        string
+		jobName     string
+		cronExpr    string
+		config      DiscoveryJobConfig
+		mockSetup   func(sqlmock.Sqlmock)
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:     "successful discovery job creation",
+			jobName:  "Test Discovery",
+			cronExpr: "0 0 * * *",
+			config: DiscoveryJobConfig{
+				Network:     "192.168.1.0/24",
+				Method:      "ping",
+				DetectOS:    true,
+				Timeout:     30,
+				Concurrency: 100,
+			},
+			mockSetup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec("INSERT INTO scheduled_jobs").
+					WithArgs(sqlmock.AnyArg(), "Test Discovery", db.ScheduledJobTypeDiscovery,
+						"0 0 * * *", sqlmock.AnyArg(), true, nil, sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+			},
+			expectError: false,
+		},
+		{
+			name:     "invalid cron expression",
+			jobName:  "Invalid Cron",
+			cronExpr: "invalid cron",
+			config: DiscoveryJobConfig{
+				Network: "192.168.1.0/24",
+			},
+			mockSetup:   func(mock sqlmock.Sqlmock) {},
+			expectError: true,
+			errorMsg:    "invalid cron expression",
+		},
+		{
+			name:     "database error on insert",
+			jobName:  "DB Error Test",
+			cronExpr: "0 0 * * *",
+			config: DiscoveryJobConfig{
+				Network: "192.168.1.0/24",
+			},
+			mockSetup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec("INSERT INTO scheduled_jobs").
+					WillReturnError(sql.ErrConnDone)
+			},
+			expectError: true,
+			errorMsg:    "failed to save scheduled job",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock database
+			mockDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			tt.mockSetup(mock)
+
+			// Create scheduler - wrap mock DB in db.DB
+			wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+			s := NewScheduler(wrappedDB, nil, nil)
+
+			// Execute
+			ctx := context.Background()
+			err = s.AddDiscoveryJob(ctx, tt.jobName, tt.cronExpr, tt.config)
+
+			// Assert
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+				// Verify job was added to in-memory map
+				assert.Len(t, s.jobs, 1)
+			}
+
+			// Verify all expectations were met
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// TestScheduler_AddScanJob tests adding a scan job.
+func TestScheduler_AddScanJob(t *testing.T) {
+	tests := []struct {
+		name        string
+		jobName     string
+		cronExpr    string
+		config      *ScanJobConfig
+		mockSetup   func(sqlmock.Sqlmock)
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:     "successful scan job creation",
+			jobName:  "Test Scan",
+			cronExpr: "0 */6 * * *",
+			config: &ScanJobConfig{
+				LiveHostsOnly: true,
+				Networks:      []string{"192.168.1.0/24"},
+				ProfileID:     uuid.New().String(),
+				MaxAge:        24,
+				OSFamily:      []string{"linux"},
+			},
+			mockSetup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec("INSERT INTO scheduled_jobs").
+					WithArgs(sqlmock.AnyArg(), "Test Scan", db.ScheduledJobTypeScan,
+						"0 */6 * * *", sqlmock.AnyArg(), true, nil, sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+			},
+			expectError: false,
+		},
+		{
+			name:     "scan job with nil config",
+			jobName:  "Nil Config Test",
+			cronExpr: "0 0 * * *",
+			config:   nil,
+			mockSetup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec("INSERT INTO scheduled_jobs").
+					WithArgs(sqlmock.AnyArg(), "Nil Config Test", db.ScheduledJobTypeScan,
+						"0 0 * * *", sqlmock.AnyArg(), true, nil, sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+			},
+			expectError: false,
+		},
+		{
+			name:     "invalid cron expression",
+			jobName:  "Invalid Cron",
+			cronExpr: "bad cron",
+			config: &ScanJobConfig{
+				Networks: []string{"192.168.1.0/24"},
+			},
+			mockSetup:   func(mock sqlmock.Sqlmock) {},
+			expectError: true,
+			errorMsg:    "invalid cron expression",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock database
+			mockDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			tt.mockSetup(mock)
+
+			// Create scheduler - wrap mock DB in db.DB
+			wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+			s := NewScheduler(wrappedDB, nil, nil)
+
+			// Execute
+			ctx := context.Background()
+			err = s.AddScanJob(ctx, tt.jobName, tt.cronExpr, tt.config)
+
+			// Assert
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+				// Verify job was added to in-memory map
+				assert.Len(t, s.jobs, 1)
+			}
+
+			// Verify all expectations were met
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// TestScheduler_RemoveJob tests removing a scheduled job.
+func TestScheduler_RemoveJob(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupJobs   func(*Scheduler) uuid.UUID
+		jobID       uuid.UUID
+		mockSetup   func(sqlmock.Sqlmock, uuid.UUID)
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "successful job removal",
+			setupJobs: func(s *Scheduler) uuid.UUID {
+				jobID := uuid.New()
+				cronID := s.cron.Schedule(cron.Every(time.Hour), cron.FuncJob(func() {}))
+				s.jobs[jobID] = &ScheduledJob{
+					ID:     jobID,
+					CronID: cronID,
+					Config: &db.ScheduledJob{
+						ID:   jobID,
+						Name: "Test Job",
+					},
+				}
+				return jobID
+			},
+			mockSetup: func(mock sqlmock.Sqlmock, jobID uuid.UUID) {
+				mock.ExpectExec("DELETE FROM scheduled_jobs WHERE id").
+					WithArgs(jobID).
+					WillReturnResult(sqlmock.NewResult(0, 1))
+			},
+			expectError: false,
+		},
+		{
+			name: "job not found",
+			setupJobs: func(s *Scheduler) uuid.UUID {
+				return uuid.New() // Return a non-existent job ID
+			},
+			mockSetup:   func(mock sqlmock.Sqlmock, jobID uuid.UUID) {},
+			expectError: true,
+			errorMsg:    "job not found",
+		},
+		{
+			name: "database error on delete",
+			setupJobs: func(s *Scheduler) uuid.UUID {
+				jobID := uuid.New()
+				cronID := s.cron.Schedule(cron.Every(time.Hour), cron.FuncJob(func() {}))
+				s.jobs[jobID] = &ScheduledJob{
+					ID:     jobID,
+					CronID: cronID,
+					Config: &db.ScheduledJob{
+						ID:   jobID,
+						Name: "Test Job",
+					},
+				}
+				return jobID
+			},
+			mockSetup: func(mock sqlmock.Sqlmock, jobID uuid.UUID) {
+				mock.ExpectExec("DELETE FROM scheduled_jobs WHERE id").
+					WithArgs(jobID).
+					WillReturnError(sql.ErrConnDone)
+			},
+			expectError: true,
+			errorMsg:    "failed to delete from database",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock database
+			mockDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			// Create scheduler - wrap mock DB in db.DB
+			wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+			s := NewScheduler(wrappedDB, nil, nil)
+
+			// Setup jobs and get the job ID to use
+			jobID := tt.setupJobs(s)
+			tt.mockSetup(mock, jobID)
+
+			// Execute
+			ctx := context.Background()
+			err = s.RemoveJob(ctx, jobID)
+
+			// Assert
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+				// Verify job was removed from in-memory map
+				_, exists := s.jobs[jobID]
+				assert.False(t, exists, "job should be removed from memory")
+			}
+
+			// Verify all expectations were met
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// TestScheduler_GetJobs tests retrieving all scheduled jobs.
+func TestScheduler_GetJobs(t *testing.T) {
+	tests := []struct {
+		name          string
+		mockSetup     func(sqlmock.Sqlmock)
+		expectedCount int
+	}{
+		{
+			name: "retrieve multiple jobs",
+			mockSetup: func(mock sqlmock.Sqlmock) {
+				rows := sqlmock.NewRows([]string{
+					"id", "name", "type", "cron_expression", "config",
+					"enabled", "last_run", "next_run", "created_at",
+				}).
+					AddRow(
+						uuid.New(), "Job 1", db.ScheduledJobTypeDiscovery,
+						"0 0 * * *", []byte(`{"network":"192.168.1.0/24"}`),
+						true, nil, time.Now(), time.Now(),
+					).
+					AddRow(
+						uuid.New(), "Job 2", db.ScheduledJobTypeScan,
+						"0 */6 * * *", []byte(`{"networks":["10.0.0.0/8"]}`),
+						true, nil, time.Now(), time.Now(),
+					)
+
+				mock.ExpectQuery("SELECT (.+) FROM scheduled_jobs").
+					WillReturnRows(rows)
+			},
+			expectedCount: 2,
+		},
+		{
+			name: "no jobs found",
+			mockSetup: func(mock sqlmock.Sqlmock) {
+				rows := sqlmock.NewRows([]string{
+					"id", "name", "type", "cron_expression", "config",
+					"enabled", "last_run", "next_run", "created_at",
+				})
+
+				mock.ExpectQuery("SELECT (.+) FROM scheduled_jobs").
+					WillReturnRows(rows)
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "database error returns empty list",
+			mockSetup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery("SELECT (.+) FROM scheduled_jobs").
+					WillReturnError(sql.ErrConnDone)
+			},
+			expectedCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock database
+			mockDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			tt.mockSetup(mock)
+
+			// Create scheduler - wrap mock DB in db.DB
+			wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+			s := NewScheduler(wrappedDB, nil, nil)
+
+			// Execute
+			jobs := s.GetJobs()
+
+			// Assert
+			assert.Len(t, jobs, tt.expectedCount)
+
+			// Verify NextRun is set for each job
+			for _, job := range jobs {
+				assert.False(t, job.NextRun.IsZero(), "NextRun should be calculated")
+			}
+
+			// Verify all expectations were met
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// TestScheduler_EnableJob tests enabling a scheduled job.
+func TestScheduler_EnableJob(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupJob    func(*Scheduler) uuid.UUID
+		mockSetup   func(sqlmock.Sqlmock, uuid.UUID)
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "successfully enable job",
+			setupJob: func(s *Scheduler) uuid.UUID {
+				jobID := uuid.New()
+				s.jobs[jobID] = &ScheduledJob{
+					ID: jobID,
+					Config: &db.ScheduledJob{
+						ID:      jobID,
+						Name:    "Test Job",
+						Enabled: false,
+					},
+				}
+				return jobID
+			},
+			mockSetup: func(mock sqlmock.Sqlmock, jobID uuid.UUID) {
+				mock.ExpectExec("UPDATE scheduled_jobs SET enabled").
+					WithArgs(true, jobID).
+					WillReturnResult(sqlmock.NewResult(0, 1))
+			},
+			expectError: false,
+		},
+		{
+			name: "job not found",
+			setupJob: func(s *Scheduler) uuid.UUID {
+				return uuid.New() // Return non-existent ID
+			},
+			mockSetup:   func(mock sqlmock.Sqlmock, jobID uuid.UUID) {},
+			expectError: true,
+			errorMsg:    "job not found",
+		},
+		{
+			name: "database error on update",
+			setupJob: func(s *Scheduler) uuid.UUID {
+				jobID := uuid.New()
+				s.jobs[jobID] = &ScheduledJob{
+					ID: jobID,
+					Config: &db.ScheduledJob{
+						ID:      jobID,
+						Name:    "Test Job",
+						Enabled: false,
+					},
+				}
+				return jobID
+			},
+			mockSetup: func(mock sqlmock.Sqlmock, jobID uuid.UUID) {
+				mock.ExpectExec("UPDATE scheduled_jobs SET enabled").
+					WithArgs(true, jobID).
+					WillReturnError(sql.ErrConnDone)
+			},
+			expectError: true,
+			errorMsg:    "failed to update job status",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock database
+			mockDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			// Create scheduler - wrap mock DB in db.DB
+			wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+			s := NewScheduler(wrappedDB, nil, nil)
+
+			// Setup job
+			jobID := tt.setupJob(s)
+			tt.mockSetup(mock, jobID)
+
+			// Execute
+			ctx := context.Background()
+			err = s.EnableJob(ctx, jobID)
+
+			// Assert
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+				// Verify job is enabled in memory
+				job, exists := s.jobs[jobID]
+				require.True(t, exists)
+				assert.True(t, job.Config.Enabled, "job should be enabled in memory")
+			}
+
+			// Verify all expectations were met
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// TestScheduler_DisableJob tests disabling a scheduled job.
+func TestScheduler_DisableJob(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupJob    func(*Scheduler) uuid.UUID
+		mockSetup   func(sqlmock.Sqlmock, uuid.UUID)
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "successfully disable job",
+			setupJob: func(s *Scheduler) uuid.UUID {
+				jobID := uuid.New()
+				s.jobs[jobID] = &ScheduledJob{
+					ID: jobID,
+					Config: &db.ScheduledJob{
+						ID:      jobID,
+						Name:    "Test Job",
+						Enabled: true,
+					},
+				}
+				return jobID
+			},
+			mockSetup: func(mock sqlmock.Sqlmock, jobID uuid.UUID) {
+				mock.ExpectExec("UPDATE scheduled_jobs SET enabled").
+					WithArgs(false, jobID).
+					WillReturnResult(sqlmock.NewResult(0, 1))
+			},
+			expectError: false,
+		},
+		{
+			name: "job not found",
+			setupJob: func(s *Scheduler) uuid.UUID {
+				return uuid.New() // Return non-existent ID
+			},
+			mockSetup:   func(mock sqlmock.Sqlmock, jobID uuid.UUID) {},
+			expectError: true,
+			errorMsg:    "job not found",
+		},
+		{
+			name: "database error on update",
+			setupJob: func(s *Scheduler) uuid.UUID {
+				jobID := uuid.New()
+				s.jobs[jobID] = &ScheduledJob{
+					ID: jobID,
+					Config: &db.ScheduledJob{
+						ID:      jobID,
+						Name:    "Test Job",
+						Enabled: true,
+					},
+				}
+				return jobID
+			},
+			mockSetup: func(mock sqlmock.Sqlmock, jobID uuid.UUID) {
+				mock.ExpectExec("UPDATE scheduled_jobs SET enabled").
+					WithArgs(false, jobID).
+					WillReturnError(sql.ErrConnDone)
+			},
+			expectError: true,
+			errorMsg:    "failed to update job status",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock database
+			mockDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			// Create scheduler - wrap mock DB in db.DB
+			wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+			s := NewScheduler(wrappedDB, nil, nil)
+
+			// Setup job
+			jobID := tt.setupJob(s)
+			tt.mockSetup(mock, jobID)
+
+			// Execute
+			ctx := context.Background()
+			err = s.DisableJob(ctx, jobID)
+
+			// Assert
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+				// Verify job is disabled in memory
+				job, exists := s.jobs[jobID]
+				require.True(t, exists)
+				assert.False(t, job.Config.Enabled, "job should be disabled in memory")
+			}
+
+			// Verify all expectations were met
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// TestScheduler_SetJobEnabled tests the internal setJobEnabled method.
+func TestScheduler_SetJobEnabled(t *testing.T) {
+	t.Run("concurrent enable/disable operations", func(t *testing.T) {
+		// Create mock database
+		mockDB, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer mockDB.Close()
+
+		// Create scheduler with a job - wrap mock DB in db.DB
+		wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+		s := NewScheduler(wrappedDB, nil, nil)
+		jobID := uuid.New()
+		s.jobs[jobID] = &ScheduledJob{
+			ID: jobID,
+			Config: &db.ScheduledJob{
+				ID:      jobID,
+				Name:    "Concurrent Test Job",
+				Enabled: true,
+			},
+		}
+
+		// Set up expectations for multiple updates
+		mock.ExpectExec("UPDATE scheduled_jobs SET enabled").
+			WithArgs(false, jobID).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec("UPDATE scheduled_jobs SET enabled").
+			WithArgs(true, jobID).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		// Execute concurrent operations
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		ctx := context.Background()
+
+		go func() {
+			defer wg.Done()
+			_ = s.DisableJob(ctx, jobID)
+		}()
+
+		go func() {
+			defer wg.Done()
+			time.Sleep(10 * time.Millisecond)
+			_ = s.EnableJob(ctx, jobID)
+		}()
+
+		wg.Wait()
+
+		// Verify job state is consistent
+		job, exists := s.jobs[jobID]
+		require.True(t, exists)
+		assert.NotNil(t, job.Config)
+	})
 }
