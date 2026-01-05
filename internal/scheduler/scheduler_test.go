@@ -715,12 +715,20 @@ func TestScheduler_StoreJobInMemory(t *testing.T) {
 	assert.Equal(t, cronID, job.CronID)
 	assert.Equal(t, dbJob, job.Config)
 	assert.False(t, job.NextRun.IsZero(), "NextRun should be calculated from cron expression")
+
+	// Verify NextRun is correctly calculated from cron expression "0 0 * * *" (midnight daily)
+	schedule, err := cron.ParseStandard("0 0 * * *")
+	require.NoError(t, err)
+	expectedNextRun := schedule.Next(time.Now())
+	assert.WithinDuration(t, expectedNextRun, job.NextRun, 2*time.Second,
+		"NextRun should match cron expression '0 0 * * *' (midnight daily)")
+
 	assert.False(t, job.Running)
 }
 
 // TestScheduler_JobInMemoryConcurrency tests concurrent access to jobs map
 // Note: This test is commented out as it exposes a race condition in storeJobInMemory
-// which doesn't use mutex protection. This is a production bug that should be fixed separately.
+// which doesn't use mutex protection. See issue #266 for tracking this production bug.
 /*
 func TestScheduler_JobInMemoryConcurrency(t *testing.T) {
 	s := NewScheduler(nil, nil, nil)
