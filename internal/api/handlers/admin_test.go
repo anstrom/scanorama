@@ -873,6 +873,475 @@ func TestValidateConfigUpdate(t *testing.T) {
 	})
 }
 
+// TestValidateDatabaseConfig tests database configuration validation
+func TestValidateDatabaseConfig(t *testing.T) {
+	handler := createTestAdminHandler(t)
+
+	t.Run("validates database host", func(t *testing.T) {
+		host := "localhost"
+		config := &DatabaseConfigUpdate{
+			Host: &host,
+		}
+
+		err := handler.validateDatabaseConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates database port", func(t *testing.T) {
+		port := 5432
+		config := &DatabaseConfigUpdate{
+			Port: &port,
+		}
+
+		err := handler.validateDatabaseConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates database name", func(t *testing.T) {
+		dbName := "scanorama"
+		config := &DatabaseConfigUpdate{
+			Database: &dbName,
+		}
+
+		err := handler.validateDatabaseConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates username", func(t *testing.T) {
+		username := "dbuser"
+		config := &DatabaseConfigUpdate{
+			Username: &username,
+		}
+
+		err := handler.validateDatabaseConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates connection max lifetime", func(t *testing.T) {
+		lifetime := "1h"
+		config := &DatabaseConfigUpdate{
+			ConnMaxLifetime: &lifetime,
+		}
+
+		err := handler.validateDatabaseConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates connection max idle time", func(t *testing.T) {
+		idleTime := "30m"
+		config := &DatabaseConfigUpdate{
+			ConnMaxIdleTime: &idleTime,
+		}
+
+		err := handler.validateDatabaseConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates all database fields together", func(t *testing.T) {
+		host := "localhost"
+		port := 5432
+		dbName := "scanorama"
+		username := "dbuser"
+		lifetime := "1h"
+		idleTime := "30m"
+
+		config := &DatabaseConfigUpdate{
+			Host:            &host,
+			Port:            &port,
+			Database:        &dbName,
+			Username:        &username,
+			ConnMaxLifetime: &lifetime,
+			ConnMaxIdleTime: &idleTime,
+		}
+
+		err := handler.validateDatabaseConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects invalid duration for conn max lifetime", func(t *testing.T) {
+		invalidDuration := "invalid"
+		config := &DatabaseConfigUpdate{
+			ConnMaxLifetime: &invalidDuration,
+		}
+
+		err := handler.validateDatabaseConfig(config)
+		assert.Error(t, err)
+	})
+
+	t.Run("rejects invalid duration for conn max idle time", func(t *testing.T) {
+		invalidDuration := "not-a-duration"
+		config := &DatabaseConfigUpdate{
+			ConnMaxIdleTime: &invalidDuration,
+		}
+
+		err := handler.validateDatabaseConfig(config)
+		assert.Error(t, err)
+	})
+}
+
+// TestValidateScanningConfig tests scanning configuration validation
+func TestValidateScanningConfig(t *testing.T) {
+	handler := createTestAdminHandler(t)
+
+	t.Run("validates default interval", func(t *testing.T) {
+		interval := "5m"
+		config := &ScanningConfigUpdate{
+			DefaultInterval: &interval,
+		}
+
+		err := handler.validateScanningConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates max scan timeout", func(t *testing.T) {
+		timeout := "30m"
+		config := &ScanningConfigUpdate{
+			MaxScanTimeout: &timeout,
+		}
+
+		err := handler.validateScanningConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates default ports", func(t *testing.T) {
+		ports := "22,80,443,8080"
+		config := &ScanningConfigUpdate{
+			DefaultPorts: &ports,
+		}
+
+		err := handler.validateScanningConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates all scanning fields together", func(t *testing.T) {
+		interval := "5m"
+		timeout := "30m"
+		ports := "22,80,443"
+		workerPoolSize := 10
+		enableServiceDetection := true
+
+		config := &ScanningConfigUpdate{
+			DefaultInterval:        &interval,
+			MaxScanTimeout:         &timeout,
+			DefaultPorts:           &ports,
+			WorkerPoolSize:         &workerPoolSize,
+			EnableServiceDetection: &enableServiceDetection,
+		}
+
+		err := handler.validateScanningConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects invalid default interval", func(t *testing.T) {
+		invalidInterval := "not-a-duration"
+		config := &ScanningConfigUpdate{
+			DefaultInterval: &invalidInterval,
+		}
+
+		err := handler.validateScanningConfig(config)
+		assert.Error(t, err)
+	})
+
+	t.Run("rejects invalid max scan timeout", func(t *testing.T) {
+		invalidTimeout := "invalid-timeout"
+		config := &ScanningConfigUpdate{
+			MaxScanTimeout: &invalidTimeout,
+		}
+
+		err := handler.validateScanningConfig(config)
+		assert.Error(t, err)
+	})
+}
+
+// TestValidateLoggingConfig tests logging configuration validation
+func TestValidateLoggingConfig(t *testing.T) {
+	handler := createTestAdminHandler(t)
+
+	t.Run("validates output path", func(t *testing.T) {
+		output := "/var/log/scanorama.log"
+		config := &LoggingConfigUpdate{
+			Output: &output,
+		}
+
+		err := handler.validateLoggingConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates stdout output", func(t *testing.T) {
+		output := "stdout"
+		config := &LoggingConfigUpdate{
+			Output: &output,
+		}
+
+		err := handler.validateLoggingConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates all logging fields together", func(t *testing.T) {
+		output := "/var/log/scanorama.log"
+		level := "info"
+		format := "json"
+		structured := true
+
+		config := &LoggingConfigUpdate{
+			Output:     &output,
+			Level:      &level,
+			Format:     &format,
+			Structured: &structured,
+		}
+
+		err := handler.validateLoggingConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates empty config", func(t *testing.T) {
+		config := &LoggingConfigUpdate{}
+
+		err := handler.validateLoggingConfig(config)
+		assert.NoError(t, err)
+	})
+}
+
+// TestValidateDaemonConfig tests daemon configuration validation
+func TestValidateDaemonConfig(t *testing.T) {
+	handler := createTestAdminHandler(t)
+
+	t.Run("validates PID file path", func(t *testing.T) {
+		pidFile := "/var/run/scanorama.pid"
+		config := &DaemonConfigUpdate{
+			PIDFile: &pidFile,
+		}
+
+		err := handler.validateDaemonConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates work directory", func(t *testing.T) {
+		workDir := "/var/lib/scanorama"
+		config := &DaemonConfigUpdate{
+			WorkDir: &workDir,
+		}
+
+		err := handler.validateDaemonConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates user", func(t *testing.T) {
+		user := "scanorama"
+		config := &DaemonConfigUpdate{
+			User: &user,
+		}
+
+		err := handler.validateDaemonConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates group", func(t *testing.T) {
+		group := "scanorama"
+		config := &DaemonConfigUpdate{
+			Group: &group,
+		}
+
+		err := handler.validateDaemonConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates shutdown timeout", func(t *testing.T) {
+		timeout := "30s"
+		config := &DaemonConfigUpdate{
+			ShutdownTimeout: &timeout,
+		}
+
+		err := handler.validateDaemonConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates all daemon fields together", func(t *testing.T) {
+		pidFile := "/var/run/scanorama.pid"
+		workDir := "/var/lib/scanorama"
+		user := "scanorama"
+		group := "scanorama"
+		timeout := "30s"
+		daemonize := true
+
+		config := &DaemonConfigUpdate{
+			PIDFile:         &pidFile,
+			WorkDir:         &workDir,
+			User:            &user,
+			Group:           &group,
+			ShutdownTimeout: &timeout,
+			Daemonize:       &daemonize,
+		}
+
+		err := handler.validateDaemonConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects invalid shutdown timeout", func(t *testing.T) {
+		invalidTimeout := "not-a-duration"
+		config := &DaemonConfigUpdate{
+			ShutdownTimeout: &invalidTimeout,
+		}
+
+		err := handler.validateDaemonConfig(config)
+		assert.Error(t, err)
+	})
+}
+
+// TestValidateAPITimeoutSettings tests API timeout validation
+func TestValidateAPITimeoutSettings(t *testing.T) {
+	handler := createTestAdminHandler(t)
+
+	t.Run("validates read timeout", func(t *testing.T) {
+		readTimeout := "30s"
+		config := &APIConfigUpdate{
+			ReadTimeout: &readTimeout,
+		}
+
+		err := handler.validateAPIConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates write timeout", func(t *testing.T) {
+		writeTimeout := "30s"
+		config := &APIConfigUpdate{
+			WriteTimeout: &writeTimeout,
+		}
+
+		err := handler.validateAPIConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates idle timeout", func(t *testing.T) {
+		idleTimeout := "2m"
+		config := &APIConfigUpdate{
+			IdleTimeout: &idleTimeout,
+		}
+
+		err := handler.validateAPIConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("validates request timeout", func(t *testing.T) {
+		requestTimeout := "60s"
+		config := &APIConfigUpdate{
+			RequestTimeout: &requestTimeout,
+		}
+
+		err := handler.validateAPIConfig(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects invalid read timeout", func(t *testing.T) {
+		invalidTimeout := "not-valid"
+		config := &APIConfigUpdate{
+			ReadTimeout: &invalidTimeout,
+		}
+
+		err := handler.validateAPIConfig(config)
+		assert.Error(t, err)
+	})
+
+	t.Run("rejects invalid write timeout", func(t *testing.T) {
+		invalidTimeout := "invalid"
+		config := &APIConfigUpdate{
+			WriteTimeout: &invalidTimeout,
+		}
+
+		err := handler.validateAPIConfig(config)
+		assert.Error(t, err)
+	})
+
+	t.Run("rejects invalid idle timeout", func(t *testing.T) {
+		invalidTimeout := "bad-duration"
+		config := &APIConfigUpdate{
+			IdleTimeout: &invalidTimeout,
+		}
+
+		err := handler.validateAPIConfig(config)
+		assert.Error(t, err)
+	})
+
+	t.Run("rejects invalid request timeout", func(t *testing.T) {
+		invalidTimeout := "nope"
+		config := &APIConfigUpdate{
+			RequestTimeout: &invalidTimeout,
+		}
+
+		err := handler.validateAPIConfig(config)
+		assert.Error(t, err)
+	})
+}
+
+// TestValidateConfigSections tests section validation functions
+func TestValidateConfigSections(t *testing.T) {
+	handler := createTestAdminHandler(t)
+
+	t.Run("database section rejects nil config", func(t *testing.T) {
+		err := handler.validateDatabaseSection(nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "database configuration data is required")
+	})
+
+	t.Run("scanning section rejects nil config", func(t *testing.T) {
+		err := handler.validateScanningSection(nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "scanning configuration data is required")
+	})
+
+	t.Run("logging section rejects nil config", func(t *testing.T) {
+		err := handler.validateLoggingSection(nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "logging configuration data is required")
+	})
+
+	t.Run("daemon section rejects nil config", func(t *testing.T) {
+		err := handler.validateDaemonSection(nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "daemon configuration data is required")
+	})
+
+	t.Run("database section validates valid config", func(t *testing.T) {
+		host := "localhost"
+		config := &DatabaseConfigUpdate{
+			Host: &host,
+		}
+
+		err := handler.validateDatabaseSection(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("scanning section validates valid config", func(t *testing.T) {
+		workerPoolSize := 10
+		config := &ScanningConfigUpdate{
+			WorkerPoolSize: &workerPoolSize,
+		}
+
+		err := handler.validateScanningSection(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("logging section validates valid config", func(t *testing.T) {
+		level := "info"
+		config := &LoggingConfigUpdate{
+			Level: &level,
+		}
+
+		err := handler.validateLoggingSection(config)
+		assert.NoError(t, err)
+	})
+
+	t.Run("daemon section validates valid config", func(t *testing.T) {
+		pidFile := "/var/run/scanorama.pid"
+		config := &DaemonConfigUpdate{
+			PIDFile: &pidFile,
+		}
+
+		err := handler.validateDaemonSection(config)
+		assert.NoError(t, err)
+	})
+}
+
 // TestIsRestartRequired tests restart requirement detection
 func TestIsRestartRequired(t *testing.T) {
 	handler := createTestAdminHandler(t)
