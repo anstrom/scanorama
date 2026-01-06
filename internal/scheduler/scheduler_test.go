@@ -1628,3 +1628,437 @@ func TestScheduler_SetJobEnabled(t *testing.T) {
 		assert.NotNil(t, job.Config)
 	})
 }
+
+// TestScheduler_Start tests the scheduler start behavior.
+func TestScheduler_Start(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupJobs   func(sqlmock.Sqlmock)
+		expectError bool
+		errorMsg    string
+		jobCount    int
+	}{
+		{
+			name: "start with existing jobs loaded",
+			setupJobs: func(mock sqlmock.Sqlmock) {
+				rows := sqlmock.NewRows([]string{
+					"id", "name", "type", "cron_expression", "config",
+					"enabled", "last_run", "next_run", "created_at",
+				}).
+					AddRow(
+						uuid.New(), "Test Job 1", db.ScheduledJobTypeDiscovery,
+						"0 0 * * *", []byte(`{"network":"192.168.1.0/24"}`),
+						true, nil, time.Now(), time.Now(),
+					).
+					AddRow(
+						uuid.New(), "Test Job 2", db.ScheduledJobTypeScan,
+						"0 */6 * * *", []byte(`{"networks":["10.0.0.0/8"]}`),
+						true, nil, time.Now(), time.Now(),
+					)
+
+				mock.ExpectQuery("SELECT (.+) FROM scheduled_jobs").
+					WillReturnRows(rows)
+			},
+			expectError: false,
+			jobCount:    2,
+		},
+		{
+			name: "start with no existing jobs",
+			setupJobs: func(mock sqlmock.Sqlmock) {
+				rows := sqlmock.NewRows([]string{
+					"id", "name", "type", "cron_expression", "config",
+					"enabled", "last_run", "next_run", "created_at",
+				})
+
+				mock.ExpectQuery("SELECT (.+) FROM scheduled_jobs").
+					WillReturnRows(rows)
+			},
+			expectError: false,
+			jobCount:    0,
+		},
+		{
+			name: "start with database error",
+			setupJobs: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery("SELECT (.+) FROM scheduled_jobs").
+					WillReturnError(sql.ErrConnDone)
+			},
+			expectError: true,
+			errorMsg:    "failed to load scheduled jobs",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock database
+			mockDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			tt.setupJobs(mock)
+
+			// Create scheduler
+			wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+			s := NewScheduler(wrappedDB, nil, nil)
+
+			// Execute
+			err = s.Start()
+
+			// Assert
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+				assert.Len(t, s.jobs, tt.jobCount, "should have loaded correct number of jobs")
+				assert.True(t, s.running, "scheduler should be marked as running")
+			}
+
+			// Verify all expectations were met
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// TestScheduler_StartAlreadyRunning tests that starting an already running scheduler returns an error.
+func TestScheduler_StartAlreadyRunning(t *testing.T) {
+	// Create mock database
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+
+	// Setup mock to return no jobs
+	rows := sqlmock.NewRows([]string{
+		"id", "name", "type", "cron_expression", "config",
+		"enabled", "last_run", "next_run", "created_at",
+	})
+	mock.ExpectQuery("SELECT (.+) FROM scheduled_jobs").
+		WillReturnRows(rows)
+
+	// Create and start scheduler
+	wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+	s := NewScheduler(wrappedDB, nil, nil)
+
+	err = s.Start()
+	require.NoError(t, err)
+
+	// Try to start again
+	err = s.Start()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already running")
+}
+
+// TestScheduler_GetHostsToScan tests the behavior of getting hosts to scan based on configuration.
+func TestScheduler_GetHostsToScan(t *testing.T) {
+	tests := []struct {
+		name          string
+		config        *ScanJobConfig
+		setupMock     func(sqlmock.Sqlmock)
+		expectedCount int
+		expectError   bool
+	}{
+		{
+			name: "get live hosts only",
+			config: &ScanJobConfig{
+				LiveHostsOnly: true,
+			},
+			setupMock: func(mock sqlmock.Sqlmock) {
+				rows := sqlmock.NewRows([]string{
+					"id", "ip_address", "hostname", "mac_address", "vendor",
+					"os_family", "os_name", "os_version", "os_confidence",
+					"os_detected_at", "os_method", "os_details", "discovery_method",
+					"response_time_ms", "discovery_count", "ignore_scanning",
+					"first_seen", "last_seen", "status",
+				}).
+					AddRow(
+						uuid.New(), "192.168.1.1", nil, nil, nil,
+						nil, nil, nil, nil,
+						nil, nil, nil, "ping",
+						nil, 1, false,
+						time.Now(), time.Now(), db.HostStatusUp,
+					)
+
+				mock.ExpectQuery("SELECT (.+) FROM hosts").
+					WillReturnRows(rows)
+			},
+			expectedCount: 1,
+			expectError:   false,
+		},
+		{
+			name: "filter by network",
+			config: &ScanJobConfig{
+				Networks: []string{"192.168.1.0/24"},
+			},
+			setupMock: func(mock sqlmock.Sqlmock) {
+				rows := sqlmock.NewRows([]string{
+					"id", "ip_address", "hostname", "mac_address", "vendor",
+					"os_family", "os_name", "os_version", "os_confidence",
+					"os_detected_at", "os_method", "os_details", "discovery_method",
+					"response_time_ms", "discovery_count", "ignore_scanning",
+					"first_seen", "last_seen", "status",
+				}).
+					AddRow(
+						uuid.New(), "192.168.1.100", nil, nil, nil,
+						nil, nil, nil, nil,
+						nil, nil, nil, "ping",
+						nil, 1, false,
+						time.Now(), time.Now(), db.HostStatusUp,
+					).
+					AddRow(
+						uuid.New(), "192.168.1.200", nil, nil, nil,
+						nil, nil, nil, nil,
+						nil, nil, nil, "ping",
+						nil, 1, false,
+						time.Now(), time.Now(), db.HostStatusUp,
+					)
+
+				mock.ExpectQuery("SELECT (.+) FROM hosts").
+					WillReturnRows(rows)
+			},
+			expectedCount: 2,
+			expectError:   false,
+		},
+		{
+			name: "database error",
+			config: &ScanJobConfig{
+				LiveHostsOnly: true,
+			},
+			setupMock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery("SELECT (.+) FROM hosts").
+					WillReturnError(sql.ErrConnDone)
+			},
+			expectedCount: 0,
+			expectError:   true,
+		},
+		{
+			name:   "empty config returns all non-ignored hosts",
+			config: &ScanJobConfig{},
+			setupMock: func(mock sqlmock.Sqlmock) {
+				rows := sqlmock.NewRows([]string{
+					"id", "ip_address", "hostname", "mac_address", "vendor",
+					"os_family", "os_name", "os_version", "os_confidence",
+					"os_detected_at", "os_method", "os_details", "discovery_method",
+					"response_time_ms", "discovery_count", "ignore_scanning",
+					"first_seen", "last_seen", "status",
+				}).
+					AddRow(
+						uuid.New(), "10.0.0.1", nil, nil, nil,
+						nil, nil, nil, nil,
+						nil, nil, nil, "ping",
+						nil, 1, false,
+						time.Now(), time.Now(), db.HostStatusUp,
+					)
+
+				mock.ExpectQuery("SELECT (.+) FROM hosts").
+					WillReturnRows(rows)
+			},
+			expectedCount: 1,
+			expectError:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock database
+			mockDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			tt.setupMock(mock)
+
+			// Create scheduler
+			wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+			s := NewScheduler(wrappedDB, nil, nil)
+
+			// Execute
+			ctx := context.Background()
+			hosts, err := s.getHostsToScan(ctx, tt.config)
+
+			// Assert
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Len(t, hosts, tt.expectedCount)
+			}
+
+			// Verify all expectations were met
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// TestScheduler_UpdateJobLastRun tests the behavior of updating job last run time.
+func TestScheduler_UpdateJobLastRun(t *testing.T) {
+	t.Run("update last run time successfully", func(t *testing.T) {
+		// Create mock database
+		mockDB, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer mockDB.Close()
+
+		jobID := uuid.New()
+		lastRun := time.Now()
+
+		// Expect the update query
+		mock.ExpectExec("UPDATE scheduled_jobs SET last_run").
+			WithArgs(lastRun, jobID).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		// Create scheduler
+		wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+		s := NewScheduler(wrappedDB, nil, nil)
+
+		// Execute - this method doesn't return an error, it just logs
+		ctx := context.Background()
+		s.updateJobLastRun(ctx, jobID, lastRun)
+
+		// Verify all expectations were met
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("update fails but doesn't panic", func(t *testing.T) {
+		// Create mock database
+		mockDB, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer mockDB.Close()
+
+		jobID := uuid.New()
+		lastRun := time.Now()
+
+		// Expect the update query to fail
+		mock.ExpectExec("UPDATE scheduled_jobs SET last_run").
+			WithArgs(lastRun, jobID).
+			WillReturnError(sql.ErrConnDone)
+
+		// Create scheduler
+		wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+		s := NewScheduler(wrappedDB, nil, nil)
+
+		// Execute - should not panic even on error
+		ctx := context.Background()
+		assert.NotPanics(t, func() {
+			s.updateJobLastRun(ctx, jobID, lastRun)
+		})
+
+		// Verify all expectations were met
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
+// TestScheduler_ExecuteHostScanQuery tests the behavior of executing host scan queries.
+func TestScheduler_ExecuteHostScanQuery(t *testing.T) {
+	t.Run("scan multiple hosts successfully", func(t *testing.T) {
+		// Create mock database
+		mockDB, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer mockDB.Close()
+
+		// Setup mock rows
+		osFamily := "linux"
+		rows := sqlmock.NewRows([]string{
+			"id", "ip_address", "hostname", "mac_address", "vendor",
+			"os_family", "os_name", "os_version", "os_confidence",
+			"os_detected_at", "os_method", "os_details", "discovery_method",
+			"response_time_ms", "discovery_count", "ignore_scanning",
+			"first_seen", "last_seen", "status",
+		}).
+			AddRow(
+				uuid.New(), "192.168.1.1", "host1", "aa:bb:cc:dd:ee:ff", "Vendor1",
+				&osFamily, "Ubuntu", "20.04", 90,
+				time.Now(), "nmap", []byte(`{}`), "ping",
+				50, 5, false,
+				time.Now(), time.Now(), db.HostStatusUp,
+			).
+			AddRow(
+				uuid.New(), "192.168.1.2", "host2", "11:22:33:44:55:66", "Vendor2",
+				&osFamily, "CentOS", "8", 85,
+				time.Now(), "nmap", []byte(`{}`), "arp",
+				30, 3, false,
+				time.Now(), time.Now(), db.HostStatusUp,
+			)
+
+		query := "SELECT * FROM hosts WHERE status = $1"
+		args := []interface{}{db.HostStatusUp}
+
+		mock.ExpectQuery("SELECT (.+) FROM hosts").
+			WillReturnRows(rows)
+
+		// Create scheduler
+		wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+		s := NewScheduler(wrappedDB, nil, nil)
+
+		// Execute
+		ctx := context.Background()
+		hosts, err := s.executeHostScanQuery(ctx, query, args)
+
+		// Assert
+		require.NoError(t, err)
+		assert.Len(t, hosts, 2)
+		assert.Equal(t, "192.168.1.1", hosts[0].IPAddress.String())
+		assert.Equal(t, "192.168.1.2", hosts[1].IPAddress.String())
+
+		// Verify all expectations were met
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("query returns no hosts", func(t *testing.T) {
+		// Create mock database
+		mockDB, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer mockDB.Close()
+
+		// Setup empty mock rows
+		rows := sqlmock.NewRows([]string{
+			"id", "ip_address", "hostname", "mac_address", "vendor",
+			"os_family", "os_name", "os_version", "os_confidence",
+			"os_detected_at", "os_method", "os_details", "discovery_method",
+			"response_time_ms", "discovery_count", "ignore_scanning",
+			"first_seen", "last_seen", "status",
+		})
+
+		query := "SELECT * FROM hosts"
+		mock.ExpectQuery("SELECT (.+) FROM hosts").
+			WillReturnRows(rows)
+
+		// Create scheduler
+		wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+		s := NewScheduler(wrappedDB, nil, nil)
+
+		// Execute
+		ctx := context.Background()
+		hosts, err := s.executeHostScanQuery(ctx, query, []interface{}{})
+
+		// Assert
+		require.NoError(t, err)
+		assert.Empty(t, hosts)
+
+		// Verify all expectations were met
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("database query fails", func(t *testing.T) {
+		// Create mock database
+		mockDB, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer mockDB.Close()
+
+		query := "SELECT * FROM hosts"
+		mock.ExpectQuery("SELECT (.+) FROM hosts").
+			WillReturnError(sql.ErrConnDone)
+
+		// Create scheduler
+		wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+		s := NewScheduler(wrappedDB, nil, nil)
+
+		// Execute
+		ctx := context.Background()
+		hosts, err := s.executeHostScanQuery(ctx, query, []interface{}{})
+
+		// Assert
+		require.Error(t, err)
+		assert.Nil(t, hosts)
+		assert.Contains(t, err.Error(), "failed to query hosts")
+
+		// Verify all expectations were met
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+}
