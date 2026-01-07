@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/services"
 	"github.com/anstrom/scanorama/test/helpers"
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
@@ -606,4 +608,508 @@ func TestNetworkHandler_GetNetworkStats(t *testing.T) {
 	// Check that we have the expected keys
 	assert.Contains(t, response.Networks, "total")
 	assert.Contains(t, response.Networks, "active")
+}
+
+// Unit tests for helper functions
+
+func TestNetworkHandler_parseNetworkFilters(t *testing.T) {
+	handler := &NetworkHandler{
+		BaseHandler: NewBaseHandler(slog.Default(), metrics.NewRegistry()),
+	}
+
+	tests := []struct {
+		name               string
+		queryParams        map[string]string
+		expectedInactive   bool
+		expectedNameFilter string
+	}{
+		{
+			name:               "no filters",
+			queryParams:        map[string]string{},
+			expectedInactive:   false,
+			expectedNameFilter: "",
+		},
+		{
+			name:               "show_inactive true",
+			queryParams:        map[string]string{"show_inactive": "true"},
+			expectedInactive:   true,
+			expectedNameFilter: "",
+		},
+		{
+			name:               "show_inactive false",
+			queryParams:        map[string]string{"show_inactive": "false"},
+			expectedInactive:   false,
+			expectedNameFilter: "",
+		},
+		{
+			name:               "name filter",
+			queryParams:        map[string]string{"name": "production"},
+			expectedInactive:   false,
+			expectedNameFilter: "production",
+		},
+		{
+			name:               "both filters",
+			queryParams:        map[string]string{"show_inactive": "true", "name": "test"},
+			expectedInactive:   true,
+			expectedNameFilter: "test",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/networks", nil)
+			q := req.URL.Query()
+			for k, v := range tt.queryParams {
+				q.Set(k, v)
+			}
+			req.URL.RawQuery = q.Encode()
+
+			showInactive, nameFilter := handler.parseNetworkFilters(req)
+
+			assert.Equal(t, tt.expectedInactive, showInactive)
+			assert.Equal(t, tt.expectedNameFilter, nameFilter)
+		})
+	}
+}
+
+func TestNetworkHandler_shouldIncludeNetwork(t *testing.T) {
+	handler := &NetworkHandler{
+		BaseHandler: NewBaseHandler(slog.Default(), metrics.NewRegistry()),
+	}
+
+	tests := []struct {
+		name         string
+		network      *db.Network
+		showInactive bool
+		nameFilter   string
+		expected     bool
+	}{
+		{
+			name: "active network - no filters",
+			network: &db.Network{
+				Name:     "production",
+				IsActive: true,
+			},
+			showInactive: false,
+			nameFilter:   "",
+			expected:     true,
+		},
+		{
+			name: "inactive network - show_inactive false",
+			network: &db.Network{
+				Name:     "test",
+				IsActive: false,
+			},
+			showInactive: false,
+			nameFilter:   "",
+			expected:     false,
+		},
+		{
+			name: "inactive network - show_inactive true",
+			network: &db.Network{
+				Name:     "test",
+				IsActive: false,
+			},
+			showInactive: true,
+			nameFilter:   "",
+			expected:     true,
+		},
+		{
+			name: "name filter matches",
+			network: &db.Network{
+				Name:     "production-network",
+				IsActive: true,
+			},
+			showInactive: false,
+			nameFilter:   "production",
+			expected:     true,
+		},
+		{
+			name: "name filter does not match",
+			network: &db.Network{
+				Name:     "staging-network",
+				IsActive: true,
+			},
+			showInactive: false,
+			nameFilter:   "production",
+			expected:     false,
+		},
+		{
+			name: "name filter case insensitive match",
+			network: &db.Network{
+				Name:     "Production-Network",
+				IsActive: true,
+			},
+			showInactive: false,
+			nameFilter:   "production",
+			expected:     true,
+		},
+		{
+			name: "inactive network with name filter - show_inactive false",
+			network: &db.Network{
+				Name:     "production",
+				IsActive: false,
+			},
+			showInactive: false,
+			nameFilter:   "prod",
+			expected:     false,
+		},
+		{
+			name: "inactive network with name filter - show_inactive true",
+			network: &db.Network{
+				Name:     "production",
+				IsActive: false,
+			},
+			showInactive: true,
+			nameFilter:   "prod",
+			expected:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := handler.shouldIncludeNetwork(tt.network, tt.showInactive, tt.nameFilter)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestNetworkHandler_applyNetworkFilters(t *testing.T) {
+	handler := &NetworkHandler{
+		BaseHandler: NewBaseHandler(slog.Default(), metrics.NewRegistry()),
+	}
+
+	networks := []*db.Network{
+		{Name: "production-1", IsActive: true},
+		{Name: "production-2", IsActive: false},
+		{Name: "staging-1", IsActive: true},
+		{Name: "staging-2", IsActive: false},
+	}
+
+	tests := []struct {
+		name         string
+		showInactive bool
+		nameFilter   string
+		expectedLen  int
+	}{
+		{
+			name:         "no filters - only active",
+			showInactive: false,
+			nameFilter:   "",
+			expectedLen:  2,
+		},
+		{
+			name:         "show all networks",
+			showInactive: true,
+			nameFilter:   "",
+			expectedLen:  4,
+		},
+		{
+			name:         "filter by name - production",
+			showInactive: false,
+			nameFilter:   "production",
+			expectedLen:  1,
+		},
+		{
+			name:         "filter by name with inactive",
+			showInactive: true,
+			nameFilter:   "production",
+			expectedLen:  2,
+		},
+		{
+			name:         "filter by name - staging active only",
+			showInactive: false,
+			nameFilter:   "staging",
+			expectedLen:  1,
+		},
+		{
+			name:         "filter non-matching name",
+			showInactive: true,
+			nameFilter:   "development",
+			expectedLen:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filtered := handler.applyNetworkFilters(networks, tt.showInactive, tt.nameFilter)
+			assert.Len(t, filtered, tt.expectedLen)
+		})
+	}
+}
+
+func TestNetworkHandler_setNetworkDefaults(t *testing.T) {
+	handler := &NetworkHandler{
+		BaseHandler: NewBaseHandler(slog.Default(), metrics.NewRegistry()),
+	}
+
+	trueVal := true
+	falseVal := false
+
+	tests := []struct {
+		name                string
+		request             *CreateNetworkRequest
+		expectedActive      bool
+		expectedScanEnabled bool
+	}{
+		{
+			name:                "no values provided - defaults to true",
+			request:             &CreateNetworkRequest{},
+			expectedActive:      true,
+			expectedScanEnabled: true,
+		},
+		{
+			name: "both explicitly true",
+			request: &CreateNetworkRequest{
+				IsActive:    &trueVal,
+				ScanEnabled: &trueVal,
+			},
+			expectedActive:      true,
+			expectedScanEnabled: true,
+		},
+		{
+			name: "both explicitly false",
+			request: &CreateNetworkRequest{
+				IsActive:    &falseVal,
+				ScanEnabled: &falseVal,
+			},
+			expectedActive:      false,
+			expectedScanEnabled: false,
+		},
+		{
+			name: "active true, scan false",
+			request: &CreateNetworkRequest{
+				IsActive:    &trueVal,
+				ScanEnabled: &falseVal,
+			},
+			expectedActive:      true,
+			expectedScanEnabled: false,
+		},
+		{
+			name: "active false, scan true",
+			request: &CreateNetworkRequest{
+				IsActive:    &falseVal,
+				ScanEnabled: &trueVal,
+			},
+			expectedActive:      false,
+			expectedScanEnabled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isActive, scanEnabled := handler.setNetworkDefaults(tt.request)
+			assert.Equal(t, tt.expectedActive, isActive)
+			assert.Equal(t, tt.expectedScanEnabled, scanEnabled)
+		})
+	}
+}
+
+func TestNetworkHandler_updateNetworkFields(t *testing.T) {
+	handler := &NetworkHandler{
+		BaseHandler: NewBaseHandler(slog.Default(), metrics.NewRegistry()),
+	}
+
+	tests := []struct {
+		name    string
+		initial *db.Network
+		request *UpdateNetworkRequest
+		check   func(t *testing.T, network *db.Network)
+	}{
+		{
+			name: "update name only",
+			initial: &db.Network{
+				Name:            "old-name",
+				DiscoveryMethod: "ping",
+				IsActive:        true,
+				ScanEnabled:     true,
+			},
+			request: &UpdateNetworkRequest{
+				Name: stringPtr("new-name"),
+			},
+			check: func(t *testing.T, network *db.Network) {
+				assert.Equal(t, "new-name", network.Name)
+				assert.Equal(t, "ping", network.DiscoveryMethod)
+				assert.True(t, network.IsActive)
+			},
+		},
+		{
+			name: "update description",
+			initial: &db.Network{
+				Name: "test-network",
+			},
+			request: &UpdateNetworkRequest{
+				Description: stringPtr("new description"),
+			},
+			check: func(t *testing.T, network *db.Network) {
+				assert.NotNil(t, network.Description)
+				assert.Equal(t, "new description", *network.Description)
+			},
+		},
+		{
+			name: "update discovery method",
+			initial: &db.Network{
+				DiscoveryMethod: "ping",
+			},
+			request: &UpdateNetworkRequest{
+				DiscoveryMethod: stringPtr("tcp"),
+			},
+			check: func(t *testing.T, network *db.Network) {
+				assert.Equal(t, "tcp", network.DiscoveryMethod)
+			},
+		},
+		{
+			name: "update active status",
+			initial: &db.Network{
+				IsActive: true,
+			},
+			request: &UpdateNetworkRequest{
+				IsActive: boolPtr(false),
+			},
+			check: func(t *testing.T, network *db.Network) {
+				assert.False(t, network.IsActive)
+			},
+		},
+		{
+			name: "update scan enabled",
+			initial: &db.Network{
+				ScanEnabled: true,
+			},
+			request: &UpdateNetworkRequest{
+				ScanEnabled: boolPtr(false),
+			},
+			check: func(t *testing.T, network *db.Network) {
+				assert.False(t, network.ScanEnabled)
+			},
+		},
+		{
+			name: "update multiple fields",
+			initial: &db.Network{
+				Name:            "old",
+				DiscoveryMethod: "ping",
+				IsActive:        true,
+				ScanEnabled:     true,
+			},
+			request: &UpdateNetworkRequest{
+				Name:            stringPtr("new"),
+				DiscoveryMethod: stringPtr("arp"),
+				IsActive:        boolPtr(false),
+			},
+			check: func(t *testing.T, network *db.Network) {
+				assert.Equal(t, "new", network.Name)
+				assert.Equal(t, "arp", network.DiscoveryMethod)
+				assert.False(t, network.IsActive)
+				assert.True(t, network.ScanEnabled)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			network := tt.initial
+			handler.updateNetworkFields(network, tt.request)
+			tt.check(t, network)
+		})
+	}
+}
+
+func TestNetworkHandler_updateNetworkStatusFields(t *testing.T) {
+	handler := &NetworkHandler{
+		BaseHandler: NewBaseHandler(slog.Default(), metrics.NewRegistry()),
+	}
+
+	tests := []struct {
+		name        string
+		isActive    bool
+		scanEnabled bool
+	}{
+		{
+			name:        "enable both",
+			isActive:    true,
+			scanEnabled: true,
+		},
+		{
+			name:        "disable both",
+			isActive:    false,
+			scanEnabled: false,
+		},
+		{
+			name:        "active only",
+			isActive:    true,
+			scanEnabled: false,
+		},
+		{
+			name:        "scan enabled only",
+			isActive:    false,
+			scanEnabled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			network := &db.Network{}
+			handler.updateNetworkStatusFields(network, tt.isActive, tt.scanEnabled)
+			assert.Equal(t, tt.isActive, network.IsActive)
+			assert.Equal(t, tt.scanEnabled, network.ScanEnabled)
+		})
+	}
+}
+
+func TestNetworkHandler_parseReasonFromRequest(t *testing.T) {
+	handler := &NetworkHandler{
+		BaseHandler: NewBaseHandler(slog.Default(), metrics.NewRegistry()),
+	}
+
+	tests := []struct {
+		name     string
+		request  *CreateExclusionRequest
+		expected string
+	}{
+		{
+			name: "reason provided",
+			request: &CreateExclusionRequest{
+				Reason: stringPtr("maintenance window"),
+			},
+			expected: "maintenance window",
+		},
+		{
+			name:     "reason nil",
+			request:  &CreateExclusionRequest{},
+			expected: "",
+		},
+		{
+			name: "empty reason string",
+			request: &CreateExclusionRequest{
+				Reason: stringPtr(""),
+			},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := handler.parseReasonFromRequest(tt.request)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestNetworkHandler_convertNetworkWithExclusionsToNetwork(t *testing.T) {
+	handler := &NetworkHandler{
+		BaseHandler: NewBaseHandler(slog.Default(), metrics.NewRegistry()),
+	}
+
+	network := &db.Network{
+		Name:     "test-network",
+		IsActive: true,
+	}
+
+	nwe := &services.NetworkWithExclusions{
+		Network: network,
+	}
+
+	result := handler.convertNetworkWithExclusionsToNetwork(nwe)
+	assert.Equal(t, network, result)
+	assert.Equal(t, "test-network", result.Name)
+	assert.True(t, result.IsActive)
 }
