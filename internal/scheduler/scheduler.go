@@ -566,7 +566,7 @@ func (s *Scheduler) addHostScanFilters(
 
 	// Filter by networks if specified
 	if len(config.Networks) > 0 {
-		networkConditions := []string{}
+		networkConditions := make([]string, 0, len(config.Networks))
 		for _, network := range config.Networks {
 			argCount++
 			networkConditions = append(networkConditions, fmt.Sprintf("ip_address << $%d", argCount))
