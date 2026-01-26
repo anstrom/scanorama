@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -729,31 +730,38 @@ func TestScheduler_StoreJobInMemory(t *testing.T) {
 	assert.False(t, job.Running)
 }
 
-// TestScheduler_JobInMemoryConcurrency tests concurrent access to jobs map
-// Note: This test is commented out as it exposes a race condition in storeJobInMemory
-// which doesn't use mutex protection. See issue #266 for tracking this production bug.
-/*
-func TestScheduler_JobInMemoryConcurrency(t *testing.T) {
+// TestScheduler_StoreJobInMemoryConcurrency tests that storeJobInMemory properly
+// works when called with the mutex held, preventing race conditions (issue #266).
+// This simulates the actual usage pattern where Start() holds the lock during job loading.
+func TestScheduler_StoreJobInMemoryConcurrency(t *testing.T) {
 	s := NewScheduler(nil, nil, nil)
 
 	var wg sync.WaitGroup
 
-	// Concurrent writes
+	// Simulate concurrent Start() calls that hold the lock
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
+
+			// Acquire lock as Start() does
+			s.mu.Lock()
+			defer s.mu.Unlock()
+
 			jobID := uuid.New()
 			dbJob := &db.ScheduledJob{
 				ID:             jobID,
-				Name:           "test-job",
+				Name:           fmt.Sprintf("test-job-%d", idx),
+				Type:           db.ScheduledJobTypeDiscovery,
 				CronExpression: "0 0 * * *",
+				Enabled:        true,
 			}
+			// Call storeJobInMemory while holding lock (as Start() does)
 			s.storeJobInMemory(dbJob, cron.EntryID(idx))
 		}(i)
 	}
 
-	// Concurrent reads
+	// Concurrent reads should use proper locking
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
@@ -771,9 +779,8 @@ func TestScheduler_JobInMemoryConcurrency(t *testing.T) {
 	count := len(s.jobs)
 	s.mu.RUnlock()
 
-	assert.Equal(t, 10, count)
+	assert.Equal(t, 10, count, "all 10 jobs should be stored without data loss")
 }
-*/
 
 // ==============================================================================
 // Phase 2: Job Configuration Tests
