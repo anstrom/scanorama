@@ -716,12 +716,14 @@ func (s *Scheduler) addScanJobToCron(job *db.ScheduledJob) (cron.EntryID, error)
 }
 
 // storeJobInMemory stores the job in the scheduler's memory.
+// storeJobInMemory stores a job in the in-memory map.
+// IMPORTANT: This function must be called with s.mu held by the caller.
 func (s *Scheduler) storeJobInMemory(job *db.ScheduledJob, cronID cron.EntryID) {
 	// Calculate next run time using standard parser
 	schedule, _ := cron.ParseStandard(job.CronExpression)
 	nextRun := schedule.Next(time.Now())
 
-	// Store in memory
+	// Store in memory (caller must hold s.mu)
 	s.jobs[job.ID] = &ScheduledJob{
 		ID:      job.ID,
 		CronID:  cronID,
