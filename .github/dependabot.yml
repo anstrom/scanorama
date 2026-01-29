@@ -65,3 +65,29 @@ updates:
     labels:
       - "dependencies"
       - "docker"
+
+  # npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "anstrom"
+    assignees:
+      - "anstrom"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "npm"
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+    ignore:
+      # Ignore major version updates for now to prevent breaking changes
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
