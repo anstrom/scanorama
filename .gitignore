@@ -109,3 +109,6 @@ docs/documentation-report.md
 # Claude development files (never commit)
 .claude-*
 REFACTORING_COMPLETE.md
+-e 
+# Coverage reports
+coverage-reports/
