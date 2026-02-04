@@ -32,7 +32,7 @@
   },
   "engines": {
     "node": "25.6.0",
-    "npm": "11.8.0"
+    "npm": "11.9.0"
   },
   "repository": {
     "type": "git",
