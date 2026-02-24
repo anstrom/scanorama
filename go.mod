@@ -1,6 +1,6 @@
 module github.com/anstrom/scanorama
 
-go 1.25.7
+go 1.26.0
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -21,7 +21,7 @@ require (
 	github.com/swaggo/http-swagger/v2 v2.0.2
 	github.com/swaggo/swag v1.16.6
 	go.uber.org/mock v0.6.0
-	golang.org/x/crypto v0.47.0
+	golang.org/x/crypto v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
