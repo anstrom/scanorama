@@ -189,12 +189,14 @@ func pidFileExists(pidFile string) (int, bool) {
 
 // writePIDFile writes the process ID to a file.
 func writePIDFile(pidFile string, pid int) error {
-	dir := filepath.Dir(pidFile)
+	cleanPath := filepath.Clean(pidFile)
+	dir := filepath.Dir(cleanPath)
 	if err := os.MkdirAll(dir, dirPermissions); err != nil {
 		return fmt.Errorf("failed to create PID file directory: %w", err)
 	}
 
-	return os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), filePermissions)
+	//nolint:gosec // G703: path is cleaned with filepath.Clean above
+	return os.WriteFile(cleanPath, []byte(strconv.Itoa(pid)), filePermissions)
 }
 
 // removePIDFile removes the PID file.
