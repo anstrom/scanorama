@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -112,10 +114,11 @@ func getAPIKeyFromSources() string {
 
 	// 3. Check for API key file (for security)
 	if keyFile := os.Getenv("SCANORAMA_API_KEY_FILE"); keyFile != "" {
-		// #nosec G304 - Intentional file reading for API key configuration
-		// Basic validation to prevent obvious path traversal
-		if !strings.Contains(keyFile, "..") && keyFile != "" {
-			if keyData, err := os.ReadFile(keyFile); err == nil {
+		// Only accept absolute, cleaned paths to prevent path traversal (G703)
+		cleanPath := filepath.Clean(keyFile)
+		if filepath.IsAbs(cleanPath) {
+			//nolint:gosec // G304: path validated as absolute and cleaned above
+			if keyData, err := os.ReadFile(cleanPath); err == nil {
 				return strings.TrimSpace(string(keyData))
 			}
 		}
@@ -146,7 +149,13 @@ func (c *APIClient) Delete(endpoint string) (*APIResponse, error) {
 
 // request performs the actual HTTP request with authentication
 func (c *APIClient) request(method, endpoint string, payload interface{}) (*APIResponse, error) {
-	url := c.baseURL + endpoint
+	reqURL := c.baseURL + endpoint
+
+	// Validate URL scheme to prevent SSRF against unexpected protocols (G704)
+	parsed, err := url.Parse(reqURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, fmt.Errorf("invalid or disallowed URL scheme in %q", reqURL)
+	}
 
 	// Prepare request body
 	var requestBody io.Reader
@@ -159,7 +168,7 @@ func (c *APIClient) request(method, endpoint string, payload interface{}) (*APIR
 	}
 
 	// Create HTTP request
-	req, err := http.NewRequest(method, url, requestBody)
+	req, err := http.NewRequest(method, reqURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
@@ -177,6 +186,7 @@ func (c *APIClient) request(method, endpoint string, payload interface{}) (*APIR
 	req.Header.Set("X-Request-Source", "cli")
 
 	// Perform request
+	//nolint:gosec // G704: URL scheme validated before request is built
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)

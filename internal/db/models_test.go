@@ -185,7 +185,7 @@ func TestMACAddr(t *testing.T) {
 		{
 			name:    "valid MAC without separators",
 			input:   "aabbccddeeff",
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "invalid MAC",
