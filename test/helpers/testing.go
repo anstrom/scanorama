@@ -26,12 +26,13 @@ const (
 
 // TestDatabase provides utilities for database testing
 type TestDatabase struct {
-	DB       *sqlx.DB
-	URL      string
-	Host     string
-	Port     string
-	Name     string
-	User     string
+	DB   *sqlx.DB
+	URL  string
+	Host string
+	Port string
+	Name string
+	User string
+	//nolint:gosec // G117: config struct field, not a hardcoded secret
 	Password string
 }
 
