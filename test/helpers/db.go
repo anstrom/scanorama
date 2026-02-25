@@ -28,6 +28,7 @@ type DatabaseConfig struct {
 	Port     int
 	Database string
 	Username string
+	//nolint:gosec // G117: config struct field, not a hardcoded secret
 	Password string
 	SSLMode  string
 }
