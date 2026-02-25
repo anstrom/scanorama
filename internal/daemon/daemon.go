@@ -165,6 +165,7 @@ func (d *Daemon) fork() error {
 	}
 
 	// Start the child process
+	//nolint:gosec // G702: executable comes from os.Executable(), not user input
 	process, err := os.StartProcess(executable, args, procAttr)
 	if err != nil {
 		return fmt.Errorf("failed to start daemon process: %w", err)

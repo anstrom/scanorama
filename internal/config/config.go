@@ -182,8 +182,9 @@ type APIConfig struct {
 	TLS TLSConfig `yaml:"tls" json:"tls"`
 
 	// Authentication settings
-	AuthEnabled bool     `yaml:"auth_enabled" json:"auth_enabled"`
-	APIKeys     []string `yaml:"api_keys" json:"api_keys"`
+	AuthEnabled bool `yaml:"auth_enabled" json:"auth_enabled"`
+	//nolint:gosec // G117: config struct field, not a hardcoded secret
+	APIKeys []string `yaml:"api_keys" json:"api_keys"`
 
 	// CORS settings
 	EnableCORS  bool     `yaml:"enable_cors" json:"enable_cors"`
