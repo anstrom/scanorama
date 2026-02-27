@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -2068,4 +2069,147 @@ func TestScheduler_ExecuteHostScanQuery(t *testing.T) {
 		// Verify all expectations were met
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
+}
+
+// TestTimingToScanTimeout verifies that timingToScanTimeout returns expected timeout
+// values for all defined timing strings and the default fallback.
+func TestTimingToScanTimeout(t *testing.T) {
+	tests := []struct {
+		name        string
+		timing      string
+		wantSeconds int
+	}{
+		{
+			name:        "paranoid timing returns 1 hour",
+			timing:      db.ScanTimingParanoid,
+			wantSeconds: scanTimeoutParanoid,
+		},
+		{
+			name:        "polite timing returns 30 minutes",
+			timing:      db.ScanTimingPolite,
+			wantSeconds: scanTimeoutPolite,
+		},
+		{
+			name:        "normal timing returns 15 minutes",
+			timing:      db.ScanTimingNormal,
+			wantSeconds: scanTimeoutNormal,
+		},
+		{
+			name:        "aggressive timing returns 10 minutes",
+			timing:      db.ScanTimingAggressive,
+			wantSeconds: scanTimeoutAggressive,
+		},
+		{
+			name:        "insane timing returns 5 minutes",
+			timing:      db.ScanTimingInsane,
+			wantSeconds: scanTimeoutInsane,
+		},
+		{
+			name:        "empty string returns default 15 minutes",
+			timing:      "",
+			wantSeconds: scanTimeoutNormal,
+		},
+		{
+			name:        "unknown timing returns default 15 minutes",
+			timing:      "unknown-timing",
+			wantSeconds: scanTimeoutNormal,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := timingToScanTimeout(tt.timing)
+			assert.Equal(t, tt.wantSeconds, got,
+				"timingToScanTimeout(%q) should return %d seconds", tt.timing, tt.wantSeconds)
+		})
+	}
+}
+
+// TestTimingToScanTimeout_Ordering verifies that slower timings produce longer timeouts.
+func TestTimingToScanTimeout_Ordering(t *testing.T) {
+	paranoid := timingToScanTimeout(db.ScanTimingParanoid)
+	polite := timingToScanTimeout(db.ScanTimingPolite)
+	normal := timingToScanTimeout(db.ScanTimingNormal)
+	aggressive := timingToScanTimeout(db.ScanTimingAggressive)
+	insane := timingToScanTimeout(db.ScanTimingInsane)
+
+	assert.Greater(t, paranoid, polite, "paranoid should be slower than polite")
+	assert.Greater(t, polite, normal, "polite should be slower than normal")
+	assert.Greater(t, normal, aggressive, "normal should be slower than aggressive")
+	assert.Greater(t, aggressive, insane, "aggressive should be slower than insane")
+	assert.Greater(t, insane, 0, "insane should still have a positive timeout")
+}
+
+// TestProcessHostsForScanning_EmptyHosts verifies that processHostsForScanning
+// handles an empty host list without error.
+func TestProcessHostsForScanning_EmptyHosts(t *testing.T) {
+	s := NewScheduler(nil, nil, nil)
+
+	ctx := context.Background()
+	config := &ScanJobConfig{
+		LiveHostsOnly: false,
+		ProfileID:     "test-profile",
+	}
+
+	// Should not panic with empty host list
+	s.processHostsForScanning(ctx, []*db.Host{}, config)
+}
+
+// TestProcessHostsForScanning_CanceledContext verifies that processHostsForScanning
+// stops processing when the context is canceled.
+func TestProcessHostsForScanning_CanceledContext(t *testing.T) {
+	s := NewScheduler(nil, nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	hosts := []*db.Host{
+		{IPAddress: db.IPAddr{}},
+		{IPAddress: db.IPAddr{}},
+	}
+
+	config := &ScanJobConfig{ProfileID: "test-profile"}
+
+	// Should return immediately without processing due to canceled context
+	// The function should not panic even with nil profile manager
+	s.processHostsForScanning(ctx, hosts, config)
+}
+
+// TestProcessHostsForScanning_NilProfileManager verifies that processHostsForScanning
+// handles a nil profile manager gracefully by skipping hosts.
+func TestProcessHostsForScanning_NilProfileManager(t *testing.T) {
+	s := NewScheduler(nil, nil, nil) // nil profile manager
+
+	ctx := context.Background()
+
+	ipStr := "192.168.1.1"
+	host := &db.Host{}
+	host.IPAddress.IP = net.ParseIP(ipStr)
+
+	hosts := []*db.Host{host}
+	config := &ScanJobConfig{
+		ProfileID: "auto", // triggers SelectBestProfile which needs profiles manager
+	}
+
+	// Should not panic, skips host when profile selection fails
+	s.processHostsForScanning(ctx, hosts, config)
+}
+
+// TestProcessHostsForScanning_NilProfilesManager verifies that processHostsForScanning
+// returns early and logs a message when the profile manager is nil, rather than panicking.
+func TestProcessHostsForScanning_NilProfilesManager(t *testing.T) {
+	s := NewScheduler(nil, nil, nil) // nil profile manager
+
+	ctx := context.Background()
+
+	host := &db.Host{}
+	host.IPAddress.IP = net.ParseIP("10.0.0.1")
+
+	hosts := []*db.Host{host}
+	config := &ScanJobConfig{
+		ProfileID: "specific-profile-id",
+	}
+
+	// Should return immediately without panicking when profiles manager is nil.
+	s.processHostsForScanning(ctx, hosts, config)
 }

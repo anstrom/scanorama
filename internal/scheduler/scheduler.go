@@ -19,6 +19,16 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/discovery"
 	"github.com/anstrom/scanorama/internal/profiles"
+	"github.com/anstrom/scanorama/internal/scanning"
+)
+
+const (
+	// Scan timeout constants in seconds, keyed to nmap timing templates.
+	scanTimeoutParanoid   = 3600 // 1 hour  - matches nmap T0 (paranoid)
+	scanTimeoutPolite     = 1800 // 30 min  - matches nmap T1 (polite)
+	scanTimeoutNormal     = 900  // 15 min  - matches nmap T3 (normal)
+	scanTimeoutAggressive = 600  // 10 min  - matches nmap T4 (aggressive)
+	scanTimeoutInsane     = 300  // 5 min   - matches nmap T5 (insane)
 )
 
 // Scheduler manages scheduled discovery and scanning jobs.
@@ -480,15 +490,28 @@ func (s *Scheduler) cleanupJobExecution(jobID uuid.UUID) {
 	s.mu.Unlock()
 }
 
-// processHostsForScanning processes each host for scanning with appropriate profiles.
+// processHostsForScanning runs scans against each host using the appropriate profile.
 func (s *Scheduler) processHostsForScanning(ctx context.Context, hosts []*db.Host, config *ScanJobConfig) {
-	// TODO: Implement actual scanning logic here
-	// This would integrate with the existing scan functionality
-	// For now, just log that we would scan these hosts
+	if s.profiles == nil {
+		log.Printf("Scan job skipped: no profile manager configured")
+		return
+	}
 
-	for _, host := range hosts {
+	for i, host := range hosts {
+		if ctx.Err() != nil {
+			log.Printf("Scan job context canceled after %d/%d hosts", i, len(hosts))
+			return
+		}
+
 		profileID := s.selectProfileForHost(ctx, host, config.ProfileID)
 		if profileID == "" {
+			log.Printf("No profile available for host %s, skipping", host.IPAddress)
+			continue
+		}
+
+		profile, err := s.profiles.GetByID(ctx, profileID)
+		if err != nil {
+			log.Printf("Failed to get profile %s for host %s: %v", profileID, host.IPAddress, err)
 			continue
 		}
 
@@ -496,8 +519,46 @@ func (s *Scheduler) processHostsForScanning(ctx context.Context, hosts []*db.Hos
 		if host.OSFamily != nil {
 			osFamily = *host.OSFamily
 		}
-		log.Printf("Would scan host %s (%s) with profile %s",
-			host.IPAddress, osFamily, profileID)
+
+		scanConfig := &scanning.ScanConfig{
+			Targets:     []string{host.IPAddress.String()},
+			Ports:       profile.Ports,
+			ScanType:    profile.ScanType,
+			TimeoutSec:  timingToScanTimeout(profile.Timing),
+			Concurrency: 1,
+		}
+
+		log.Printf("Scanning host %s (%s) with profile %s (ports: %s, type: %s)",
+			host.IPAddress, osFamily, profileID, profile.Ports, profile.ScanType)
+
+		result, err := scanning.RunScanWithContext(ctx, scanConfig, s.db)
+		if err != nil {
+			log.Printf("Failed to scan host %s with profile %s: %v",
+				host.IPAddress, profileID, err)
+			continue
+		}
+
+		log.Printf("Completed scan of host %s: %d hosts responded, %d up",
+			host.IPAddress, result.Stats.Total, result.Stats.Up)
+	}
+}
+
+// timingToScanTimeout converts a profile timing string to a scan timeout in seconds.
+// Longer timeouts are used for polite/paranoid scans to match their slower pace.
+func timingToScanTimeout(timing string) int {
+	switch timing {
+	case db.ScanTimingParanoid:
+		return scanTimeoutParanoid
+	case db.ScanTimingPolite:
+		return scanTimeoutPolite
+	case db.ScanTimingNormal:
+		return scanTimeoutNormal
+	case db.ScanTimingAggressive:
+		return scanTimeoutAggressive
+	case db.ScanTimingInsane:
+		return scanTimeoutInsane
+	default:
+		return scanTimeoutNormal
 	}
 }
 
