@@ -100,7 +100,7 @@ jobs:
           test -f docs/swagger/docs.go
 
       - name: Upload documentation artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: api-documentation
           path: |
