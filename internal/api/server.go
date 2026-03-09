@@ -73,8 +73,7 @@ type Config struct {
 	RateLimitRequests int           `yaml:"rate_limit_requests" json:"rate_limit_requests"`
 	RateLimitWindow   time.Duration `yaml:"rate_limit_window" json:"rate_limit_window"`
 	AuthEnabled       bool          `yaml:"auth_enabled" json:"auth_enabled"`
-	//nolint:gosec // G117: config struct field, not a hardcoded secret
-	APIKeys []string `yaml:"api_keys" json:"api_keys"`
+	APIKeys           []string      `yaml:"api_keys" json:"api_keys"` //nolint:gosec // G117: config field
 }
 
 // DefaultConfig returns default API server configuration.

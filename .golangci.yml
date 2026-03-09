@@ -65,6 +65,7 @@ linters:
       confidence: medium
       excludes:
         - G104 # Errors unhandled (intentional in some cases)
+        - G118 # Goroutine/context not using request-scoped context (intentional for async workers and test helpers)
 
     gocritic:
       enabled-tags:
