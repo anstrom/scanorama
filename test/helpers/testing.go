@@ -32,7 +32,7 @@ type TestDatabase struct {
 	Port     string
 	Name     string
 	User     string
-	Password string //nolint:gosec // G117: config field
+	Password string //nolint:gosec // G117: Exported struct field matches secret pattern
 }
 
 // NewTestDatabase creates a new test database connection
