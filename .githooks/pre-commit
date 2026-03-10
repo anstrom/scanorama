@@ -1,5 +1,24 @@
 #!/bin/bash
 
+# Source shell profile to ensure tools like go and golangci-lint are on PATH
+# This is needed because git hooks run in a minimal environment
+if [ -f "$HOME/.bash_profile" ]; then
+    # shellcheck source=/dev/null
+    source "$HOME/.bash_profile"
+elif [ -f "$HOME/.profile" ]; then
+    # shellcheck source=/dev/null
+    source "$HOME/.profile"
+fi
+# Also source zshenv/zprofile for zsh users (common on macOS)
+if [ -f "$HOME/.zshenv" ]; then
+    # shellcheck source=/dev/null
+    source "$HOME/.zshenv"
+fi
+if [ -f "$HOME/.zprofile" ]; then
+    # shellcheck source=/dev/null
+    source "$HOME/.zprofile"
+fi
+
 # Pre-commit hook to enforce code quality checks
 # This hook runs before each commit and prevents commits if checks fail
 

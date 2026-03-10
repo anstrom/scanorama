@@ -117,7 +117,6 @@ func getAPIKeyFromSources() string {
 		// Only accept absolute, cleaned paths to prevent path traversal (G703)
 		cleanPath := filepath.Clean(keyFile)
 		if filepath.IsAbs(cleanPath) {
-			//nolint:gosec // G703: path validated as absolute and cleaned above
 			if keyData, err := os.ReadFile(cleanPath); err == nil {
 				return strings.TrimSpace(string(keyData))
 			}
@@ -186,7 +185,6 @@ func (c *APIClient) request(method, endpoint string, payload interface{}) (*APIR
 	req.Header.Set("X-Request-Source", "cli")
 
 	// Perform request
-	//nolint:gosec // G704: URL scheme validated before request is built
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
