@@ -65,7 +65,10 @@ linters:
       confidence: medium
       excludes:
         - G104 # Errors unhandled (intentional in some cases)
+        - G117 # Exported struct fields matching secret patterns (intentional in config structs)
         - G118 # Goroutine/context not using request-scoped context (intentional for async workers and test helpers)
+        - G703 # Path traversal via taint analysis (path is validated as absolute and cleaned before use)
+        - G704 # SSRF via taint analysis (URL scheme is validated before request is built)
 
     gocritic:
       enabled-tags:
