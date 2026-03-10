@@ -28,7 +28,7 @@ type DatabaseConfig struct {
 	Port     int
 	Database string
 	Username string
-	Password string //nolint:gosec // G117: exported struct field matches secret pattern
+	Password string
 	SSLMode  string
 }
 

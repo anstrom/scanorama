@@ -90,7 +90,7 @@ type Config struct {
 	Port            int           `yaml:"port" json:"port"`
 	Database        string        `yaml:"database" json:"database"`
 	Username        string        `yaml:"username" json:"username"`
-	Password        string        `yaml:"password" json:"password"` //nolint:gosec // G117: config field
+	Password        string        `yaml:"password" json:"password"`
 	SSLMode         string        `yaml:"ssl_mode" json:"ssl_mode"`
 	MaxOpenConns    int           `yaml:"max_open_conns" json:"max_open_conns"`
 	MaxIdleConns    int           `yaml:"max_idle_conns" json:"max_idle_conns"`

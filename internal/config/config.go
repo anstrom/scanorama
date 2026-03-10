@@ -183,7 +183,7 @@ type APIConfig struct {
 
 	// Authentication settings
 	AuthEnabled bool     `yaml:"auth_enabled" json:"auth_enabled"`
-	APIKeys     []string `yaml:"api_keys" json:"api_keys"` //nolint:gosec // G117: config field containing API keys
+	APIKeys     []string `yaml:"api_keys" json:"api_keys"`
 
 	// CORS settings
 	EnableCORS  bool     `yaml:"enable_cors" json:"enable_cors"`

@@ -195,7 +195,6 @@ func writePIDFile(pidFile string, pid int) error {
 		return fmt.Errorf("failed to create PID file directory: %w", err)
 	}
 
-	//nolint:gosec // G703: path is cleaned with filepath.Clean above
 	return os.WriteFile(cleanPath, []byte(strconv.Itoa(pid)), filePermissions)
 }
 
