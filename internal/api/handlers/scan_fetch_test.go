@@ -879,11 +879,13 @@ func TestScanHandler_ScanToResponse_Unit(t *testing.T) {
 	assert.Equal(t, scanID, response.ID)
 	assert.Equal(t, "Test Scan", response.Name)
 	assert.Equal(t, "Test Description", response.Description)
-	// Note: scanToResponse returns empty targets array (placeholder implementation)
-	assert.Equal(t, []string{}, response.Targets)
+	assert.Equal(t, []string{"192.168.1.0/24"}, response.Targets)
 	assert.Equal(t, "connect", response.ScanType)
-	// Note: Ports and ProfileID are not populated in current implementation
+	assert.Equal(t, "22,80,443", response.Ports)
+	assert.Equal(t, &profileID, response.ProfileID)
 	assert.Equal(t, "running", response.Status)
+	assert.Equal(t, 50.0, response.Progress)
+	assert.Equal(t, &now, response.StartTime)
 }
 
 // TestScanHandler_ResultToResponse_Unit tests resultToResponse conversion

@@ -302,15 +302,18 @@ func TestScanHandler_ScanToResponse(t *testing.T) {
 	logger := createTestLogger()
 	handler := NewScanHandler(nil, logger, metrics.NewRegistry())
 
+	now := time.Now()
 	testScanID := uuid.New()
 	testScan := &db.Scan{
 		ID:          testScanID,
 		Name:        "Test Scan",
 		Description: "Test Description",
+		Targets:     []string{"192.168.1.0/24"},
 		ScanType:    "connect",
 		Status:      "running",
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		StartedAt:   &now,
 	}
 
 	response := handler.scanToResponse(testScan)
@@ -318,10 +321,99 @@ func TestScanHandler_ScanToResponse(t *testing.T) {
 	assert.Equal(t, testScan.ID, response.ID)
 	assert.Equal(t, testScan.Name, response.Name)
 	assert.Equal(t, testScan.Description, response.Description)
+	assert.Equal(t, []string{"192.168.1.0/24"}, response.Targets)
 	assert.Equal(t, testScan.ScanType, response.ScanType)
 	assert.Equal(t, testScan.Status, response.Status)
 	assert.Equal(t, testScan.CreatedAt, response.CreatedAt)
 	assert.Equal(t, testScan.UpdatedAt, response.UpdatedAt)
+	assert.Equal(t, 50.0, response.Progress) // running → 50%
+	assert.Equal(t, &now, response.StartTime)
+	assert.Nil(t, response.EndTime)
+	assert.Nil(t, response.Duration)
+}
+
+func TestScanHandler_ScanToResponse_Completed(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewScanHandler(nil, logger, metrics.NewRegistry())
+
+	start := time.Now().Add(-10 * time.Minute)
+	end := time.Now()
+	testScan := &db.Scan{
+		ID:          uuid.New(),
+		Name:        "Completed Scan",
+		ScanType:    "syn",
+		Status:      "completed",
+		StartedAt:   &start,
+		CompletedAt: &end,
+		CreatedAt:   start,
+		UpdatedAt:   end,
+	}
+
+	response := handler.scanToResponse(testScan)
+
+	assert.Equal(t, 100.0, response.Progress)
+	assert.NotNil(t, response.Duration)
+	assert.Equal(t, end.Sub(start).String(), *response.Duration)
+}
+
+func TestScanHandler_ScanToResponse_WithOptions(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewScanHandler(nil, logger, metrics.NewRegistry())
+
+	testScan := &db.Scan{
+		ID:       uuid.New(),
+		Name:     "Options Scan",
+		ScanType: "connect",
+		Status:   "pending",
+		Options: map[string]interface{}{
+			"timeout": 30,
+			"retries": "3",
+			"verbose": true,
+		},
+	}
+
+	response := handler.scanToResponse(testScan)
+
+	require.NotNil(t, response.Options)
+	assert.Equal(t, "30", response.Options["timeout"])
+	assert.Equal(t, "3", response.Options["retries"])
+	assert.Equal(t, "true", response.Options["verbose"])
+}
+
+func TestScanHandler_ScanToResponse_FailedStatus(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewScanHandler(nil, logger, metrics.NewRegistry())
+
+	testScan := &db.Scan{
+		ID:       uuid.New(),
+		Name:     "Failed Scan",
+		ScanType: "syn",
+		Status:   "failed",
+	}
+
+	response := handler.scanToResponse(testScan)
+
+	assert.Equal(t, "failed", response.Status)
+	assert.Equal(t, 0.0, response.Progress)
+	assert.Equal(t, []string{}, response.Targets)
+	assert.Nil(t, response.Options)
+}
+
+func TestScanHandler_ScanToResponse_NilTargets(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewScanHandler(nil, logger, metrics.NewRegistry())
+
+	testScan := &db.Scan{
+		ID:       uuid.New(),
+		Name:     "No Targets",
+		ScanType: "connect",
+		Status:   "pending",
+	}
+
+	response := handler.scanToResponse(testScan)
+
+	// Nil targets should be normalized to empty slice for JSON
+	assert.Equal(t, []string{}, response.Targets)
 	assert.Equal(t, 0.0, response.Progress)
 }
 
@@ -329,27 +421,30 @@ func TestScanHandler_ResultToResponse(t *testing.T) {
 	logger := createTestLogger()
 	handler := NewScanHandler(nil, logger, metrics.NewRegistry())
 
+	now := time.Now().UTC()
 	testResultID := uuid.New()
 	testScanID := uuid.New()
 	testHostID := uuid.New()
 	testResult := &db.ScanResult{
-		ID:       testResultID,
-		ScanID:   testScanID,
-		HostID:   testHostID,
-		Port:     80,
-		Protocol: "tcp",
-		State:    "open",
-		Service:  "http",
+		ID:        testResultID,
+		ScanID:    testScanID,
+		HostID:    testHostID,
+		Port:      80,
+		Protocol:  "tcp",
+		State:     "open",
+		Service:   "http",
+		ScannedAt: now,
 	}
 
 	response := handler.resultToResponse(testResult)
 
 	assert.Equal(t, testResult.ID, response.ID)
+	assert.Equal(t, testHostID.String(), response.HostIP)
 	assert.Equal(t, testResult.Port, response.Port)
 	assert.Equal(t, testResult.Protocol, response.Protocol)
 	assert.Equal(t, testResult.State, response.State)
 	assert.Equal(t, testResult.Service, response.Service)
-	assert.NotZero(t, response.ScanTime)
+	assert.Equal(t, now, response.ScanTime)
 }
 
 func TestScanHandler_CreateScan_ValidationErrors(t *testing.T) {

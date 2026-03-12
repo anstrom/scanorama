@@ -3,11 +3,13 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -706,4 +708,109 @@ func TestDiscoveryHandler_CreateDiscoveryJob_ValidationErrors(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 		})
 	}
+}
+
+func TestDiscoveryHandler_DiscoveryToResponse_Completed(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+
+	jobID := uuid.New()
+	_, ipnet, _ := net.ParseCIDR("192.168.1.0/24")
+	startedAt := time.Now().Add(-5 * time.Minute)
+	completedAt := time.Now()
+	now := time.Now().UTC()
+
+	job := &db.DiscoveryJob{
+		ID:              jobID,
+		Network:         db.NetworkAddr{IPNet: *ipnet},
+		Method:          "ping",
+		StartedAt:       &startedAt,
+		CompletedAt:     &completedAt,
+		HostsDiscovered: 25,
+		HostsResponsive: 20,
+		Status:          "completed",
+		CreatedAt:       now,
+	}
+
+	response := handler.discoveryToResponse(job)
+
+	assert.Equal(t, jobID, response.ID)
+	assert.Equal(t, []string{"192.168.1.0/24"}, response.Networks)
+	assert.Equal(t, "ping", response.Method)
+	assert.Equal(t, "completed", response.Status)
+	assert.Equal(t, 100.0, response.Progress)
+	assert.Equal(t, 25, response.HostsFound)
+	assert.True(t, response.Enabled)
+	assert.Equal(t, now, response.CreatedAt)
+	assert.Equal(t, &startedAt, response.LastRun)
+}
+
+func TestDiscoveryHandler_DiscoveryToResponse_Running(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+
+	_, ipnet, _ := net.ParseCIDR("10.0.0.0/8")
+	startedAt := time.Now().Add(-1 * time.Minute)
+
+	job := &db.DiscoveryJob{
+		ID:              uuid.New(),
+		Network:         db.NetworkAddr{IPNet: *ipnet},
+		Method:          "arp",
+		StartedAt:       &startedAt,
+		HostsDiscovered: 5,
+		Status:          "running",
+		CreatedAt:       time.Now().UTC(),
+	}
+
+	response := handler.discoveryToResponse(job)
+
+	assert.Equal(t, "running", response.Status)
+	assert.Equal(t, 50.0, response.Progress)
+	assert.Equal(t, 5, response.HostsFound)
+	assert.True(t, response.Enabled)
+	assert.Equal(t, &startedAt, response.LastRun)
+}
+
+func TestDiscoveryHandler_DiscoveryToResponse_Pending(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+
+	_, ipnet, _ := net.ParseCIDR("172.16.0.0/16")
+
+	job := &db.DiscoveryJob{
+		ID:        uuid.New(),
+		Network:   db.NetworkAddr{IPNet: *ipnet},
+		Method:    "tcp_connect",
+		Status:    "pending",
+		CreatedAt: time.Now().UTC(),
+	}
+
+	response := handler.discoveryToResponse(job)
+
+	assert.Equal(t, "pending", response.Status)
+	assert.Equal(t, 0.0, response.Progress)
+	assert.Equal(t, 0, response.HostsFound)
+	assert.True(t, response.Enabled)
+	assert.Nil(t, response.LastRun)
+}
+
+func TestDiscoveryHandler_DiscoveryToResponse_Failed(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+
+	_, ipnet, _ := net.ParseCIDR("192.168.1.0/24")
+
+	job := &db.DiscoveryJob{
+		ID:        uuid.New(),
+		Network:   db.NetworkAddr{IPNet: *ipnet},
+		Method:    "ping",
+		Status:    "failed",
+		CreatedAt: time.Now().UTC(),
+	}
+
+	response := handler.discoveryToResponse(job)
+
+	assert.Equal(t, "failed", response.Status)
+	assert.Equal(t, 0.0, response.Progress)
+	assert.False(t, response.Enabled) // failed jobs are not enabled
 }
