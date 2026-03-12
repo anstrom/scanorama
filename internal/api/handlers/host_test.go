@@ -873,6 +873,180 @@ func TestHostHandler_GetHostScans_Integration(t *testing.T) {
 	assert.NotNil(t, response.Data)
 }
 
+func TestHostHandler_GetScanFilters_WithTimestamps(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewHostHandler(nil, logger, metrics.NewRegistry())
+
+	t.Run("valid created_after timestamp", func(t *testing.T) {
+		ts := time.Now().UTC().Format(time.RFC3339)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/hosts/id/scans?created_after="+ts, nil)
+		filters := handler.getScanFilters(req)
+		assert.Contains(t, filters, "created_after")
+		parsed, ok := filters["created_after"].(time.Time)
+		assert.True(t, ok)
+		assert.False(t, parsed.IsZero())
+	})
+
+	t.Run("valid created_before timestamp", func(t *testing.T) {
+		ts := time.Now().UTC().Format(time.RFC3339)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/hosts/id/scans?created_before="+ts, nil)
+		filters := handler.getScanFilters(req)
+		assert.Contains(t, filters, "created_before")
+		parsed, ok := filters["created_before"].(time.Time)
+		assert.True(t, ok)
+		assert.False(t, parsed.IsZero())
+	})
+
+	t.Run("invalid created_after timestamp is ignored", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/hosts/id/scans?created_after=not-a-timestamp", nil)
+		filters := handler.getScanFilters(req)
+		assert.NotContains(t, filters, "created_after")
+	})
+
+	t.Run("invalid created_before timestamp is ignored", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/hosts/id/scans?created_before=20230101", nil)
+		filters := handler.getScanFilters(req)
+		assert.NotContains(t, filters, "created_before")
+	})
+
+	t.Run("status filter", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/hosts/id/scans?status=running", nil)
+		filters := handler.getScanFilters(req)
+		assert.Equal(t, "running", filters["status"])
+	})
+
+	t.Run("scan_type filter", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/hosts/id/scans?scan_type=comprehensive", nil)
+		filters := handler.getScanFilters(req)
+		assert.Equal(t, "comprehensive", filters["scan_type"])
+	})
+
+	t.Run("all filters combined", func(t *testing.T) {
+		after := time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339)
+		before := time.Now().UTC().Format(time.RFC3339)
+		url := fmt.Sprintf(
+			"/api/v1/hosts/id/scans?status=completed&scan_type=connect&created_after=%s&created_before=%s",
+			after, before)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		filters := handler.getScanFilters(req)
+		assert.Equal(t, "completed", filters["status"])
+		assert.Equal(t, "connect", filters["scan_type"])
+		assert.Contains(t, filters, "created_after")
+		assert.Contains(t, filters, "created_before")
+	})
+
+	t.Run("no filters", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/hosts/id/scans", nil)
+		filters := handler.getScanFilters(req)
+		assert.Empty(t, filters)
+	})
+}
+
+func TestHostHandler_ScanToHostScanResponse(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewHostHandler(nil, logger, metrics.NewRegistry())
+
+	t.Run("scan without start or end time", func(t *testing.T) {
+		scan := &db.Scan{
+			ID:        uuid.New(),
+			Name:      "Test Scan",
+			ScanType:  "connect",
+			Status:    "pending",
+			CreatedAt: time.Now(),
+		}
+
+		resp := handler.scanToHostScanResponse(scan)
+
+		assert.Equal(t, "Test Scan", resp.Name)
+		assert.Equal(t, "connect", resp.ScanType)
+		assert.Equal(t, "pending", resp.Status)
+		assert.Nil(t, resp.StartTime)
+		assert.Nil(t, resp.EndTime)
+		assert.Nil(t, resp.Duration)
+		assert.Equal(t, 0.0, resp.Progress)
+	})
+
+	t.Run("scan with start time only", func(t *testing.T) {
+		startTime := time.Now().Add(-5 * time.Minute)
+		scan := &db.Scan{
+			ID:        uuid.New(),
+			Name:      "Running Scan",
+			ScanType:  "comprehensive",
+			Status:    "running",
+			CreatedAt: time.Now().Add(-5 * time.Minute),
+			StartedAt: &startTime,
+		}
+
+		resp := handler.scanToHostScanResponse(scan)
+
+		assert.Equal(t, "Running Scan", resp.Name)
+		assert.Equal(t, "running", resp.Status)
+		assert.NotNil(t, resp.StartTime)
+		assert.Equal(t, &startTime, resp.StartTime)
+		assert.Nil(t, resp.EndTime)
+		assert.Nil(t, resp.Duration)
+	})
+
+	t.Run("scan with start and end time computes duration", func(t *testing.T) {
+		startTime := time.Now().Add(-10 * time.Minute)
+		endTime := time.Now()
+		scan := &db.Scan{
+			ID:          uuid.New(),
+			Name:        "Completed Scan",
+			ScanType:    "connect",
+			Status:      "completed",
+			CreatedAt:   startTime,
+			StartedAt:   &startTime,
+			CompletedAt: &endTime,
+		}
+
+		resp := handler.scanToHostScanResponse(scan)
+
+		assert.Equal(t, "Completed Scan", resp.Name)
+		assert.Equal(t, "completed", resp.Status)
+		assert.NotNil(t, resp.StartTime)
+		assert.NotNil(t, resp.EndTime)
+		assert.NotNil(t, resp.Duration)
+		assert.NotEmpty(t, *resp.Duration)
+	})
+
+	t.Run("scan with end time but no start time omits duration", func(t *testing.T) {
+		endTime := time.Now()
+		scan := &db.Scan{
+			ID:          uuid.New(),
+			Name:        "Odd Scan",
+			ScanType:    "connect",
+			Status:      "completed",
+			CreatedAt:   time.Now().Add(-5 * time.Minute),
+			CompletedAt: &endTime,
+		}
+
+		resp := handler.scanToHostScanResponse(scan)
+
+		assert.NotNil(t, resp.EndTime)
+		assert.Nil(t, resp.StartTime)
+		assert.Nil(t, resp.Duration)
+	})
+
+	t.Run("fields are mapped correctly", func(t *testing.T) {
+		createdAt := time.Now().Add(-1 * time.Hour)
+		scan := &db.Scan{
+			ID:        uuid.New(),
+			Name:      "Field Check Scan",
+			ScanType:  "ping",
+			Status:    "failed",
+			CreatedAt: createdAt,
+		}
+
+		resp := handler.scanToHostScanResponse(scan)
+
+		assert.Equal(t, "Field Check Scan", resp.Name)
+		assert.Equal(t, "ping", resp.ScanType)
+		assert.Equal(t, "failed", resp.Status)
+		assert.Equal(t, createdAt, resp.CreatedAt)
+	})
+}
+
 func TestHostHandler_ListHosts_WithFilters_Integration(t *testing.T) {
 	handler, database, cleanup := setupHostHandlerTest(t)
 	if handler == nil {

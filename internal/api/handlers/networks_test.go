@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -1110,4 +1111,1026 @@ func TestNetworkHandler_convertNetworkWithExclusionsToNetwork(t *testing.T) {
 	assert.Equal(t, network, result)
 	assert.Equal(t, "test-network", result.Name)
 	assert.True(t, result.IsActive)
+}
+
+func TestNetworkHandler_validateRenameNetworkRequest(t *testing.T) {
+	handler := &NetworkHandler{
+		BaseHandler: NewBaseHandler(slog.Default(), metrics.NewRegistry()),
+	}
+
+	tests := []struct {
+		name        string
+		req         RenameNetworkRequest
+		expectError bool
+	}{
+		{
+			name:        "empty name returns error",
+			req:         RenameNetworkRequest{NewName: ""},
+			expectError: true,
+		},
+		{
+			name:        "whitespace-only name returns error",
+			req:         RenameNetworkRequest{NewName: "   "},
+			expectError: true,
+		},
+		{
+			name:        "name over 100 chars returns error",
+			req:         RenameNetworkRequest{NewName: string(make([]byte, 101))},
+			expectError: true,
+		},
+		{
+			name:        "valid name returns nil",
+			req:         RenameNetworkRequest{NewName: "My Valid Network"},
+			expectError: false,
+		},
+		{
+			name:        "name exactly 100 chars returns nil",
+			req:         RenameNetworkRequest{NewName: string(make([]byte, 100))},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := handler.validateRenameNetworkRequest(&tt.req)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestNetworkHandler_validateCreateNetworkRequest(t *testing.T) {
+	handler := &NetworkHandler{
+		BaseHandler: NewBaseHandler(slog.Default(), metrics.NewRegistry()),
+	}
+
+	longName := strings.Repeat("a", 101)
+	exactMaxName := strings.Repeat("a", 100)
+
+	tests := []struct {
+		name        string
+		req         CreateNetworkRequest
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "valid request",
+			req: CreateNetworkRequest{
+				Name:            "My Network",
+				CIDR:            "10.0.0.0/24",
+				DiscoveryMethod: "ping",
+			},
+			expectError: false,
+		},
+		{
+			name: "valid request with all fields",
+			req: CreateNetworkRequest{
+				Name:            "Full Network",
+				CIDR:            "192.168.1.0/24",
+				DiscoveryMethod: "tcp",
+				Description:     stringPtr("A full network"),
+				IsActive:        boolPtr(true),
+				ScanEnabled:     boolPtr(true),
+			},
+			expectError: false,
+		},
+		{
+			name: "valid arp discovery method",
+			req: CreateNetworkRequest{
+				Name:            "ARP Network",
+				CIDR:            "172.16.0.0/16",
+				DiscoveryMethod: "arp",
+			},
+			expectError: false,
+		},
+		{
+			name: "name exactly at max length",
+			req: CreateNetworkRequest{
+				Name:            exactMaxName,
+				CIDR:            "10.0.0.0/24",
+				DiscoveryMethod: "ping",
+			},
+			expectError: false,
+		},
+		{
+			name: "empty name returns error",
+			req: CreateNetworkRequest{
+				Name:            "",
+				CIDR:            "10.0.0.0/24",
+				DiscoveryMethod: "ping",
+			},
+			expectError: true,
+			errorMsg:    "name is required",
+		},
+		{
+			name: "whitespace-only name returns error",
+			req: CreateNetworkRequest{
+				Name:            "   ",
+				CIDR:            "10.0.0.0/24",
+				DiscoveryMethod: "ping",
+			},
+			expectError: true,
+			errorMsg:    "name is required",
+		},
+		{
+			name: "name too long returns error",
+			req: CreateNetworkRequest{
+				Name:            longName,
+				CIDR:            "10.0.0.0/24",
+				DiscoveryMethod: "ping",
+			},
+			expectError: true,
+			errorMsg:    "name too long",
+		},
+		{
+			name: "empty CIDR returns error",
+			req: CreateNetworkRequest{
+				Name:            "My Network",
+				CIDR:            "",
+				DiscoveryMethod: "ping",
+			},
+			expectError: true,
+			errorMsg:    "cidr is required",
+		},
+		{
+			name: "invalid CIDR returns error",
+			req: CreateNetworkRequest{
+				Name:            "My Network",
+				CIDR:            "not-a-cidr",
+				DiscoveryMethod: "ping",
+			},
+			expectError: true,
+			errorMsg:    "invalid cidr",
+		},
+		{
+			name: "CIDR out of range returns error",
+			req: CreateNetworkRequest{
+				Name:            "My Network",
+				CIDR:            "10.0.0.0/33",
+				DiscoveryMethod: "ping",
+			},
+			expectError: true,
+			errorMsg:    "invalid cidr",
+		},
+		{
+			name: "empty discovery method returns error",
+			req: CreateNetworkRequest{
+				Name:            "My Network",
+				CIDR:            "10.0.0.0/24",
+				DiscoveryMethod: "",
+			},
+			expectError: true,
+			errorMsg:    "invalid discovery_method",
+		},
+		{
+			name: "invalid discovery method returns error",
+			req: CreateNetworkRequest{
+				Name:            "My Network",
+				CIDR:            "10.0.0.0/24",
+				DiscoveryMethod: "nmap",
+			},
+			expectError: true,
+			errorMsg:    "invalid discovery_method",
+		},
+		{
+			name: "case-sensitive discovery method returns error",
+			req: CreateNetworkRequest{
+				Name:            "My Network",
+				CIDR:            "10.0.0.0/24",
+				DiscoveryMethod: "PING",
+			},
+			expectError: true,
+			errorMsg:    "invalid discovery_method",
+		},
+		{
+			name: "valid IPv6 CIDR",
+			req: CreateNetworkRequest{
+				Name:            "IPv6 Network",
+				CIDR:            "2001:db8::/32",
+				DiscoveryMethod: "ping",
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := handler.validateCreateNetworkRequest(&tt.req)
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestNetworkHandler_validateUpdateNetworkRequest(t *testing.T) {
+	handler := &NetworkHandler{
+		BaseHandler: NewBaseHandler(slog.Default(), metrics.NewRegistry()),
+	}
+
+	longName := strings.Repeat("a", 101)
+	exactMaxName := strings.Repeat("a", 100)
+	validName := "Updated Network"
+	validCIDR := "192.168.2.0/24"
+	invalidCIDR := "not-a-cidr"
+	outOfRangeCIDR := "10.0.0.0/33"
+	validMethod := "tcp"
+	invalidMethod := "nmap"
+	emptyName := ""
+	whitespaceName := "   "
+
+	tests := []struct {
+		name        string
+		req         UpdateNetworkRequest
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "empty request is valid (all fields optional)",
+			req:         UpdateNetworkRequest{},
+			expectError: false,
+		},
+		{
+			name: "valid name update",
+			req: UpdateNetworkRequest{
+				Name: &validName,
+			},
+			expectError: false,
+		},
+		{
+			name: "valid CIDR update",
+			req: UpdateNetworkRequest{
+				CIDR: &validCIDR,
+			},
+			expectError: false,
+		},
+		{
+			name: "valid discovery method update to tcp",
+			req: UpdateNetworkRequest{
+				DiscoveryMethod: &validMethod,
+			},
+			expectError: false,
+		},
+		{
+			name: "valid discovery method update to arp",
+			req: UpdateNetworkRequest{
+				DiscoveryMethod: stringPtr("arp"),
+			},
+			expectError: false,
+		},
+		{
+			name: "valid discovery method update to ping",
+			req: UpdateNetworkRequest{
+				DiscoveryMethod: stringPtr("ping"),
+			},
+			expectError: false,
+		},
+		{
+			name: "name exactly at max length",
+			req: UpdateNetworkRequest{
+				Name: &exactMaxName,
+			},
+			expectError: false,
+		},
+		{
+			name: "all valid fields",
+			req: UpdateNetworkRequest{
+				Name:            &validName,
+				CIDR:            &validCIDR,
+				DiscoveryMethod: &validMethod,
+				IsActive:        boolPtr(false),
+				ScanEnabled:     boolPtr(true),
+			},
+			expectError: false,
+		},
+		{
+			name: "empty name returns error",
+			req: UpdateNetworkRequest{
+				Name: &emptyName,
+			},
+			expectError: true,
+			errorMsg:    "name cannot be empty",
+		},
+		{
+			name: "whitespace-only name returns error",
+			req: UpdateNetworkRequest{
+				Name: &whitespaceName,
+			},
+			expectError: true,
+			errorMsg:    "name cannot be empty",
+		},
+		{
+			name: "name too long returns error",
+			req: UpdateNetworkRequest{
+				Name: &longName,
+			},
+			expectError: true,
+			errorMsg:    "name too long",
+		},
+		{
+			name: "invalid CIDR returns error",
+			req: UpdateNetworkRequest{
+				CIDR: &invalidCIDR,
+			},
+			expectError: true,
+			errorMsg:    "invalid cidr",
+		},
+		{
+			name: "CIDR out of range returns error",
+			req: UpdateNetworkRequest{
+				CIDR: &outOfRangeCIDR,
+			},
+			expectError: true,
+			errorMsg:    "invalid cidr",
+		},
+		{
+			name: "invalid discovery method returns error",
+			req: UpdateNetworkRequest{
+				DiscoveryMethod: &invalidMethod,
+			},
+			expectError: true,
+			errorMsg:    "invalid discovery_method",
+		},
+		{
+			name: "empty discovery method returns error",
+			req: UpdateNetworkRequest{
+				DiscoveryMethod: stringPtr(""),
+			},
+			expectError: true,
+			errorMsg:    "invalid discovery_method",
+		},
+		{
+			name: "uppercase discovery method returns error",
+			req: UpdateNetworkRequest{
+				DiscoveryMethod: stringPtr("TCP"),
+			},
+			expectError: true,
+			errorMsg:    "invalid discovery_method",
+		},
+		{
+			name: "valid IPv6 CIDR update",
+			req: UpdateNetworkRequest{
+				CIDR: stringPtr("2001:db8::/32"),
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := handler.validateUpdateNetworkRequest(&tt.req)
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestNetworkHandler_validateCreateExclusionRequest(t *testing.T) {
+	handler := &NetworkHandler{
+		BaseHandler: NewBaseHandler(slog.Default(), metrics.NewRegistry()),
+	}
+
+	tests := []struct {
+		name        string
+		req         CreateExclusionRequest
+		expectError bool
+	}{
+		{
+			name:        "empty CIDR returns error",
+			req:         CreateExclusionRequest{ExcludedCIDR: ""},
+			expectError: true,
+		},
+		{
+			name:        "invalid CIDR returns error",
+			req:         CreateExclusionRequest{ExcludedCIDR: "not-a-cidr"},
+			expectError: true,
+		},
+		{
+			name:        "invalid IP address returns error",
+			req:         CreateExclusionRequest{ExcludedCIDR: "999.999.999.999/24"},
+			expectError: true,
+		},
+		{
+			name:        "valid IPv4 CIDR returns nil",
+			req:         CreateExclusionRequest{ExcludedCIDR: "192.168.1.0/24"},
+			expectError: false,
+		},
+		{
+			name:        "valid single host CIDR returns nil",
+			req:         CreateExclusionRequest{ExcludedCIDR: "10.0.0.1/32"},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := handler.validateCreateExclusionRequest(&tt.req)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestNetworkHandler_EnableNetwork(t *testing.T) {
+	handler, database, cleanup := setupNetworkHandlerTest(t)
+	if handler == nil {
+		return
+	}
+	defer cleanup()
+
+	// Create a test network that starts disabled
+	var networkID string
+	err := database.QueryRow(`
+		INSERT INTO networks (name, cidr, discovery_method, is_active, scan_enabled)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`,
+		generateUniqueNetworkName("HandlerTest Enable Network"),
+		generateUniqueCIDR(50), "ping", false, false).Scan(&networkID)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name           string
+		networkID      string
+		expectedStatus int
+		checkResponse  func(t *testing.T, body []byte)
+	}{
+		{
+			name:           "enable existing network",
+			networkID:      networkID,
+			expectedStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, body []byte) {
+				var network map[string]interface{}
+				err := json.Unmarshal(body, &network)
+				require.NoError(t, err)
+				assert.Equal(t, true, network["is_active"])
+			},
+		},
+		{
+			name:           "enable with invalid UUID",
+			networkID:      "not-a-uuid",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "enable non-existent network",
+			networkID:      "00000000-0000-0000-0000-000000000000",
+			expectedStatus: http.StatusNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/networks/"+tt.networkID+"/enable", nil)
+			req = mux.SetURLVars(req, map[string]string{"id": tt.networkID})
+			w := httptest.NewRecorder()
+
+			handler.EnableNetwork(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Logf("Expected status %d but got %d. Response: %s", tt.expectedStatus, w.Code, w.Body.String())
+			}
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.checkResponse != nil && w.Code == tt.expectedStatus {
+				tt.checkResponse(t, w.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestNetworkHandler_DisableNetwork(t *testing.T) {
+	handler, database, cleanup := setupNetworkHandlerTest(t)
+	if handler == nil {
+		return
+	}
+	defer cleanup()
+
+	// Create a test network that starts enabled
+	var networkID string
+	err := database.QueryRow(`
+		INSERT INTO networks (name, cidr, discovery_method, is_active, scan_enabled)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`,
+		generateUniqueNetworkName("HandlerTest Disable Network"),
+		generateUniqueCIDR(51), "ping", true, true).Scan(&networkID)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name           string
+		networkID      string
+		expectedStatus int
+		checkResponse  func(t *testing.T, body []byte)
+	}{
+		{
+			name:           "disable existing network",
+			networkID:      networkID,
+			expectedStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, body []byte) {
+				var network map[string]interface{}
+				err := json.Unmarshal(body, &network)
+				require.NoError(t, err)
+				assert.Equal(t, false, network["is_active"])
+			},
+		},
+		{
+			name:           "disable with invalid UUID",
+			networkID:      "not-a-uuid",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "disable non-existent network",
+			networkID:      "00000000-0000-0000-0000-000000000000",
+			expectedStatus: http.StatusNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/networks/"+tt.networkID+"/disable", nil)
+			req = mux.SetURLVars(req, map[string]string{"id": tt.networkID})
+			w := httptest.NewRecorder()
+
+			handler.DisableNetwork(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Logf("Expected status %d but got %d. Response: %s", tt.expectedStatus, w.Code, w.Body.String())
+			}
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.checkResponse != nil && w.Code == tt.expectedStatus {
+				tt.checkResponse(t, w.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestNetworkHandler_RenameNetwork(t *testing.T) {
+	handler, database, cleanup := setupNetworkHandlerTest(t)
+	if handler == nil {
+		return
+	}
+	defer cleanup()
+
+	// Create a test network to rename
+	var networkID string
+	err := database.QueryRow(`
+		INSERT INTO networks (name, cidr, discovery_method, is_active, scan_enabled)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`,
+		generateUniqueNetworkName("HandlerTest Rename Network"),
+		generateUniqueCIDR(52), "ping", true, true).Scan(&networkID)
+	require.NoError(t, err)
+
+	newName := generateUniqueNetworkName("HandlerTest Renamed Network")
+
+	tests := []struct {
+		name           string
+		networkID      string
+		body           interface{}
+		expectedStatus int
+		checkResponse  func(t *testing.T, body []byte)
+	}{
+		{
+			name:           "rename existing network",
+			networkID:      networkID,
+			body:           RenameNetworkRequest{NewName: newName},
+			expectedStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, body []byte) {
+				var network map[string]interface{}
+				err := json.Unmarshal(body, &network)
+				require.NoError(t, err)
+				assert.Contains(t, network["name"], "HandlerTest Renamed Network")
+			},
+		},
+		{
+			name:           "rename with empty new_name",
+			networkID:      networkID,
+			body:           RenameNetworkRequest{NewName: ""},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "rename with invalid JSON body",
+			networkID:      networkID,
+			body:           nil,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "rename non-existent network",
+			networkID:      "00000000-0000-0000-0000-000000000000",
+			body:           RenameNetworkRequest{NewName: "Some Valid Name"},
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:           "rename with invalid UUID",
+			networkID:      "not-a-uuid",
+			body:           RenameNetworkRequest{NewName: "Some Valid Name"},
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var reqBody *bytes.Reader
+			if tt.body != nil {
+				b, err := json.Marshal(tt.body)
+				require.NoError(t, err)
+				reqBody = bytes.NewReader(b)
+			} else {
+				reqBody = bytes.NewReader([]byte("invalid json {{{"))
+			}
+
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/networks/"+tt.networkID+"/rename", reqBody)
+			req.Header.Set("Content-Type", "application/json")
+			req = mux.SetURLVars(req, map[string]string{"id": tt.networkID})
+			w := httptest.NewRecorder()
+
+			handler.RenameNetwork(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Logf("Expected status %d but got %d. Response: %s", tt.expectedStatus, w.Code, w.Body.String())
+			}
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.checkResponse != nil && w.Code == tt.expectedStatus {
+				tt.checkResponse(t, w.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestNetworkHandler_ListNetworkExclusions(t *testing.T) {
+	handler, database, cleanup := setupNetworkHandlerTest(t)
+	if handler == nil {
+		return
+	}
+	defer cleanup()
+
+	// Create a test network
+	var networkID string
+	err := database.QueryRow(`
+		INSERT INTO networks (name, cidr, discovery_method, is_active, scan_enabled)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`,
+		generateUniqueNetworkName("HandlerTest ListExclusions Network"),
+		generateUniqueCIDR(53), "ping", true, true).Scan(&networkID)
+	require.NoError(t, err)
+
+	// Insert an exclusion directly via SQL
+	exclusionCIDR := "192.168.53.128/25"
+	var exclusionID string
+	err = database.QueryRow(`
+		INSERT INTO network_exclusions (network_id, excluded_cidr, reason, enabled)
+		VALUES ($1, $2::cidr, $3, true)
+		RETURNING id`,
+		networkID, exclusionCIDR, "test exclusion").Scan(&exclusionID)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name           string
+		networkID      string
+		expectedStatus int
+		checkResponse  func(t *testing.T, body []byte)
+	}{
+		{
+			name:           "list exclusions for existing network",
+			networkID:      networkID,
+			expectedStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, body []byte) {
+				var exclusions []map[string]interface{}
+				err := json.Unmarshal(body, &exclusions)
+				require.NoError(t, err)
+				require.NotEmpty(t, exclusions, "Expected at least one exclusion")
+
+				found := false
+				for _, ex := range exclusions {
+					if ex["id"] == exclusionID {
+						found = true
+						break
+					}
+				}
+				assert.True(t, found, "Expected to find the inserted exclusion")
+			},
+		},
+		{
+			name:           "list exclusions with invalid UUID",
+			networkID:      "not-a-uuid",
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/networks/"+tt.networkID+"/exclusions", nil)
+			req = mux.SetURLVars(req, map[string]string{"id": tt.networkID})
+			w := httptest.NewRecorder()
+
+			handler.ListNetworkExclusions(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Logf("Expected status %d but got %d. Response: %s", tt.expectedStatus, w.Code, w.Body.String())
+			}
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.checkResponse != nil && w.Code == tt.expectedStatus {
+				tt.checkResponse(t, w.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestNetworkHandler_CreateNetworkExclusion(t *testing.T) {
+	handler, database, cleanup := setupNetworkHandlerTest(t)
+	if handler == nil {
+		return
+	}
+	defer cleanup()
+
+	// Create a test network
+	var networkID string
+	err := database.QueryRow(`
+		INSERT INTO networks (name, cidr, discovery_method, is_active, scan_enabled)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`,
+		generateUniqueNetworkName("HandlerTest CreateExclusion Network"),
+		generateUniqueCIDR(54), "ping", true, true).Scan(&networkID)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name           string
+		networkID      string
+		body           interface{}
+		expectedStatus int
+		checkResponse  func(t *testing.T, body []byte)
+	}{
+		{
+			name:      "create valid network exclusion",
+			networkID: networkID,
+			body: CreateExclusionRequest{
+				ExcludedCIDR: "192.168.54.0/28",
+				Reason:       stringPtr("test reason"),
+			},
+			expectedStatus: http.StatusCreated,
+			checkResponse: func(t *testing.T, body []byte) {
+				var exclusion map[string]interface{}
+				err := json.Unmarshal(body, &exclusion)
+				require.NoError(t, err)
+				assert.NotEmpty(t, exclusion["id"])
+				assert.NotEmpty(t, exclusion["excluded_cidr"])
+			},
+		},
+		{
+			name:      "create exclusion with invalid CIDR",
+			networkID: networkID,
+			body: CreateExclusionRequest{
+				ExcludedCIDR: "not-a-cidr",
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:      "create exclusion with empty CIDR",
+			networkID: networkID,
+			body: CreateExclusionRequest{
+				ExcludedCIDR: "",
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "create exclusion with invalid UUID path param",
+			networkID:      "not-a-uuid",
+			body:           CreateExclusionRequest{ExcludedCIDR: "192.168.1.0/24"},
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, err := json.Marshal(tt.body)
+			require.NoError(t, err)
+
+			url := "/api/v1/networks/" + tt.networkID + "/exclusions"
+			req := httptest.NewRequest(http.MethodPost, url, bytes.NewReader(b))
+			req.Header.Set("Content-Type", "application/json")
+			req = mux.SetURLVars(req, map[string]string{"id": tt.networkID})
+			w := httptest.NewRecorder()
+
+			handler.CreateNetworkExclusion(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Logf("Expected status %d but got %d. Response: %s", tt.expectedStatus, w.Code, w.Body.String())
+			}
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.checkResponse != nil && w.Code == tt.expectedStatus {
+				tt.checkResponse(t, w.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestNetworkHandler_ListGlobalExclusions(t *testing.T) {
+	handler, database, cleanup := setupNetworkHandlerTest(t)
+	if handler == nil {
+		return
+	}
+	defer cleanup()
+
+	// Insert a global exclusion directly (network_id = NULL)
+	globalCIDR := "10.99.0.0/16"
+	var globalExclusionID string
+	err := database.QueryRow(`
+		INSERT INTO network_exclusions (network_id, excluded_cidr, reason, enabled)
+		VALUES (NULL, $1::cidr, $2, true)
+		RETURNING id`,
+		globalCIDR, "global test exclusion").Scan(&globalExclusionID)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exclusions", nil)
+	w := httptest.NewRecorder()
+
+	handler.ListGlobalExclusions(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var exclusions []map[string]interface{}
+	err = json.NewDecoder(w.Body).Decode(&exclusions)
+	require.NoError(t, err)
+
+	found := false
+	for _, ex := range exclusions {
+		if ex["id"] == globalExclusionID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Expected to find the inserted global exclusion")
+}
+
+func TestNetworkHandler_CreateGlobalExclusion(t *testing.T) {
+	handler, _, cleanup := setupNetworkHandlerTest(t)
+	if handler == nil {
+		return
+	}
+	defer cleanup()
+
+	tests := []struct {
+		name           string
+		body           interface{}
+		expectedStatus int
+		checkResponse  func(t *testing.T, body []byte)
+	}{
+		{
+			name: "create valid global exclusion",
+			body: CreateExclusionRequest{
+				ExcludedCIDR: "10.55.0.0/16",
+				Reason:       stringPtr("global test"),
+			},
+			expectedStatus: http.StatusCreated,
+			checkResponse: func(t *testing.T, body []byte) {
+				var exclusion map[string]interface{}
+				err := json.Unmarshal(body, &exclusion)
+				require.NoError(t, err)
+				assert.NotEmpty(t, exclusion["id"])
+				assert.NotEmpty(t, exclusion["excluded_cidr"])
+				// Global exclusions have no network_id
+				_, hasNetworkID := exclusion["network_id"]
+				assert.False(t, hasNetworkID, "Global exclusion should not have network_id")
+			},
+		},
+		{
+			name: "create global exclusion with invalid CIDR",
+			body: CreateExclusionRequest{
+				ExcludedCIDR: "not-a-cidr",
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name: "create global exclusion with empty CIDR",
+			body: CreateExclusionRequest{
+				ExcludedCIDR: "",
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, err := json.Marshal(tt.body)
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/exclusions", bytes.NewReader(b))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			handler.CreateGlobalExclusion(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Logf("Expected status %d but got %d. Response: %s", tt.expectedStatus, w.Code, w.Body.String())
+			}
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.checkResponse != nil && w.Code == tt.expectedStatus {
+				tt.checkResponse(t, w.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestNetworkHandler_DeleteExclusion(t *testing.T) {
+	handler, database, cleanup := setupNetworkHandlerTest(t)
+	if handler == nil {
+		return
+	}
+	defer cleanup()
+
+	// Create a test network and an exclusion to delete
+	var networkID string
+	err := database.QueryRow(`
+		INSERT INTO networks (name, cidr, discovery_method, is_active, scan_enabled)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`,
+		generateUniqueNetworkName("HandlerTest DeleteExclusion Network"),
+		generateUniqueCIDR(55), "ping", true, true).Scan(&networkID)
+	require.NoError(t, err)
+
+	createExclusion := func() string {
+		var exclusionID string
+		err := database.QueryRow(`
+			INSERT INTO network_exclusions (network_id, excluded_cidr, reason, enabled)
+			VALUES ($1, $2::cidr, $3, true)
+			RETURNING id`,
+			networkID, "192.168.55.0/28", "to be deleted").Scan(&exclusionID)
+		require.NoError(t, err)
+		return exclusionID
+	}
+
+	tests := []struct {
+		name           string
+		setupExclusion func() string
+		expectedStatus int
+	}{
+		{
+			name:           "delete existing exclusion",
+			setupExclusion: createExclusion,
+			expectedStatus: http.StatusNoContent,
+		},
+		{
+			name: "delete non-existent exclusion",
+			setupExclusion: func() string {
+				return "00000000-0000-0000-0000-000000000000"
+			},
+			// RemoveExclusion returns a plain fmt.Errorf (not a typed not-found error),
+			// so handleDatabaseError falls through to the 500 path.
+			expectedStatus: http.StatusInternalServerError,
+		},
+		{
+			name: "delete with invalid UUID",
+			setupExclusion: func() string {
+				return "not-a-uuid"
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exclusionID := tt.setupExclusion()
+
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/exclusions/"+exclusionID, nil)
+			req = mux.SetURLVars(req, map[string]string{"id": exclusionID})
+			w := httptest.NewRecorder()
+
+			handler.DeleteExclusion(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Logf("Expected status %d but got %d. Response: %s", tt.expectedStatus, w.Code, w.Body.String())
+			}
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			// Verify deletion if successful
+			if tt.expectedStatus == http.StatusNoContent {
+				var exists bool
+				err := database.QueryRow(`
+					SELECT EXISTS(SELECT 1 FROM network_exclusions WHERE id = $1)`,
+					exclusionID).Scan(&exists)
+				require.NoError(t, err)
+				assert.False(t, exists, "Exclusion should be deleted")
+			}
+		})
+	}
 }
