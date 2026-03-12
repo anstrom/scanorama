@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -774,7 +775,7 @@ func TestScanHandler_GetScan_Integration(t *testing.T) {
 
 	// Test getting the scan
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/scans/%s", createdScan.ID), http.NoBody)
-	req.SetPathValue("id", createdScan.ID.String())
+	req = mux.SetURLVars(req, map[string]string{"id": createdScan.ID.String()})
 	w := httptest.NewRecorder()
 
 	handler.GetScan(w, req)
@@ -824,7 +825,7 @@ func TestScanHandler_UpdateScan_Integration(t *testing.T) {
 
 	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/v1/scans/%s", createdScan.ID), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", createdScan.ID.String())
+	req = mux.SetURLVars(req, map[string]string{"id": createdScan.ID.String()})
 	w := httptest.NewRecorder()
 
 	handler.UpdateScan(w, req)
@@ -863,7 +864,7 @@ func TestScanHandler_DeleteScan_Integration(t *testing.T) {
 
 	// Delete the scan
 	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/v1/scans/%s", createdScan.ID), http.NoBody)
-	req.SetPathValue("id", createdScan.ID.String())
+	req = mux.SetURLVars(req, map[string]string{"id": createdScan.ID.String()})
 	w := httptest.NewRecorder()
 
 	handler.DeleteScan(w, req)
@@ -899,7 +900,7 @@ func TestScanHandler_StartScan_Integration(t *testing.T) {
 
 	// Start the scan
 	req := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/scans/%s/start", createdScan.ID), http.NoBody)
-	req.SetPathValue("id", createdScan.ID.String())
+	req = mux.SetURLVars(req, map[string]string{"id": createdScan.ID.String()})
 	w := httptest.NewRecorder()
 
 	handler.StartScan(w, req)
@@ -935,7 +936,7 @@ func TestScanHandler_StopScan_Integration(t *testing.T) {
 
 	// Stop the scan
 	req := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/scans/%s/stop", createdScan.ID), http.NoBody)
-	req.SetPathValue("id", createdScan.ID.String())
+	req = mux.SetURLVars(req, map[string]string{"id": createdScan.ID.String()})
 	w := httptest.NewRecorder()
 
 	handler.StopScan(w, req)
@@ -967,19 +968,17 @@ func TestScanHandler_GetScanResults_Integration(t *testing.T) {
 
 	// Get scan results (might be empty but should not error)
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/scans/%s/results", createdScan.ID), http.NoBody)
-	req.SetPathValue("id", createdScan.ID.String())
+	req = mux.SetURLVars(req, map[string]string{"id": createdScan.ID.String()})
 	w := httptest.NewRecorder()
 
 	handler.GetScanResults(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response struct {
-		Data []ScanResult `json:"data"`
-	}
+	var response ScanResultsResponse
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
 	// Results might be empty for a newly created scan
-	assert.NotNil(t, response.Data)
+	assert.NotNil(t, response.Results)
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -732,7 +733,7 @@ func TestHostHandler_GetHost_Integration(t *testing.T) {
 
 	// Test getting the host
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/hosts/%s", createdHost.ID), http.NoBody)
-	req.SetPathValue("id", createdHost.ID.String())
+	req = mux.SetURLVars(req, map[string]string{"id": createdHost.ID.String()})
 	w := httptest.NewRecorder()
 
 	handler.GetHost(w, req)
@@ -817,7 +818,7 @@ func TestHostHandler_DeleteHost_Integration(t *testing.T) {
 
 	// Delete the host
 	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/v1/hosts/%s", createdHost.ID), http.NoBody)
-	req.SetPathValue("id", createdHost.ID.String())
+	req = mux.SetURLVars(req, map[string]string{"id": createdHost.ID.String()})
 	w := httptest.NewRecorder()
 
 	handler.DeleteHost(w, req)
@@ -855,7 +856,7 @@ func TestHostHandler_GetHostScans_Integration(t *testing.T) {
 
 	// Get host scans (might be empty but should not error)
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/hosts/%s/scans", createdHost.ID), http.NoBody)
-	req.SetPathValue("id", createdHost.ID.String())
+	req = mux.SetURLVars(req, map[string]string{"id": createdHost.ID.String()})
 	w := httptest.NewRecorder()
 
 	handler.GetHostScans(w, req)
