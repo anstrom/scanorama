@@ -1157,6 +1157,17 @@ func generateValueByContext(upperSQL string, paramIndex int) interface{} {
 		return handleSelectQueries(upperSQL, paramIndex)
 	}
 
+	// UUID detection must run before timestamp/config heuristics: a WHERE clause
+	// of the form "WHERE id = $N" or "WHERE id = $N AND ..." always carries a UUID
+	// regardless of what other columns the query mentions.
+	whereIDParam := regexp.MustCompile(`WHERE\s+ID\s*=\s*\$(\d+)`)
+	if m := whereIDParam.FindStringSubmatch(upperSQL); m != nil {
+		// paramIndex is zero-based; the captured placeholder number is one-based.
+		if n, err := strconv.Atoi(m[1]); err == nil && paramIndex == n-1 {
+			return "550e8400-e29b-41d4-a716-446655440000"
+		}
+	}
+
 	// Handle network/CIDR fields - these need proper CIDR format
 	if strings.Contains(upperSQL, "NETWORK") &&
 		(strings.Contains(upperSQL, "INSERT") || strings.Contains(upperSQL, "VALUES")) {
@@ -1299,6 +1310,25 @@ func handleUpdateScanJobsQuery(upperSQL string, paramIndex int) interface{} {
 
 // handleInsertQueries handles INSERT query parameter generation
 func handleInsertQueries(upperSQL string, paramIndex int) interface{} {
+	if strings.Contains(upperSQL, "INSERT INTO SCHEDULED_JOBS") {
+		// Columns: (id, name, type, cron_expression, config, enabled, created_at)
+		// $1=uuid, $2=name, $3=type, $4=cron_expression, $5=config(json), $6=enabled
+		switch paramIndex {
+		case 0:
+			return "550e8400-e29b-41d4-a716-446655440000"
+		case 1:
+			return "test schedule"
+		case 2:
+			return "scan"
+		case 3:
+			return "0 * * * *"
+		case 4:
+			return "{}"
+		case 5:
+			return true
+		}
+	}
+
 	if strings.Contains(upperSQL, "INSERT INTO DISCOVERY_JOBS") {
 		switch paramIndex {
 		case 0:
