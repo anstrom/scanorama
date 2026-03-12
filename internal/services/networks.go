@@ -17,6 +17,7 @@ import (
 
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
+	apierrors "github.com/anstrom/scanorama/internal/errors"
 )
 
 // NetworkService manages network configuration and exclusions.
@@ -274,6 +275,9 @@ func (s *NetworkService) GetNetworkByID(ctx context.Context, id uuid.UUID) (*Net
 	network := &db.Network{}
 	err := s.database.GetContext(ctx, network, query, id)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, apierrors.ErrNotFoundWithID("network", id.String())
+		}
 		return nil, fmt.Errorf("failed to get network %s: %w", id, err)
 	}
 
@@ -328,6 +332,13 @@ func (s *NetworkService) GetActiveNetworks(ctx context.Context) ([]*NetworkWithE
 // GetGlobalExclusions returns all global exclusions.
 func (s *NetworkService) GetGlobalExclusions(ctx context.Context) ([]*db.NetworkExclusion, error) {
 	return s.getNetworkExclusions(ctx, nil) // nil = global exclusions
+}
+
+// GetNetworkExclusions returns all exclusions for a specific network.
+func (s *NetworkService) GetNetworkExclusions(
+	ctx context.Context, networkID uuid.UUID,
+) ([]*db.NetworkExclusion, error) {
+	return s.getNetworkExclusions(ctx, &networkID)
 }
 
 // getNetworkExclusions retrieves exclusions for a network (or global if networkID is nil).
@@ -625,7 +636,7 @@ func (s *NetworkService) normalizeCIDR(cidr string) (string, error) {
 func (s *NetworkService) CreateNetwork(
 	ctx context.Context,
 	name, cidr, description, method string,
-	enabled bool,
+	isActive, scanEnabled bool,
 ) (*db.Network, error) {
 	// Validate CIDR
 	if _, _, err := net.ParseCIDR(cidr); err != nil {
@@ -652,7 +663,7 @@ func (s *NetworkService) CreateNetwork(
 			is_active,
 			scan_enabled
 		) VALUES (
-			$1, $2, $3, $4, $5, true
+			$1, $2, $3, $4, $5, $6
 		)
 		RETURNING
 			id, name, cidr, description, discovery_method,
@@ -660,7 +671,7 @@ func (s *NetworkService) CreateNetwork(
 			host_count, active_host_count, created_at, updated_at, created_by`
 
 	network := &db.Network{}
-	err := s.database.QueryRowContext(ctx, query, name, cidr, description, method, enabled).Scan(
+	err := s.database.QueryRowContext(ctx, query, name, cidr, description, method, isActive, scanEnabled).Scan(
 		&network.ID,
 		&network.Name,
 		&network.CIDR,
@@ -741,6 +752,9 @@ func (s *NetworkService) UpdateNetwork(
 	)
 
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, apierrors.ErrNotFoundWithID("network", id.String())
+		}
 		return nil, fmt.Errorf("failed to update network: %w", err)
 	}
 
@@ -764,7 +778,7 @@ func (s *NetworkService) DeleteNetwork(ctx context.Context, id uuid.UUID) error 
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("network not found")
+		return apierrors.ErrNotFoundWithID("network", id.String())
 	}
 
 	return nil
