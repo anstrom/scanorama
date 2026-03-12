@@ -274,24 +274,22 @@ func TestNetworkHandler_CreateNetwork(t *testing.T) {
 		// Skipping "missing required name" test - database has unique constraint on name
 		// which causes duplicate key errors for empty strings
 		{
-			// TODO: Handler should validate CIDR before calling service
 			name: "invalid CIDR",
 			request: CreateNetworkRequest{
 				Name:            generateUniqueNetworkName("HandlerTest Invalid CIDR"),
 				CIDR:            "not-a-cidr",
 				DiscoveryMethod: "ping",
 			},
-			expectedStatus: http.StatusInternalServerError, // Currently returns 500
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			// TODO: Handler should validate discovery method before calling service
 			name: "invalid discovery method",
 			request: CreateNetworkRequest{
 				Name:            generateUniqueNetworkName("HandlerTest Invalid Method"),
 				CIDR:            generateUniqueCIDR(20),
 				DiscoveryMethod: "invalid",
 			},
-			expectedStatus: http.StatusInternalServerError, // Currently returns 500
+			expectedStatus: http.StatusBadRequest,
 		},
 	}
 
@@ -362,7 +360,7 @@ func TestNetworkHandler_GetNetwork(t *testing.T) {
 		{
 			name:           "get non-existent network",
 			networkID:      "00000000-0000-0000-0000-000000000000",
-			expectedStatus: http.StatusInternalServerError, // Currently returns 500 for non-existent network
+			expectedStatus: http.StatusNotFound,
 		},
 		{
 			name:           "invalid UUID",
@@ -468,7 +466,7 @@ func TestNetworkHandler_UpdateNetwork(t *testing.T) {
 			request: UpdateNetworkRequest{
 				Name: stringPtr(generateUniqueNetworkName("Does Not Exist")),
 			},
-			expectedStatus: http.StatusInternalServerError, // Currently returns 500 for non-existent network
+			expectedStatus: http.StatusNotFound,
 		},
 	}
 
@@ -532,7 +530,7 @@ func TestNetworkHandler_DeleteNetwork(t *testing.T) {
 			setupNetwork: func() string {
 				return "00000000-0000-0000-0000-000000000000"
 			},
-			expectedStatus: http.StatusInternalServerError, // Currently returns 500 for non-existent network
+			expectedStatus: http.StatusNotFound,
 		},
 	}
 
