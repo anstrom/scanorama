@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 
@@ -11,13 +12,13 @@ import (
 	"github.com/anstrom/scanorama/internal/services"
 )
 
-// NetworkHandler handles network-related API requests
+// NetworkHandler handles network-related API requests.
 type NetworkHandler struct {
 	*BaseHandler
 	service *services.NetworkService
 }
 
-// NewNetworkHandler creates a new network handler
+// NewNetworkHandler creates a new network handler.
 func NewNetworkHandler(database *db.DB, logger *slog.Logger, metricsRegistry metrics.MetricsRegistry) *NetworkHandler {
 	return &NetworkHandler{
 		BaseHandler: NewBaseHandler(logger, metricsRegistry),
@@ -25,41 +26,47 @@ func NewNetworkHandler(database *db.DB, logger *slog.Logger, metricsRegistry met
 	}
 }
 
-// CreateNetworkRequest represents the request body for creating a network
+// CreateNetworkRequest represents the request body for creating a network.
 type CreateNetworkRequest struct {
-	Name            string  `json:"name" validate:"required,min=1,max=100"`
-	CIDR            string  `json:"cidr" validate:"required,cidr"`
+	Name            string  `json:"name"             validate:"required,min=1,max=100"`
+	CIDR            string  `json:"cidr"             validate:"required,cidr"`
 	Description     *string `json:"description,omitempty"`
 	DiscoveryMethod string  `json:"discovery_method" validate:"required,oneof=ping tcp arp"`
 	IsActive        *bool   `json:"is_active,omitempty"`
 	ScanEnabled     *bool   `json:"scan_enabled,omitempty"`
 }
 
+// UpdateNetworkRequest represents the request body for updating a network.
 type UpdateNetworkRequest struct {
-	Name            *string `json:"name,omitempty" validate:"omitempty,min=1,max=100"`
-	CIDR            *string `json:"cidr,omitempty" validate:"omitempty,cidr"`
+	Name            *string `json:"name,omitempty"             validate:"omitempty,min=1,max=100"`
+	CIDR            *string `json:"cidr,omitempty"             validate:"omitempty,cidr"`
 	Description     *string `json:"description,omitempty"`
 	DiscoveryMethod *string `json:"discovery_method,omitempty" validate:"omitempty,oneof=ping tcp arp"`
 	IsActive        *bool   `json:"is_active,omitempty"`
 	ScanEnabled     *bool   `json:"scan_enabled,omitempty"`
 }
 
+// RenameNetworkRequest represents the request body for renaming a network.
 type RenameNetworkRequest struct {
 	NewName string `json:"new_name" validate:"required,min=1,max=100"`
 }
 
+// CreateExclusionRequest represents the request body for creating a network exclusion.
 type CreateExclusionRequest struct {
 	ExcludedCIDR string  `json:"excluded_cidr" validate:"required,cidr"`
 	Reason       *string `json:"reason,omitempty"`
 }
 
+// NetworkStatsResponse is the response body for network statistics.
 type NetworkStatsResponse struct {
 	Networks   map[string]interface{} `json:"networks"`
 	Hosts      map[string]interface{} `json:"hosts"`
 	Exclusions map[string]interface{} `json:"exclusions"`
 }
 
-// Helper functions
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 func (h *NetworkHandler) parseNetworkFilters(r *http.Request) (showInactive bool, nameFilter string) {
 	showInactive = r.URL.Query().Get("show_inactive") == "true"
@@ -67,8 +74,9 @@ func (h *NetworkHandler) parseNetworkFilters(r *http.Request) (showInactive bool
 	return showInactive, nameFilter
 }
 
-func (h *NetworkHandler) applyNetworkFilters(networks []*db.Network,
-	showInactive bool, nameFilter string) []*db.Network {
+func (h *NetworkHandler) applyNetworkFilters(
+	networks []*db.Network, showInactive bool, nameFilter string,
+) []*db.Network {
 	filtered := make([]*db.Network, 0, len(networks))
 	for _, network := range networks {
 		if !h.shouldIncludeNetwork(network, showInactive, nameFilter) {
@@ -89,25 +97,15 @@ func (h *NetworkHandler) shouldIncludeNetwork(network *db.Network, showInactive 
 	return true
 }
 
-func (h *NetworkHandler) parseCreateNetworkRequest(r *http.Request) (*CreateNetworkRequest, error) {
-	var req CreateNetworkRequest
-	if err := parseJSON(r, &req); err != nil {
-		return nil, fmt.Errorf("invalid request body: %w", err)
-	}
-	return &req, nil
-}
-
 func (h *NetworkHandler) setNetworkDefaults(req *CreateNetworkRequest) (isActive, scanEnabled bool) {
 	isActive = true
 	if req.IsActive != nil {
 		isActive = *req.IsActive
 	}
-
 	scanEnabled = true
 	if req.ScanEnabled != nil {
 		scanEnabled = *req.ScanEnabled
 	}
-
 	return isActive, scanEnabled
 }
 
@@ -145,9 +143,78 @@ func (h *NetworkHandler) parseReasonFromRequest(req *CreateExclusionRequest) str
 	return ""
 }
 
-// API Handlers
+// ---------------------------------------------------------------------------
+// Validation helpers
+// ---------------------------------------------------------------------------
 
-// ListNetworks handles GET /api/v1/networks
+const maxNetworkNameLen = 100
+
+var validDiscoveryMethods = map[string]bool{"ping": true, "tcp": true, "arp": true}
+
+func (h *NetworkHandler) validateCreateNetworkRequest(req *CreateNetworkRequest) error {
+	if strings.TrimSpace(req.Name) == "" {
+		return fmt.Errorf("name is required")
+	}
+	if len(req.Name) > maxNetworkNameLen {
+		return fmt.Errorf("name too long (max 100 characters)")
+	}
+	if req.CIDR == "" {
+		return fmt.Errorf("cidr is required")
+	}
+	if _, _, err := net.ParseCIDR(req.CIDR); err != nil {
+		return fmt.Errorf("invalid cidr %q: %w", req.CIDR, err)
+	}
+	if !validDiscoveryMethods[req.DiscoveryMethod] {
+		return fmt.Errorf("invalid discovery_method %q: must be one of ping, tcp, arp", req.DiscoveryMethod)
+	}
+	return nil
+}
+
+func (h *NetworkHandler) validateUpdateNetworkRequest(req *UpdateNetworkRequest) error {
+	if req.Name != nil {
+		if strings.TrimSpace(*req.Name) == "" {
+			return fmt.Errorf("name cannot be empty")
+		}
+		if len(*req.Name) > maxNetworkNameLen {
+			return fmt.Errorf("name too long (max 100 characters)")
+		}
+	}
+	if req.CIDR != nil {
+		if _, _, err := net.ParseCIDR(*req.CIDR); err != nil {
+			return fmt.Errorf("invalid cidr %q: %w", *req.CIDR, err)
+		}
+	}
+	if req.DiscoveryMethod != nil && !validDiscoveryMethods[*req.DiscoveryMethod] {
+		return fmt.Errorf("invalid discovery_method %q: must be one of ping, tcp, arp", *req.DiscoveryMethod)
+	}
+	return nil
+}
+
+func (h *NetworkHandler) validateRenameNetworkRequest(req *RenameNetworkRequest) error {
+	if strings.TrimSpace(req.NewName) == "" {
+		return fmt.Errorf("new_name is required")
+	}
+	if len(req.NewName) > maxNetworkNameLen {
+		return fmt.Errorf("new_name too long (max 100 characters)")
+	}
+	return nil
+}
+
+func (h *NetworkHandler) validateCreateExclusionRequest(req *CreateExclusionRequest) error {
+	if req.ExcludedCIDR == "" {
+		return fmt.Errorf("excluded_cidr is required")
+	}
+	if _, _, err := net.ParseCIDR(req.ExcludedCIDR); err != nil {
+		return fmt.Errorf("invalid excluded_cidr %q: %w", req.ExcludedCIDR, err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// API Handlers
+// ---------------------------------------------------------------------------
+
+// ListNetworks handles GET /api/v1/networks.
 func (h *NetworkHandler) ListNetworks(w http.ResponseWriter, r *http.Request) {
 	requestID := getRequestIDFromContext(r.Context())
 	h.logger.Info("Listing networks", "request_id", requestID)
@@ -160,7 +227,7 @@ func (h *NetworkHandler) ListNetworks(w http.ResponseWriter, r *http.Request) {
 
 	showInactive, nameFilter := h.parseNetworkFilters(r)
 
-	networks, err := h.service.ListNetworks(r.Context(), false) // Get all networks
+	networks, err := h.service.ListNetworks(r.Context(), false)
 	if err != nil {
 		handleDatabaseError(w, r, err, "list", "networks", h.logger)
 		return
@@ -168,7 +235,6 @@ func (h *NetworkHandler) ListNetworks(w http.ResponseWriter, r *http.Request) {
 
 	filteredNetworks := h.applyNetworkFilters(networks, showInactive, nameFilter)
 
-	// Apply pagination
 	totalItems := int64(len(filteredNetworks))
 	startIdx := params.Offset
 	endIdx := startIdx + params.PageSize
@@ -186,25 +252,32 @@ func (h *NetworkHandler) ListNetworks(w http.ResponseWriter, r *http.Request) {
 	recordCRUDMetric(h.metrics, "networks_listed", map[string]string{"status": "success"})
 }
 
-// CreateNetwork handles POST /api/v1/networks
+// CreateNetwork handles POST /api/v1/networks.
 func (h *NetworkHandler) CreateNetwork(w http.ResponseWriter, r *http.Request) {
 	requestID := getRequestIDFromContext(r.Context())
 	h.logger.Info("Creating network", "request_id", requestID)
 
-	req, err := h.parseCreateNetworkRequest(r)
-	if err != nil {
+	var req CreateNetworkRequest
+	if err := parseJSON(r, &req); err != nil {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("invalid request body: %w", err))
+		return
+	}
+
+	if err := h.validateCreateNetworkRequest(&req); err != nil {
 		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
-	isActive, _ := h.setNetworkDefaults(req)
+	isActive, scanEnabled := h.setNetworkDefaults(&req)
 
 	description := ""
 	if req.Description != nil {
 		description = *req.Description
 	}
 
-	network, err := h.service.CreateNetwork(r.Context(), req.Name, req.CIDR, description, req.DiscoveryMethod, isActive)
+	network, err := h.service.CreateNetwork(
+		r.Context(), req.Name, req.CIDR, description, req.DiscoveryMethod, isActive, scanEnabled,
+	)
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			writeError(w, r, http.StatusConflict, err)
@@ -219,7 +292,7 @@ func (h *NetworkHandler) CreateNetwork(w http.ResponseWriter, r *http.Request) {
 	recordCRUDMetric(h.metrics, "networks_created", nil)
 }
 
-// GetNetwork handles GET /api/v1/networks/{id}
+// GetNetwork handles GET /api/v1/networks/{id}.
 func (h *NetworkHandler) GetNetwork(w http.ResponseWriter, r *http.Request) {
 	id, err := extractUUIDFromPath(r)
 	if err != nil {
@@ -233,12 +306,11 @@ func (h *NetworkHandler) GetNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	network := h.convertNetworkWithExclusionsToNetwork(networkWithExclusions)
-	writeJSON(w, r, http.StatusOK, network)
+	writeJSON(w, r, http.StatusOK, h.convertNetworkWithExclusionsToNetwork(networkWithExclusions))
 	recordCRUDMetric(h.metrics, "networks_retrieved", nil)
 }
 
-// UpdateNetwork handles PUT /api/v1/networks/{id}
+// UpdateNetwork handles PUT /api/v1/networks/{id}.
 func (h *NetworkHandler) UpdateNetwork(w http.ResponseWriter, r *http.Request) {
 	id, err := extractUUIDFromPath(r)
 	if err != nil {
@@ -252,7 +324,11 @@ func (h *NetworkHandler) UpdateNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get existing network
+	if err := h.validateUpdateNetworkRequest(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
 	networkWithExclusions, err := h.service.GetNetworkByID(r.Context(), id)
 	if err != nil {
 		handleDatabaseError(w, r, err, "get", "network", h.logger)
@@ -278,7 +354,7 @@ func (h *NetworkHandler) UpdateNetwork(w http.ResponseWriter, r *http.Request) {
 	recordCRUDMetric(h.metrics, "networks_updated", nil)
 }
 
-// DeleteNetwork handles DELETE /api/v1/networks/{id}
+// DeleteNetwork handles DELETE /api/v1/networks/{id}.
 func (h *NetworkHandler) DeleteNetwork(w http.ResponseWriter, r *http.Request) {
 	id, err := extractUUIDFromPath(r)
 	if err != nil {
@@ -286,8 +362,7 @@ func (h *NetworkHandler) DeleteNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.service.DeleteNetwork(r.Context(), id)
-	if err != nil {
+	if err := h.service.DeleteNetwork(r.Context(), id); err != nil {
 		handleDatabaseError(w, r, err, "delete", "network", h.logger)
 		return
 	}
@@ -296,17 +371,17 @@ func (h *NetworkHandler) DeleteNetwork(w http.ResponseWriter, r *http.Request) {
 	recordCRUDMetric(h.metrics, "networks_deleted", map[string]string{"status": "success"})
 }
 
-// EnableNetwork handles POST /api/v1/networks/{id}/enable
+// EnableNetwork handles POST /api/v1/networks/{id}/enable.
 func (h *NetworkHandler) EnableNetwork(w http.ResponseWriter, r *http.Request) {
 	h.updateNetworkStatus(w, r, true, true, "enable")
 }
 
-// DisableNetwork handles POST /api/v1/networks/{id}/disable
+// DisableNetwork handles POST /api/v1/networks/{id}/disable.
 func (h *NetworkHandler) DisableNetwork(w http.ResponseWriter, r *http.Request) {
 	h.updateNetworkStatus(w, r, false, false, "disable")
 }
 
-// RenameNetwork handles PUT /api/v1/networks/{id}/rename
+// RenameNetwork handles PUT /api/v1/networks/{id}/rename.
 func (h *NetworkHandler) RenameNetwork(w http.ResponseWriter, r *http.Request) {
 	id, err := extractUUIDFromPath(r)
 	if err != nil {
@@ -317,6 +392,11 @@ func (h *NetworkHandler) RenameNetwork(w http.ResponseWriter, r *http.Request) {
 	var req RenameNetworkRequest
 	if err := parseJSON(r, &req); err != nil {
 		writeError(w, r, http.StatusBadRequest, fmt.Errorf("invalid request body: %w", err))
+		return
+	}
+
+	if err := h.validateRenameNetworkRequest(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -336,7 +416,7 @@ func (h *NetworkHandler) RenameNetwork(w http.ResponseWriter, r *http.Request) {
 		network.CIDR.String(), description, network.DiscoveryMethod, network.IsActive)
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			writeError(w, r, http.StatusConflict, fmt.Errorf("network name '%s' already exists", req.NewName))
+			writeError(w, r, http.StatusConflict, fmt.Errorf("network name %q already exists", req.NewName))
 			return
 		}
 		handleDatabaseError(w, r, err, "rename", "network", h.logger)
@@ -347,7 +427,7 @@ func (h *NetworkHandler) RenameNetwork(w http.ResponseWriter, r *http.Request) {
 	recordCRUDMetric(h.metrics, "networks_renamed", nil)
 }
 
-// GetNetworkStats handles GET /api/v1/networks/stats
+// GetNetworkStats handles GET /api/v1/networks/stats.
 func (h *NetworkHandler) GetNetworkStats(w http.ResponseWriter, r *http.Request) {
 	requestID := getRequestIDFromContext(r.Context())
 	h.logger.Info("Getting network statistics", "request_id", requestID)
@@ -358,17 +438,46 @@ func (h *NetworkHandler) GetNetworkStats(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	response := NetworkStatsResponse{
-		Networks:   stats["networks"].(map[string]interface{}),
-		Hosts:      stats["hosts"].(map[string]interface{}),
-		Exclusions: stats["exclusions"].(map[string]interface{}),
-	}
-
-	writeJSON(w, r, http.StatusOK, response)
+	writeJSON(w, r, http.StatusOK, stats)
 	recordCRUDMetric(h.metrics, "network_stats_retrieved", nil)
 }
 
-// ListNetworkExclusions handles GET /api/v1/networks/{id}/exclusions
+// updateNetworkStatus is a helper for enabling/disabling a network.
+func (h *NetworkHandler) updateNetworkStatus(
+	w http.ResponseWriter, r *http.Request, isActive, scanEnabled bool, action string,
+) {
+	id, err := extractUUIDFromPath(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	networkWithExclusions, err := h.service.GetNetworkByID(r.Context(), id)
+	if err != nil {
+		handleDatabaseError(w, r, err, action, "network", h.logger)
+		return
+	}
+
+	network := h.convertNetworkWithExclusionsToNetwork(networkWithExclusions)
+	h.updateNetworkStatusFields(network, isActive, scanEnabled)
+
+	description := ""
+	if network.Description != nil {
+		description = *network.Description
+	}
+
+	updatedNetwork, err := h.service.UpdateNetwork(r.Context(), id, network.Name,
+		network.CIDR.String(), description, network.DiscoveryMethod, network.IsActive)
+	if err != nil {
+		handleDatabaseError(w, r, err, action, "network", h.logger)
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, updatedNetwork)
+	recordCRUDMetric(h.metrics, "networks_"+action+"d", nil)
+}
+
+// ListNetworkExclusions handles GET /api/v1/networks/{id}/exclusions.
 func (h *NetworkHandler) ListNetworkExclusions(w http.ResponseWriter, r *http.Request) {
 	id, err := extractUUIDFromPath(r)
 	if err != nil {
@@ -376,20 +485,17 @@ func (h *NetworkHandler) ListNetworkExclusions(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Verify network exists
-	_, err = h.service.GetNetworkByID(r.Context(), id)
+	exclusions, err := h.service.GetNetworkExclusions(r.Context(), id)
 	if err != nil {
-		handleDatabaseError(w, r, err, "get", "network", h.logger)
+		handleDatabaseError(w, r, err, "list", "network exclusions", h.logger)
 		return
 	}
 
-	// Note: This would need a GetNetworkExclusions method in the service
-	exclusions := []*db.NetworkExclusion{}
 	writeJSON(w, r, http.StatusOK, exclusions)
 	recordCRUDMetric(h.metrics, "network_exclusions_listed", nil)
 }
 
-// CreateNetworkExclusion handles POST /api/v1/networks/{id}/exclusions
+// CreateNetworkExclusion handles POST /api/v1/networks/{id}/exclusions.
 func (h *NetworkHandler) CreateNetworkExclusion(w http.ResponseWriter, r *http.Request) {
 	id, err := extractUUIDFromPath(r)
 	if err != nil {
@@ -403,17 +509,15 @@ func (h *NetworkHandler) CreateNetworkExclusion(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Verify network exists
-	_, err = h.service.GetNetworkByID(r.Context(), id)
-	if err != nil {
-		handleDatabaseError(w, r, err, "get", "network", h.logger)
+	if err := h.validateCreateExclusionRequest(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
 	reason := h.parseReasonFromRequest(&req)
 	exclusion, err := h.service.AddExclusion(r.Context(), &id, req.ExcludedCIDR, reason)
 	if err != nil {
-		handleDatabaseError(w, r, err, "create", "exclusion", h.logger)
+		handleDatabaseError(w, r, err, "create", "network exclusion", h.logger)
 		return
 	}
 
@@ -421,11 +525,8 @@ func (h *NetworkHandler) CreateNetworkExclusion(w http.ResponseWriter, r *http.R
 	recordCRUDMetric(h.metrics, "network_exclusions_created", nil)
 }
 
-// ListGlobalExclusions handles GET /api/v1/exclusions
+// ListGlobalExclusions handles GET /api/v1/exclusions.
 func (h *NetworkHandler) ListGlobalExclusions(w http.ResponseWriter, r *http.Request) {
-	requestID := getRequestIDFromContext(r.Context())
-	h.logger.Info("Listing global exclusions", "request_id", requestID)
-
 	exclusions, err := h.service.GetGlobalExclusions(r.Context())
 	if err != nil {
 		handleDatabaseError(w, r, err, "list", "global exclusions", h.logger)
@@ -436,14 +537,16 @@ func (h *NetworkHandler) ListGlobalExclusions(w http.ResponseWriter, r *http.Req
 	recordCRUDMetric(h.metrics, "global_exclusions_listed", nil)
 }
 
-// CreateGlobalExclusion handles POST /api/v1/exclusions
+// CreateGlobalExclusion handles POST /api/v1/exclusions.
 func (h *NetworkHandler) CreateGlobalExclusion(w http.ResponseWriter, r *http.Request) {
-	requestID := getRequestIDFromContext(r.Context())
-	h.logger.Info("Creating global exclusion", "request_id", requestID)
-
 	var req CreateExclusionRequest
 	if err := parseJSON(r, &req); err != nil {
 		writeError(w, r, http.StatusBadRequest, fmt.Errorf("invalid request body: %w", err))
+		return
+	}
+
+	if err := h.validateCreateExclusionRequest(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -458,7 +561,7 @@ func (h *NetworkHandler) CreateGlobalExclusion(w http.ResponseWriter, r *http.Re
 	recordCRUDMetric(h.metrics, "global_exclusions_created", nil)
 }
 
-// DeleteExclusion handles DELETE /api/v1/exclusions/{id}
+// DeleteExclusion handles DELETE /api/v1/exclusions/{id}.
 func (h *NetworkHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 	id, err := extractUUIDFromPath(r)
 	if err != nil {
@@ -466,50 +569,11 @@ func (h *NetworkHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err = h.service.RemoveExclusion(r.Context(), id)
-	if err != nil {
+	if err := h.service.RemoveExclusion(r.Context(), id); err != nil {
 		handleDatabaseError(w, r, err, "delete", "exclusion", h.logger)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-	recordCRUDMetric(h.metrics, "exclusions_deleted", map[string]string{"status": "success"})
-}
-
-// Helper method for enable/disable operations
-func (h *NetworkHandler) updateNetworkStatus(w http.ResponseWriter, r *http.Request,
-	isActive, scanEnabled bool, operation string) {
-	id, err := extractUUIDFromPath(r)
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, err)
-		return
-	}
-
-	requestID := getRequestIDFromContext(r.Context())
-	h.logger.Info(fmt.Sprintf("Network %s operation", operation), "request_id", requestID, "network_id", id)
-
-	networkWithExclusions, err := h.service.GetNetworkByID(r.Context(), id)
-	if err != nil {
-		handleDatabaseError(w, r, err, "get", "network", h.logger)
-		return
-	}
-
-	network := h.convertNetworkWithExclusionsToNetwork(networkWithExclusions)
-	h.updateNetworkStatusFields(network, isActive, scanEnabled)
-
-	description := ""
-	if network.Description != nil {
-		description = *network.Description
-	}
-
-	updatedNetwork, err := h.service.UpdateNetwork(r.Context(), id, network.Name,
-		network.CIDR.String(), description, network.DiscoveryMethod, isActive)
-	if err != nil {
-		handleDatabaseError(w, r, err, operation, "network", h.logger)
-		return
-	}
-
-	h.logger.Info(fmt.Sprintf("Network %s successfully", operation), "request_id", requestID, "network_id", id)
-	writeJSON(w, r, http.StatusOK, updatedNetwork)
-	recordCRUDMetric(h.metrics, fmt.Sprintf("networks_%sd", operation), nil)
+	recordCRUDMetric(h.metrics, "exclusions_deleted", nil)
 }
