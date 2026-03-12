@@ -161,26 +161,26 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 	targets, err := e.generateTargetsFromCIDR(job.Network.IPNet, maxHosts)
 	if err != nil {
 		job.Status = db.DiscoveryJobStatusFailed
-		fmt.Printf("Failed to generate targets: %v\n", err)
+		log.Printf("Failed to generate targets: %v", err)
 		return
 	}
 
 	if len(targets) == 0 {
 		job.Status = db.DiscoveryJobStatusCompleted
-		fmt.Printf("No targets to discover.\n")
+		log.Printf("No targets to discover.")
 		return
 	}
 
 	// Calculate dynamic timeout based on target count
 	dynamicTimeout := e.calculateDynamicTimeout(len(targets), config.Timeout)
-	fmt.Printf("Starting nmap discovery with %d targets, method=%s, timeout=%v\n",
+	log.Printf("Starting nmap discovery with %d targets, method=%s, timeout=%v",
 		len(targets), config.Method, dynamicTimeout)
 
 	// Use nmap for host discovery with generated targets
 	discoveredHosts, err := e.nmapDiscoveryWithTargets(ctx, targets, config, dynamicTimeout)
 	if err != nil {
 		job.Status = db.DiscoveryJobStatusFailed
-		fmt.Printf("Discovery failed: %v\n", err)
+		log.Printf("Discovery failed: %v", err)
 		return
 	}
 
@@ -188,16 +188,16 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 	if len(discoveredHosts) > 0 {
 		err = e.saveDiscoveredHosts(ctx, discoveredHosts)
 		if err != nil {
-			fmt.Printf("Warning: Failed to save some discovered hosts: %v\n", err)
+			log.Printf("Warning: Failed to save some discovered hosts: %v", err)
 		} else {
-			fmt.Printf("Saved %d discovered hosts to database\n", len(discoveredHosts))
+			log.Printf("Saved %d discovered hosts to database", len(discoveredHosts))
 		}
 	}
 
 	// Update job with results
 	job.HostsResponsive = len(discoveredHosts)
 	job.HostsDiscovered = len(discoveredHosts)
-	fmt.Printf("Discovery completed. Found %d hosts.\n", job.HostsDiscovered)
+	log.Printf("Discovery completed. Found %d hosts.", job.HostsDiscovered)
 }
 
 // calculateDynamicTimeout calculates timeout based on network size and base timeout.
