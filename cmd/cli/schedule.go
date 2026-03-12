@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/robfig/cron/v3"
 	"github.com/spf13/cobra"
 )
 
@@ -515,10 +516,14 @@ func validateCronExpression(cronExpr string) error {
 	return nil
 }
 
-func getNextRunTime(_ string) time.Time {
-	// Simple implementation - in real code you'd use the cron library
-	// to calculate the actual next run time
-	return time.Now().Add(time.Hour) // Placeholder
+// getNextRunTime parses a standard cron expression and returns the next
+// scheduled time after now. Returns the zero time if the expression is invalid.
+func getNextRunTime(cronExpr string) time.Time {
+	schedule, err := cron.ParseStandard(cronExpr)
+	if err != nil {
+		return time.Time{}
+	}
+	return schedule.Next(time.Now())
 }
 
 func truncateString(s string, maxLen int) string {
