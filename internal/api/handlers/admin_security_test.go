@@ -59,8 +59,9 @@ func TestAdminHandler_ConfigSecurity(t *testing.T) {
 
 		handler.UpdateConfig(w, req)
 
-		// Should succeed with properly typed configuration
-		assert.Equal(t, http.StatusOK, w.Code)
+		// Config persistence is not yet implemented; expect 501 Not Implemented
+		// (validation still runs and passes, but the actual update is stubbed).
+		assert.Equal(t, http.StatusNotImplemented, w.Code)
 	})
 
 	t.Run("rejects malformed configuration structure", func(t *testing.T) {

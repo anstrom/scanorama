@@ -65,6 +65,20 @@ func assertJSONResponse(t *testing.T, rr *httptest.ResponseRecorder, target inte
 	}
 }
 
+// assertNotImplementedResponse verifies that a handler responded with 501 Not Implemented
+// and a valid JSON error body. Use this for stub endpoints that are not yet built.
+func assertNotImplementedResponse(t *testing.T, rr *httptest.ResponseRecorder) {
+	t.Helper()
+	assert.Equal(t, http.StatusNotImplemented, rr.Code, "expected 501 Not Implemented")
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var resp ErrorResponse
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err, "failed to decode error response body")
+	assert.Equal(t, "Not Implemented", resp.Error)
+	assert.NotEmpty(t, resp.Message, "error message should not be empty")
+}
+
 // TestNewAdminHandler tests admin handler initialization
 func TestNewAdminHandler(t *testing.T) {
 	t.Run("initializes with all dependencies", func(t *testing.T) {
@@ -176,7 +190,7 @@ func TestGetWorkerStatus(t *testing.T) {
 
 // TestStopWorker tests worker stop endpoint
 func TestStopWorker(t *testing.T) {
-	t.Run("stops worker with valid ID", func(t *testing.T) {
+	t.Run("returns 501 for valid worker ID (not yet implemented)", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 		req := createTestRequest(t, http.MethodPost, "/api/v1/admin/workers/worker-001/stop", nil)
 
@@ -185,68 +199,51 @@ func TestStopWorker(t *testing.T) {
 
 		rr := executeRequest(t, handler.StopWorker, req)
 
-		var response map[string]interface{}
-		assertJSONResponse(t, rr, &response)
-
-		// Verify response contains expected fields
-		assert.Equal(t, "worker-001", response["worker_id"])
-		assert.Equal(t, "stopped", response["status"])
-		assert.NotEmpty(t, response["message"])
-		assert.NotNil(t, response["timestamp"])
-		assert.NotNil(t, response["graceful"])
+		// Worker management is not yet implemented; expect 501.
+		assertNotImplementedResponse(t, rr)
 	})
 
-	t.Run("defaults to graceful shutdown", func(t *testing.T) {
+	t.Run("returns 501 regardless of graceful default", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 		req := createTestRequest(t, http.MethodPost, "/api/v1/admin/workers/worker-001/stop", nil)
 		req = mux.SetURLVars(req, map[string]string{"id": "worker-001"})
 
 		rr := executeRequest(t, handler.StopWorker, req)
 
-		var response map[string]interface{}
-		assertJSONResponse(t, rr, &response)
-
-		// Default should be graceful
-		assert.True(t, response["graceful"].(bool))
+		assertNotImplementedResponse(t, rr)
 	})
 
-	t.Run("supports graceful parameter true", func(t *testing.T) {
+	t.Run("returns 501 with graceful=true", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 		req := createTestRequest(t, http.MethodPost, "/api/v1/admin/workers/worker-001/stop?graceful=true", nil)
 		req = mux.SetURLVars(req, map[string]string{"id": "worker-001"})
 
 		rr := executeRequest(t, handler.StopWorker, req)
 
-		var response map[string]interface{}
-		assertJSONResponse(t, rr, &response)
-
-		assert.True(t, response["graceful"].(bool))
+		assertNotImplementedResponse(t, rr)
 	})
 
-	t.Run("supports graceful parameter false", func(t *testing.T) {
+	t.Run("returns 501 with graceful=false", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 		req := createTestRequest(t, http.MethodPost, "/api/v1/admin/workers/worker-001/stop?graceful=false", nil)
 		req = mux.SetURLVars(req, map[string]string{"id": "worker-001"})
 
 		rr := executeRequest(t, handler.StopWorker, req)
 
-		var response map[string]interface{}
-		assertJSONResponse(t, rr, &response)
-
-		assert.False(t, response["graceful"].(bool))
+		assertNotImplementedResponse(t, rr)
 	})
 
 	t.Run("rejects request without worker ID", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 		req := createTestRequest(t, http.MethodPost, "/api/v1/admin/workers/stop", nil)
-		// No mux vars set - missing worker ID
+		// No mux vars set - missing worker ID; validation still returns 400.
 
 		rr := executeRequest(t, handler.StopWorker, req)
 
 		assert.Equal(t, http.StatusBadRequest, rr.Code)
 	})
 
-	t.Run("handles different worker IDs", func(t *testing.T) {
+	t.Run("returns 501 for all valid worker IDs", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 
 		workerIDs := []string{"worker-001", "worker-002", "worker-999"}
@@ -259,10 +256,7 @@ func TestStopWorker(t *testing.T) {
 
 				rr := executeRequest(t, handler.StopWorker, req)
 
-				var response map[string]interface{}
-				assertJSONResponse(t, rr, &response)
-
-				assert.Equal(t, workerID, response["worker_id"])
+				assertNotImplementedResponse(t, rr)
 			})
 		}
 	})
@@ -313,7 +307,7 @@ func TestGetConfig(t *testing.T) {
 
 // TestUpdateConfig tests configuration update endpoint
 func TestUpdateConfig(t *testing.T) {
-	t.Run("updates API configuration section", func(t *testing.T) {
+	t.Run("returns 501 for valid API config update (not yet implemented)", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 
 		host := "0.0.0.0"
@@ -332,14 +326,8 @@ func TestUpdateConfig(t *testing.T) {
 
 		rr := executeRequest(t, handler.UpdateConfig, req)
 
-		var response map[string]interface{}
-		assertJSONResponse(t, rr, &response)
-
-		assert.Equal(t, "api", response["section"])
-		assert.Equal(t, "updated", response["status"])
-		assert.NotEmpty(t, response["message"])
-		assert.NotNil(t, response["config"])
-		assert.NotNil(t, response["restart_required"])
+		// Config persistence is not yet implemented; validation still runs, then 501.
+		assertNotImplementedResponse(t, rr)
 	})
 
 	t.Run("rejects invalid JSON", func(t *testing.T) {
@@ -415,7 +403,7 @@ func TestUpdateConfig(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, rr.Code)
 	})
 
-	t.Run("indicates restart requirement for critical sections", func(t *testing.T) {
+	t.Run("returns 501 for critical sections (not yet implemented)", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 
 		criticalSections := []string{"database", "api"}
@@ -450,18 +438,13 @@ func TestUpdateConfig(t *testing.T) {
 
 				rr := executeRequest(t, handler.UpdateConfig, req)
 
-				var response map[string]interface{}
-				assertJSONResponse(t, rr, &response)
-
-				// Critical sections should indicate restart required
-				restartRequired, exists := response["restart_required"]
-				assert.True(t, exists, "restart_required field should be present")
-				assert.NotNil(t, restartRequired)
+				// Validation passes but persistence is not yet implemented.
+				assertNotImplementedResponse(t, rr)
 			})
 		}
 	})
 
-	t.Run("validates scanning section", func(t *testing.T) {
+	t.Run("validates scanning section then returns 501", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 
 		workerPoolSize := 10
@@ -478,13 +461,11 @@ func TestUpdateConfig(t *testing.T) {
 
 		rr := executeRequest(t, handler.UpdateConfig, req)
 
-		var response map[string]interface{}
-		assertJSONResponse(t, rr, &response)
-
-		assert.Equal(t, "scanning", response["section"])
+		// Validation passes; persistence not yet implemented.
+		assertNotImplementedResponse(t, rr)
 	})
 
-	t.Run("validates logging section", func(t *testing.T) {
+	t.Run("validates logging section then returns 501", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 
 		level := "info"
@@ -501,13 +482,11 @@ func TestUpdateConfig(t *testing.T) {
 
 		rr := executeRequest(t, handler.UpdateConfig, req)
 
-		var response map[string]interface{}
-		assertJSONResponse(t, rr, &response)
-
-		assert.Equal(t, "logging", response["section"])
+		// Validation passes; persistence not yet implemented.
+		assertNotImplementedResponse(t, rr)
 	})
 
-	t.Run("validates daemon section", func(t *testing.T) {
+	t.Run("validates daemon section then returns 501", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 
 		pidFile := "/var/run/scanorama.pid"
@@ -524,10 +503,8 @@ func TestUpdateConfig(t *testing.T) {
 
 		rr := executeRequest(t, handler.UpdateConfig, req)
 
-		var response map[string]interface{}
-		assertJSONResponse(t, rr, &response)
-
-		assert.Equal(t, "daemon", response["section"])
+		// Validation passes; persistence not yet implemented.
+		assertNotImplementedResponse(t, rr)
 	})
 
 	t.Run("validates scanning section with invalid worker pool size", func(t *testing.T) {
@@ -571,26 +548,18 @@ func TestUpdateConfig(t *testing.T) {
 	})
 }
 
-// TestGetLogs tests log retrieval endpoint
+// TestGetLogs tests log retrieval endpoint — currently returns 501 Not Implemented.
 func TestGetLogs(t *testing.T) {
-	t.Run("retrieves logs without filters", func(t *testing.T) {
+	t.Run("returns 501 without filters (not yet implemented)", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs", nil)
 
 		rr := executeRequest(t, handler.GetLogs, req)
 
-		var response LogsResponse
-		assertJSONResponse(t, rr, &response)
-
-		// Verify response structure
-		assert.NotNil(t, response.Lines)
-		assert.GreaterOrEqual(t, response.TotalLines, 0)
-		assert.GreaterOrEqual(t, response.StartLine, 0)
-		assert.GreaterOrEqual(t, response.EndLine, 0)
-		assert.False(t, response.GeneratedAt.IsZero())
+		assertNotImplementedResponse(t, rr)
 	})
 
-	t.Run("filters logs by level", func(t *testing.T) {
+	t.Run("returns 501 when filtering by level", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 		levels := []string{"debug", "info", "warn", "error"}
 
@@ -600,15 +569,12 @@ func TestGetLogs(t *testing.T) {
 
 				rr := executeRequest(t, handler.GetLogs, req)
 
-				var response LogsResponse
-				assertJSONResponse(t, rr, &response)
-
-				assert.NotNil(t, response.Lines)
+				assertNotImplementedResponse(t, rr)
 			})
 		}
 	})
 
-	t.Run("filters logs by component", func(t *testing.T) {
+	t.Run("returns 501 when filtering by component", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 		components := []string{"api", "scanner", "discovery", "scheduler"}
 
@@ -619,24 +585,21 @@ func TestGetLogs(t *testing.T) {
 
 				rr := executeRequest(t, handler.GetLogs, req)
 
-				assert.Equal(t, http.StatusOK, rr.Code)
+				assert.Equal(t, http.StatusNotImplemented, rr.Code)
 			})
 		}
 	})
 
-	t.Run("supports search parameter", func(t *testing.T) {
+	t.Run("returns 501 with search parameter", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?search=error", nil)
 
 		rr := executeRequest(t, handler.GetLogs, req)
 
-		var response LogsResponse
-		assertJSONResponse(t, rr, &response)
-
-		assert.NotNil(t, response.Lines)
+		assertNotImplementedResponse(t, rr)
 	})
 
-	t.Run("supports time range filters", func(t *testing.T) {
+	t.Run("returns 501 with time range filters", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 
 		since := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
@@ -647,81 +610,36 @@ func TestGetLogs(t *testing.T) {
 
 		rr := executeRequest(t, handler.GetLogs, req)
 
-		var response LogsResponse
-		assertJSONResponse(t, rr, &response)
-
-		assert.NotNil(t, response.Lines)
+		assertNotImplementedResponse(t, rr)
 	})
 
-	t.Run("supports tail parameter", func(t *testing.T) {
-		handler := createTestAdminHandler(t)
-		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?tail=100", nil)
-
-		rr := executeRequest(t, handler.GetLogs, req)
-
-		var response LogsResponse
-		assertJSONResponse(t, rr, &response)
-
-		assert.NotNil(t, response.Lines)
-	})
-
-	t.Run("supports pagination", func(t *testing.T) {
+	t.Run("returns 501 with valid pagination params", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?page=1&page_size=50", nil)
 
 		rr := executeRequest(t, handler.GetLogs, req)
 
-		var response LogsResponse
-		assertJSONResponse(t, rr, &response)
-
-		assert.NotNil(t, response.Lines)
-		assert.LessOrEqual(t, len(response.Lines), 50)
+		assertNotImplementedResponse(t, rr)
 	})
 
-	t.Run("handles invalid time format gracefully", func(t *testing.T) {
-		handler := createTestAdminHandler(t)
-		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?since=invalid-time", nil)
-
-		rr := executeRequest(t, handler.GetLogs, req)
-
-		// Should still return logs, just ignore invalid time filter
-		assert.Equal(t, http.StatusOK, rr.Code)
-	})
-
-	t.Run("handles invalid tail parameter gracefully", func(t *testing.T) {
-		handler := createTestAdminHandler(t)
-		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?tail=invalid", nil)
-
-		rr := executeRequest(t, handler.GetLogs, req)
-
-		// Should still return logs, just ignore invalid tail
-		assert.Equal(t, http.StatusOK, rr.Code)
-	})
-
-	t.Run("combines multiple filters", func(t *testing.T) {
+	t.Run("returns 501 with combined filters", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 		path := "/api/v1/admin/logs?level=error&component=scanner&search=timeout"
 		req := createTestRequest(t, http.MethodGet, path, nil)
 
 		rr := executeRequest(t, handler.GetLogs, req)
 
-		var response LogsResponse
-		assertJSONResponse(t, rr, &response)
-
-		assert.NotNil(t, response.Lines)
+		assertNotImplementedResponse(t, rr)
 	})
 
-	t.Run("indicates when more logs are available", func(t *testing.T) {
+	t.Run("returns 501 even with invalid time format (ignored, not a 400)", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
-		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?page_size=10", nil)
+		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?since=invalid-time", nil)
 
 		rr := executeRequest(t, handler.GetLogs, req)
 
-		var response LogsResponse
-		assertJSONResponse(t, rr, &response)
-
-		// HasMore field should indicate if pagination needed
-		assert.NotNil(t, response.HasMore)
+		// Invalid time is not a pagination error; endpoint returns 501 regardless.
+		assert.Equal(t, http.StatusNotImplemented, rr.Code)
 	})
 }
 
@@ -1340,30 +1258,4 @@ func TestValidateConfigSections(t *testing.T) {
 		err := handler.validateDaemonSection(config)
 		assert.NoError(t, err)
 	})
-}
-
-// TestIsRestartRequired tests restart requirement detection
-func TestIsRestartRequired(t *testing.T) {
-	handler := createTestAdminHandler(t)
-
-	testCases := []struct {
-		section       string
-		expectRestart bool
-		description   string
-	}{
-		{"api", true, "API section changes require restart"},
-		{"database", true, "Database section changes require restart"},
-		{"scanning", false, "Scanning section changes may not require restart"},
-		{"logging", false, "Logging section changes may not require restart"},
-		{"daemon", true, "Daemon section changes require restart"},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.section, func(t *testing.T) {
-			result := handler.isRestartRequired(tc.section)
-
-			// Just verify the method returns a boolean
-			assert.IsType(t, true, result, tc.description)
-		})
-	}
 }
