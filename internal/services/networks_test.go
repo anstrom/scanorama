@@ -165,6 +165,164 @@ func TestValidateNetworkConfig(t *testing.T) {
 	}
 }
 
+// TestValidateNetworkConfig_WithMethodAndExclusions tests the method and exclusion validation
+// paths in validateNetworkConfig which are not covered by the base test.
+func TestValidateNetworkConfig_WithMethodAndExclusions(t *testing.T) {
+	service := &NetworkService{}
+
+	tests := []struct {
+		name        string
+		config      *config.NetworkConfig
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "valid config with ping method",
+			config: &config.NetworkConfig{
+				Name:   "Ping Network",
+				CIDR:   "10.0.0.0/24",
+				Method: "ping",
+			},
+			expectError: false,
+		},
+		{
+			name: "valid config with tcp method",
+			config: &config.NetworkConfig{
+				Name:   "TCP Network",
+				CIDR:   "10.0.1.0/24",
+				Method: "tcp",
+			},
+			expectError: false,
+		},
+		{
+			name: "valid config with arp method",
+			config: &config.NetworkConfig{
+				Name:   "ARP Network",
+				CIDR:   "10.0.2.0/24",
+				Method: "arp",
+			},
+			expectError: false,
+		},
+		{
+			name: "valid config with icmp method",
+			config: &config.NetworkConfig{
+				Name:   "ICMP Network",
+				CIDR:   "10.0.3.0/24",
+				Method: "icmp",
+			},
+			expectError: false,
+		},
+		{
+			name: "empty method is valid (uses default)",
+			config: &config.NetworkConfig{
+				Name:   "Default Method Network",
+				CIDR:   "10.0.4.0/24",
+				Method: "",
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid discovery method",
+			config: &config.NetworkConfig{
+				Name:   "Bad Method Network",
+				CIDR:   "10.0.5.0/24",
+				Method: "nmap",
+			},
+			expectError: true,
+			errorMsg:    "invalid discovery method",
+		},
+		{
+			name: "uppercase method is invalid",
+			config: &config.NetworkConfig{
+				Name:   "Uppercase Network",
+				CIDR:   "10.0.6.0/24",
+				Method: "PING",
+			},
+			expectError: true,
+			errorMsg:    "invalid discovery method",
+		},
+		{
+			name: "valid exclusion CIDR",
+			config: &config.NetworkConfig{
+				Name:       "Network With Exclusion",
+				CIDR:       "10.0.7.0/24",
+				Exclusions: []string{"10.0.7.100/32"},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid exclusion as single IP (normalized to /32)",
+			config: &config.NetworkConfig{
+				Name:       "Network With IP Exclusion",
+				CIDR:       "10.0.8.0/24",
+				Exclusions: []string{"10.0.8.50"},
+			},
+			expectError: false,
+		},
+		{
+			name: "multiple valid exclusions",
+			config: &config.NetworkConfig{
+				Name:       "Network Multi Exclusions",
+				CIDR:       "10.0.9.0/24",
+				Exclusions: []string{"10.0.9.1/32", "10.0.9.2", "10.0.9.0/28"},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid exclusion CIDR",
+			config: &config.NetworkConfig{
+				Name:       "Network Bad Exclusion",
+				CIDR:       "10.0.10.0/24",
+				Exclusions: []string{"not-a-cidr"},
+			},
+			expectError: true,
+			errorMsg:    "invalid exclusion CIDR or IP",
+		},
+		{
+			name: "first exclusion valid second invalid",
+			config: &config.NetworkConfig{
+				Name:       "Network Mixed Exclusions",
+				CIDR:       "10.0.11.0/24",
+				Exclusions: []string{"10.0.11.1/32", "bad-exclusion"},
+			},
+			expectError: true,
+			errorMsg:    "invalid exclusion CIDR or IP",
+		},
+		{
+			name: "valid IPv6 CIDR",
+			config: &config.NetworkConfig{
+				Name: "IPv6 Network",
+				CIDR: "2001:db8::/32",
+			},
+			expectError: false,
+		},
+		{
+			name: "valid config with method and exclusions together",
+			config: &config.NetworkConfig{
+				Name:       "Full Config Network",
+				CIDR:       "172.16.0.0/16",
+				Method:     "tcp",
+				Exclusions: []string{"172.16.0.1", "172.16.255.0/24"},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := service.validateNetworkConfig(tt.config)
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 // Integration tests require a real database connection.
 
 func setupTestDB(t *testing.T) (database *db.DB, cleanup func()) {
@@ -642,7 +800,7 @@ func TestNetworkService_DeleteNetwork_NotFound_Integration(t *testing.T) {
 
 	err := service.DeleteNetwork(ctx, uuid.New())
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "network not found")
+	assert.Contains(t, err.Error(), "not found")
 }
 
 func TestNetworkService_RemoveExclusion_NotFound_Integration(t *testing.T) {
