@@ -566,9 +566,19 @@ func extractScanData(input interface{}) (*scanData, error) {
 		return nil, fmt.Errorf("targets must be a string array")
 	}
 
+	name, ok := data["name"].(string)
+	if !ok || name == "" {
+		return nil, errors.NewScanError(errors.CodeValidation, "name is required")
+	}
+
+	scanType, ok := data["scan_type"].(string)
+	if !ok || scanType == "" {
+		return nil, errors.NewScanError(errors.CodeValidation, "scan_type is required")
+	}
+
 	result := &scanData{
-		name:     data["name"].(string),
-		scanType: data["scan_type"].(string),
+		name:     name,
+		scanType: scanType,
 		targets:  targets,
 	}
 
@@ -769,14 +779,78 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 }
 
 // UpdateScan updates an existing scan.
+// updateScanTarget updates the scan_targets row linked to a scan job within a transaction.
+func updateScanTarget(ctx context.Context, tx interface {
+	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+}, id uuid.UUID, data map[string]interface{}) error {
+	targetFieldMappings := map[string]string{
+		"name":        "name",
+		"description": "description",
+		"scan_type":   "scan_type",
+		"ports":       "scan_ports",
+	}
+
+	setParts, args := buildUpdateQuery(data, targetFieldMappings)
+	if len(setParts) == 0 {
+		return nil
+	}
+
+	setParts = append(setParts, "updated_at = NOW()")
+	paramNum := len(args) + 1
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE scan_targets SET ")
+	queryBuilder.WriteString(strings.Join(setParts, ", "))
+	queryBuilder.WriteString(" WHERE id = (SELECT target_id FROM scan_jobs WHERE id = $")
+	queryBuilder.WriteString(strconv.Itoa(paramNum))
+	queryBuilder.WriteString(")")
+
+	args = append(args, id)
+	if _, err := tx.ExecContext(ctx, queryBuilder.String(), args...); err != nil {
+		return fmt.Errorf("failed to update scan target: %w", err)
+	}
+	return nil
+}
+
+// updateScanJob updates the scan_jobs row within a transaction.
+func updateScanJob(ctx context.Context, tx interface {
+	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+}, id uuid.UUID, data map[string]interface{}) error {
+	jobFieldMappings := map[string]string{
+		"status": "status",
+	}
+	jobSetParts, jobArgs := buildUpdateQuery(data, jobFieldMappings)
+
+	if profileID, ok := data["profile_id"].(*int64); ok && profileID != nil {
+		profileIDStr := strconv.FormatInt(*profileID, 10)
+		jobSetParts = append(jobSetParts, fmt.Sprintf("profile_id = $%d", len(jobArgs)+1))
+		jobArgs = append(jobArgs, profileIDStr)
+	}
+
+	if len(jobSetParts) == 0 {
+		return nil
+	}
+
+	paramNum := len(jobArgs) + 1
+	var jobQueryBuilder strings.Builder
+	jobQueryBuilder.WriteString("UPDATE scan_jobs SET ")
+	jobQueryBuilder.WriteString(strings.Join(jobSetParts, ", "))
+	jobQueryBuilder.WriteString(" WHERE id = $")
+	jobQueryBuilder.WriteString(strconv.Itoa(paramNum))
+
+	jobArgs = append(jobArgs, id)
+	if _, err := tx.ExecContext(ctx, jobQueryBuilder.String(), jobArgs...); err != nil {
+		return fmt.Errorf("failed to update scan job: %w", err)
+	}
+	return nil
+}
+
 func (db *DB) UpdateScan(ctx context.Context, id uuid.UUID, scanData interface{}) (*Scan, error) {
-	// Convert the interface{} to scan data.
 	data, ok := scanData.(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("invalid scan data format")
 	}
 
-	// Start a transaction.
 	tx, err := db.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
@@ -787,7 +861,6 @@ func (db *DB) UpdateScan(ctx context.Context, id uuid.UUID, scanData interface{}
 		}
 	}()
 
-	// First, check if the scan exists.
 	var exists bool
 	err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE id = $1)", id).Scan(&exists)
 	if err != nil {
@@ -797,56 +870,18 @@ func (db *DB) UpdateScan(ctx context.Context, id uuid.UUID, scanData interface{}
 		return nil, errors.ErrNotFoundWithID("scan", id.String())
 	}
 
-	// Build dynamic update for scan_targets using field mapping.
-	targetFieldMappings := map[string]string{
-		"name":        "name",
-		"description": "description",
-		"scan_type":   "scan_type",
-		"ports":       "scan_ports",
+	if err := updateScanTarget(ctx, tx, id, data); err != nil {
+		return nil, err
 	}
 
-	setParts, args := buildUpdateQuery(data, targetFieldMappings)
-
-	// Update scan_targets if there are fields to update.
-	if len(setParts) > 0 {
-		setParts = append(setParts, "updated_at = NOW()")
-		setClause := strings.Join(setParts, ", ")
-		paramNum := len(args) + 1
-
-		// Build query safely without string concatenation.
-		var queryBuilder strings.Builder
-		queryBuilder.WriteString("UPDATE scan_targets SET ")
-		queryBuilder.WriteString(setClause)
-		queryBuilder.WriteString(" WHERE id = (SELECT target_id FROM scan_jobs WHERE id = $")
-		queryBuilder.WriteString(strconv.Itoa(paramNum))
-		queryBuilder.WriteString(")")
-		targetQuery := queryBuilder.String()
-
-		args = append(args, id)
-
-		_, err = tx.ExecContext(ctx, targetQuery, args...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to update scan target: %w", err)
-		}
+	if err := updateScanJob(ctx, tx, id, data); err != nil {
+		return nil, err
 	}
 
-	// Update profile_id in scan_jobs if provided.
-	if profileID, ok := data["profile_id"].(*int64); ok && profileID != nil {
-		profileIDStr := strconv.FormatInt(*profileID, 10)
-		_, err = tx.ExecContext(ctx, `
-			UPDATE scan_jobs SET profile_id = $1 WHERE id = $2`,
-			profileIDStr, id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to update profile ID: %w", err)
-		}
-	}
-
-	// Commit transaction.
 	if err = tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	// Retrieve and return the updated scan.
 	return db.GetScan(ctx, id)
 }
 
