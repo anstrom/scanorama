@@ -32,16 +32,23 @@ const (
 )
 
 // Scheduler manages scheduled discovery and scanning jobs.
+// defaultMaxConcurrentScans is the default limit on simultaneous per-host scans
+// launched by a single scan job execution. Callers can override this with
+// WithMaxConcurrentScans.
+const defaultMaxConcurrentScans = 5
+
+// Scheduler manages scheduled discovery and scanning jobs.
 type Scheduler struct {
-	db        *db.DB
-	cron      *cron.Cron
-	discovery *discovery.Engine
-	profiles  *profiles.Manager
-	jobs      map[uuid.UUID]*ScheduledJob
-	mu        sync.RWMutex
-	running   bool
-	ctx       context.Context
-	cancel    context.CancelFunc
+	db                 *db.DB
+	cron               *cron.Cron
+	discovery          *discovery.Engine
+	profiles           *profiles.Manager
+	jobs               map[uuid.UUID]*ScheduledJob
+	mu                 sync.RWMutex
+	running            bool
+	ctx                context.Context
+	cancel             context.CancelFunc
+	maxConcurrentScans int // bounded parallelism for per-host scans
 }
 
 // ScheduledJob represents a scheduled job wrapper.
@@ -77,14 +84,25 @@ func NewScheduler(database *db.DB, discoveryEngine *discovery.Engine, profileMan
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Scheduler{
-		db:        database,
-		cron:      cron.New(),
-		discovery: discoveryEngine,
-		profiles:  profileManager,
-		jobs:      make(map[uuid.UUID]*ScheduledJob),
-		ctx:       ctx,
-		cancel:    cancel,
+		db:                 database,
+		cron:               cron.New(),
+		discovery:          discoveryEngine,
+		profiles:           profileManager,
+		jobs:               make(map[uuid.UUID]*ScheduledJob),
+		ctx:                ctx,
+		cancel:             cancel,
+		maxConcurrentScans: defaultMaxConcurrentScans,
 	}
+}
+
+// WithMaxConcurrentScans overrides the maximum number of host scans that may
+// run in parallel within a single scan job execution. It returns the scheduler
+// to allow call chaining. n <= 0 is treated as the default.
+func (s *Scheduler) WithMaxConcurrentScans(n int) *Scheduler {
+	if n > 0 {
+		s.maxConcurrentScans = n
+	}
+	return s
 }
 
 // Start begins the scheduler.
@@ -393,6 +411,7 @@ func (s *Scheduler) executeDiscoveryJob(jobID uuid.UUID, config DiscoveryJobConf
 		s.mu.Unlock()
 	}()
 
+	startTime := job.LastRun
 	log.Printf("Executing discovery job '%s' for network %s", job.Config.Name, config.Network)
 
 	// Create discovery config
@@ -407,15 +426,19 @@ func (s *Scheduler) executeDiscoveryJob(jobID uuid.UUID, config DiscoveryJobConf
 	// Execute discovery
 	ctx := context.Background()
 	discoveryJob, err := s.discovery.Discover(ctx, &discoveryConfig)
+
+	// Always update last_run and next_run in the database, even on failure,
+	// so the scheduler's persistent state stays current.
+	s.updateJobLastRun(ctx, jobID, startTime)
+
 	if err != nil {
-		log.Printf("Discovery job '%s' failed: %v", job.Config.Name, err)
+		log.Printf("Discovery job '%s' failed after %s: %v",
+			job.Config.Name, time.Since(startTime).Round(time.Millisecond), err)
 		return
 	}
 
-	// Update last run time in database
-	s.updateJobLastRun(ctx, jobID, job.LastRun)
-
-	log.Printf("Discovery job '%s' completed, job ID: %s", job.Config.Name, discoveryJob.ID)
+	log.Printf("Discovery job '%s' completed in %s, discovery job ID: %s",
+		job.Config.Name, time.Since(startTime).Round(time.Millisecond), discoveryJob.ID)
 }
 
 // executeScanJob executes a scan job.
@@ -435,8 +458,12 @@ func (s *Scheduler) executeScanJob(jobID uuid.UUID, config *ScanJobConfig) {
 
 	defer s.cleanupJobExecution(jobID)
 
+	startTime := job.LastRun
 	log.Printf("Executing scan job '%s'", job.Config.Name)
 	ctx := context.Background()
+
+	// Always persist last_run and next_run when the job finishes (success or failure).
+	defer s.updateJobLastRun(ctx, jobID, startTime)
 
 	// Get hosts to scan based on configuration
 	hosts, err := s.getHostsToScan(ctx, config)
@@ -452,13 +479,11 @@ func (s *Scheduler) executeScanJob(jobID uuid.UUID, config *ScanJobConfig) {
 
 	log.Printf("Scan job '%s' found %d hosts to scan", job.Config.Name, len(hosts))
 
-	// Process hosts for scanning
+	// Process hosts for scanning (bounded concurrency, results persisted by RunScanWithContext).
 	s.processHostsForScanning(ctx, hosts, config)
 
-	// Update last run time in database
-	s.updateJobLastRun(ctx, jobID, job.LastRun)
-
-	log.Printf("Scan job '%s' completed", job.Config.Name)
+	log.Printf("Scan job '%s' completed in %s",
+		job.Config.Name, time.Since(startTime).Round(time.Millisecond))
 }
 
 // prepareJobExecution validates and prepares a job for execution.
@@ -495,16 +520,28 @@ func (s *Scheduler) cleanupJobExecution(jobID uuid.UUID) {
 }
 
 // processHostsForScanning runs scans against each host using the appropriate profile.
+// Scans are dispatched concurrently, bounded by s.maxConcurrentScans, so that a
+// large host list does not open an unbounded number of nmap processes at once.
 func (s *Scheduler) processHostsForScanning(ctx context.Context, hosts []*db.Host, config *ScanJobConfig) {
 	if s.profiles == nil {
 		log.Printf("Scan job skipped: no profile manager configured")
 		return
 	}
 
+	if len(hosts) == 0 {
+		return
+	}
+
+	// sem is a counting semaphore that limits concurrent scans.
+	sem := make(chan struct{}, s.maxConcurrentScans)
+	var wg sync.WaitGroup
+
+hostLoop:
 	for i, host := range hosts {
+		// Check for context cancellation before starting the next goroutine.
 		if ctx.Err() != nil {
-			log.Printf("Scan job context canceled after %d/%d hosts", i, len(hosts))
-			return
+			log.Printf("Scan job context canceled after dispatching %d/%d hosts", i, len(hosts))
+			break
 		}
 
 		profileID := s.selectProfileForHost(ctx, host, config.ProfileID)
@@ -519,32 +556,53 @@ func (s *Scheduler) processHostsForScanning(ctx context.Context, hosts []*db.Hos
 			continue
 		}
 
-		osFamily := "unknown"
-		if host.OSFamily != nil {
-			osFamily = *host.OSFamily
+		// Acquire semaphore slot (blocks when maxConcurrentScans are already running).
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			log.Printf("Scan job context canceled while waiting for semaphore slot")
+			break hostLoop
 		}
 
-		scanConfig := &scanning.ScanConfig{
-			Targets:     []string{host.IPAddress.String()},
-			Ports:       profile.Ports,
-			ScanType:    profile.ScanType,
-			TimeoutSec:  timingToScanTimeout(profile.Timing),
-			Concurrency: 1,
-		}
+		wg.Add(1)
+		go func(h *db.Host, pID string, ports, scanType string, timeoutSec int) {
+			defer func() {
+				<-sem // release semaphore slot
+				wg.Done()
+				if r := recover(); r != nil {
+					log.Printf("PANIC while scanning host %s: %v", h.IPAddress, r)
+				}
+			}()
 
-		log.Printf("Scanning host %s (%s) with profile %s (ports: %s, type: %s)",
-			host.IPAddress, osFamily, profileID, profile.Ports, profile.ScanType)
+			osFamily := "unknown"
+			if h.OSFamily != nil {
+				osFamily = *h.OSFamily
+			}
 
-		result, err := scanning.RunScanWithContext(ctx, scanConfig, s.db)
-		if err != nil {
-			log.Printf("Failed to scan host %s with profile %s: %v",
-				host.IPAddress, profileID, err)
-			continue
-		}
+			scanConfig := &scanning.ScanConfig{
+				Targets:     []string{h.IPAddress.String()},
+				Ports:       ports,
+				ScanType:    scanType,
+				TimeoutSec:  timeoutSec,
+				Concurrency: 1,
+			}
 
-		log.Printf("Completed scan of host %s: %d hosts responded, %d up",
-			host.IPAddress, result.Stats.Total, result.Stats.Up)
+			log.Printf("Scanning host %s (%s) with profile %s (ports: %s, type: %s)",
+				h.IPAddress, osFamily, pID, ports, scanType)
+
+			result, err := scanning.RunScanWithContext(ctx, scanConfig, s.db)
+			if err != nil {
+				log.Printf("Failed to scan host %s with profile %s: %v", h.IPAddress, pID, err)
+				return
+			}
+
+			log.Printf("Completed scan of host %s: %d hosts responded, %d up",
+				h.IPAddress, result.Stats.Total, result.Stats.Up)
+		}(host, profileID, profile.Ports, profile.ScanType, timingToScanTimeout(profile.Timing))
 	}
+
+	// Wait for all in-flight scans to finish before returning.
+	wg.Wait()
 }
 
 // timingToScanTimeout converts a profile timing string to a scan timeout in seconds.
@@ -818,10 +876,50 @@ func (s *Scheduler) deleteScheduledJob(ctx context.Context, jobID uuid.UUID) err
 	return err
 }
 
-// updateJobLastRun updates the last run time for a scheduled job.
+// updateJobLastRun updates the last_run timestamp and recalculates next_run for
+// a scheduled job, persisting both values to the database. It also refreshes
+// the in-memory NextRun field so the scheduler's state stays consistent.
 func (s *Scheduler) updateJobLastRun(ctx context.Context, jobID uuid.UUID, lastRun time.Time) {
-	query := `UPDATE scheduled_jobs SET last_run = $1 WHERE id = $2`
-	if _, err := s.db.ExecContext(ctx, query, lastRun, jobID); err != nil {
-		log.Printf("Failed to update last run time for job %s: %v", jobID, err)
+	// Derive the next run time from the cron expression stored in the job config.
+	nextRun := s.calculateNextRun(jobID, lastRun)
+
+	query := `UPDATE scheduled_jobs SET last_run = $1, next_run = $2 WHERE id = $3`
+	if _, err := s.db.ExecContext(ctx, query, lastRun, nextRun, jobID); err != nil {
+		log.Printf("Failed to update last/next run time for job %s: %v", jobID, err)
+		return
 	}
+
+	// Keep the in-memory entry consistent.
+	s.updateJobNextRunInMemory(jobID, nextRun)
+}
+
+// calculateNextRun computes the next scheduled run time for a job by parsing
+// its cron expression from the in-memory registry. Falls back to 0 time when
+// the job is not found or the expression cannot be parsed.
+func (s *Scheduler) calculateNextRun(jobID uuid.UUID, after time.Time) time.Time {
+	s.mu.RLock()
+	job, exists := s.jobs[jobID]
+	s.mu.RUnlock()
+
+	if !exists {
+		return time.Time{}
+	}
+
+	schedule, err := cron.ParseStandard(job.Config.CronExpression)
+	if err != nil {
+		log.Printf("Failed to parse cron expression for job %s: %v", jobID, err)
+		return time.Time{}
+	}
+
+	return schedule.Next(after)
+}
+
+// updateJobNextRunInMemory updates only the in-memory NextRun field of a job.
+// It is safe to call from any goroutine.
+func (s *Scheduler) updateJobNextRunInMemory(jobID uuid.UUID, nextRun time.Time) {
+	s.mu.Lock()
+	if job, exists := s.jobs[jobID]; exists {
+		job.NextRun = nextRun
+	}
+	s.mu.Unlock()
 }
