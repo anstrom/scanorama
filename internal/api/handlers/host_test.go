@@ -710,7 +710,6 @@ func TestHostHandler_CreateHost_Integration(t *testing.T) {
 }
 
 func TestHostHandler_GetHost_Integration(t *testing.T) {
-	t.Skip("TODO: Fix database host creation format compatibility")
 	handler, database, cleanup := setupHostHandlerTest(t)
 	if handler == nil {
 		return
@@ -748,7 +747,6 @@ func TestHostHandler_GetHost_Integration(t *testing.T) {
 }
 
 func TestHostHandler_UpdateHost_Integration(t *testing.T) {
-	t.Skip("TODO: Fix database host creation format compatibility")
 	handler, database, cleanup := setupHostHandlerTest(t)
 	if handler == nil {
 		return
@@ -797,7 +795,6 @@ func TestHostHandler_UpdateHost_Integration(t *testing.T) {
 }
 
 func TestHostHandler_DeleteHost_Integration(t *testing.T) {
-	t.Skip("TODO: Fix database host creation format compatibility")
 	handler, database, cleanup := setupHostHandlerTest(t)
 	if handler == nil {
 		return
@@ -836,7 +833,6 @@ func TestHostHandler_DeleteHost_Integration(t *testing.T) {
 }
 
 func TestHostHandler_GetHostScans_Integration(t *testing.T) {
-	t.Skip("TODO: Fix database host creation format compatibility")
 	handler, database, cleanup := setupHostHandlerTest(t)
 	if handler == nil {
 		return
