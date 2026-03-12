@@ -378,10 +378,12 @@ func (s *Scheduler) executeDiscoveryJob(jobID uuid.UUID, config DiscoveryJobConf
 		s.mu.RUnlock()
 		return
 	}
+	s.mu.RUnlock()
 
+	s.mu.Lock()
 	job.Running = true
 	job.LastRun = time.Now()
-	s.mu.RUnlock()
+	s.mu.Unlock()
 
 	defer func() {
 		s.mu.Lock()
@@ -473,10 +475,12 @@ func (s *Scheduler) prepareJobExecution(jobID uuid.UUID) (*ScheduledJob, bool) {
 		s.mu.RUnlock()
 		return nil, false
 	}
+	s.mu.RUnlock()
 
+	s.mu.Lock()
 	job.Running = true
 	job.LastRun = time.Now()
-	s.mu.RUnlock()
+	s.mu.Unlock()
 
 	return job, true
 }
