@@ -376,6 +376,7 @@ func (h *HostHandler) requestToDBHost(req *HostRequest) interface{} {
 	if len(req.Tags) > 0 {
 		data["tags"] = req.Tags
 	}
+
 	if len(req.Metadata) > 0 {
 		data["metadata"] = req.Metadata
 	}

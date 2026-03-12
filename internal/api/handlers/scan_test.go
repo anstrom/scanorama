@@ -751,7 +751,6 @@ func TestScanHandler_CreateScan_Integration(t *testing.T) {
 }
 
 func TestScanHandler_GetScan_Integration(t *testing.T) {
-	t.Skip("TODO: Fix database scan creation format compatibility")
 	handler, database, cleanup := setupScanHandlerTest(t)
 	if handler == nil {
 		return
@@ -791,7 +790,6 @@ func TestScanHandler_GetScan_Integration(t *testing.T) {
 }
 
 func TestScanHandler_UpdateScan_Integration(t *testing.T) {
-	t.Skip("TODO: Fix database scan creation format compatibility")
 	handler, database, cleanup := setupScanHandlerTest(t)
 	if handler == nil {
 		return
@@ -842,7 +840,6 @@ func TestScanHandler_UpdateScan_Integration(t *testing.T) {
 }
 
 func TestScanHandler_DeleteScan_Integration(t *testing.T) {
-	t.Skip("TODO: Fix database scan creation format compatibility")
 	handler, database, cleanup := setupScanHandlerTest(t)
 	if handler == nil {
 		return
@@ -879,7 +876,6 @@ func TestScanHandler_DeleteScan_Integration(t *testing.T) {
 }
 
 func TestScanHandler_StartScan_Integration(t *testing.T) {
-	t.Skip("TODO: Fix database scan creation format compatibility")
 	handler, database, cleanup := setupScanHandlerTest(t)
 	if handler == nil {
 		return
@@ -913,7 +909,6 @@ func TestScanHandler_StartScan_Integration(t *testing.T) {
 }
 
 func TestScanHandler_StopScan_Integration(t *testing.T) {
-	t.Skip("TODO: Fix database scan creation format compatibility")
 	handler, database, cleanup := setupScanHandlerTest(t)
 	if handler == nil {
 		return
@@ -949,7 +944,6 @@ func TestScanHandler_StopScan_Integration(t *testing.T) {
 }
 
 func TestScanHandler_GetScanResults_Integration(t *testing.T) {
-	t.Skip("TODO: Fix database scan creation format compatibility")
 	handler, database, cleanup := setupScanHandlerTest(t)
 	if handler == nil {
 		return
