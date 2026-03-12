@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 
 	"github.com/anstrom/scanorama/internal/db"
@@ -62,12 +63,12 @@ type ScheduleRequest struct {
 
 // ScheduleResponse represents a schedule response.
 type ScheduleResponse struct {
-	ID           int64             `json:"id"`
+	ID           uuid.UUID         `json:"id"`
 	Name         string            `json:"name"`
 	Description  string            `json:"description,omitempty"`
 	CronExpr     string            `json:"cron_expr"`
 	Type         string            `json:"type"`
-	TargetID     int64             `json:"target_id"`
+	TargetID     string            `json:"target_id,omitempty"`
 	TargetName   string            `json:"target_name,omitempty"`
 	Enabled      bool              `json:"enabled"`
 	MaxRunTime   time.Duration     `json:"max_run_time,omitempty"`
@@ -447,55 +448,101 @@ func (h *ScheduleHandler) getScheduleFilters(r *http.Request) db.ScheduleFilters
 
 // requestToDBSchedule converts a schedule request to database schedule object.
 func (h *ScheduleHandler) requestToDBSchedule(req *ScheduleRequest) interface{} {
-	// This should return the appropriate database schedule type
-	// The exact structure would depend on the database package implementation
-	return map[string]interface{}{
-		"name":           req.Name,
-		"description":    req.Description,
-		"cron_expr":      req.CronExpr,
-		"type":           req.Type,
+	// Build job_config from request fields that don't have dedicated DB columns
+	jobConfig := map[string]interface{}{
 		"target_id":      req.TargetID,
-		"enabled":        req.Enabled,
-		"max_run_time":   req.MaxRunTime,
+		"max_run_time":   req.MaxRunTime.String(),
 		"retry_on_error": req.RetryOnError,
 		"max_retries":    req.MaxRetries,
-		"retry_delay":    req.RetryDelay,
-		"options":        req.Options,
-		"tags":           req.Tags,
+		"retry_delay":    req.RetryDelay.String(),
 		"notify_on_fail": req.NotifyOnFail,
 		"notify_emails":  req.NotifyEmails,
-		"status":         "pending",
-		"run_count":      0,
-		"success_count":  0,
-		"error_count":    0,
-		"created_at":     time.Now().UTC(),
-		"updated_at":     time.Now().UTC(),
+		"tags":           req.Tags,
+	}
+
+	// Merge user-provided options into job config
+	if req.Options != nil {
+		jobConfig["options"] = req.Options
+	}
+
+	return map[string]interface{}{
+		"name":            req.Name,
+		"description":     req.Description,
+		"cron_expression": req.CronExpr,
+		"job_type":        req.Type,
+		"job_config":      jobConfig,
+		"enabled":         req.Enabled,
 	}
 }
 
 // scheduleToResponse converts a database schedule to response format.
-func (h *ScheduleHandler) scheduleToResponse(_ interface{}) ScheduleResponse {
-	// This would convert from the actual database schedule type
-	// For now, return a placeholder structure
-	return ScheduleResponse{
-		ID:           1,                   // schedule.ID
-		Name:         "",                  // schedule.Name
-		Description:  "",                  // schedule.Description
-		CronExpr:     "0 */6 * * *",       // schedule.CronExpr
-		Type:         "scan",              // schedule.Type
-		TargetID:     1,                   // schedule.TargetID
-		Enabled:      true,                // schedule.Enabled
-		RetryOnError: false,               // schedule.RetryOnError
-		MaxRetries:   3,                   // schedule.MaxRetries
-		Options:      map[string]string{}, // schedule.Options
-		Tags:         []string{},          // schedule.Tags
-		NotifyOnFail: false,               // schedule.NotifyOnFail
-		NotifyEmails: []string{},          // schedule.NotifyEmails
-		Status:       "active",            // schedule.Status
-		RunCount:     0,                   // schedule.RunCount
-		SuccessCount: 0,                   // schedule.SuccessCount
-		ErrorCount:   0,                   // schedule.ErrorCount
-		CreatedAt:    time.Now().UTC(),    // schedule.CreatedAt
-		UpdatedAt:    time.Now().UTC(),    // schedule.UpdatedAt
+func (h *ScheduleHandler) scheduleToResponse(schedule *db.Schedule) ScheduleResponse {
+	resp := ScheduleResponse{
+		ID:          schedule.ID,
+		Name:        schedule.Name,
+		Description: schedule.Description,
+		CronExpr:    schedule.CronExpression,
+		Type:        schedule.JobType,
+		Enabled:     schedule.Enabled,
+		LastRun:     schedule.LastRun,
+		NextRun:     schedule.NextRun,
+		CreatedAt:   schedule.CreatedAt,
+		UpdatedAt:   schedule.UpdatedAt,
+	}
+
+	// Derive status from enabled + last run info
+	switch {
+	case !schedule.Enabled:
+		resp.Status = "disabled"
+	case schedule.LastRun != nil:
+		resp.Status = "active"
+	default:
+		resp.Status = "pending"
+	}
+
+	applyJobConfigToScheduleResponse(schedule.JobConfig, &resp)
+
+	return resp
+}
+
+// applyJobConfigToScheduleResponse extracts optional fields stored in JobConfig
+// and populates the corresponding response fields.
+func applyJobConfigToScheduleResponse(cfg map[string]interface{}, resp *ScheduleResponse) {
+	if cfg == nil {
+		return
+	}
+
+	if targetID, ok := cfg["target_id"]; ok {
+		resp.TargetID = fmt.Sprintf("%v", targetID)
+	}
+	if v, ok := cfg["retry_on_error"].(bool); ok {
+		resp.RetryOnError = v
+	}
+	if v, ok := cfg["max_retries"].(float64); ok {
+		resp.MaxRetries = int(v)
+	}
+	if v, ok := cfg["notify_on_fail"].(bool); ok {
+		resp.NotifyOnFail = v
+	}
+
+	if emails, ok := cfg["notify_emails"].([]interface{}); ok {
+		for _, e := range emails {
+			if s, ok := e.(string); ok {
+				resp.NotifyEmails = append(resp.NotifyEmails, s)
+			}
+		}
+	}
+	if tags, ok := cfg["tags"].([]interface{}); ok {
+		for _, t := range tags {
+			if s, ok := t.(string); ok {
+				resp.Tags = append(resp.Tags, s)
+			}
+		}
+	}
+	if opts, ok := cfg["options"].(map[string]interface{}); ok {
+		resp.Options = make(map[string]string, len(opts))
+		for k, v := range opts {
+			resp.Options[k] = fmt.Sprintf("%v", v)
+		}
 	}
 }

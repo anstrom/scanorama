@@ -504,34 +504,67 @@ func (h *ScanHandler) requestToDBScan(req *ScanRequest) interface{} {
 
 // scanToResponse converts a database scan to response format.
 func (h *ScanHandler) scanToResponse(scan *db.Scan) ScanResponse {
-	// This would convert from the actual database scan type
-	// For now, return a placeholder structure
-	return ScanResponse{
+	resp := ScanResponse{
 		ID:          scan.ID,
 		Name:        scan.Name,
 		Description: scan.Description,
-		Targets:     []string{}, // scan.Targets
+		Targets:     scan.Targets,
 		ScanType:    scan.ScanType,
+		Ports:       scan.Ports,
+		ProfileID:   scan.ProfileID,
+		ScheduleID:  scan.ScheduleID,
+		Tags:        scan.Tags,
 		Status:      scan.Status,
-		Progress:    0.0,
+		StartTime:   scan.StartedAt,
+		EndTime:     scan.CompletedAt,
 		CreatedAt:   scan.CreatedAt,
 		UpdatedAt:   scan.UpdatedAt,
 	}
+
+	// Ensure Targets is never nil for JSON serialization
+	if resp.Targets == nil {
+		resp.Targets = []string{}
+	}
+
+	// Convert options from map[string]interface{} to map[string]string
+	if scan.Options != nil {
+		resp.Options = make(map[string]string, len(scan.Options))
+		for k, v := range scan.Options {
+			resp.Options[k] = fmt.Sprintf("%v", v)
+		}
+	}
+
+	// Compute progress from status
+	switch scan.Status {
+	case "completed":
+		resp.Progress = 100.0
+	case "failed":
+		resp.Progress = 0.0
+	case "running":
+		resp.Progress = 50.0 // Approximation without a dedicated progress field
+	default:
+		resp.Progress = 0.0
+	}
+
+	// Compute duration if start and end times are available
+	if scan.StartedAt != nil && scan.CompletedAt != nil {
+		d := scan.CompletedAt.Sub(*scan.StartedAt).String()
+		resp.Duration = &d
+	}
+
+	return resp
 }
 
 // resultToResponse converts a database scan result to response format.
 func (h *ScanHandler) resultToResponse(result *db.ScanResult) ScanResult {
 	return ScanResult{
 		ID:       result.ID,
-		HostIP:   "", // Would need to lookup host IP from HostID
-		Hostname: "", // Would need to lookup hostname from HostID
+		HostIP:   result.HostID.String(), // Best available; full IP would need a host lookup
 		Port:     result.Port,
 		Protocol: result.Protocol,
 		State:    result.State,
 		Service:  result.Service,
-		Version:  "",               // Not available in current db.ScanResult
-		Banner:   "",               // Not available in current db.ScanResult
-		ScanTime: time.Now().UTC(), // Would use actual scan time from database
+		ScanTime: result.ScannedAt,
 	}
 }
 

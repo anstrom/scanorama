@@ -9,9 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
@@ -741,41 +743,134 @@ func TestScheduleHandler_requestToDBSchedule(t *testing.T) {
 	resultMap, ok := result.(map[string]interface{})
 	require.True(t, ok, "result should be a map")
 
+	// Top-level fields use DB column names
 	assert.Equal(t, req.Name, resultMap["name"])
 	assert.Equal(t, req.Description, resultMap["description"])
-	assert.Equal(t, req.CronExpr, resultMap["cron_expr"])
-	assert.Equal(t, req.Type, resultMap["type"])
-	assert.Equal(t, req.TargetID, resultMap["target_id"])
+	assert.Equal(t, req.CronExpr, resultMap["cron_expression"])
+	assert.Equal(t, req.Type, resultMap["job_type"])
 	assert.Equal(t, req.Enabled, resultMap["enabled"])
-	assert.Equal(t, req.MaxRunTime, resultMap["max_run_time"])
-	assert.Equal(t, req.RetryOnError, resultMap["retry_on_error"])
-	assert.Equal(t, req.MaxRetries, resultMap["max_retries"])
-	assert.Equal(t, req.RetryDelay, resultMap["retry_delay"])
-	assert.Equal(t, req.Options, resultMap["options"])
-	assert.Equal(t, req.Tags, resultMap["tags"])
-	assert.Equal(t, req.NotifyOnFail, resultMap["notify_on_fail"])
-	assert.Equal(t, req.NotifyEmails, resultMap["notify_emails"])
-	assert.Equal(t, "pending", resultMap["status"])
-	assert.Equal(t, 0, resultMap["run_count"])
-	assert.Equal(t, 0, resultMap["success_count"])
-	assert.Equal(t, 0, resultMap["error_count"])
-	assert.NotNil(t, resultMap["created_at"])
-	assert.NotNil(t, resultMap["updated_at"])
+
+	// Extra request fields are nested inside job_config
+	jobConfig, ok := resultMap["job_config"].(map[string]interface{})
+	require.True(t, ok, "job_config should be a map")
+
+	assert.Equal(t, int64(123), jobConfig["target_id"])
+	assert.Equal(t, req.MaxRunTime.String(), jobConfig["max_run_time"])
+	assert.Equal(t, req.RetryOnError, jobConfig["retry_on_error"])
+	assert.Equal(t, req.MaxRetries, jobConfig["max_retries"])
+	assert.Equal(t, req.RetryDelay.String(), jobConfig["retry_delay"])
+	assert.Equal(t, req.Options, jobConfig["options"])
+	assert.Equal(t, req.Tags, jobConfig["tags"])
+	assert.Equal(t, req.NotifyOnFail, jobConfig["notify_on_fail"])
+	assert.Equal(t, req.NotifyEmails, jobConfig["notify_emails"])
 }
 
 func TestScheduleHandler_scheduleToResponse(t *testing.T) {
 	handler := createTestScheduleHandler(t)
 
-	// The current implementation returns a placeholder
-	result := handler.scheduleToResponse(nil)
+	now := time.Now().UTC()
+	lastRun := now.Add(-1 * time.Hour)
+	nextRun := now.Add(1 * time.Hour)
+	scheduleID := uuid.New()
 
-	assert.NotZero(t, result.ID)
-	assert.NotEmpty(t, result.CronExpr)
-	assert.NotEmpty(t, result.Type)
-	assert.NotZero(t, result.TargetID)
-	assert.NotEmpty(t, result.Status)
-	assert.NotZero(t, result.CreatedAt)
-	assert.NotZero(t, result.UpdatedAt)
+	schedule := &db.Schedule{
+		ID:             scheduleID,
+		Name:           "test-schedule",
+		Description:    "test description",
+		CronExpression: "0 * * * *",
+		JobType:        "scan",
+		JobConfig: map[string]interface{}{
+			"target_id":      float64(123),
+			"retry_on_error": true,
+			"max_retries":    float64(3),
+			"notify_on_fail": true,
+			"notify_emails":  []interface{}{"admin@example.com"},
+			"tags":           []interface{}{"tag1", "tag2"},
+			"options":        map[string]interface{}{"key": "value"},
+		},
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+		LastRun:   &lastRun,
+		NextRun:   &nextRun,
+	}
+
+	result := handler.scheduleToResponse(schedule)
+
+	assert.Equal(t, scheduleID, result.ID)
+	assert.Equal(t, "test-schedule", result.Name)
+	assert.Equal(t, "test description", result.Description)
+	assert.Equal(t, "0 * * * *", result.CronExpr)
+	assert.Equal(t, "scan", result.Type)
+	assert.Equal(t, true, result.Enabled)
+	assert.Equal(t, "active", result.Status)
+	assert.Equal(t, &lastRun, result.LastRun)
+	assert.Equal(t, &nextRun, result.NextRun)
+	assert.Equal(t, now, result.CreatedAt)
+	assert.Equal(t, now, result.UpdatedAt)
+
+	// Fields extracted from JobConfig
+	assert.Equal(t, "123", result.TargetID)
+	assert.Equal(t, true, result.RetryOnError)
+	assert.Equal(t, 3, result.MaxRetries)
+	assert.Equal(t, true, result.NotifyOnFail)
+	assert.Equal(t, []string{"admin@example.com"}, result.NotifyEmails)
+	assert.Equal(t, []string{"tag1", "tag2"}, result.Tags)
+	assert.Equal(t, map[string]string{"key": "value"}, result.Options)
+}
+
+func TestScheduleHandler_scheduleToResponse_DisabledStatus(t *testing.T) {
+	handler := createTestScheduleHandler(t)
+
+	schedule := &db.Schedule{
+		ID:             uuid.New(),
+		Name:           "disabled-schedule",
+		CronExpression: "0 0 * * *",
+		JobType:        "discovery",
+		Enabled:        false,
+		CreatedAt:      time.Now().UTC(),
+	}
+
+	result := handler.scheduleToResponse(schedule)
+	assert.Equal(t, "disabled", result.Status)
+}
+
+func TestScheduleHandler_scheduleToResponse_PendingStatus(t *testing.T) {
+	handler := createTestScheduleHandler(t)
+
+	schedule := &db.Schedule{
+		ID:             uuid.New(),
+		Name:           "pending-schedule",
+		CronExpression: "0 0 * * *",
+		JobType:        "scan",
+		Enabled:        true,
+		CreatedAt:      time.Now().UTC(),
+	}
+
+	result := handler.scheduleToResponse(schedule)
+	assert.Equal(t, "pending", result.Status)
+}
+
+func TestScheduleHandler_scheduleToResponse_NilJobConfig(t *testing.T) {
+	handler := createTestScheduleHandler(t)
+
+	schedule := &db.Schedule{
+		ID:             uuid.New(),
+		Name:           "bare-schedule",
+		CronExpression: "0 0 * * *",
+		JobType:        "scan",
+		Enabled:        true,
+		CreatedAt:      time.Now().UTC(),
+	}
+
+	result := handler.scheduleToResponse(schedule)
+
+	assert.Equal(t, "bare-schedule", result.Name)
+	assert.Empty(t, result.TargetID)
+	assert.False(t, result.RetryOnError)
+	assert.Equal(t, 0, result.MaxRetries)
+	assert.Nil(t, result.Tags)
+	assert.Nil(t, result.Options)
 }
 
 func TestScheduleRequest_JSONMarshaling(t *testing.T) {

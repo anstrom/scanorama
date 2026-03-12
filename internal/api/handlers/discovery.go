@@ -60,7 +60,7 @@ type DiscoveryRequest struct {
 
 // DiscoveryResponse represents a discovery job response.
 type DiscoveryResponse struct {
-	ID          int64             `json:"id"`
+	ID          uuid.UUID         `json:"id"`
 	Name        string            `json:"name"`
 	Description string            `json:"description,omitempty"`
 	Networks    []string          `json:"networks"`
@@ -399,22 +399,32 @@ func (h *DiscoveryHandler) requestToDBDiscovery(req *DiscoveryRequest) interface
 }
 
 // discoveryToResponse converts a database discovery job to response format.
-func (h *DiscoveryHandler) discoveryToResponse(_ interface{}) DiscoveryResponse {
-	// This would convert from the actual database discovery type
-	// For now, return a placeholder structure
-	return DiscoveryResponse{
-		ID:          1,                // job.ID
-		Name:        "",               // job.Name
-		Description: "",               // job.Description
-		Networks:    []string{},       // job.Networks
-		Method:      "ping",           // job.Method
-		Enabled:     true,             // job.Enabled
-		Status:      "pending",        // job.Status
-		Progress:    0.0,              // job.Progress
-		HostsFound:  0,                // job.HostsFound
-		RunCount:    0,                // job.RunCount
-		ErrorCount:  0,                // job.ErrorCount
-		CreatedAt:   time.Now().UTC(), // job.CreatedAt
-		UpdatedAt:   time.Now().UTC(), // job.UpdatedAt
+func (h *DiscoveryHandler) discoveryToResponse(job *db.DiscoveryJob) DiscoveryResponse {
+	resp := DiscoveryResponse{
+		ID:         job.ID,
+		Networks:   []string{job.Network.String()},
+		Method:     job.Method,
+		Enabled:    job.Status != db.DiscoveryJobStatusFailed,
+		Status:     job.Status,
+		HostsFound: job.HostsDiscovered,
+		CreatedAt:  job.CreatedAt,
+		UpdatedAt:  job.CreatedAt, // No separate UpdatedAt in DB model, use CreatedAt
 	}
+
+	// Compute progress from status
+	switch job.Status {
+	case db.DiscoveryJobStatusCompleted:
+		resp.Progress = 100.0
+	case db.DiscoveryJobStatusRunning:
+		resp.Progress = 50.0 // Approximation; real progress would need a separate field
+	default:
+		resp.Progress = 0.0
+	}
+
+	// Map started_at as last_run
+	if job.StartedAt != nil {
+		resp.LastRun = job.StartedAt
+	}
+
+	return resp
 }
