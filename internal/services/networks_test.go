@@ -230,6 +230,7 @@ func TestNetworkService_CreateGetUpdateDelete_Integration(t *testing.T) {
 		"A test network",
 		"ping",
 		true,
+		true,
 	)
 	require.NoError(t, err)
 	assert.NotNil(t, network)
@@ -310,7 +311,7 @@ func TestNetworkService_CreateNetwork_ValidationErrors_Integration(t *testing.T)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := service.CreateNetwork(ctx, tt.networkName, tt.cidr, "Test", tt.method, true)
+			_, err := service.CreateNetwork(ctx, tt.networkName, tt.cidr, "Test", tt.method, true, true)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errorContains)
 		})
@@ -325,11 +326,11 @@ func TestNetworkService_ListNetworks_Integration(t *testing.T) {
 	ctx := context.Background()
 
 	// Create test networks
-	activeNetwork, err := service.CreateNetwork(ctx, "Active Network", "10.1.0.0/24", "Test", "ping", true)
+	activeNetwork, err := service.CreateNetwork(ctx, "Active Network", "10.1.0.0/24", "Test", "ping", true, true)
 	require.NoError(t, err)
 	defer service.DeleteNetwork(ctx, activeNetwork.ID)
 
-	inactiveNetwork, err := service.CreateNetwork(ctx, "Inactive Network", "10.2.0.0/24", "Test", "ping", false)
+	inactiveNetwork, err := service.CreateNetwork(ctx, "Inactive Network", "10.2.0.0/24", "Test", "ping", false, false)
 	require.NoError(t, err)
 	defer service.DeleteNetwork(ctx, inactiveNetwork.ID)
 
@@ -362,7 +363,7 @@ func TestNetworkService_GetActiveNetworks_Integration(t *testing.T) {
 	ctx := context.Background()
 
 	// Create an active network
-	activeNetwork, err := service.CreateNetwork(ctx, "Active Test", "10.3.0.0/24", "Test", "ping", true)
+	activeNetwork, err := service.CreateNetwork(ctx, "Active Test", "10.3.0.0/24", "Test", "ping", true, true)
 	require.NoError(t, err)
 	defer service.DeleteNetwork(ctx, activeNetwork.ID)
 
@@ -482,7 +483,7 @@ func TestNetworkService_AddRemoveExclusion_Integration(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test network
-	network, err := service.CreateNetwork(ctx, "Exclusion Test", "10.4.0.0/24", "Test", "ping", true)
+	network, err := service.CreateNetwork(ctx, "Exclusion Test", "10.4.0.0/24", "Test", "ping", true, true)
 	require.NoError(t, err)
 	defer service.DeleteNetwork(ctx, network.ID)
 
@@ -550,7 +551,7 @@ func TestNetworkService_UpdateNetworkDiscoveryTime_Integration(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test network
-	network, err := service.CreateNetwork(ctx, "Discovery Time Test", "10.5.0.0/24", "Test", "ping", true)
+	network, err := service.CreateNetwork(ctx, "Discovery Time Test", "10.5.0.0/24", "Test", "ping", true, true)
 	require.NoError(t, err)
 	defer service.DeleteNetwork(ctx, network.ID)
 
@@ -598,7 +599,7 @@ func TestNetworkService_GenerateTargetsForNetwork_Integration(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test network with a small CIDR
-	network, err := service.CreateNetwork(ctx, "Target Gen Test", "10.6.0.0/30", "Test", "ping", true)
+	network, err := service.CreateNetwork(ctx, "Target Gen Test", "10.6.0.0/30", "Test", "ping", true, true)
 	require.NoError(t, err)
 	defer service.DeleteNetwork(ctx, network.ID)
 
