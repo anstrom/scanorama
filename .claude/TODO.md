@@ -42,18 +42,12 @@ four inline `Header/WriteHeader/json.NewEncoder` blocks.
 
 ---
 
-### 4. Simplify Database Error Sanitization
+### 4. Simplify Database Error Sanitization ✅ DONE (PR #441)
 
-**File:** `internal/db/database.go` - `sanitizeDBError` function (75 lines)  
-**Issue:** Inline error code handling is verbose
-
-**Recommendation:**
-- Create map-based lookup for PostgreSQL error codes
-- Reduce inline conditionals
-- Easier to maintain and extend
-
-**Effort:** 2 hours  
-**Benefit:** More maintainable error handling
+`sanitizeDBError` in `internal/db/database.go` now uses a compact
+package-level `pgErrorCodeMap` (`map[pq.ErrorCode]pgErrMapping`) instead
+of a 14-arm switch statement. The pg-error branch shrank from ~14 lines
+to 4 lines; adding a new mapped code requires only one map entry.
 
 ---
 
@@ -142,32 +136,34 @@ monolithic method.
 
 ## Documentation Improvements
 
-### 11. Add Architecture Diagrams
+### 11. Add Architecture Diagrams ✅ DONE (PR #441)
 
-**Location:** `docs/technical/architecture/`  
-**Needed:**
-- `system-overview.md` - High-level architecture
-- `data-flow.md` - How data flows through system
-- `scheduling-flow.md` - Cron job execution flow
-- `api-design.md` - REST API design decisions
+`docs/technical/architecture/system-overview.md` (304 lines):
+- ASCII component diagram
+- Package reference table for all internal/ packages and cmd/ binaries
+- Daemon/API/CLI relationships and startup flow
+- External dependency overview
 
-**Effort:** 2 days  
-**Benefit:** Easier onboarding, clearer system understanding
+`docs/technical/architecture/data-flow.md` (355 lines):
+- ASCII sequence diagrams for every major operation: HTTP request
+  lifecycle, ad-hoc and scheduled scan/discovery, WebSocket updates,
+  DB migration, metrics, and config load flow
+- Summary table mapping operations to entry points and packages
 
 ---
 
-### 12. Create Deployment Guide
+### 12. Create Deployment Guide ✅ DONE (PR #441)
 
-**Location:** `docs/DEPLOYMENT.md`  
-**Should Cover:**
-- Production deployment options
-- Environment variables reference
-- Database setup and migrations
-- Security considerations
-- Monitoring and logging setup
-
-**Effort:** 1 day  
-**Benefit:** Easier production deployments
+`docs/DEPLOYMENT.md` (562 lines):
+- Prerequisites (Go, nmap, PostgreSQL) with per-OS install commands
+- Build from source with version ldflags
+- Full configuration YAML reference and environment variable table
+- Database setup SQL and automatic-migration behaviour
+- Foreground, daemon, systemd, and API-only run modes
+- CLI usage examples
+- Security: nmap capabilities, API keys, TLS, DB credentials, rate limiting
+- Monitoring: health endpoints, Prometheus scrape config
+- Troubleshooting for 8 common failure scenarios
 
 ---
 
@@ -197,8 +193,8 @@ monolithic method.
 7. ✅ Extract routing (#8) — done in PR #441
 
 ### Phase 3: Documentation (1 week)
-8. Add architecture diagrams (#11)
-9. Create deployment guide (#12)
+8. ✅ Add architecture diagrams (#11) — done in PR #441
+9. ✅ Create deployment guide (#12) — done in PR #441
 10. Document configuration (#9)
 
 ### Phase 4: Ongoing
