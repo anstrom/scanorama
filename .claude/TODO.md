@@ -1,6 +1,6 @@
 # Scanorama TODO - Remaining Codebase Analysis Tasks
 
-**Last Updated:** February 3, 2026  
+**Last Updated:** March 13, 2026  
 **Source:** CODEBASE_ANALYSIS.md  
 **Status:** Active Development Tasks
 
@@ -10,67 +10,35 @@
 
 ## High Priority
 
-### 1. Complete Scan Scheduling Implementation ⚠️ CRITICAL
+### 1. Complete Scan Scheduling Implementation ✅ DONE
 
-**File:** `internal/scheduler/scheduler.go:484`  
-**Issue:** `processHostsForScanning` has TODO placeholder instead of actual implementation
+**File:** `internal/scheduler/scheduler.go`  
+**Resolved in:** `fix(scheduler): implement bounded-concurrency host scanning`
 
-**Current State:**
-```go
-func (s *Scheduler) processHostsForScanning(ctx context.Context, hosts []*db.Host, config *ScanJobConfig) {
-    // TODO: Implement actual scanning logic here
-    // This would integrate with the existing scan functionality
-    // For now, just log that we would scan these hosts
-}
-```
-
-**Action Required:**
-- Integrate with existing scan service
-- Actually trigger scans for scheduled jobs
-- Add error handling and logging
-- Test scheduled scan execution
-
-**Effort:** 2-4 hours  
-**Impact:** Feature completion - scheduled scans don't work without this
+`processHostsForScanning` now selects a scan profile per host, dispatches
+goroutines bounded by a counting semaphore (`maxConcurrentScans`), calls
+`scanning.RunScanWithContext`, and logs results. Full context-cancellation
+support is included.
 
 ---
 
 ## Medium Priority
 
-### 2. Split Large Database File
+### 2. Split Large Database File ✅ DONE
 
-**File:** `internal/db/database.go` (2,591 lines)  
-**Recommendation:** Split into logical modules
-
-**Proposed Structure:**
-```
-internal/db/
-  ├── database.go       (core DB connection, migrations, sanitization)
-  ├── hosts.go         (host-related operations)
-  ├── scans.go         (scan-related operations)
-  ├── networks.go      (network-related operations)
-  ├── profiles.go      (profile operations)
-  └── scheduled_jobs.go (scheduler operations)
-```
-
-**Effort:** 1 day  
-**Benefit:** Easier navigation, better logical grouping, reduced merge conflicts
+`internal/db/` is already split into focused files:
+`database.go`, `hosts.go`, `scans.go`, `networks.go`, `profiles.go`,
+`scheduled_jobs.go`, `migrate.go`, `models.go`.
 
 ---
 
-### 3. Consolidate Handler Patterns
+### 3. Consolidate Handler Patterns ✅ DONE
 
-**Location:** `internal/api/handlers/` (11 handler files)  
-**Issue:** Repetitive patterns for validation, error handling, response formatting
-
-**Recommendation:**
-Create shared handler utilities (e.g., `internal/api/handlers/utils.go`):
-- `ValidateAndDecode(r *http.Request, v interface{}) error`
-- `RespondJSON(w http.ResponseWriter, status int, data interface{})`
-- Common error response helpers
-
-**Effort:** 1-2 days  
-**Benefit:** Reduce handler code by ~20%, more consistent patterns
+`internal/api/handlers/common.go` contains `writeJSON`, `writeError`,
+`writePaginatedResponse`, `parseJSON`, `getPaginationParams`, and
+`getRequestIDFromContext`. All handlers use these shared helpers.
+`health.go` was also updated (PR #441) to use `writeJSON` instead of
+four inline `Header/WriteHeader/json.NewEncoder` blocks.
 
 ---
 
@@ -89,30 +57,25 @@ Create shared handler utilities (e.g., `internal/api/handlers/utils.go`):
 
 ---
 
-### 5. Split Large Admin Handler
+### 5. Split Large Admin Handler ✅ DONE (PR #441)
 
-**File:** `internal/api/handlers/admin.go` (1,283 lines)  
-**Recommendation:** Split into separate files:
-- `admin_config.go` - Configuration handlers
-- `admin_logging.go` - Logging handlers
-- `admin_workers.go` - Worker management handlers
+`admin.go` (995 lines) split into four focused files:
 
-**Effort:** 3-4 hours  
-**Benefit:** Better organization, easier to find specific handlers
+- `admin.go` (232 lines) — handler struct, constructor, HTTP methods
+- `admin_types.go` (151 lines) — all request/response types
+- `admin_config.go` (212 lines) — config retrieval, parsing, extraction
+- `admin_validate.go` (419 lines) — all validation and field-level checks
 
 ---
 
-### 6. Split Large Networks CLI
+### 6. Split Large Networks CLI ✅ DONE (PR #441)
 
-**File:** `cmd/cli/networks.go` (1,139 lines)  
-**Recommendation:** Split into separate command files:
-- `networks_list.go`
-- `networks_add.go`
-- `networks_delete.go`
-- `networks_scan.go`
+`networks.go` (1,139 lines) split into four focused files:
 
-**Effort:** 2-3 hours  
-**Benefit:** Clearer command structure
+- `networks.go` (270 lines) — Cobra command vars, flags, `init()` wiring
+- `networks_handlers.go` (496 lines) — all 12 `run*` command functions
+- `networks_helpers.go` (336 lines) — DB query and display helpers
+- `networks_complete.go` (72 lines) — shell completion + CIDR validation
 
 ---
 
@@ -134,13 +97,14 @@ Split by functionality (e.g., `scheduler_test.go` → `scheduler_test.go`, `sche
 
 ---
 
-### 8. Extract Routing from Server
+### 8. Extract Routing from Server ✅ DONE (PR #441)
 
-**File:** `internal/api/server.go` (881 lines)  
-**Recommendation:** Extract routing to `routes.go`
-
-**Effort:** 2 hours  
-**Benefit:** Clearer separation of concerns
+`setupRoutes` extracted from `server.go` into `internal/api/routes.go`
+and decomposed into eight per-resource helper methods (`setupSystemRoutes`,
+`setupScanRoutes`, `setupHostRoutes`, `setupDiscoveryRoutes`,
+`setupProfileRoutes`, `setupScheduleRoutes`, `setupNetworkRoutes`,
+`setupDocRoutes`). Resolves the `funlen` linter warning on the original
+monolithic method.
 
 ---
 
@@ -222,15 +186,15 @@ Split by functionality (e.g., `scheduler_test.go` → `scheduler_test.go`, `sche
 ## Implementation Roadmap
 
 ### Phase 1: Critical (1 week)
-1. Complete scan scheduling implementation (#1) - **HIGHEST PRIORITY**
-2. Split database.go (#2)
-3. Create shared handler utilities (#3)
+1. ✅ Complete scan scheduling implementation (#1)
+2. ✅ Split database.go (#2)
+3. ✅ Create shared handler utilities (#3)
 
 ### Phase 2: Organization (1 week)
-4. Split admin.go (#5)
-5. Split networks.go (#6)
+4. ✅ Split admin.go (#5) — done in PR #441
+5. ✅ Split networks.go (#6) — done in PR #441
 6. Split large test files (#7)
-7. Extract routing (#8)
+7. ✅ Extract routing (#8) — done in PR #441
 
 ### Phase 3: Documentation (1 week)
 8. Add architecture diagrams (#11)
