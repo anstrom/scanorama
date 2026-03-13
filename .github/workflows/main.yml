@@ -168,6 +168,11 @@ jobs:
       TEST_DB_USER: scanorama_test_user
       TEST_DB_PASSWORD: test_password_123
       CI: true
+      # Opt into Node.js 24 for all JavaScript actions in this job.
+      # codecov-action@v5 vendors github-script@v7.0.1 (Node.js 20), which is
+      # deprecated and will break after June 2 2026. This env var silences the
+      # warning and future-proofs the job until codecov ships an updated bundle.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
