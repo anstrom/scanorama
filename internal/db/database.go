@@ -17,6 +17,25 @@ import (
 	"github.com/anstrom/scanorama/internal/errors"
 )
 
+// pgErrMapping holds the sanitized error code and message for a PostgreSQL error code.
+type pgErrMapping struct {
+	code    errors.ErrorCode
+	message string
+}
+
+// pgErrorCodeMap maps PostgreSQL error codes to sanitized error info.
+var pgErrorCodeMap = map[pq.ErrorCode]pgErrMapping{
+	"23505": {errors.CodeConflict, "Resource already exists"},              // unique_violation
+	"23503": {errors.CodeValidation, "Referenced resource does not exist"}, // foreign_key_violation
+	"23502": {errors.CodeValidation, "Required field is missing"},          // not_null_violation
+	"23514": {errors.CodeValidation, "Data validation failed"},             // check_violation
+	"57014": {errors.CodeCanceled, "Database operation was canceled"},      // query_canceled
+	"57P01": {errors.CodeDatabaseConnection, "Database connection lost"},   // admin_shutdown
+	"08000": {errors.CodeDatabaseConnection, "Database connection error"},  // connection_exception
+	"08003": {errors.CodeDatabaseConnection, "Database connection error"},  // connection_does_not_exist
+	"08006": {errors.CodeDatabaseConnection, "Database connection error"},  // connection_failure
+}
+
 // sanitizeDBError converts raw database errors into safe, sanitized errors
 // that don't expose internal SQL details or credentials to API clients.
 // The original error is preserved in the Cause field for internal debugging.
@@ -36,22 +55,9 @@ func sanitizeDBError(operation string, err error) error {
 	// Check for PostgreSQL-specific errors.
 	if pqErr, ok := err.(*pq.Error); ok {
 		var dbErr *errors.DatabaseError
-		switch pqErr.Code {
-		case "23505": // unique_violation
-			dbErr = errors.NewDatabaseError(errors.CodeConflict, "Resource already exists")
-		case "23503": // foreign_key_violation
-			dbErr = errors.NewDatabaseError(errors.CodeValidation, "Referenced resource does not exist")
-		case "23502": // not_null_violation
-			dbErr = errors.NewDatabaseError(errors.CodeValidation, "Required field is missing")
-		case "23514": // check_violation
-			dbErr = errors.NewDatabaseError(errors.CodeValidation, "Data validation failed")
-		case "57014": // query_canceled
-			dbErr = errors.NewDatabaseError(errors.CodeCanceled, "Database operation was canceled")
-		case "57P01": // admin_shutdown
-			dbErr = errors.NewDatabaseError(errors.CodeDatabaseConnection, "Database connection lost")
-		case "08000", "08003", "08006": // connection errors
-			dbErr = errors.NewDatabaseError(errors.CodeDatabaseConnection, "Database connection error")
-		default:
+		if mapping, found := pgErrorCodeMap[pqErr.Code]; found {
+			dbErr = errors.NewDatabaseError(mapping.code, mapping.message)
+		} else {
 			// Unknown PostgreSQL error - use generic sanitized error.
 			msg := fmt.Sprintf("Database operation failed: %s", operation)
 			dbErr = errors.NewDatabaseError(errors.CodeDatabaseQuery, msg)

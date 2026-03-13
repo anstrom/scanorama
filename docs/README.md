@@ -10,6 +10,14 @@ Core technical documentation for developers and contributors.
 - **`testing.md`** - Testing framework, utilities, and best practices
 - **`api/`** - API documentation and specifications
 - **`architecture/`** - System architecture and design documents
+  - **`system-overview.md`** - High-level component diagram, package reference, and external dependencies
+  - **`data-flow.md`** - Request lifecycle, scan/discovery flows, WebSocket updates, and migration flow
+  - **`logging.md`** - Logging, metrics, and worker pool architecture
+
+### `/`
+Top-level documentation.
+
+- **`DEPLOYMENT.md`** - Prerequisites, build instructions, environment variables, database setup, running modes, security, and troubleshooting
 
 ## Quick Start
 
