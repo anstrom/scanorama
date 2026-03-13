@@ -4,7 +4,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -181,13 +180,7 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 		statusCode = http.StatusServiceUnavailable
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("Failed to encode health response", "error", err)
-		return
-	}
+	writeJSON(w, r, statusCode, response)
 
 	// Record metrics
 	if h.metrics != nil {
@@ -207,13 +200,7 @@ func (h *HealthHandler) Liveness(w http.ResponseWriter, r *http.Request) {
 		Uptime:    time.Since(h.startTime).String(),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("Failed to encode liveness response", "error", err)
-		return
-	}
+	writeJSON(w, r, http.StatusOK, response)
 
 	// Record metrics
 	if h.metrics != nil {
@@ -255,13 +242,7 @@ func (h *HealthHandler) Status(w http.ResponseWriter, r *http.Request) {
 	defer dbCancel()
 	response.Health = h.getHealthInfo(dbCtx)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("Failed to encode status response", "error", err)
-		return
-	}
+	writeJSON(w, r, http.StatusOK, response)
 
 	// Record metrics
 	if h.metrics != nil {
@@ -283,13 +264,7 @@ func (h *HealthHandler) Version(w http.ResponseWriter, r *http.Request) {
 		Timestamp: time.Now().UTC(),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("Failed to encode version response", "error", err)
-		return
-	}
+	writeJSON(w, r, http.StatusOK, response)
 
 	// Record metrics
 	if h.metrics != nil {
