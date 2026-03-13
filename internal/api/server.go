@@ -17,16 +17,12 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	httpSwagger "github.com/swaggo/http-swagger/v2"
 
-	_ "github.com/anstrom/scanorama/docs/swagger" // Import generated swagger docs
-	apihandlers "github.com/anstrom/scanorama/internal/api/handlers"
 	"github.com/anstrom/scanorama/internal/api/middleware"
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
-	"github.com/anstrom/scanorama/internal/services"
 )
 
 // Server timeout constants.
@@ -224,114 +220,6 @@ func (s *Server) Stop() error {
 
 	s.logger.Info("API server stopped successfully")
 	return nil
-}
-
-// setupRoutes configures all API routes.
-//
-//nolint:funlen // Route registration should stay together for clarity
-func (s *Server) setupRoutes() {
-	// API version prefix
-	api := s.router.PathPrefix("/api/v1").Subrouter()
-
-	// Health and status endpoints
-	api.HandleFunc("/liveness", s.livenessHandler).Methods("GET")
-	api.HandleFunc("/health", s.healthHandler).Methods("GET")
-	api.HandleFunc("/status", s.statusHandler).Methods("GET")
-	api.HandleFunc("/version", s.versionHandler).Methods("GET")
-	api.HandleFunc("/metrics", s.metricsHandler).Methods("GET")
-	// Root-level Prometheus scrape endpoint (common convention)
-	s.router.Handle("/metrics", promhttp.HandlerFor(s.prom.GetRegistry(), promhttp.HandlerOpts{})).Methods("GET")
-
-	// Create handler instances
-	scanHandler := apihandlers.NewScanHandler(s.database, s.logger, s.metrics)
-	hostHandler := apihandlers.NewHostHandler(s.database, s.logger, s.metrics)
-	discoveryHandler := apihandlers.NewDiscoveryHandler(s.database, s.logger, s.metrics)
-	profileHandler := apihandlers.NewProfileHandler(s.database, s.logger, s.metrics)
-	scheduleHandler := apihandlers.NewScheduleHandler(s.database, s.logger, s.metrics)
-	networkHandler := apihandlers.NewNetworkHandler(services.NewNetworkService(s.database), s.logger, s.metrics)
-
-	// Create handler manager for WebSocket endpoints
-	handlerManager := apihandlers.New(s.database, s.logger, s.metrics)
-
-	// Scan endpoints
-	api.HandleFunc("/scans", scanHandler.ListScans).Methods("GET")
-	api.HandleFunc("/scans", scanHandler.CreateScan).Methods("POST")
-	api.HandleFunc("/scans/{id}", scanHandler.GetScan).Methods("GET")
-	api.HandleFunc("/scans/{id}", scanHandler.UpdateScan).Methods("PUT")
-	api.HandleFunc("/scans/{id}", scanHandler.DeleteScan).Methods("DELETE")
-	api.HandleFunc("/scans/{id}/results", scanHandler.GetScanResults).Methods("GET")
-	api.HandleFunc("/scans/{id}/start", scanHandler.StartScan).Methods("POST")
-	api.HandleFunc("/scans/{id}/stop", scanHandler.StopScan).Methods("POST")
-
-	// Host endpoints
-	api.HandleFunc("/hosts", hostHandler.ListHosts).Methods("GET")
-	api.HandleFunc("/hosts", hostHandler.CreateHost).Methods("POST")
-	api.HandleFunc("/hosts/{id}", hostHandler.GetHost).Methods("GET")
-	api.HandleFunc("/hosts/{id}", hostHandler.UpdateHost).Methods("PUT")
-	api.HandleFunc("/hosts/{id}", hostHandler.DeleteHost).Methods("DELETE")
-	api.HandleFunc("/hosts/{id}/scans", hostHandler.GetHostScans).Methods("GET")
-
-	// Discovery endpoints
-	api.HandleFunc("/discovery", discoveryHandler.ListDiscoveryJobs).Methods("GET")
-	api.HandleFunc("/discovery", discoveryHandler.CreateDiscoveryJob).Methods("POST")
-	api.HandleFunc("/discovery/{id}", discoveryHandler.GetDiscoveryJob).Methods("GET")
-	api.HandleFunc("/discovery/{id}/start", discoveryHandler.StartDiscovery).Methods("POST")
-	api.HandleFunc("/discovery/{id}/stop", discoveryHandler.StopDiscovery).Methods("POST")
-
-	// Profile endpoints
-	api.HandleFunc("/profiles", profileHandler.ListProfiles).Methods("GET")
-	api.HandleFunc("/profiles", profileHandler.CreateProfile).Methods("POST")
-	api.HandleFunc("/profiles/{id}", profileHandler.GetProfile).Methods("GET")
-	api.HandleFunc("/profiles/{id}", profileHandler.UpdateProfile).Methods("PUT")
-	api.HandleFunc("/profiles/{id}", profileHandler.DeleteProfile).Methods("DELETE")
-
-	// Schedule endpoints
-	api.HandleFunc("/schedules", scheduleHandler.ListSchedules).Methods("GET")
-	api.HandleFunc("/schedules", scheduleHandler.CreateSchedule).Methods("POST")
-	api.HandleFunc("/schedules/{id}", scheduleHandler.GetSchedule).Methods("GET")
-	api.HandleFunc("/schedules/{id}", scheduleHandler.UpdateSchedule).Methods("PUT")
-	api.HandleFunc("/schedules/{id}", scheduleHandler.DeleteSchedule).Methods("DELETE")
-	api.HandleFunc("/schedules/{id}/enable", scheduleHandler.EnableSchedule).Methods("POST")
-	api.HandleFunc("/schedules/{id}/disable", scheduleHandler.DisableSchedule).Methods("POST")
-
-	// Network endpoints
-	api.HandleFunc("/networks", networkHandler.ListNetworks).Methods("GET")
-	api.HandleFunc("/networks", networkHandler.CreateNetwork).Methods("POST")
-	api.HandleFunc("/networks/stats", networkHandler.GetNetworkStats).Methods("GET")
-	api.HandleFunc("/networks/{id}", networkHandler.GetNetwork).Methods("GET")
-	api.HandleFunc("/networks/{id}", networkHandler.UpdateNetwork).Methods("PUT")
-	api.HandleFunc("/networks/{id}", networkHandler.DeleteNetwork).Methods("DELETE")
-	api.HandleFunc("/networks/{id}/enable", networkHandler.EnableNetwork).Methods("POST")
-	api.HandleFunc("/networks/{id}/disable", networkHandler.DisableNetwork).Methods("POST")
-	api.HandleFunc("/networks/{id}/rename", networkHandler.RenameNetwork).Methods("PUT")
-	api.HandleFunc("/networks/{id}/exclusions", networkHandler.ListNetworkExclusions).Methods("GET")
-	api.HandleFunc("/networks/{id}/exclusions", networkHandler.CreateNetworkExclusion).Methods("POST")
-
-	// Global exclusions endpoints
-	api.HandleFunc("/exclusions", networkHandler.ListGlobalExclusions).Methods("GET")
-	api.HandleFunc("/exclusions", networkHandler.CreateGlobalExclusion).Methods("POST")
-	api.HandleFunc("/exclusions/{id}", networkHandler.DeleteExclusion).Methods("DELETE")
-
-	// WebSocket endpoints
-	api.HandleFunc("/ws", handlerManager.GeneralWebSocket).Methods("GET")
-
-	// Admin endpoints
-	api.HandleFunc("/admin/status", s.adminStatusHandler).Methods("GET")
-
-	// Swagger documentation endpoints
-	s.router.PathPrefix("/swagger/").Handler(httpSwagger.Handler(
-		httpSwagger.URL("/swagger/doc.json"),
-		httpSwagger.DeepLinking(true),
-		httpSwagger.DocExpansion("none"),
-	))
-
-	// Documentation aliases
-	s.router.HandleFunc("/docs", s.redirectToSwagger).Methods("GET")
-	s.router.HandleFunc("/docs/", s.redirectToSwagger).Methods("GET")
-	s.router.HandleFunc("/api-docs", s.redirectToSwagger).Methods("GET")
-
-	// Root redirect - send browsers to docs, API clients to health
-	s.router.HandleFunc("/", s.redirectToAPI).Methods("GET")
 }
 
 // setupMiddleware configures middleware for the API server.
