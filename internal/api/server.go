@@ -26,6 +26,7 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/services"
 )
 
 // Server timeout constants.
@@ -247,7 +248,7 @@ func (s *Server) setupRoutes() {
 	discoveryHandler := apihandlers.NewDiscoveryHandler(s.database, s.logger, s.metrics)
 	profileHandler := apihandlers.NewProfileHandler(s.database, s.logger, s.metrics)
 	scheduleHandler := apihandlers.NewScheduleHandler(s.database, s.logger, s.metrics)
-	networkHandler := apihandlers.NewNetworkHandler(s.database, s.logger, s.metrics)
+	networkHandler := apihandlers.NewNetworkHandler(services.NewNetworkService(s.database), s.logger, s.metrics)
 
 	// Create handler manager for WebSocket endpoints
 	handlerManager := apihandlers.New(s.database, s.logger, s.metrics)

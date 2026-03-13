@@ -22,7 +22,7 @@ func createTestScheduleHandler(t *testing.T) *ScheduleHandler {
 	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 	registry := metrics.NewRegistry()
 
-	return NewScheduleHandler(nil, logger, registry)
+	return NewScheduleHandler(nilScheduleStore{}, logger, registry)
 }
 
 func TestNewScheduleHandler(t *testing.T) {
@@ -30,7 +30,7 @@ func TestNewScheduleHandler(t *testing.T) {
 		logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 		registry := metrics.NewRegistry()
 
-		handler := NewScheduleHandler(nil, logger, registry)
+		handler := NewScheduleHandler(nilScheduleStore{}, logger, registry)
 
 		assert.NotNil(t, handler)
 		assert.NotNil(t, handler.logger)

@@ -15,14 +15,16 @@ import (
 // NetworkHandler handles network-related API requests.
 type NetworkHandler struct {
 	*BaseHandler
-	service *services.NetworkService
+	service NetworkServicer
 }
 
 // NewNetworkHandler creates a new network handler.
-func NewNetworkHandler(database *db.DB, logger *slog.Logger, metricsRegistry metrics.MetricsRegistry) *NetworkHandler {
+func NewNetworkHandler(
+	service NetworkServicer, logger *slog.Logger, metricsRegistry metrics.MetricsRegistry,
+) *NetworkHandler {
 	return &NetworkHandler{
 		BaseHandler: NewBaseHandler(logger, metricsRegistry),
-		service:     services.NewNetworkService(database),
+		service:     service,
 	}
 }
 

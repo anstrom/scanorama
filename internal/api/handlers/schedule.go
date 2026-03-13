@@ -25,17 +25,20 @@ const (
 	maxScheduleDescLength = 1000
 	maxScheduleTagLength  = 50
 	maxScheduleRetries    = 10
+	scheduleStatusActive  = "active"
 )
 
 // ScheduleHandler handles schedule-related API endpoints.
 type ScheduleHandler struct {
-	database *db.DB
+	database ScheduleStore
 	logger   *slog.Logger
 	metrics  *metrics.Registry
 }
 
 // NewScheduleHandler creates a new schedule handler.
-func NewScheduleHandler(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry) *ScheduleHandler {
+func NewScheduleHandler(
+	database ScheduleStore, logger *slog.Logger, metricsManager *metrics.Registry,
+) *ScheduleHandler {
 	return &ScheduleHandler{
 		database: database,
 		logger:   logger.With("handler", "schedule"),
@@ -495,7 +498,7 @@ func (h *ScheduleHandler) scheduleToResponse(schedule *db.Schedule) ScheduleResp
 	case !schedule.Enabled:
 		resp.Status = "disabled"
 	case schedule.LastRun != nil:
-		resp.Status = "active"
+		resp.Status = scheduleStatusActive
 	default:
 		resp.Status = "pending"
 	}

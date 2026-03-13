@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
@@ -41,16 +40,14 @@ const (
 
 // AdminHandler handles administrative API endpoints.
 type AdminHandler struct {
-	database  *db.DB
 	logger    *slog.Logger
 	metrics   *metrics.Registry
 	validator *validator.Validate
 }
 
 // NewAdminHandler creates a new admin handler.
-func NewAdminHandler(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry) *AdminHandler {
+func NewAdminHandler(logger *slog.Logger, metricsManager *metrics.Registry) *AdminHandler {
 	return &AdminHandler{
-		database:  database,
 		logger:    logger.With("handler", "admin"),
 		metrics:   metricsManager,
 		validator: validator.New(),

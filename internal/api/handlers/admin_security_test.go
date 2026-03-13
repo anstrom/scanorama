@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
@@ -28,11 +27,10 @@ const (
 
 func TestAdminHandler_ConfigSecurity(t *testing.T) {
 	// Setup test dependencies
-	mockDB := &db.DB{} // Mock database
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	metricsRegistry := metrics.NewRegistry()
 
-	handler := NewAdminHandler(mockDB, logger, metricsRegistry)
+	handler := NewAdminHandler(logger, metricsRegistry)
 
 	t.Run("typed configuration prevents unsafe deserialization", func(t *testing.T) {
 		// This test demonstrates that the new typed approach prevents

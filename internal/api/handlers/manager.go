@@ -43,8 +43,8 @@ func New(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry)
 	hm.discovery = NewDiscoveryHandler(database, logger, metricsManager)
 	hm.profile = NewProfileHandler(database, logger, metricsManager)
 	hm.schedule = NewScheduleHandler(database, logger, metricsManager)
-	hm.admin = NewAdminHandler(database, logger, metricsManager)
-	hm.websocket = NewWebSocketHandler(database, logger, metricsManager)
+	hm.admin = NewAdminHandler(logger, metricsManager)
+	hm.websocket = NewWebSocketHandler(logger, metricsManager)
 
 	return hm
 }

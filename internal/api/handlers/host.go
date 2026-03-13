@@ -29,13 +29,13 @@ const (
 
 // HostHandler handles host-related API endpoints.
 type HostHandler struct {
-	database *db.DB
+	database HostStore
 	logger   *slog.Logger
 	metrics  *metrics.Registry
 }
 
 // NewHostHandler creates a new host handler.
-func NewHostHandler(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry) *HostHandler {
+func NewHostHandler(database HostStore, logger *slog.Logger, metricsManager *metrics.Registry) *HostHandler {
 	return &HostHandler{
 		database: database,
 		logger:   logger.With("handler", "host"),

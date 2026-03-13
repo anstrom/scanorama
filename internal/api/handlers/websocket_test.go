@@ -17,28 +17,24 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
 func TestNewWebSocketHandler(t *testing.T) {
 	tests := []struct {
 		name        string
-		database    *db.DB
 		logger      *slog.Logger
 		metrics     *metrics.Registry
 		expectPanic bool
 	}{
 		{
 			name:        "successful creation with nil dependencies",
-			database:    nil,
 			logger:      createTestLogger(),
 			metrics:     nil,
 			expectPanic: false,
 		},
 		{
 			name:        "creation with valid logger",
-			database:    nil,
 			logger:      createTestLogger(),
 			metrics:     nil,
 			expectPanic: false,
@@ -49,10 +45,10 @@ func TestNewWebSocketHandler(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectPanic {
 				assert.Panics(t, func() {
-					NewWebSocketHandler(tt.database, tt.logger, tt.metrics)
+					NewWebSocketHandler(tt.logger, tt.metrics)
 				})
 			} else {
-				handler := NewWebSocketHandler(tt.database, tt.logger, tt.metrics)
+				handler := NewWebSocketHandler(tt.logger, tt.metrics)
 				assert.NotNil(t, handler)
 				assert.NotNil(t, handler.logger)
 				assert.NotNil(t, handler.scanClients)
@@ -93,7 +89,7 @@ func (h *hijackerWrapper) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 func TestWebSocketHandler_GetConnectedClients(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 
 	clients := handler.GetConnectedClients()
 
@@ -108,7 +104,7 @@ func TestWebSocketHandler_GetConnectedClients(t *testing.T) {
 
 func TestWebSocketHandler_Close(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 
 	err := handler.Close()
 	assert.NoError(t, err)
@@ -122,7 +118,7 @@ func TestWebSocketHandler_Close(t *testing.T) {
 
 func TestWebSocketHandler_Shutdown(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 
 	// Should not panic
 	assert.NotPanics(t, func() {
@@ -310,7 +306,7 @@ func TestDiscoveryUpdateMessage_Validation(t *testing.T) {
 
 func TestWebSocketHandler_BroadcastMethods_NilHandling(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 
 	// Test broadcasting with nil - should handle gracefully
 	t.Run("nil scan update", func(t *testing.T) {
@@ -402,7 +398,7 @@ func TestWebSocketConstants(t *testing.T) {
 
 func TestWebSocketHandler_BroadcastChannelCapacity(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 
 	// Test that broadcast channels have expected capacity
 	// We can't directly test capacity, but we can test behavior
@@ -447,7 +443,7 @@ func TestWebSocketHandler_SecurityConfigurationExists(t *testing.T) {
 // Test that the WebSocket handler properly handles context cancellation
 func TestWebSocketHandler_ContextHandling(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 
 	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -465,7 +461,7 @@ func TestWebSocketHandler_ContextHandling(t *testing.T) {
 
 func TestWebSocketHandler_GetTotalClients(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 
 	// Test getTotalClients method directly
 	total := handler.getTotalClients()
@@ -474,7 +470,7 @@ func TestWebSocketHandler_GetTotalClients(t *testing.T) {
 
 func TestWebSocketHandler_BroadcastSuccessfulCases(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 
 	// Test multiple successful scan broadcasts
 	for i := 0; i < 10; i++ {
@@ -512,7 +508,7 @@ func TestWebSocketHandler_BroadcastSuccessfulCases(t *testing.T) {
 
 func TestWebSocketHandler_BroadcastEdgeCases(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 
 	t.Run("scan update with all fields", func(t *testing.T) {
 		now := time.Now()
@@ -551,7 +547,7 @@ func TestWebSocketHandler_BroadcastEdgeCases(t *testing.T) {
 
 func TestWebSocketHandler_GetTotalClientsInternal(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 
 	// Test internal getTotalClients method
 	total := handler.getTotalClients()
@@ -565,7 +561,7 @@ func TestWebSocketHandler_GetTotalClientsInternal(t *testing.T) {
 // TestWebSocketHandler_ScanWebSocket tests the scan WebSocket endpoint
 func TestWebSocketHandler_ScanWebSocket(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -612,7 +608,7 @@ func TestWebSocketHandler_ScanWebSocket(t *testing.T) {
 // TestWebSocketHandler_DiscoveryWebSocket tests the discovery WebSocket endpoint
 func TestWebSocketHandler_DiscoveryWebSocket(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -660,7 +656,7 @@ func TestWebSocketHandler_DiscoveryWebSocket(t *testing.T) {
 // TestWebSocketHandler_GeneralWebSocket tests the general WebSocket endpoint
 func TestWebSocketHandler_GeneralWebSocket(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -708,7 +704,7 @@ func TestWebSocketHandler_GeneralWebSocket(t *testing.T) {
 // TestWebSocketHandler_MultipleClients tests multiple concurrent connections
 func TestWebSocketHandler_MultipleClients(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -773,7 +769,7 @@ func TestWebSocketHandler_MultipleClients(t *testing.T) {
 // TestWebSocketHandler_ClientDisconnection tests client disconnection handling
 func TestWebSocketHandler_ClientDisconnection(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -809,7 +805,7 @@ func TestWebSocketHandler_ClientDisconnection(t *testing.T) {
 // TestWebSocketHandler_BroadcastWithNoClients tests broadcasting with no connected clients
 func TestWebSocketHandler_BroadcastWithNoClients(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	// Test broadcasting with no clients connected
@@ -836,7 +832,7 @@ func TestWebSocketHandler_BroadcastWithNoClients(t *testing.T) {
 // TestWebSocketHandler_ConcurrentBroadcasts tests concurrent broadcasting
 func TestWebSocketHandler_ConcurrentBroadcasts(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	var wg sync.WaitGroup
@@ -878,7 +874,7 @@ func TestWebSocketHandler_ConcurrentBroadcasts(t *testing.T) {
 // TestWebSocketHandler_PingPong tests ping/pong mechanism
 func TestWebSocketHandler_PingPong(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -917,7 +913,7 @@ func TestWebSocketHandler_PingPong(t *testing.T) {
 // TestWebSocketHandler_ChannelFullBehavior tests behavior when broadcast channels are full
 func TestWebSocketHandler_ChannelFullBehavior(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	// Fill the scan broadcast channel beyond capacity
@@ -940,7 +936,7 @@ func TestWebSocketHandler_ChannelFullBehavior(t *testing.T) {
 // TestWebSocketHandler_CloseWithActiveConnections tests closing handler with active connections
 func TestWebSocketHandler_CloseWithActiveConnections(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler.ScanWebSocket(w, r)
@@ -983,7 +979,7 @@ func TestWebSocketHandler_CloseWithActiveConnections(t *testing.T) {
 // TestWebSocketHandler_MixedClientTypes tests scan and discovery clients together
 func TestWebSocketHandler_MixedClientTypes(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	scanServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1059,7 +1055,7 @@ func TestWebSocketHandler_MixedClientTypes(t *testing.T) {
 // TestWebSocketHandler_SystemMessageBroadcast tests system message broadcasting
 func TestWebSocketHandler_SystemMessageBroadcast(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	generalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1094,7 +1090,7 @@ func TestWebSocketHandler_SystemMessageBroadcast(t *testing.T) {
 // TestWebSocketHandler_InvalidUpgrade tests handling of invalid WebSocket upgrade requests
 func TestWebSocketHandler_InvalidUpgrade(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	// Create a regular HTTP request (not WebSocket upgrade)
@@ -1111,7 +1107,7 @@ func TestWebSocketHandler_InvalidUpgrade(t *testing.T) {
 // TestWebSocketHandler_GetConnectedClientsThreadSafety tests thread-safe access to client counts
 func TestWebSocketHandler_GetConnectedClientsThreadSafety(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	var wg sync.WaitGroup
@@ -1134,7 +1130,7 @@ func TestWebSocketHandler_GetConnectedClientsThreadSafety(t *testing.T) {
 // TestWebSocketHandler_WritePumpTimeout tests writePump with connection timeout
 func TestWebSocketHandler_WritePumpTimeout(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1165,7 +1161,7 @@ func TestWebSocketHandler_WritePumpTimeout(t *testing.T) {
 // TestWebSocketHandler_BroadcastToMultipleClients tests broadcast distribution
 func TestWebSocketHandler_BroadcastToMultipleClients(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1219,7 +1215,7 @@ func TestWebSocketHandler_BroadcastToMultipleClients(t *testing.T) {
 // TestWebSocketHandler_PingClientsExecution tests that ping mechanism runs
 func TestWebSocketHandler_PingClientsExecution(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1266,7 +1262,7 @@ func TestWebSocketHandler_PingClientsExecution(t *testing.T) {
 // TestWebSocketHandler_BroadcastErrorHandling tests broadcast with client write errors
 func TestWebSocketHandler_BroadcastErrorHandling(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1306,7 +1302,7 @@ func TestWebSocketHandler_BroadcastErrorHandling(t *testing.T) {
 // TestWebSocketHandler_ReadPumpCloseHandling tests readPump connection close handling
 func TestWebSocketHandler_ReadPumpCloseHandling(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1340,7 +1336,7 @@ func TestWebSocketHandler_ReadPumpCloseHandling(t *testing.T) {
 // TestWebSocketHandler_BroadcastTimeoutBehavior tests broadcast with slow clients
 func TestWebSocketHandler_BroadcastTimeoutBehavior(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1376,7 +1372,7 @@ func TestWebSocketHandler_BroadcastTimeoutBehavior(t *testing.T) {
 // TestWebSocketHandler_MixedBroadcastTypes tests broadcasting different message types
 func TestWebSocketHandler_MixedBroadcastTypes(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewWebSocketHandler(nil, logger, nil)
+	handler := NewWebSocketHandler(logger, nil)
 	defer handler.Shutdown()
 
 	generalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

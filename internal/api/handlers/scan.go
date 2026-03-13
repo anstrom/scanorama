@@ -27,13 +27,13 @@ const (
 
 // ScanHandler handles scan-related API endpoints.
 type ScanHandler struct {
-	database *db.DB
+	database ScanStore
 	logger   *slog.Logger
 	metrics  *metrics.Registry
 }
 
 // NewScanHandler creates a new scan handler.
-func NewScanHandler(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry) *ScanHandler {
+func NewScanHandler(database ScanStore, logger *slog.Logger, metricsManager *metrics.Registry) *ScanHandler {
 	return &ScanHandler{
 		database: database,
 		logger:   logger.With("handler", "scan"),
@@ -366,7 +366,6 @@ func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 	h.logger.Info("Starting async scan execution", "scan_id", scanID, "scan_name", scan.Name)
 
-	// Convert database scan to internal ScanConfig
 	scanConfig := &scanning.ScanConfig{
 		Targets:    scan.Targets,
 		Ports:      scan.Ports,
@@ -374,27 +373,23 @@ func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 		TimeoutSec: 300, // Default 5 minute timeout
 	}
 
-	// Execute the scan using the internal scan engine
+	// Pass nil for the database — status transitions are handled via the typed
+	// StopScan/StartScan methods below, keeping this handler decoupled from *db.DB.
 	ctx := context.Background()
-	result, err := scanning.RunScanWithContext(ctx, scanConfig, h.database)
+	result, err := scanning.RunScanWithContext(ctx, scanConfig, nil)
 
-	// Update scan status based on result
 	if err != nil {
 		h.logger.Error("Scan execution failed", "scan_id", scanID, "error", err)
-		// Update scan status to failed
-		query := `UPDATE scan_jobs SET status = 'failed', completed_at = NOW() WHERE id = $1`
-		_, updateErr := h.database.Exec(query, scanID)
-		if updateErr != nil {
-			h.logger.Error("Failed to update scan status to failed", "scan_id", scanID, "error", updateErr)
+		if stopErr := h.database.StopScan(ctx, scanID); stopErr != nil {
+			h.logger.Error("Failed to mark scan as stopped after failure",
+				"scan_id", scanID, "error", stopErr)
 		}
 	} else {
 		h.logger.Info("Scan execution completed successfully", "scan_id", scanID,
 			"hosts_scanned", len(result.Hosts), "duration", result.Duration)
-		// Update scan status to completed
-		query := `UPDATE scan_jobs SET status = 'completed', completed_at = NOW() WHERE id = $1`
-		_, updateErr := h.database.Exec(query, scanID)
-		if updateErr != nil {
-			h.logger.Error("Failed to update scan status to completed", "scan_id", scanID, "error", updateErr)
+		if stopErr := h.database.StopScan(ctx, scanID); stopErr != nil {
+			h.logger.Error("Failed to mark scan as completed",
+				"scan_id", scanID, "error", stopErr)
 		}
 	}
 }

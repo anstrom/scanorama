@@ -29,13 +29,15 @@ const (
 
 // DiscoveryHandler handles discovery-related API endpoints.
 type DiscoveryHandler struct {
-	database *db.DB
+	database DiscoveryStore
 	logger   *slog.Logger
 	metrics  *metrics.Registry
 }
 
 // NewDiscoveryHandler creates a new discovery handler.
-func NewDiscoveryHandler(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry) *DiscoveryHandler {
+func NewDiscoveryHandler(
+	database DiscoveryStore, logger *slog.Logger, metricsManager *metrics.Registry,
+) *DiscoveryHandler {
 	return &DiscoveryHandler{
 		database: database,
 		logger:   logger.With("handler", "discovery"),

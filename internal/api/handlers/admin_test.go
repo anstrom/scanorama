@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
@@ -26,7 +25,7 @@ func createTestAdminHandler(t *testing.T) *AdminHandler {
 	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 	registry := metrics.NewRegistry()
 
-	return NewAdminHandler(nil, logger, registry)
+	return NewAdminHandler(logger, registry)
 }
 
 func createTestRequest(t *testing.T, method, path string, body interface{}) *http.Request {
@@ -84,12 +83,10 @@ func TestNewAdminHandler(t *testing.T) {
 	t.Run("initializes with all dependencies", func(t *testing.T) {
 		logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 		registry := metrics.NewRegistry()
-		database := &db.DB{}
 
-		handler := NewAdminHandler(database, logger, registry)
+		handler := NewAdminHandler(logger, registry)
 
 		assert.NotNil(t, handler)
-		assert.Equal(t, database, handler.database)
 		assert.NotNil(t, handler.logger)
 		assert.Equal(t, registry, handler.metrics)
 		assert.NotNil(t, handler.validator)
