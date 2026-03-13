@@ -13,7 +13,6 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
@@ -29,7 +28,6 @@ const (
 
 // WebSocketHandler handles WebSocket connections for real-time updates.
 type WebSocketHandler struct {
-	database *db.DB
 	logger   *slog.Logger
 	metrics  *metrics.Registry
 	upgrader websocket.Upgrader
@@ -83,11 +81,10 @@ type DiscoveryUpdateMessage struct {
 }
 
 // NewWebSocketHandler creates a new WebSocket handler.
-func NewWebSocketHandler(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry) *WebSocketHandler {
+func NewWebSocketHandler(logger *slog.Logger, metricsManager *metrics.Registry) *WebSocketHandler {
 	handler := &WebSocketHandler{
-		database: database,
-		logger:   logger.With("handler", "websocket"),
-		metrics:  metricsManager,
+		logger:  logger.With("handler", "websocket"),
+		metrics: metricsManager,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,

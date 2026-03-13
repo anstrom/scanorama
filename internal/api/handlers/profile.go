@@ -69,13 +69,13 @@ const (
 
 // ProfileHandler handles profile-related API endpoints.
 type ProfileHandler struct {
-	database *db.DB
+	database ProfileStore
 	logger   *slog.Logger
 	metrics  *metrics.Registry
 }
 
 // NewProfileHandler creates a new profile handler.
-func NewProfileHandler(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry) *ProfileHandler {
+func NewProfileHandler(database ProfileStore, logger *slog.Logger, metricsManager *metrics.Registry) *ProfileHandler {
 	return &ProfileHandler{
 		database: database,
 		logger:   logger.With("handler", "profile"),

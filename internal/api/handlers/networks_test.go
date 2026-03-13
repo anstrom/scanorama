@@ -49,7 +49,7 @@ func setupNetworkHandlerTest(t *testing.T) (*NetworkHandler, *db.DB, func()) {
 
 	logger := createTestLogger()
 	metricsRegistry := metrics.NewRegistry()
-	handler := NewNetworkHandler(database, logger, metricsRegistry)
+	handler := NewNetworkHandler(services.NewNetworkService(database), logger, metricsRegistry)
 
 	// Clean up any leftover test data from previous runs (handler-specific prefix)
 	_, _ = database.Exec(`
@@ -86,7 +86,7 @@ func TestNewNetworkHandler(t *testing.T) {
 	metricsRegistry := metrics.NewRegistry()
 	mockDB := &db.DB{}
 
-	handler := NewNetworkHandler(mockDB, logger, metricsRegistry)
+	handler := NewNetworkHandler(services.NewNetworkService(mockDB), logger, metricsRegistry)
 
 	assert.NotNil(t, handler)
 	assert.NotNil(t, handler.service)

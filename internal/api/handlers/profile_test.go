@@ -11,35 +11,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
-
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/anstrom/scanorama/test/helpers"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewProfileHandler(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
 	testMetrics := metrics.NewRegistry()
 
 	tests := []struct {
 		name     string
-		database *db.DB
+		database ProfileStore
 		metrics  *metrics.Registry
 	}{
 		{
-			name:     "with database and metrics",
-			database: &db.DB{},
+			name:     "with store and metrics",
+			database: nilProfileStore{},
 			metrics:  testMetrics,
 		},
 		{
-			name:     "with nil database",
-			database: nil,
+			name:     "with nil store",
+			database: nilProfileStore{},
 			metrics:  testMetrics,
 		},
 	}
@@ -58,7 +53,7 @@ func TestNewProfileHandler(t *testing.T) {
 
 func TestProfileHandler_ValidateProfileRequest(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -179,7 +174,7 @@ func TestProfileHandler_ValidateProfileRequest(t *testing.T) {
 
 func TestProfileHandler_GetProfileFilters(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name           string
@@ -219,7 +214,7 @@ func TestProfileHandler_GetProfileFilters(t *testing.T) {
 
 func TestProfileHandler_RequestToDBProfile(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	request := &ProfileRequest{
 		Name:        "Test Profile",
@@ -274,7 +269,7 @@ func TestProfileHandler_RequestToDBProfile(t *testing.T) {
 
 func TestProfileHandler_ProfileToResponse(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	testProfile := &db.ScanProfile{
 		ID:          "test-profile",
@@ -296,7 +291,7 @@ func TestProfileHandler_ProfileToResponse(t *testing.T) {
 
 func TestProfileHandler_CreateProfile_ValidationErrors(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -353,7 +348,7 @@ func TestProfileHandler_CreateProfile_ValidationErrors(t *testing.T) {
 
 func TestProfileHandler_GetProfile_InvalidID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("GET", "/api/v1/profiles/invalid-id", http.NoBody)
 	req.SetPathValue("id", "invalid-id")
@@ -366,7 +361,7 @@ func TestProfileHandler_GetProfile_InvalidID(t *testing.T) {
 
 func TestProfileHandler_UpdateProfile_InvalidID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	updateRequest := ProfileRequest{
 		Name:     "Updated Profile",
@@ -386,7 +381,7 @@ func TestProfileHandler_UpdateProfile_InvalidID(t *testing.T) {
 
 func TestProfileHandler_DeleteProfile_InvalidID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("DELETE", "/api/v1/profiles/invalid-id", http.NoBody)
 	req.SetPathValue("id", "invalid-id")
@@ -399,7 +394,7 @@ func TestProfileHandler_DeleteProfile_InvalidID(t *testing.T) {
 
 func TestProfileHandler_ValidateTimingTemplate(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -480,7 +475,7 @@ func TestProfileHandler_ValidateTimingTemplate(t *testing.T) {
 
 func TestProfileHandler_ValidateProfileTimeouts(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -535,7 +530,7 @@ func TestProfileHandler_ValidateProfileTimeouts(t *testing.T) {
 
 func TestProfileHandler_ValidateProfileRateLimiting(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -590,7 +585,7 @@ func TestProfileHandler_ValidateProfileRateLimiting(t *testing.T) {
 
 func TestProfileHandler_ValidateHostGroupSizes(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -646,7 +641,7 @@ func TestProfileHandler_ValidateHostGroupSizes(t *testing.T) {
 
 func TestProfileHandler_EdgeCases(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	t.Run("scan types validation", func(t *testing.T) {
 		validTypes := []string{"connect", "syn", "ack", "aggressive", "comprehensive"}
@@ -685,7 +680,7 @@ func TestProfileHandler_EdgeCases(t *testing.T) {
 
 func TestProfileHandler_RequestValidation_Comprehensive(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	t.Run("maximum valid profile request", func(t *testing.T) {
 		req := &ProfileRequest{
@@ -735,7 +730,7 @@ func TestProfileHandler_RequestValidation_Comprehensive(t *testing.T) {
 
 func BenchmarkProfileHandler_ValidateProfileRequest(b *testing.B) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	request := &ProfileRequest{
 		Name:        "Benchmark Profile",
@@ -763,7 +758,7 @@ func BenchmarkProfileHandler_ValidateProfileRequest(b *testing.B) {
 
 func BenchmarkProfileHandler_GetProfileFilters(b *testing.B) {
 	logger := createTestLogger()
-	handler := NewProfileHandler(nil, logger, metrics.NewRegistry())
+	handler := NewProfileHandler(nilProfileStore{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("GET", "/api/v1/profiles?scan_type=comprehensive", http.NoBody)
 

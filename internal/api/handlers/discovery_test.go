@@ -22,17 +22,17 @@ func TestNewDiscoveryHandler(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		database *db.DB
+		database DiscoveryStore
 		metrics  *metrics.Registry
 	}{
 		{
-			name:     "with database and metrics",
-			database: &db.DB{},
+			name:     "with store and metrics",
+			database: nilDiscoveryStore{},
 			metrics:  testMetrics,
 		},
 		{
-			name:     "with nil database",
-			database: nil,
+			name:     "with nil store",
+			database: nilDiscoveryStore{},
 			metrics:  testMetrics,
 		},
 	}
@@ -51,7 +51,7 @@ func TestNewDiscoveryHandler(t *testing.T) {
 
 func TestDiscoveryHandler_ValidateDiscoveryRequest(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -223,7 +223,7 @@ func TestDiscoveryHandler_ValidateDiscoveryRequest(t *testing.T) {
 
 func TestDiscoveryHandler_ValidateBasicFields(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -277,7 +277,7 @@ func TestDiscoveryHandler_ValidateBasicFields(t *testing.T) {
 
 func TestDiscoveryHandler_ValidateMethod(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -335,7 +335,7 @@ func TestDiscoveryHandler_ValidateMethod(t *testing.T) {
 
 func TestDiscoveryHandler_ValidateNetworks(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -397,7 +397,7 @@ func TestDiscoveryHandler_ValidateNetworks(t *testing.T) {
 
 func TestDiscoveryHandler_ValidateLimits(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -457,7 +457,7 @@ func TestDiscoveryHandler_ValidateLimits(t *testing.T) {
 
 func TestDiscoveryHandler_ValidateTags(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -521,7 +521,7 @@ func TestDiscoveryHandler_ValidateTags(t *testing.T) {
 
 func TestDiscoveryHandler_GetDiscoveryFilters(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name           string
@@ -587,7 +587,7 @@ func TestDiscoveryHandler_GetDiscoveryFilters(t *testing.T) {
 
 func TestDiscoveryHandler_RequestToDBDiscovery(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name     string
@@ -649,7 +649,7 @@ func TestDiscoveryHandler_RequestToDBDiscovery(t *testing.T) {
 
 func TestDiscoveryHandler_CreateDiscoveryJob_ValidationErrors(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name           string
@@ -712,7 +712,7 @@ func TestDiscoveryHandler_CreateDiscoveryJob_ValidationErrors(t *testing.T) {
 
 func TestDiscoveryHandler_DiscoveryToResponse_Completed(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	jobID := uuid.New()
 	_, ipnet, _ := net.ParseCIDR("192.168.1.0/24")
@@ -747,7 +747,7 @@ func TestDiscoveryHandler_DiscoveryToResponse_Completed(t *testing.T) {
 
 func TestDiscoveryHandler_DiscoveryToResponse_Running(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	_, ipnet, _ := net.ParseCIDR("10.0.0.0/8")
 	startedAt := time.Now().Add(-1 * time.Minute)
@@ -773,7 +773,7 @@ func TestDiscoveryHandler_DiscoveryToResponse_Running(t *testing.T) {
 
 func TestDiscoveryHandler_DiscoveryToResponse_Pending(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	_, ipnet, _ := net.ParseCIDR("172.16.0.0/16")
 
@@ -796,7 +796,7 @@ func TestDiscoveryHandler_DiscoveryToResponse_Pending(t *testing.T) {
 
 func TestDiscoveryHandler_DiscoveryToResponse_Failed(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewDiscoveryHandler(nil, logger, metrics.NewRegistry())
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
 	_, ipnet, _ := net.ParseCIDR("192.168.1.0/24")
 
