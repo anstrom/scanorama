@@ -589,13 +589,20 @@ func TestDiscoveryHandler_RequestToDBDiscovery(t *testing.T) {
 	logger := createTestLogger()
 	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
+	// Keys that must never appear in the map returned to the DB layer.
+	forbiddenKeys := []string{
+		"name", "description", "ports", "timeout", "retries",
+		"options", "schedule_id", "tags", "enabled",
+		"status", "created_at", "updated_at",
+	}
+
 	tests := []struct {
 		name     string
 		request  *DiscoveryRequest
 		validate func(t *testing.T, data interface{})
 	}{
 		{
-			name: "basic request",
+			name: "basic request – networks and method are present",
 			request: &DiscoveryRequest{
 				Name:     "Test Discovery",
 				Networks: []string{"192.168.1.0/24"},
@@ -603,22 +610,43 @@ func TestDiscoveryHandler_RequestToDBDiscovery(t *testing.T) {
 				Enabled:  true,
 			},
 			validate: func(t *testing.T, data interface{}) {
-				m := data.(map[string]interface{})
-				assert.Equal(t, "Test Discovery", m["name"])
-				assert.Equal(t, "ping", m["method"])
-				assert.Equal(t, true, m["enabled"])
+				m, ok := data.(map[string]interface{})
+				require.True(t, ok, "result must be map[string]interface{}")
+
+				// "networks" must be a []string matching the request.
 				networks, ok := m["networks"].([]string)
-				require.True(t, ok)
+				require.True(t, ok, "networks must be []string")
 				assert.Equal(t, []string{"192.168.1.0/24"}, networks)
+
+				// "method" must match the request.
+				assert.Equal(t, "ping", m["method"])
 			},
 		},
 		{
-			name: "request with all fields",
+			name: "multiple networks – all networks preserved",
+			request: &DiscoveryRequest{
+				Name:     "Multi-net Discovery",
+				Networks: []string{"192.168.1.0/24", "10.0.0.0/8"},
+				Method:   "tcp_connect",
+			},
+			validate: func(t *testing.T, data interface{}) {
+				m, ok := data.(map[string]interface{})
+				require.True(t, ok, "result must be map[string]interface{}")
+
+				networks, ok := m["networks"].([]string)
+				require.True(t, ok, "networks must be []string")
+				assert.Equal(t, []string{"192.168.1.0/24", "10.0.0.0/8"}, networks)
+
+				assert.Equal(t, "tcp_connect", m["method"])
+			},
+		},
+		{
+			name: "request with all fields – extra keys absent",
 			request: &DiscoveryRequest{
 				Name:        "Full Discovery",
 				Description: "Complete test",
-				Networks:    []string{"192.168.1.0/24", "10.0.0.0/8"},
-				Method:      "tcp_connect",
+				Networks:    []string{"192.168.1.0/24"},
+				Method:      "arp",
 				Ports:       "80,443",
 				Timeout:     5 * time.Second,
 				Retries:     3,
@@ -627,14 +655,39 @@ func TestDiscoveryHandler_RequestToDBDiscovery(t *testing.T) {
 				Enabled:     true,
 			},
 			validate: func(t *testing.T, data interface{}) {
-				m := data.(map[string]interface{})
-				assert.Equal(t, "Full Discovery", m["name"])
-				assert.Equal(t, "Complete test", m["description"])
-				assert.Equal(t, "tcp_connect", m["method"])
-				assert.Equal(t, "80,443", m["ports"])
-				assert.Equal(t, 5*time.Second, m["timeout"])
-				assert.Equal(t, 3, m["retries"])
-				assert.Equal(t, true, m["enabled"])
+				m, ok := data.(map[string]interface{})
+				require.True(t, ok, "result must be map[string]interface{}")
+
+				// Core keys must be present and correct.
+				networks, ok := m["networks"].([]string)
+				require.True(t, ok, "networks must be []string")
+				assert.Equal(t, []string{"192.168.1.0/24"}, networks)
+				assert.Equal(t, "arp", m["method"])
+
+				// The map must contain exactly two keys.
+				assert.Len(t, m, 2, "map must contain exactly 'networks' and 'method'")
+			},
+		},
+		{
+			name: "no forbidden keys present",
+			request: &DiscoveryRequest{
+				Name:        "Forbidden Key Check",
+				Description: "Should not appear in map",
+				Networks:    []string{"172.16.0.0/12"},
+				Method:      "icmp",
+				Ports:       "22",
+				Retries:     2,
+				Tags:        []string{"infra"},
+				Enabled:     false,
+			},
+			validate: func(t *testing.T, data interface{}) {
+				m, ok := data.(map[string]interface{})
+				require.True(t, ok, "result must be map[string]interface{}")
+
+				for _, key := range forbiddenKeys {
+					_, exists := m[key]
+					assert.False(t, exists, "key %q must not be present in the DB map", key)
+				}
 			},
 		},
 	}
