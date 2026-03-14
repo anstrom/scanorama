@@ -425,6 +425,7 @@ func TestScanHandler_ResultToResponse(t *testing.T) {
 		ID:        testResultID,
 		ScanID:    testScanID,
 		HostID:    testHostID,
+		HostIP:    "192.168.1.1",
 		Port:      80,
 		Protocol:  "tcp",
 		State:     "open",
@@ -435,7 +436,7 @@ func TestScanHandler_ResultToResponse(t *testing.T) {
 	response := handler.resultToResponse(testResult)
 
 	assert.Equal(t, testResult.ID, response.ID)
-	assert.Equal(t, testHostID.String(), response.HostIP)
+	assert.Equal(t, "192.168.1.1", response.HostIP)
 	assert.Equal(t, testResult.Port, response.Port)
 	assert.Equal(t, testResult.Protocol, response.Protocol)
 	assert.Equal(t, testResult.State, response.State)

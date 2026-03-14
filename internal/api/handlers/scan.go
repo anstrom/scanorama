@@ -84,8 +84,8 @@ type ScanResponse struct {
 	Tags        []string          `json:"tags,omitempty"`
 	Status      string            `json:"status"`
 	Progress    float64           `json:"progress"`
-	StartTime   *time.Time        `json:"start_time,omitempty"`
-	EndTime     *time.Time        `json:"end_time,omitempty"`
+	StartTime   *time.Time        `json:"started_at,omitempty"`
+	EndTime     *time.Time        `json:"completed_at,omitempty"`
 	Duration    *string           `json:"duration,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
@@ -636,7 +636,7 @@ func (h *ScanHandler) scanToResponse(scan *db.Scan) ScanResponse {
 func (h *ScanHandler) resultToResponse(result *db.ScanResult) ScanResult {
 	return ScanResult{
 		ID:       result.ID,
-		HostIP:   result.HostID.String(), // Best available; full IP would need a host lookup
+		HostIP:   result.HostIP,
 		Port:     result.Port,
 		Protocol: result.Protocol,
 		State:    result.State,
