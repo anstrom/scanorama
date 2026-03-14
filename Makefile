@@ -47,7 +47,7 @@ export TEST_DB_PASSWORD := test_password
 help: ## Show this help
 	@printf '\n\033[1mScanorama\033[0m — $(VERSION)\n\n'
 	@printf '\033[1mQuick start:\033[0m\n'
-	@printf '  make run           Start dev DB + API server (localhost:$(PORT))\n'
+	@printf '  make run           Start backend + frontend (localhost:5173)\n'
 	@printf '  make test          Run all tests\n'
 	@printf '  make build         Build the binary\n'
 	@printf '\n'
@@ -72,16 +72,25 @@ clean: ## Remove build artifacts and coverage files
 	@find . -name "coverage.txt" -type f -delete
 	@echo "✓ Clean"
 
-.PHONY: version
-version: ## Print version info
-	@echo "Version:    $(VERSION)"
-	@echo "Commit:     $(COMMIT)"
-	@echo "Build Time: $(BUILD_TIME)"
-
 # ─── Run ─────────────────────────────────────────────────────────────────────
 
 .PHONY: run
-run: build dev-db-up dev-config ## Build and run the API server with dev database
+run: build dev-db-up dev-config frontend-deps ## Start backend + frontend dev server
+	@echo ""
+	@echo "Starting scanorama..."
+	@echo "  Backend:  http://$(HOST):$(PORT)/api/v1/health"
+	@echo "  Frontend: http://localhost:5173"
+	@echo "Press Ctrl-C to stop."
+	@echo ""
+	@cd frontend && npx vite --clearScreen false &
+	@$(BUILD_DIR)/$(BINARY_NAME) api \
+		--config $(DEV_CONFIG) \
+		--host $(HOST) \
+		--port $(PORT) \
+		--verbose
+
+.PHONY: run-backend
+run-backend: build dev-db-up dev-config ## Start only the backend API server
 	@echo ""
 	@echo "Starting scanorama API server on $(HOST):$(PORT)..."
 	@echo "Press Ctrl-C to stop."
@@ -92,19 +101,16 @@ run: build dev-db-up dev-config ## Build and run the API server with dev databas
 		--port $(PORT) \
 		--verbose
 
-.PHONY: dev
-dev: build dev-up dev-config ## Build and run with full dev stack (DB + pgAdmin + Redis)
+.PHONY: frontend
+frontend: frontend-deps ## Start the frontend dev server (needs backend running)
+	@echo "Starting frontend dev server..."
+	@echo "  Open http://localhost:5173"
 	@echo ""
-	@echo "Starting scanorama API server on $(HOST):$(PORT)..."
-	@echo "  pgAdmin:  http://localhost:5050"
-	@echo "  Redis:    localhost:6379"
-	@echo "Press Ctrl-C to stop."
-	@echo ""
-	@$(BUILD_DIR)/$(BINARY_NAME) api \
-		--config $(DEV_CONFIG) \
-		--host $(HOST) \
-		--port $(PORT) \
-		--verbose
+	@cd frontend && npx vite
+
+.PHONY: frontend-deps
+frontend-deps:
+	@cd frontend && npm install --silent
 
 .PHONY: dev-config
 dev-config:
@@ -121,12 +127,6 @@ dev-db-up: ## Start dev PostgreSQL (port 5432)
 	@echo "Starting dev database..."
 	@$(DOCKER_COMPOSE) -f $(DEV_COMPOSE) up -d --wait postgres
 	@echo "✓ Dev database ready (localhost:5432)"
-
-.PHONY: dev-up
-dev-up: ## Start full dev stack (DB + pgAdmin + Redis)
-	@echo "Starting dev stack..."
-	@$(DOCKER_COMPOSE) -f $(DEV_COMPOSE) --profile tools --profile cache up -d --wait
-	@echo "✓ Dev stack ready"
 
 .PHONY: dev-down
 dev-down: ## Stop dev infrastructure
@@ -254,23 +254,13 @@ docs: ## Generate Swagger/OpenAPI docs
 	@cd docs && swag init -g swagger_docs.go -o ./swagger --parseDependency --parseInternal
 	@echo "✓ Swagger docs generated"
 
-# ─── Seed Data ───────────────────────────────────────────────────────────────
-
-.PHONY: seed
-seed: dev-db-up dev-config build ## Populate dev database with sample data
-	@echo "Seeding dev database..."
-	@echo "TODO: implement seed command or SQL script"
-	@echo "  For now, use the API to create test data:"
-	@echo "    curl -X POST http://localhost:$(PORT)/api/v1/networks -d '{\"name\":\"Lab\",\"cidr\":\"192.168.1.0/24\",\"discovery_method\":\"ping\"}'"
-	@echo ""
-
 # ─── CI / Workflows ─────────────────────────────────────────────────────────
 
 .PHONY: ci
 ci: deps check test ## Run full CI pipeline locally
 
 .PHONY: dev-setup
-dev-setup: deps ## Set up dev environment (install tools + deps)
+dev-setup: deps frontend-deps ## Set up dev environment (install tools + deps)
 	@if ! command -v golangci-lint >/dev/null 2>&1; then \
 		echo "Installing golangci-lint..."; \
 		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
