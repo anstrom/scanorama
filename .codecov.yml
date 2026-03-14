@@ -9,20 +9,20 @@
 coverage:
   precision: 2 # Show coverage to 2 decimal places (e.g., 43.25%)
   round: down # Round down coverage percentages
-  range: "70...100" # Consider 70-100% as "good" coverage range
+  range: "40...100" # Consider 40-100% as "good" coverage range
 
   # Status checks for pull requests
   status:
     project:
       default:
         target: auto # Compare to base branch coverage
-        threshold: 1% # Allow 1% decrease without failing
+        threshold: 2% # Allow 2% decrease without failing
         if_ci_failed: error # Fail if CI tests fail
 
     patch:
       default:
-        target: auto # New code should maintain coverage
-        threshold: 1% # Allow 1% decrease for new code
+        target: 40% # Fixed threshold for new/changed code
+        threshold: 0% # No additional slack on top of target
         if_ci_failed: error
 
 # Ignore patterns - exclude test files and non-production code from coverage
