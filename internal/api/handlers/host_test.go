@@ -311,7 +311,7 @@ func TestHostHandler_HostToResponse(t *testing.T) {
 
 	// Note: The current hostToResponse returns placeholder data
 	// These assertions test the function call works, not actual mapping
-	assert.NotEmpty(t, response.IP)
+	assert.NotEmpty(t, response.IPAddress)
 	assert.Equal(t, testHostID.String(), response.ID) // UUID string
 	assert.NotNil(t, response)
 }
@@ -702,7 +702,7 @@ func TestHostHandler_CreateHost_Integration(t *testing.T) {
 		var response HostResponse
 		err = json.Unmarshal(w.Body.Bytes(), &response)
 		require.NoError(t, err)
-		assert.NotEmpty(t, response.IP)
+		assert.NotEmpty(t, response.IPAddress)
 	}
 }
 

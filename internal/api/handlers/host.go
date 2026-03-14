@@ -58,18 +58,19 @@ type HostRequest struct {
 // HostResponse represents a host response.
 type HostResponse struct {
 	ID           string            `json:"id"`
-	IP           string            `json:"ip"`
+	IPAddress    string            `json:"ip_address"`
 	Hostname     string            `json:"hostname,omitempty"`
 	Description  string            `json:"description,omitempty"`
 	OS           string            `json:"os,omitempty"`
 	OSVersion    string            `json:"os_version,omitempty"`
 	Tags         []string          `json:"tags,omitempty"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
-	Active       bool              `json:"active"`
+	Status       string            `json:"status"`
+	MACAddress   string            `json:"mac_address,omitempty"`
+	OpenPortNums []int             `json:"open_ports,omitempty"`
 	LastSeen     *time.Time        `json:"last_seen,omitempty"`
 	LastScanID   *int64            `json:"last_scan_id,omitempty"`
 	ScanCount    int               `json:"scan_count"`
-	OpenPorts    int               `json:"open_ports"`
 	TotalPorts   int               `json:"total_ports"`
 	CreatedAt    time.Time         `json:"created_at"`
 	UpdatedAt    time.Time         `json:"updated_at"`
@@ -142,7 +143,7 @@ func (h *HostHandler) CreateHost(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Host created successfully",
 		"request_id", requestID,
 		"host_id", response.ID,
-		"host_ip", response.IP)
+		"host_ip", response.IPAddress)
 
 	writeJSON(w, r, http.StatusCreated, response)
 
@@ -387,9 +388,9 @@ func (h *HostHandler) requestToDBHost(req *HostRequest) interface{} {
 // hostToResponse converts a database host to response format.
 func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 	response := HostResponse{
-		ID:        host.ID.String(), // Use UUID string for API consistency
-		IP:        host.IPAddress.String(),
-		Active:    host.Status == "up",
+		ID:        host.ID.String(),
+		IPAddress: host.IPAddress.String(),
+		Status:    host.Status,
 		CreatedAt: host.FirstSeen,
 		UpdatedAt: host.LastSeen,
 	}
@@ -414,11 +415,15 @@ func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 	// Set last seen time
 	response.LastSeen = &host.LastSeen
 
-	// Note: ScanCount, OpenPorts, TotalPorts would need additional queries
+	if host.MACAddress != nil {
+		response.MACAddress = host.MACAddress.String()
+	}
+
+	// Note: ScanCount, TotalPorts would need additional queries
 	// or could be computed in the ListHosts query as we do in the CLI
 	response.ScanCount = 0
-	response.OpenPorts = 0
 	response.TotalPorts = 0
+	response.OpenPortNums = []int{}
 	response.Tags = []string{}
 	response.Metadata = map[string]string{}
 
