@@ -1086,9 +1086,33 @@ func (db *DB) StartScan(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// StopScan stops scan execution.
+// CompleteScan marks a scan as successfully completed.
+func (db *DB) CompleteScan(ctx context.Context, id uuid.UUID) error {
+	query := `
+		UPDATE scan_jobs
+		SET status = 'completed', completed_at = NOW()
+		WHERE id = $1 AND status = 'running'
+	`
+
+	result, err := db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to complete scan: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.ErrNotFoundWithID("scan", id.String())
+	}
+
+	return nil
+}
+
+// StopScan stops scan execution and marks it as failed.
 func (db *DB) StopScan(ctx context.Context, id uuid.UUID) error {
-	// Update scan job status to failed (stopped).
 	query := `
 		UPDATE scan_jobs
 		SET status = 'failed', completed_at = NOW()

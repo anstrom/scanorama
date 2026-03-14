@@ -22,6 +22,7 @@ type ScanStore interface {
 	UpdateScan(ctx context.Context, id uuid.UUID, scanData interface{}) (*db.Scan, error)
 	DeleteScan(ctx context.Context, id uuid.UUID) error
 	StartScan(ctx context.Context, id uuid.UUID) error
+	CompleteScan(ctx context.Context, id uuid.UUID) error
 	StopScan(ctx context.Context, id uuid.UUID) error
 	GetScanResults(ctx context.Context, scanID uuid.UUID, offset, limit int) ([]*db.ScanResult, int64, error)
 	GetScanSummary(ctx context.Context, scanID uuid.UUID) (*db.ScanSummary, error)
