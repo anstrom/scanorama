@@ -27,6 +27,40 @@ definitions:
         example: 192.168.1.0/24
         type: string
     type: object
+  docs.CreateExclusionRequest:
+    properties:
+      excluded_cidr:
+        example: 192.168.1.128/25
+        type: string
+      reason:
+        example: Reserved for printers
+        type: string
+    type: object
+  docs.CreateNetworkRequest:
+    properties:
+      cidr:
+        example: 192.168.1.0/24
+        type: string
+      description:
+        example: Main office network
+        type: string
+      discovery_method:
+        enum:
+        - ping
+        - tcp
+        - arp
+        example: ping
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      name:
+        example: Office Network
+        type: string
+      scan_enabled:
+        example: true
+        type: boolean
+    type: object
   docs.CreateProfileRequest:
     properties:
       description:
@@ -184,6 +218,99 @@ definitions:
         example: up
         type: string
     type: object
+  docs.LivenessResponse:
+    properties:
+      status:
+        example: alive
+        type: string
+      timestamp:
+        type: string
+      uptime:
+        example: 2h30m45s
+        type: string
+    type: object
+  docs.NetworkExclusionResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        example: admin
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      excluded_cidr:
+        example: 192.168.1.128/25
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440011
+        type: string
+      network_id:
+        example: 550e8400-e29b-41d4-a716-446655440010
+        type: string
+      reason:
+        example: Reserved for printers
+        type: string
+      updated_at:
+        type: string
+    type: object
+  docs.NetworkResponse:
+    properties:
+      active_host_count:
+        example: 20
+        type: integer
+      cidr:
+        example: 192.168.1.0/24
+        type: string
+      created_at:
+        type: string
+      created_by:
+        example: admin
+        type: string
+      description:
+        example: Main office network
+        type: string
+      discovery_method:
+        enum:
+        - ping
+        - tcp
+        - arp
+        example: ping
+        type: string
+      host_count:
+        example: 25
+        type: integer
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440010
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      last_discovery:
+        type: string
+      last_scan:
+        type: string
+      name:
+        example: Office Network
+        type: string
+      scan_enabled:
+        example: true
+        type: boolean
+      updated_at:
+        type: string
+    type: object
+  docs.NetworkStatsResponse:
+    properties:
+      exclusions:
+        additionalProperties: true
+        type: object
+      hosts:
+        additionalProperties: true
+        type: object
+      networks:
+        additionalProperties: true
+        type: object
+    type: object
   docs.PaginatedDiscoveryJobsResponse:
     properties:
       data:
@@ -198,6 +325,15 @@ definitions:
       data:
         items:
           $ref: '#/definitions/docs.HostResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/docs.PaginationInfo'
+    type: object
+  docs.PaginatedNetworksResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/docs.NetworkResponse'
         type: array
       pagination:
         $ref: '#/definitions/docs.PaginationInfo'
@@ -267,6 +403,12 @@ definitions:
         example: connect
         type: string
       updated_at:
+        type: string
+    type: object
+  docs.RenameNetworkRequest:
+    properties:
+      new_name:
+        example: New Office Network
         type: string
     type: object
   docs.ScanResponse:
@@ -358,6 +500,70 @@ definitions:
       version:
         example: 0.7.0
         type: string
+    type: object
+  docs.UpdateNetworkRequest:
+    properties:
+      cidr:
+        example: 192.168.1.0/24
+        type: string
+      description:
+        example: Main office network
+        type: string
+      discovery_method:
+        enum:
+        - ping
+        - tcp
+        - arp
+        example: ping
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      name:
+        example: Office Network
+        type: string
+      scan_enabled:
+        example: true
+        type: boolean
+    type: object
+  docs.UpdateScanRequest:
+    properties:
+      description:
+        example: Updated description
+        type: string
+      name:
+        example: Updated scan name
+        type: string
+      options:
+        additionalProperties:
+          type: string
+        type: object
+      ports:
+        example: 22,80,443
+        type: string
+      profile_id:
+        type: integer
+      scan_type:
+        enum:
+        - connect
+        - syn
+        - ack
+        - aggressive
+        - comprehensive
+        example: connect
+        type: string
+      schedule_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      targets:
+        example:
+        - 192.168.1.0/24
+        items:
+          type: string
+        type: array
     type: object
   docs.VersionResponse:
     properties:
@@ -644,6 +850,107 @@ paths:
       summary: Stop discovery
       tags:
       - Discovery
+  /exclusions:
+    get:
+      description: Get all global exclusion rules not tied to a specific network
+      operationId: listGlobalExclusions
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/docs.NetworkExclusionResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List global exclusions
+      tags:
+      - Exclusions
+    post:
+      consumes:
+      - application/json
+      description: Create a global exclusion rule that applies to all networks
+      operationId: createGlobalExclusion
+      parameters:
+      - description: Exclusion configuration
+        in: body
+        name: exclusion
+        required: true
+        schema:
+          $ref: '#/definitions/docs.CreateExclusionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/docs.NetworkExclusionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create global exclusion
+      tags:
+      - Exclusions
+  /exclusions/{exclusionId}:
+    delete:
+      description: Delete an exclusion rule by ID
+      operationId: deleteExclusion
+      parameters:
+      - description: Exclusion ID
+        format: uuid
+        in: path
+        name: exclusionId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Successfully deleted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete exclusion
+      tags:
+      - Exclusions
   /health:
     get:
       description: Returns service health status including database connectivity
@@ -941,6 +1248,24 @@ paths:
       summary: Get host scans
       tags:
       - Hosts
+  /liveness:
+    get:
+      description: Returns simple liveness status without dependency checks
+      operationId: getLiveness
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.LivenessResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      summary: Liveness check
+      tags:
+      - System
   /metrics:
     get:
       description: Returns Prometheus metrics for monitoring
@@ -963,6 +1288,464 @@ paths:
       summary: Application metrics
       tags:
       - System
+  /networks:
+    get:
+      description: Get paginated list of networks with optional filtering
+      operationId: listNetworks
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: page_size
+        type: integer
+      - description: Include inactive networks
+        in: query
+        name: show_inactive
+        type: boolean
+      - description: Filter by network name
+        in: query
+        name: name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.PaginatedNetworksResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List networks
+      tags:
+      - Networks
+    post:
+      consumes:
+      - application/json
+      description: Create a new network for scanning and discovery
+      operationId: createNetwork
+      parameters:
+      - description: Network configuration
+        in: body
+        name: network
+        required: true
+        schema:
+          $ref: '#/definitions/docs.CreateNetworkRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/docs.NetworkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create network
+      tags:
+      - Networks
+  /networks/{networkId}:
+    delete:
+      description: Delete a network and its associated exclusions
+      operationId: deleteNetwork
+      parameters:
+      - description: Network ID
+        format: uuid
+        in: path
+        name: networkId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Successfully deleted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete network
+      tags:
+      - Networks
+    get:
+      description: Get network details by ID
+      operationId: getNetwork
+      parameters:
+      - description: Network ID
+        format: uuid
+        in: path
+        name: networkId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.NetworkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get network
+      tags:
+      - Networks
+    put:
+      consumes:
+      - application/json
+      description: Update network configuration
+      operationId: updateNetwork
+      parameters:
+      - description: Network ID
+        format: uuid
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: Updated network configuration
+        in: body
+        name: network
+        required: true
+        schema:
+          $ref: '#/definitions/docs.UpdateNetworkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.NetworkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update network
+      tags:
+      - Networks
+  /networks/{networkId}/disable:
+    post:
+      description: Disable a network from scanning and discovery
+      operationId: disableNetwork
+      parameters:
+      - description: Network ID
+        format: uuid
+        in: path
+        name: networkId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.NetworkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Disable network
+      tags:
+      - Networks
+  /networks/{networkId}/enable:
+    post:
+      description: Enable a network for scanning and discovery
+      operationId: enableNetwork
+      parameters:
+      - description: Network ID
+        format: uuid
+        in: path
+        name: networkId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.NetworkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Enable network
+      tags:
+      - Networks
+  /networks/{networkId}/exclusions:
+    get:
+      description: Get exclusion rules for a specific network
+      operationId: listNetworkExclusions
+      parameters:
+      - description: Network ID
+        format: uuid
+        in: path
+        name: networkId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/docs.NetworkExclusionResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List network exclusions
+      tags:
+      - Networks
+    post:
+      consumes:
+      - application/json
+      description: Add an exclusion rule to a specific network
+      operationId: createNetworkExclusion
+      parameters:
+      - description: Network ID
+        format: uuid
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: Exclusion configuration
+        in: body
+        name: exclusion
+        required: true
+        schema:
+          $ref: '#/definitions/docs.CreateExclusionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/docs.NetworkExclusionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create network exclusion
+      tags:
+      - Networks
+  /networks/{networkId}/rename:
+    put:
+      consumes:
+      - application/json
+      description: Rename an existing network
+      operationId: renameNetwork
+      parameters:
+      - description: Network ID
+        format: uuid
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: New network name
+        in: body
+        name: rename
+        required: true
+        schema:
+          $ref: '#/definitions/docs.RenameNetworkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.NetworkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Rename network
+      tags:
+      - Networks
+  /networks/stats:
+    get:
+      description: Returns aggregate statistics about networks, hosts, and exclusions
+      operationId: getNetworkStats
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.NetworkStatsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get network statistics
+      tags:
+      - Networks
   /profiles:
     get:
       description: Get paginated list of scan profiles
@@ -1345,6 +2128,56 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get scan
+      tags:
+      - Scans
+    put:
+      consumes:
+      - application/json
+      description: Update an existing scan configuration
+      operationId: updateScan
+      parameters:
+      - description: Scan ID
+        format: uuid
+        in: path
+        name: scanId
+        required: true
+        type: string
+      - description: Updated scan configuration
+        in: body
+        name: scan
+        required: true
+        schema:
+          $ref: '#/definitions/docs.UpdateScanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.ScanResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update scan
       tags:
       - Scans
   /scans/{scanId}/results:

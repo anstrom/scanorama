@@ -233,6 +233,100 @@ type PaginatedSchedulesResponse struct {
 	Pagination PaginationInfo     `json:"pagination"`
 }
 
+// NetworkResponse represents a network object
+type NetworkResponse struct {
+	ID              string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440010"`
+	Name            string     `json:"name" example:"Office Network"`
+	CIDR            string     `json:"cidr" example:"192.168.1.0/24"`
+	Description     *string    `json:"description,omitempty" example:"Main office network"`
+	DiscoveryMethod string     `json:"discovery_method" example:"ping" enums:"ping,tcp,arp"`
+	IsActive        bool       `json:"is_active" example:"true"`
+	ScanEnabled     bool       `json:"scan_enabled" example:"true"`
+	LastDiscovery   *time.Time `json:"last_discovery,omitempty"`
+	LastScan        *time.Time `json:"last_scan,omitempty"`
+	HostCount       int        `json:"host_count" example:"25"`
+	ActiveHostCount int        `json:"active_host_count" example:"20"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	CreatedBy       *string    `json:"created_by,omitempty" example:"admin"`
+}
+
+// CreateNetworkRequest represents a request to create a network
+type CreateNetworkRequest struct {
+	Name            string  `json:"name" example:"Office Network"`
+	CIDR            string  `json:"cidr" example:"192.168.1.0/24"`
+	Description     *string `json:"description,omitempty" example:"Main office network"`
+	DiscoveryMethod string  `json:"discovery_method" example:"ping" enums:"ping,tcp,arp"`
+	IsActive        *bool   `json:"is_active,omitempty" example:"true"`
+	ScanEnabled     *bool   `json:"scan_enabled,omitempty" example:"true"`
+}
+
+// UpdateNetworkRequest represents a request to update a network
+type UpdateNetworkRequest struct {
+	Name            *string `json:"name,omitempty" example:"Office Network"`
+	CIDR            *string `json:"cidr,omitempty" example:"192.168.1.0/24"`
+	Description     *string `json:"description,omitempty" example:"Main office network"`
+	DiscoveryMethod *string `json:"discovery_method,omitempty" example:"ping" enums:"ping,tcp,arp"`
+	IsActive        *bool   `json:"is_active,omitempty" example:"true"`
+	ScanEnabled     *bool   `json:"scan_enabled,omitempty" example:"true"`
+}
+
+// RenameNetworkRequest represents a request to rename a network
+type RenameNetworkRequest struct {
+	NewName string `json:"new_name" example:"New Office Network"`
+}
+
+// NetworkStatsResponse represents network statistics
+type NetworkStatsResponse struct {
+	Networks   map[string]interface{} `json:"networks"`
+	Hosts      map[string]interface{} `json:"hosts"`
+	Exclusions map[string]interface{} `json:"exclusions"`
+}
+
+// NetworkExclusionResponse represents a network exclusion rule
+type NetworkExclusionResponse struct {
+	ID           string    `json:"id" example:"550e8400-e29b-41d4-a716-446655440011"`
+	NetworkID    *string   `json:"network_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440010"`
+	ExcludedCIDR string    `json:"excluded_cidr" example:"192.168.1.128/25"`
+	Reason       *string   `json:"reason,omitempty" example:"Reserved for printers"`
+	Enabled      bool      `json:"enabled" example:"true"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	CreatedBy    *string   `json:"created_by,omitempty" example:"admin"`
+}
+
+// CreateExclusionRequest represents a request to create a network exclusion
+type CreateExclusionRequest struct {
+	ExcludedCIDR string  `json:"excluded_cidr" example:"192.168.1.128/25"`
+	Reason       *string `json:"reason,omitempty" example:"Reserved for printers"`
+}
+
+// PaginatedNetworksResponse represents a paginated list of networks
+type PaginatedNetworksResponse struct {
+	Data       []NetworkResponse `json:"data"`
+	Pagination PaginationInfo    `json:"pagination"`
+}
+
+// LivenessResponse represents a liveness check response
+type LivenessResponse struct {
+	Status    string    `json:"status" example:"alive"`
+	Timestamp time.Time `json:"timestamp"`
+	Uptime    string    `json:"uptime" example:"2h30m45s"`
+}
+
+// UpdateScanRequest represents a request to update an existing scan
+type UpdateScanRequest struct {
+	Name        string            `json:"name" example:"Updated scan name"`
+	Description string            `json:"description,omitempty" example:"Updated description"`
+	Targets     []string          `json:"targets" example:"192.168.1.0/24"`
+	ScanType    string            `json:"scan_type" example:"connect" enums:"connect,syn,ack,aggressive,comprehensive"`
+	Ports       string            `json:"ports,omitempty" example:"22,80,443"`
+	ProfileID   *int64            `json:"profile_id,omitempty"`
+	Options     map[string]string `json:"options,omitempty"`
+	ScheduleID  *int64            `json:"schedule_id,omitempty"`
+	Tags        []string          `json:"tags,omitempty"`
+}
+
 // Health godoc
 // @Summary Health check
 // @Description Returns service health status including database connectivity
@@ -803,3 +897,263 @@ func StartScan(_ http.ResponseWriter, _ *http.Request) {}
 // @Router /scans/{scanId}/stop [post]
 // @ID stopScan
 func StopScan(_ http.ResponseWriter, _ *http.Request) {}
+
+// UpdateScan godoc
+// @Summary Update scan
+// @Description Update an existing scan configuration
+// @Tags Scans
+// @Accept json
+// @Produce json
+// @Param scanId path string true "Scan ID" format(uuid)
+// @Param scan body UpdateScanRequest true "Updated scan configuration"
+// @Success 200 {object} ScanResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /scans/{scanId} [put]
+// @ID updateScan
+func UpdateScan(_ http.ResponseWriter, _ *http.Request) {}
+
+// Liveness godoc
+// @Summary Liveness check
+// @Description Returns simple liveness status without dependency checks
+// @Tags System
+// @Produce json
+// @Success 200 {object} LivenessResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /liveness [get]
+// @ID getLiveness
+func Liveness(_ http.ResponseWriter, _ *http.Request) {}
+
+// ListNetworks godoc
+// @Summary List networks
+// @Description Get paginated list of networks with optional filtering
+// @Tags Networks
+// @Produce json
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Items per page" default(20)
+// @Param show_inactive query boolean false "Include inactive networks"
+// @Param name query string false "Filter by network name"
+// @Success 200 {object} PaginatedNetworksResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks [get]
+// @ID listNetworks
+func ListNetworks(_ http.ResponseWriter, _ *http.Request) {}
+
+// CreateNetwork godoc
+// @Summary Create network
+// @Description Create a new network for scanning and discovery
+// @Tags Networks
+// @Accept json
+// @Produce json
+// @Param network body CreateNetworkRequest true "Network configuration"
+// @Success 201 {object} NetworkResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks [post]
+// @ID createNetwork
+func CreateNetwork(_ http.ResponseWriter, _ *http.Request) {}
+
+// GetNetworkStats godoc
+// @Summary Get network statistics
+// @Description Returns aggregate statistics about networks, hosts, and exclusions
+// @Tags Networks
+// @Produce json
+// @Success 200 {object} NetworkStatsResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks/stats [get]
+// @ID getNetworkStats
+func GetNetworkStats(_ http.ResponseWriter, _ *http.Request) {}
+
+// GetNetwork godoc
+// @Summary Get network
+// @Description Get network details by ID
+// @Tags Networks
+// @Produce json
+// @Param networkId path string true "Network ID" format(uuid)
+// @Success 200 {object} NetworkResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks/{networkId} [get]
+// @ID getNetwork
+func GetNetwork(_ http.ResponseWriter, _ *http.Request) {}
+
+// UpdateNetwork godoc
+// @Summary Update network
+// @Description Update network configuration
+// @Tags Networks
+// @Accept json
+// @Produce json
+// @Param networkId path string true "Network ID" format(uuid)
+// @Param network body UpdateNetworkRequest true "Updated network configuration"
+// @Success 200 {object} NetworkResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks/{networkId} [put]
+// @ID updateNetwork
+func UpdateNetwork(_ http.ResponseWriter, _ *http.Request) {}
+
+// DeleteNetwork godoc
+// @Summary Delete network
+// @Description Delete a network and its associated exclusions
+// @Tags Networks
+// @Param networkId path string true "Network ID" format(uuid)
+// @Success 204 "Successfully deleted"
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks/{networkId} [delete]
+// @ID deleteNetwork
+func DeleteNetwork(_ http.ResponseWriter, _ *http.Request) {}
+
+// EnableNetwork godoc
+// @Summary Enable network
+// @Description Enable a network for scanning and discovery
+// @Tags Networks
+// @Produce json
+// @Param networkId path string true "Network ID" format(uuid)
+// @Success 200 {object} NetworkResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks/{networkId}/enable [post]
+// @ID enableNetwork
+func EnableNetwork(_ http.ResponseWriter, _ *http.Request) {}
+
+// DisableNetwork godoc
+// @Summary Disable network
+// @Description Disable a network from scanning and discovery
+// @Tags Networks
+// @Produce json
+// @Param networkId path string true "Network ID" format(uuid)
+// @Success 200 {object} NetworkResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks/{networkId}/disable [post]
+// @ID disableNetwork
+func DisableNetwork(_ http.ResponseWriter, _ *http.Request) {}
+
+// RenameNetwork godoc
+// @Summary Rename network
+// @Description Rename an existing network
+// @Tags Networks
+// @Accept json
+// @Produce json
+// @Param networkId path string true "Network ID" format(uuid)
+// @Param rename body RenameNetworkRequest true "New network name"
+// @Success 200 {object} NetworkResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks/{networkId}/rename [put]
+// @ID renameNetwork
+func RenameNetwork(_ http.ResponseWriter, _ *http.Request) {}
+
+// ListNetworkExclusions godoc
+// @Summary List network exclusions
+// @Description Get exclusion rules for a specific network
+// @Tags Networks
+// @Produce json
+// @Param networkId path string true "Network ID" format(uuid)
+// @Success 200 {array} NetworkExclusionResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks/{networkId}/exclusions [get]
+// @ID listNetworkExclusions
+func ListNetworkExclusions(_ http.ResponseWriter, _ *http.Request) {}
+
+// CreateNetworkExclusion godoc
+// @Summary Create network exclusion
+// @Description Add an exclusion rule to a specific network
+// @Tags Networks
+// @Accept json
+// @Produce json
+// @Param networkId path string true "Network ID" format(uuid)
+// @Param exclusion body CreateExclusionRequest true "Exclusion configuration"
+// @Success 201 {object} NetworkExclusionResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks/{networkId}/exclusions [post]
+// @ID createNetworkExclusion
+func CreateNetworkExclusion(_ http.ResponseWriter, _ *http.Request) {}
+
+// ListGlobalExclusions godoc
+// @Summary List global exclusions
+// @Description Get all global exclusion rules not tied to a specific network
+// @Tags Exclusions
+// @Produce json
+// @Success 200 {array} NetworkExclusionResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /exclusions [get]
+// @ID listGlobalExclusions
+func ListGlobalExclusions(_ http.ResponseWriter, _ *http.Request) {}
+
+// CreateGlobalExclusion godoc
+// @Summary Create global exclusion
+// @Description Create a global exclusion rule that applies to all networks
+// @Tags Exclusions
+// @Accept json
+// @Produce json
+// @Param exclusion body CreateExclusionRequest true "Exclusion configuration"
+// @Success 201 {object} NetworkExclusionResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /exclusions [post]
+// @ID createGlobalExclusion
+func CreateGlobalExclusion(_ http.ResponseWriter, _ *http.Request) {}
+
+// DeleteExclusion godoc
+// @Summary Delete exclusion
+// @Description Delete an exclusion rule by ID
+// @Tags Exclusions
+// @Param exclusionId path string true "Exclusion ID" format(uuid)
+// @Success 204 "Successfully deleted"
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /exclusions/{exclusionId} [delete]
+// @ID deleteExclusion
+func DeleteExclusion(_ http.ResponseWriter, _ *http.Request) {}

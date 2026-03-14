@@ -26,6 +26,14 @@ func (s *Server) setupMiddleware(apiConfig *Config) {
 	// Basic logging middleware
 	s.router.Use(s.loggingMiddleware)
 
+	// Security headers middleware (always active)
+	s.router.Use(middleware.SecurityHeaders())
+
+	// Rate limiting middleware (conditional)
+	if apiConfig.RateLimitEnabled {
+		s.router.Use(middleware.RateLimit(apiConfig.RateLimitRequests, apiConfig.RateLimitWindow, s.logger))
+	}
+
 	// CORS middleware
 	if apiConfig.EnableCORS {
 		corsOptions := gorilla.AllowedOrigins(apiConfig.CORSOrigins)
