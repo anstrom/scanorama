@@ -1,0 +1,8 @@
+export { DashboardPage } from "./dashboard";
+export { ScansPage } from "./scans";
+export { HostsPage } from "./hosts";
+export { NetworksPage } from "./networks";
+export { DiscoveryPage } from "./discovery";
+export { ProfilesPage } from "./profiles";
+export { SchedulesPage } from "./schedules";
+export { AdminPage } from "./admin";

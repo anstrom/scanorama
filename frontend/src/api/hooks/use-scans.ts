@@ -52,3 +52,17 @@ export function useCreateScan() {
     },
   });
 }
+
+export function useRecentScans(limit = 5) {
+  return useQuery({
+    queryKey: ["scans", "recent", limit],
+    queryFn: async () => {
+      const { data, error } = await api.GET("/scans", {
+        params: { query: { page: 1, page_size: limit } },
+      });
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: 30_000,
+  });
+}

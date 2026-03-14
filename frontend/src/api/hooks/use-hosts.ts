@@ -34,3 +34,17 @@ export function useHost(id: string) {
     enabled: !!id,
   });
 }
+
+export function useActiveHostCount() {
+  return useQuery({
+    queryKey: ["hosts", "active-count"],
+    queryFn: async () => {
+      const { data, error } = await api.GET("/hosts", {
+        params: { query: { status: "up", page: 1, page_size: 1 } },
+      });
+      if (error) throw error;
+      return data?.pagination?.total_items ?? 0;
+    },
+    refetchInterval: 30_000,
+  });
+}

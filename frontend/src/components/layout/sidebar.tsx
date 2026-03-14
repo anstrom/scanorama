@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "../../lib/utils";
 import {
   LayoutDashboard,
@@ -36,13 +36,13 @@ function useHashPath(): string {
     () => window.location.hash.replace(/^#/, "") || "/",
   );
 
-  useState(() => {
+  useEffect(() => {
     const onHashChange = () => {
       setPath(window.location.hash.replace(/^#/, "") || "/");
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  });
+  }, []);
 
   return path;
 }
@@ -77,6 +77,24 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const currentPath = useHashPath();
 
+  function renderNavItems(items: NavItem[]) {
+    return items.map((item) => {
+      const routePath = item.href.replace(/^#/, "");
+      const active =
+        routePath === "/"
+          ? currentPath === "/"
+          : currentPath.startsWith(routePath);
+      return (
+        <NavLink
+          key={item.href}
+          item={item}
+          collapsed={collapsed}
+          active={active}
+        />
+      );
+    });
+  }
+
   return (
     <aside
       className={cn(
@@ -96,38 +114,13 @@ export function Sidebar() {
 
       {/* Main navigation */}
       <nav className="flex-1 py-2 px-2 space-y-0.5 overflow-y-auto">
-        {mainNav.map((item) => {
-          const routePath = item.href.replace(/^#/, "");
-          const active =
-            routePath === "/"
-              ? currentPath === "/"
-              : currentPath.startsWith(routePath);
-          return (
-            <NavLink
-              key={item.href}
-              item={item}
-              collapsed={collapsed}
-              active={active}
-            />
-          );
-        })}
+        {renderNavItems(mainNav)}
       </nav>
 
       {/* Divider + admin nav */}
       <div className="px-2 pb-2 space-y-0.5">
         <div className="border-t border-border my-1" />
-        {adminNav.map((item) => {
-          const routePath = item.href.replace(/^#/, "");
-          const active = currentPath.startsWith(routePath);
-          return (
-            <NavLink
-              key={item.href}
-              item={item}
-              collapsed={collapsed}
-              active={active}
-            />
-          );
-        })}
+        {renderNavItems(adminNav)}
 
         {/* Collapse toggle */}
         <button
