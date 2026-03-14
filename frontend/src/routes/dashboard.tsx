@@ -1,33 +1,22 @@
-import { RootLayout } from "../components/layout/root-layout";
 import { useHealth, useVersion } from "../api/hooks/use-system";
 import { useNetworkStats } from "../api/hooks/use-networks";
+import { useRecentScans } from "../api/hooks/use-scans";
+import { useActiveHostCount } from "../api/hooks/use-hosts";
 import { StatusBadge } from "../components/status-badge";
-
-function StatCard({
-  label,
-  value,
-  subtext,
-}: {
-  label: string;
-  value: string | number;
-  subtext?: string;
-}) {
-  return (
-    <div className="bg-surface rounded-lg border border-border p-4">
-      <p className="text-xs text-text-muted mb-1">{label}</p>
-      <p className="text-2xl font-semibold text-text-primary">{value}</p>
-      {subtext && <p className="text-xs text-text-secondary mt-1">{subtext}</p>}
-    </div>
-  );
-}
+import { StatCard } from "../components/stat-card";
+import { RecentScansTable } from "../components/recent-scans-table";
+import { Network, Server, MonitorCheck, ShieldOff } from "lucide-react";
 
 export function DashboardPage() {
   const { data: health, isLoading: healthLoading } = useHealth();
   const { data: version } = useVersion();
-  const { data: stats } = useNetworkStats();
+  const { data: stats, isLoading: statsLoading } = useNetworkStats();
+  const { data: recentScans, isLoading: scansLoading } = useRecentScans();
+  const { data: activeHostCount, isLoading: activeHostsLoading } =
+    useActiveHostCount();
 
   return (
-    <RootLayout title="Dashboard">
+    <>
       {/* System status */}
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-4">
@@ -50,29 +39,32 @@ export function DashboardPage() {
           <StatCard
             label="Networks"
             value={(stats?.networks?.total as number) ?? "—"}
+            icon={Network}
+            loading={statsLoading}
           />
           <StatCard
             label="Hosts"
             value={(stats?.hosts?.total as number) ?? "—"}
+            icon={Server}
+            loading={statsLoading}
           />
           <StatCard
             label="Active Hosts"
-            value={(stats?.hosts?.active as number) ?? "—"}
+            value={activeHostCount ?? "—"}
+            icon={MonitorCheck}
+            loading={activeHostsLoading}
           />
           <StatCard
             label="Exclusions"
             value={(stats?.exclusions?.total as number) ?? "—"}
+            icon={ShieldOff}
+            loading={statsLoading}
           />
         </div>
       </div>
 
-      {/* Placeholder for recent scans - will be built in iteration 1 */}
-      <div className="bg-surface rounded-lg border border-border p-4">
-        <h2 className="text-sm font-medium text-text-primary mb-2">
-          Recent Scans
-        </h2>
-        <p className="text-xs text-text-muted">Coming in the next iteration.</p>
-      </div>
-    </RootLayout>
+      {/* Recent scans */}
+      <RecentScansTable scans={recentScans?.data} loading={scansLoading} />
+    </>
   );
 }
