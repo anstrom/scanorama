@@ -381,6 +381,7 @@ type ScanResult struct {
 	ID        uuid.UUID `json:"id" db:"id"`
 	ScanID    uuid.UUID `json:"scan_id" db:"scan_id"`
 	HostID    uuid.UUID `json:"host_id" db:"host_id"`
+	HostIP    string    `json:"host_ip" db:"host_ip"`
 	Port      int       `json:"port" db:"port"`
 	Protocol  string    `json:"protocol" db:"protocol"`
 	State     string    `json:"state" db:"state"`
@@ -964,12 +965,14 @@ func (db *DB) GetScanResults(ctx context.Context, scanID uuid.UUID, offset, limi
 			ps.id,
 			ps.job_id,
 			ps.host_id,
+			host(h.ip_address) AS host_ip,
 			ps.port,
 			ps.protocol,
 			ps.state,
 			ps.service_name,
 			ps.scanned_at
 		FROM port_scans ps
+		LEFT JOIN hosts h ON h.id = ps.host_id
 		WHERE ps.job_id = $1
 		ORDER BY ps.scanned_at DESC, ps.port ASC
 		LIMIT $2 OFFSET $3
@@ -994,6 +997,7 @@ func (db *DB) GetScanResults(ctx context.Context, scanID uuid.UUID, offset, limi
 			&result.ID,
 			&result.ScanID,
 			&result.HostID,
+			&result.HostIP,
 			&result.Port,
 			&result.Protocol,
 			&result.State,
