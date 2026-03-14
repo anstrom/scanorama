@@ -86,7 +86,7 @@ jobs:
         run: go install github.com/swaggo/swag/cmd/swag@latest
 
       - name: Generate API documentation
-        run: make docs-generate
+        run: make docs
 
       - name: Build HTML documentation
         run: npm run docs:build
