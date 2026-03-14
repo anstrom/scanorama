@@ -9,6 +9,7 @@ import (
 
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/scanning"
 )
 
 // HandlerManager manages all API handlers and their dependencies.
@@ -287,4 +288,12 @@ func (hm *HandlerManager) GetLogger() *slog.Logger {
 // GetMetrics returns the metrics manager.
 func (hm *HandlerManager) GetMetrics() *metrics.Registry {
 	return hm.metrics
+}
+
+// SetScanQueue configures the scan execution queue and propagates it to the
+// scan handler (for API-triggered scans) and the health handler (for status
+// reporting). Pass nil to revert to the default fire-and-forget behavior.
+func (hm *HandlerManager) SetScanQueue(q *scanning.ScanQueue) {
+	hm.scan.SetScanQueue(q)
+	hm.health.SetScanQueue(q)
 }
