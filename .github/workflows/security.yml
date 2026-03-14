@@ -10,10 +10,6 @@ on:
     - cron: "0 2 * * *"
   workflow_dispatch:
 
-env:
-  # renovate: datasource=golang-version depName=go
-  GO_VERSION: "1.26.1"
-
 permissions:
   contents: read
   security-events: write
@@ -30,7 +26,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           cache: true
 
       - name: Install govulncheck
@@ -74,7 +70,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           cache: true
 
       - name: Check for hardcoded secrets patterns
@@ -154,7 +150,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           cache: true
 
       - name: Check Go module licenses
@@ -172,52 +168,3 @@ jobs:
           }
 
           echo "✅ License compliance check passed"
-
-  security-summary:
-    name: Security Summary
-    runs-on: ubuntu-latest
-    needs:
-      [
-        vulnerability-scan,
-        codeql-analysis,
-        security-hardening,
-        npm-audit,
-        license-compliance,
-      ]
-    if: always()
-    steps:
-      - name: Security pipeline summary
-        run: |
-          echo "🔒 Security Pipeline Summary:"
-          echo "- Vulnerability Scan: ${{ needs.vulnerability-scan.result }}"
-          echo "- CodeQL Analysis: ${{ needs.codeql-analysis.result }}"
-          echo "- Security Hardening: ${{ needs.security-hardening.result }}"
-          echo "- NPM Audit: ${{ needs.npm-audit.result }}"
-          echo "- License Compliance: ${{ needs.license-compliance.result }}"
-
-          # Count failures
-          FAILURES=0
-          if [[ "${{ needs.vulnerability-scan.result }}" == "failure" ]]; then
-            echo "❌ Vulnerability scan failed"
-            FAILURES=$((FAILURES + 1))
-          fi
-          if [[ "${{ needs.codeql-analysis.result }}" == "failure" ]]; then
-            echo "❌ CodeQL analysis failed"
-            FAILURES=$((FAILURES + 1))
-          fi
-          if [[ "${{ needs.security-hardening.result }}" == "failure" ]]; then
-            echo "❌ Security hardening check failed"
-            FAILURES=$((FAILURES + 1))
-          fi
-          if [[ "${{ needs.license-compliance.result }}" == "failure" ]]; then
-            echo "❌ License compliance check failed"
-            FAILURES=$((FAILURES + 1))
-          fi
-
-          if [ "$FAILURES" -gt 0 ]; then
-            echo "⚠️ $FAILURES security check(s) failed"
-            echo "Please review the failed jobs and address security issues"
-            exit 1
-          fi
-
-          echo "✅ All security checks passed!"
