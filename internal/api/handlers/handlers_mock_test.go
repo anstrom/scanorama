@@ -21,6 +21,7 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/scanning"
 	"github.com/anstrom/scanorama/internal/services"
 )
 
@@ -480,6 +481,136 @@ func TestScanHandler_StartScan_Mock(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusConflict, w.Code)
+	})
+}
+
+// TestScanHandler_ExecuteScanAsync covers the goroutine that runs after StartScan
+// returns 200. These tests use the injectable scanRunner field so no real nmap
+// binary is required.
+func TestScanHandler_ExecuteScanAsync(t *testing.T) {
+	makeStartedScan := func(id uuid.UUID) *db.Scan {
+		return makeScan(id, "Async Scan", "running", "connect")
+	}
+
+	t.Run("calls CompleteScan on successful scan runner", func(t *testing.T) {
+		h, store, ctrl := newScanHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		done := make(chan struct{})
+
+		// Inject a runner that succeeds immediately.
+		h.scanRunner = func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+			return &scanning.ScanResult{Hosts: []scanning.Host{{Address: "127.0.0.1"}}}, nil
+		}
+
+		store.EXPECT().
+			CompleteScan(gomock.Any(), id).
+			DoAndReturn(func(_ context.Context, _ uuid.UUID) error {
+				close(done)
+				return nil
+			})
+
+		go h.executeScanAsync(id, makeStartedScan(id))
+
+		select {
+		case <-done:
+			// pass
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for CompleteScan to be called")
+		}
+	})
+
+	t.Run("calls StopScan (failed) when scan runner returns an error", func(t *testing.T) {
+		h, store, ctrl := newScanHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		done := make(chan struct{})
+
+		h.scanRunner = func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+			return nil, fmt.Errorf("nmap: binary not found")
+		}
+
+		store.EXPECT().
+			StopScan(gomock.Any(), id).
+			DoAndReturn(func(_ context.Context, _ uuid.UUID) error {
+				close(done)
+				return nil
+			})
+
+		go h.executeScanAsync(id, makeStartedScan(id))
+
+		select {
+		case <-done:
+			// pass
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for StopScan to be called")
+		}
+	})
+
+	t.Run("does not call CompleteScan when scan runner returns an error", func(t *testing.T) {
+		h, store, ctrl := newScanHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		done := make(chan struct{})
+
+		h.scanRunner = func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+			return nil, fmt.Errorf("execution failed")
+		}
+
+		// Only StopScan should be called — CompleteScan must not be.
+		store.EXPECT().StopScan(gomock.Any(), id).
+			DoAndReturn(func(_ context.Context, _ uuid.UUID) error {
+				close(done)
+				return nil
+			})
+
+		go h.executeScanAsync(id, makeStartedScan(id))
+
+		select {
+		case <-done:
+			// pass — gomock will fail the test if CompleteScan is called unexpectedly
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for StopScan to be called")
+		}
+	})
+
+	t.Run("type-asserting a mock store to *db.DB yields nil and runner still called", func(t *testing.T) {
+		// The store is a *mocks.MockScanStore, not *db.DB, so concreteDB will be
+		// nil. RunScanWithContext skips persistence when database is nil, so this
+		// must not panic.
+		h, store, ctrl := newScanHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		done := make(chan struct{})
+
+		var capturedDB *db.DB
+		h.scanRunner = func(_ context.Context, _ *scanning.ScanConfig, database *db.DB) (*scanning.ScanResult, error) {
+			capturedDB = database
+			return &scanning.ScanResult{}, nil
+		}
+
+		store.EXPECT().CompleteScan(gomock.Any(), id).
+			DoAndReturn(func(_ context.Context, _ uuid.UUID) error {
+				close(done)
+				return nil
+			})
+
+		go h.executeScanAsync(id, makeStartedScan(id))
+
+		select {
+		case <-done:
+			// pass
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out")
+		}
+
+		if capturedDB != nil {
+			t.Errorf("expected nil *db.DB for mock store, got %v", capturedDB)
+		}
 	})
 }
 

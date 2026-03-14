@@ -26,20 +26,28 @@ const (
 	maxTargetLength   = 255
 )
 
+// scanRunnerFunc is the signature for the function that executes a scan.
+// It matches scanning.RunScanWithContext and can be replaced in tests.
+type scanRunnerFunc func(
+	ctx context.Context, config *scanning.ScanConfig, database *db.DB,
+) (*scanning.ScanResult, error)
+
 // ScanHandler handles scan-related API endpoints.
 type ScanHandler struct {
-	database  ScanStore
-	logger    *slog.Logger
-	metrics   *metrics.Registry
-	scanQueue *scanning.ScanQueue
+	database   ScanStore
+	logger     *slog.Logger
+	metrics    *metrics.Registry
+	scanQueue  *scanning.ScanQueue
+	scanRunner scanRunnerFunc
 }
 
 // NewScanHandler creates a new scan handler.
 func NewScanHandler(database ScanStore, logger *slog.Logger, metricsManager *metrics.Registry) *ScanHandler {
 	return &ScanHandler{
-		database: database,
-		logger:   logger.With("handler", "scan"),
-		metrics:  metricsManager,
+		database:   database,
+		logger:     logger.With("handler", "scan"),
+		metrics:    metricsManager,
+		scanRunner: scanning.RunScanWithContext,
 	}
 }
 
@@ -444,23 +452,26 @@ func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 		TimeoutSec: 300, // Default 5 minute timeout
 	}
 
-	// Pass nil for the database — status transitions are handled via the typed
-	// StopScan/StartScan methods below, keeping this handler decoupled from *db.DB.
+	// Type-assert to *db.DB so the runner can persist hosts and ports.
+	// If the store is a test double the cast yields nil, which RunScanWithContext
+	// handles gracefully (it skips persistence when database is nil).
+	concreteDB, _ := h.database.(*db.DB)
+
 	ctx := context.Background()
-	result, err := scanning.RunScanWithContext(ctx, scanConfig, nil)
+	result, err := h.scanRunner(ctx, scanConfig, concreteDB)
 
 	if err != nil {
 		h.logger.Error("Scan execution failed", "scan_id", scanID, "error", err)
 		if stopErr := h.database.StopScan(ctx, scanID); stopErr != nil {
-			h.logger.Error("Failed to mark scan as stopped after failure",
+			h.logger.Error("Failed to mark scan as failed after execution error",
 				"scan_id", scanID, "error", stopErr)
 		}
 	} else {
 		h.logger.Info("Scan execution completed successfully", "scan_id", scanID,
 			"hosts_scanned", len(result.Hosts), "duration", result.Duration)
-		if stopErr := h.database.StopScan(ctx, scanID); stopErr != nil {
+		if completeErr := h.database.CompleteScan(ctx, scanID); completeErr != nil {
 			h.logger.Error("Failed to mark scan as completed",
-				"scan_id", scanID, "error", stopErr)
+				"scan_id", scanID, "error", completeErr)
 		}
 	}
 }

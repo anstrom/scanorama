@@ -42,6 +42,44 @@ func (m *MockScanStore) EXPECT() *MockScanStoreMockRecorder {
 	return m.recorder
 }
 
+// CompleteScan mocks base method.
+func (m *MockScanStore) CompleteScan(ctx context.Context, id uuid.UUID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteScan", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CompleteScan indicates an expected call of CompleteScan.
+func (mr *MockScanStoreMockRecorder) CompleteScan(ctx, id any) *MockScanStoreCompleteScanCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteScan", reflect.TypeOf((*MockScanStore)(nil).CompleteScan), ctx, id)
+	return &MockScanStoreCompleteScanCall{Call: call}
+}
+
+// MockScanStoreCompleteScanCall wrap *gomock.Call
+type MockScanStoreCompleteScanCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockScanStoreCompleteScanCall) Return(arg0 error) *MockScanStoreCompleteScanCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockScanStoreCompleteScanCall) Do(f func(context.Context, uuid.UUID) error) *MockScanStoreCompleteScanCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockScanStoreCompleteScanCall) DoAndReturn(f func(context.Context, uuid.UUID) error) *MockScanStoreCompleteScanCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // CreateScan mocks base method.
 func (m *MockScanStore) CreateScan(ctx context.Context, input any) (*db.Scan, error) {
 	m.ctrl.T.Helper()

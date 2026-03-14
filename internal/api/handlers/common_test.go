@@ -49,6 +49,9 @@ func (nilScanStore) DeleteScan(_ context.Context, _ uuid.UUID) error {
 func (nilScanStore) StartScan(_ context.Context, _ uuid.UUID) error {
 	panic("nilScanStore: StartScan called unexpectedly")
 }
+func (nilScanStore) CompleteScan(_ context.Context, _ uuid.UUID) error {
+	panic("nilScanStore: CompleteScan called unexpectedly")
+}
 func (nilScanStore) StopScan(_ context.Context, _ uuid.UUID) error {
 	panic("nilScanStore: StopScan called unexpectedly")
 }
