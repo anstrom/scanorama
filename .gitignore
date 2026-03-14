@@ -2,6 +2,10 @@
 /scanorama
 build/
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
 # Go specific
 *.test
 *.out
@@ -109,6 +113,6 @@ docs/documentation-report.md
 # Claude development files (never commit)
 .claude-*
 REFACTORING_COMPLETE.md
--e 
+-e
 # Coverage reports
 coverage-reports/

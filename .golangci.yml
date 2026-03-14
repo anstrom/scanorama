@@ -213,14 +213,18 @@ linters:
           - misspell
         text: "cancelled"
 
-  #     - path: cmd/.*main\.go
-  #       linters:
-  #         - funlen
-  #         - mnd
+    #     - path: cmd/.*main\.go
+    #       linters:
+    #         - funlen
+    #         - mnd
 
-  #     - path: ".*\\.pb\\.go"
-  #       linters:
-  #         - lll
+    #     - path: ".*\\.pb\\.go"
+    #       linters:
+    #         - lll
+
+    paths:
+      - frontend
+      - node_modules
 
 issues:
   max-issues-per-linter: 0
