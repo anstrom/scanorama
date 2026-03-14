@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/scanning"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -39,6 +40,7 @@ type HealthHandler struct {
 	logger    *slog.Logger
 	metrics   metrics.MetricsRegistry
 	startTime time.Time
+	scanQueue *scanning.ScanQueue
 }
 
 // NewHealthHandler creates a new health handler.
@@ -53,6 +55,11 @@ func NewHealthHandler(
 		metrics:   metricsManager,
 		startTime: time.Now(),
 	}
+}
+
+// SetScanQueue sets the scan queue for health monitoring.
+func (h *HealthHandler) SetScanQueue(q *scanning.ScanQueue) {
+	h.scanQueue = q
 }
 
 // HealthResponse represents a health check response.
@@ -70,12 +77,26 @@ type LivenessResponse struct {
 	Uptime    string    `json:"uptime"`
 }
 
+// ScanQueueInfo contains scan queue status information.
+type ScanQueueInfo struct {
+	Configured     bool  `json:"configured"`
+	QueueDepth     int   `json:"queue_depth"`
+	ActiveScans    int   `json:"active_scans"`
+	MaxConcurrent  int   `json:"max_concurrent"`
+	MaxQueueSize   int   `json:"max_queue_size"`
+	TotalSubmitted int64 `json:"total_submitted"`
+	TotalCompleted int64 `json:"total_completed"`
+	TotalRejected  int64 `json:"total_rejected"`
+	TotalFailed    int64 `json:"total_failed"`
+}
+
 // StatusResponse represents a detailed status response.
 type StatusResponse struct {
 	Service   ServiceInfo    `json:"service"`
 	System    SystemInfo     `json:"system"`
 	Database  DatabaseInfo   `json:"database"`
 	Metrics   MetricsInfo    `json:"metrics"`
+	ScanQueue ScanQueueInfo  `json:"scan_queue"`
 	Health    HealthResponse `json:"health"`
 	Timestamp time.Time      `json:"timestamp"`
 }
@@ -174,6 +195,18 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 		response.Checks["metrics"] = StatusNotConfigured
 	}
 
+	// Check scan queue
+	if h.scanQueue != nil {
+		stats := h.scanQueue.Stats()
+		if stats.QueueDepth >= stats.MaxQueueSize {
+			response.Checks["scan_queue"] = "full"
+		} else {
+			response.Checks["scan_queue"] = "ok"
+		}
+	} else {
+		response.Checks["scan_queue"] = "not configured"
+	}
+
 	// Set HTTP status based on health
 	statusCode := http.StatusOK
 	if response.Status == StatusUnhealthy {
@@ -236,6 +269,22 @@ func (h *HealthHandler) Status(w http.ResponseWriter, r *http.Request) {
 
 	// Metrics information
 	response.Metrics = h.getMetricsInfo()
+
+	// Scan queue information
+	if h.scanQueue != nil {
+		stats := h.scanQueue.Stats()
+		response.ScanQueue = ScanQueueInfo{
+			Configured:     true,
+			QueueDepth:     stats.QueueDepth,
+			ActiveScans:    stats.ActiveScans,
+			MaxConcurrent:  stats.MaxConcurrent,
+			MaxQueueSize:   stats.MaxQueueSize,
+			TotalSubmitted: stats.TotalSubmitted,
+			TotalCompleted: stats.TotalCompleted,
+			TotalRejected:  stats.TotalRejected,
+			TotalFailed:    stats.TotalFailed,
+		}
+	}
 
 	// Health check
 	dbCtx, dbCancel := context.WithTimeout(ctx, dependencyTimeout)
@@ -427,6 +476,18 @@ func (h *HealthHandler) getHealthInfo(ctx context.Context) HealthResponse {
 		response.Checks["goroutines"] = "high count"
 	} else {
 		response.Checks["goroutines"] = "ok"
+	}
+
+	// Scan queue health check
+	if h.scanQueue != nil {
+		stats := h.scanQueue.Stats()
+		if stats.QueueDepth >= stats.MaxQueueSize {
+			response.Checks["scan_queue"] = "full"
+		} else {
+			response.Checks["scan_queue"] = "ok"
+		}
+	} else {
+		response.Checks["scan_queue"] = "not configured"
 	}
 
 	return response

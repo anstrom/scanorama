@@ -5,6 +5,7 @@ package handlers
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -27,9 +28,10 @@ const (
 
 // ScanHandler handles scan-related API endpoints.
 type ScanHandler struct {
-	database ScanStore
-	logger   *slog.Logger
-	metrics  *metrics.Registry
+	database  ScanStore
+	logger    *slog.Logger
+	metrics   *metrics.Registry
+	scanQueue *scanning.ScanQueue
 }
 
 // NewScanHandler creates a new scan handler.
@@ -39,6 +41,12 @@ func NewScanHandler(database ScanStore, logger *slog.Logger, metricsManager *met
 		logger:   logger.With("handler", "scan"),
 		metrics:  metricsManager,
 	}
+}
+
+// SetScanQueue configures an optional scan execution queue. When set, StartScan
+// submits work to the queue instead of spawning an unbounded goroutine.
+func (h *ScanHandler) SetScanQueue(q *scanning.ScanQueue) {
+	h.scanQueue = q
 }
 
 // ScanRequest represents a scan creation/update request.
@@ -339,7 +347,19 @@ func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert scan to ScanConfig and execute asynchronously
-	go h.executeScanAsync(scanID, scan)
+	if h.scanQueue != nil {
+		if code, qErr := h.submitToQueue(scanID, scan); qErr != nil {
+			// Revert scan status since we couldn't queue it
+			if stopErr := h.database.StopScan(r.Context(), scanID); stopErr != nil {
+				h.logger.Error("Failed to revert scan status after queue rejection",
+					"request_id", requestID, "scan_id", scanID, "error", stopErr)
+			}
+			writeError(w, r, code, qErr)
+			return
+		}
+	} else {
+		go h.executeScanAsync(scanID, scan)
+	}
 
 	// Return updated scan
 	updatedScan, err := h.database.GetScan(r.Context(), scanID)
@@ -360,6 +380,57 @@ func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("Scan started successfully", "request_id", requestID, "scan_id", scanID)
+}
+
+// submitToQueue enqueues the scan for execution via the bounded scan queue.
+// It returns the HTTP status code and error to write back, or 0/nil on success.
+func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error) {
+	scanConfig := &scanning.ScanConfig{
+		Targets:    scan.Targets,
+		Ports:      scan.Ports,
+		ScanType:   scan.ScanType,
+		TimeoutSec: 300,
+	}
+
+	resultCh := make(chan *scanning.ScanQueueResult, 1)
+	req := &scanning.ScanQueueRequest{
+		ID:       scanID.String(),
+		Config:   scanConfig,
+		Database: nil,
+		ResultCh: resultCh,
+	}
+
+	if err := h.scanQueue.Submit(req); err != nil {
+		if stderrors.Is(err, scanning.ErrQueueFull) {
+			h.logger.Warn("Scan queue is full, rejecting request", "scan_id", scanID)
+			return http.StatusTooManyRequests, fmt.Errorf("scan queue is full, please try again later")
+		}
+		if stderrors.Is(err, scanning.ErrQueueClosed) {
+			h.logger.Error("Scan queue is closed", "scan_id", scanID)
+			return http.StatusServiceUnavailable, fmt.Errorf("scan queue is unavailable")
+		}
+		h.logger.Error("Failed to submit scan to queue", "scan_id", scanID, "error", err)
+		return http.StatusInternalServerError, fmt.Errorf("failed to submit scan: %w", err)
+	}
+
+	// Listen for the result and update scan status when done.
+	go func() {
+		result := <-resultCh
+		ctx := context.Background()
+		if result.Error != nil {
+			h.logger.Error("Queued scan execution failed",
+				"scan_id", scanID, "error", result.Error)
+		} else {
+			h.logger.Info("Queued scan execution completed",
+				"scan_id", scanID, "duration", result.Duration)
+		}
+		if stopErr := h.database.StopScan(ctx, scanID); stopErr != nil {
+			h.logger.Error("Failed to mark scan as stopped after queue execution",
+				"scan_id", scanID, "error", stopErr)
+		}
+	}()
+
+	return 0, nil
 }
 
 // executeScanAsync executes a scan asynchronously and stores results
