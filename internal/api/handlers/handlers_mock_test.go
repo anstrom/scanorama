@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/services"
 )
 
 // notFoundErr returns a DatabaseError with CodeNotFound, matching what the
@@ -73,6 +75,14 @@ func newProfileHandlerWithMock(t *testing.T) (*ProfileHandler, *mocks.MockProfil
 	store := mocks.NewMockProfileStore(ctrl)
 	h := NewProfileHandler(store, createTestLogger(), metrics.NewRegistry())
 	return h, store, ctrl
+}
+
+func newNetworkHandlerWithMock(t *testing.T) (*NetworkHandler, *mocks.MockNetworkServicer, *gomock.Controller) {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	svc := mocks.NewMockNetworkServicer(ctrl)
+	h := NewNetworkHandler(svc, createTestLogger(), metrics.NewRegistry())
+	return h, svc, ctrl
 }
 
 // routerWithID wraps a handler in a mux router that provides the {id} path variable.
@@ -133,6 +143,35 @@ func makeHost(id uuid.UUID, ip, status string) *db.Host {
 		Status:    status,
 		FirstSeen: now,
 		LastSeen:  now,
+	}
+}
+
+func makeNetwork(id uuid.UUID, name, cidr string) *db.Network {
+	_, ipNet, _ := net.ParseCIDR(cidr)
+	now := time.Now()
+	return &db.Network{
+		ID:              id,
+		Name:            name,
+		CIDR:            db.NetworkAddr{IPNet: *ipNet},
+		DiscoveryMethod: "ping",
+		IsActive:        true,
+		ScanEnabled:     true,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+}
+
+func makeNetworkExclusion(id uuid.UUID, networkID *uuid.UUID, cidr string) *db.NetworkExclusion {
+	now := time.Now()
+	reason := "test exclusion"
+	return &db.NetworkExclusion{
+		ID:           id,
+		NetworkID:    networkID,
+		ExcludedCIDR: cidr,
+		Reason:       &reason,
+		Enabled:      true,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 }
 
@@ -1346,6 +1385,526 @@ func TestProfileHandler_DeleteProfile_Mock(t *testing.T) {
 		// (it uses a raw writeError rather than handleDatabaseError). This test documents
 		// the current behavior; it should be updated to 409 once the handler is fixed.
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
+// ── NetworkHandler ────────────────────────────────────────────────────────────
+
+func TestNetworkHandler_ListNetworks_Mock(t *testing.T) {
+	t.Run("returns networks from service", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		network := makeNetwork(id, "Office Network", "10.0.0.0/24")
+
+		svc.EXPECT().
+			ListNetworks(gomock.Any(), false).
+			Return([]*db.Network{network}, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/networks", nil)
+		w := httptest.NewRecorder()
+		h.ListNetworks(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		data, ok := resp["data"].([]interface{})
+		require.True(t, ok)
+		assert.Len(t, data, 1)
+	})
+
+	t.Run("returns empty list when service returns nothing", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		svc.EXPECT().
+			ListNetworks(gomock.Any(), false).
+			Return([]*db.Network{}, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/networks", nil)
+		w := httptest.NewRecorder()
+		h.ListNetworks(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("returns 500 on service error", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		svc.EXPECT().
+			ListNetworks(gomock.Any(), false).
+			Return(nil, fmt.Errorf("db error"))
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/networks", nil)
+		w := httptest.NewRecorder()
+		h.ListNetworks(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
+func TestNetworkHandler_CreateNetwork_Mock(t *testing.T) {
+	t.Run("creates network and returns 201", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		network := makeNetwork(id, "New Network", "192.168.1.0/24")
+
+		svc.EXPECT().
+			CreateNetwork(gomock.Any(), "New Network", "192.168.1.0/24", "", "ping", true, true).
+			Return(network, nil)
+
+		body := `{"name":"New Network","cidr":"192.168.1.0/24","discovery_method":"ping"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/networks", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.CreateNetwork(w, req)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, id.String(), resp["id"])
+	})
+
+	t.Run("returns 400 for invalid CIDR", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		body := `{"name":"Bad CIDR","cidr":"not-a-cidr","discovery_method":"ping"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/networks", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.CreateNetwork(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 409 on conflict", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		svc.EXPECT().
+			CreateNetwork(gomock.Any(), "Dup Network", "10.0.0.0/8", "", "ping", true, true).
+			Return(nil, fmt.Errorf("network already exists"))
+
+		body := `{"name":"Dup Network","cidr":"10.0.0.0/8","discovery_method":"ping"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/networks", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.CreateNetwork(w, req)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
+	})
+
+	t.Run("returns 400 for invalid JSON", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/networks", bytes.NewBufferString("{bad json}"))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.CreateNetwork(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 400 for missing name", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		body := `{"cidr":"10.0.0.0/8","discovery_method":"ping"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/networks", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.CreateNetwork(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+func TestNetworkHandler_GetNetwork_Mock(t *testing.T) {
+	t.Run("returns network by ID", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		network := makeNetwork(id, "My Network", "172.16.0.0/16")
+		nwe := &services.NetworkWithExclusions{
+			Network:    network,
+			Exclusions: []*db.NetworkExclusion{},
+		}
+
+		svc.EXPECT().
+			GetNetworkByID(gomock.Any(), id).
+			Return(nwe, nil)
+
+		router, _ := routerWithID(http.MethodGet, "/api/v1/networks/{id}", h.GetNetwork)
+		url := fmt.Sprintf("/api/v1/networks/%s", id)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, id.String(), resp["id"])
+	})
+
+	t.Run("returns 404 when network not found", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		svc.EXPECT().
+			GetNetworkByID(gomock.Any(), id).
+			Return(nil, notFoundErr("network", id.String()))
+
+		router, _ := routerWithID(http.MethodGet, "/api/v1/networks/{id}", h.GetNetwork)
+		url := fmt.Sprintf("/api/v1/networks/%s", id)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("returns 400 for invalid UUID", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		router, _ := routerWithID(http.MethodGet, "/api/v1/networks/{id}", h.GetNetwork)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/networks/not-a-uuid", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+func TestNetworkHandler_UpdateNetwork_Mock(t *testing.T) {
+	t.Run("updates network and returns 200", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		existing := makeNetwork(id, "Old Name", "10.0.0.0/24")
+		nwe := &services.NetworkWithExclusions{
+			Network:    existing,
+			Exclusions: []*db.NetworkExclusion{},
+		}
+		updated := makeNetwork(id, "New Name", "10.0.0.0/24")
+
+		svc.EXPECT().
+			GetNetworkByID(gomock.Any(), id).
+			Return(nwe, nil)
+		svc.EXPECT().
+			UpdateNetwork(gomock.Any(), id, "New Name", "10.0.0.0/24", "", "ping", true).
+			Return(updated, nil)
+
+		body := `{"name":"New Name"}`
+		router, _ := routerWithID(http.MethodPut, "/api/v1/networks/{id}", h.UpdateNetwork)
+		url := fmt.Sprintf("/api/v1/networks/%s", id)
+		req := httptest.NewRequest(http.MethodPut, url, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, "New Name", resp["name"])
+	})
+
+	t.Run("returns 404 when network not found on get", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		svc.EXPECT().
+			GetNetworkByID(gomock.Any(), id).
+			Return(nil, notFoundErr("network", id.String()))
+
+		body := `{"name":"Updated"}`
+		router, _ := routerWithID(http.MethodPut, "/api/v1/networks/{id}", h.UpdateNetwork)
+		url := fmt.Sprintf("/api/v1/networks/%s", id)
+		req := httptest.NewRequest(http.MethodPut, url, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("returns 400 for invalid JSON", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		router, _ := routerWithID(http.MethodPut, "/api/v1/networks/{id}", h.UpdateNetwork)
+		url := fmt.Sprintf("/api/v1/networks/%s", id)
+		req := httptest.NewRequest(http.MethodPut, url, bytes.NewBufferString("{bad}"))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+func TestNetworkHandler_DeleteNetwork_Mock(t *testing.T) {
+	t.Run("deletes network and returns 204", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		svc.EXPECT().DeleteNetwork(gomock.Any(), id).Return(nil)
+
+		router, _ := routerWithID(http.MethodDelete, "/api/v1/networks/{id}", h.DeleteNetwork)
+		url := fmt.Sprintf("/api/v1/networks/%s", id)
+		req := httptest.NewRequest(http.MethodDelete, url, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNoContent, w.Code)
+	})
+
+	t.Run("returns 404 when network not found", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		svc.EXPECT().
+			DeleteNetwork(gomock.Any(), id).
+			Return(notFoundErr("network", id.String()))
+
+		router, _ := routerWithID(http.MethodDelete, "/api/v1/networks/{id}", h.DeleteNetwork)
+		url := fmt.Sprintf("/api/v1/networks/%s", id)
+		req := httptest.NewRequest(http.MethodDelete, url, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+}
+
+func TestNetworkHandler_EnableDisableNetwork_Mock(t *testing.T) {
+	t.Run("enable returns 200 with updated network", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		existing := makeNetwork(id, "Net", "10.0.0.0/24")
+		nwe := &services.NetworkWithExclusions{
+			Network:    existing,
+			Exclusions: []*db.NetworkExclusion{},
+		}
+		enabled := makeNetwork(id, "Net", "10.0.0.0/24")
+		enabled.IsActive = true
+		enabled.ScanEnabled = true
+
+		svc.EXPECT().
+			GetNetworkByID(gomock.Any(), id).
+			Return(nwe, nil)
+		svc.EXPECT().
+			UpdateNetwork(gomock.Any(), id, "Net", "10.0.0.0/24", "", "ping", true).
+			Return(enabled, nil)
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/networks/{id}/enable", h.EnableNetwork)
+		url := fmt.Sprintf("/api/v1/networks/%s/enable", id)
+		req := httptest.NewRequest(http.MethodPost, url, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("disable returns 200 with updated network", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		existing := makeNetwork(id, "Net", "10.0.0.0/24")
+		nwe := &services.NetworkWithExclusions{
+			Network:    existing,
+			Exclusions: []*db.NetworkExclusion{},
+		}
+		disabled := makeNetwork(id, "Net", "10.0.0.0/24")
+		disabled.IsActive = false
+		disabled.ScanEnabled = false
+
+		svc.EXPECT().
+			GetNetworkByID(gomock.Any(), id).
+			Return(nwe, nil)
+		svc.EXPECT().
+			UpdateNetwork(gomock.Any(), id, "Net", "10.0.0.0/24", "", "ping", false).
+			Return(disabled, nil)
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/networks/{id}/disable", h.DisableNetwork)
+		url := fmt.Sprintf("/api/v1/networks/%s/disable", id)
+		req := httptest.NewRequest(http.MethodPost, url, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("enable returns 404 when network not found", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		svc.EXPECT().
+			GetNetworkByID(gomock.Any(), id).
+			Return(nil, notFoundErr("network", id.String()))
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/networks/{id}/enable", h.EnableNetwork)
+		url := fmt.Sprintf("/api/v1/networks/%s/enable", id)
+		req := httptest.NewRequest(http.MethodPost, url, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+}
+
+func TestNetworkHandler_GetNetworkStats_Mock(t *testing.T) {
+	t.Run("returns stats", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		stats := map[string]interface{}{
+			"total_networks": 5,
+			"active":         3,
+		}
+		svc.EXPECT().
+			GetNetworkStats(gomock.Any()).
+			Return(stats, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/networks/stats", nil)
+		w := httptest.NewRecorder()
+		h.GetNetworkStats(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.NotEmpty(t, resp)
+	})
+
+	t.Run("returns 500 on service error", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		svc.EXPECT().
+			GetNetworkStats(gomock.Any()).
+			Return(nil, fmt.Errorf("db error"))
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/networks/stats", nil)
+		w := httptest.NewRecorder()
+		h.GetNetworkStats(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
+func TestNetworkHandler_ListNetworkExclusions_Mock(t *testing.T) {
+	t.Run("returns exclusions for network", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		networkID := uuid.New()
+		exclID := uuid.New()
+		excl := makeNetworkExclusion(exclID, &networkID, "10.0.0.1/32")
+
+		svc.EXPECT().
+			GetNetworkExclusions(gomock.Any(), networkID).
+			Return([]*db.NetworkExclusion{excl}, nil)
+
+		router := mux.NewRouter()
+		router.HandleFunc(
+			"/api/v1/networks/{id}/exclusions",
+			h.ListNetworkExclusions,
+		).Methods(http.MethodGet)
+		url := fmt.Sprintf("/api/v1/networks/%s/exclusions", networkID)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+}
+
+func TestNetworkHandler_CreateNetworkExclusion_Mock(t *testing.T) {
+	t.Run("creates exclusion and returns 201", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		networkID := uuid.New()
+		exclID := uuid.New()
+		excl := makeNetworkExclusion(exclID, &networkID, "10.0.0.1/32")
+
+		svc.EXPECT().
+			AddExclusion(gomock.Any(), &networkID, "10.0.0.1/32", "reserved host").
+			Return(excl, nil)
+
+		body := `{"excluded_cidr":"10.0.0.1/32","reason":"reserved host"}`
+		router := mux.NewRouter()
+		router.HandleFunc(
+			"/api/v1/networks/{id}/exclusions",
+			h.CreateNetworkExclusion,
+		).Methods(http.MethodPost)
+		url := fmt.Sprintf("/api/v1/networks/%s/exclusions", networkID)
+		req := httptest.NewRequest(http.MethodPost, url, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, exclID.String(), resp["id"])
+	})
+
+	t.Run("returns 400 for invalid excluded_cidr", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		networkID := uuid.New()
+		body := `{"excluded_cidr":"not-a-cidr"}`
+		router := mux.NewRouter()
+		router.HandleFunc(
+			"/api/v1/networks/{id}/exclusions",
+			h.CreateNetworkExclusion,
+		).Methods(http.MethodPost)
+		url := fmt.Sprintf("/api/v1/networks/%s/exclusions", networkID)
+		req := httptest.NewRequest(http.MethodPost, url, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 400 for missing excluded_cidr", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		networkID := uuid.New()
+		body := `{"reason":"no cidr"}`
+		router := mux.NewRouter()
+		router.HandleFunc(
+			"/api/v1/networks/{id}/exclusions",
+			h.CreateNetworkExclusion,
+		).Methods(http.MethodPost)
+		url := fmt.Sprintf("/api/v1/networks/%s/exclusions", networkID)
+		req := httptest.NewRequest(http.MethodPost, url, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 }
 
