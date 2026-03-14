@@ -6,6 +6,7 @@
 BINARY_NAME  ?= scanorama
 BUILD_DIR    := build
 COVERAGE_FILE := coverage.out
+PID_FILE     := .backend.pid
 
 # Version from git
 GIT_VERSION := $(shell git describe --tags --always 2>/dev/null)
@@ -90,16 +91,27 @@ run: build dev-db-up dev-config frontend-deps ## Start backend + frontend dev se
 		--verbose
 
 .PHONY: run-backend
-run-backend: build dev-db-up dev-config ## Start only the backend API server
+run-backend: build dev-db-up dev-config ## Start only the backend API server (restarts if running)
+	@if [ -f $(PID_FILE) ]; then \
+		PID=$$(cat $(PID_FILE)); \
+		if kill -0 "$$PID" 2>/dev/null; then \
+			kill "$$PID" && echo "↺ Stopped existing backend (pid $$PID)"; \
+			sleep 0.5; \
+		fi; \
+		rm -f $(PID_FILE); \
+	fi
 	@echo ""
 	@echo "Starting scanorama API server on $(HOST):$(PORT)..."
 	@echo "Press Ctrl-C to stop."
 	@echo ""
-	@$(BUILD_DIR)/$(BINARY_NAME) api \
+	@trap 'rm -f $(PID_FILE)' EXIT; \
+	$(BUILD_DIR)/$(BINARY_NAME) api \
 		--config $(DEV_CONFIG) \
 		--host $(HOST) \
 		--port $(PORT) \
-		--verbose
+		--verbose & \
+	echo $$! > $(PID_FILE); \
+	wait $$!
 
 .PHONY: frontend
 frontend: frontend-deps ## Start the frontend dev server (needs backend running)
@@ -107,6 +119,20 @@ frontend: frontend-deps ## Start the frontend dev server (needs backend running)
 	@echo "  Open http://localhost:5173"
 	@echo ""
 	@cd frontend && npx vite
+
+.PHONY: stop-backend
+stop-backend: ## Stop a background backend started by run-backend
+	@if [ -f $(PID_FILE) ]; then \
+		PID=$$(cat $(PID_FILE)); \
+		if kill -0 "$$PID" 2>/dev/null; then \
+			kill "$$PID" && echo "✓ Backend stopped (pid $$PID)"; \
+		else \
+			echo "Backend pid $$PID is not running"; \
+		fi; \
+		rm -f $(PID_FILE); \
+	else \
+		echo "No PID file found ($(PID_FILE))"; \
+	fi
 
 .PHONY: frontend-deps
 frontend-deps:

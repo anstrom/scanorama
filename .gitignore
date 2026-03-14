@@ -116,3 +116,4 @@ REFACTORING_COMPLETE.md
 -e
 # Coverage reports
 coverage-reports/
+.backend.pid
