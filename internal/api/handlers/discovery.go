@@ -378,25 +378,14 @@ func (h *DiscoveryHandler) getDiscoveryFilters(r *http.Request) db.DiscoveryFilt
 	return filters
 }
 
-// requestToDBDiscovery converts a discovery request to database discovery object.
+// requestToDBDiscovery converts a discovery request to the map expected by db.CreateDiscoveryJob.
+// Only the keys that the database layer reads are included:
+//   - "networks" ([]string): read by CreateDiscoveryJob to derive the target CIDR
+//   - "method"   (string):   read by CreateDiscoveryJob and UpdateDiscoveryJob
 func (h *DiscoveryHandler) requestToDBDiscovery(req *DiscoveryRequest) interface{} {
-	// This should return the appropriate database discovery type
-	// The exact structure would depend on the database package implementation
 	return map[string]interface{}{
-		"name":        req.Name,
-		"description": req.Description,
-		"networks":    req.Networks,
-		"method":      req.Method,
-		"ports":       req.Ports,
-		"timeout":     req.Timeout,
-		"retries":     req.Retries,
-		"options":     req.Options,
-		"schedule_id": req.ScheduleID,
-		"tags":        req.Tags,
-		"enabled":     req.Enabled,
-		"status":      "pending",
-		"created_at":  time.Now().UTC(),
-		"updated_at":  time.Now().UTC(),
+		"networks": req.Networks,
+		"method":   req.Method,
 	}
 }
 
