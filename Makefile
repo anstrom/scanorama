@@ -1,252 +1,283 @@
-# Scanorama Makefile - Simplified and Fixed
+# Scanorama Makefile
+# Run `make` or `make help` to see available targets.
 
-# Build configuration
-BINARY_NAME ?= scanorama
-BUILD_DIR := build
+# ─── Configuration ───────────────────────────────────────────────────────────
+
+BINARY_NAME  ?= scanorama
+BUILD_DIR    := build
 COVERAGE_FILE := coverage.out
 
-# Version information
+# Version from git
 GIT_VERSION := $(shell git describe --tags --always 2>/dev/null)
-VERSION ?= $(if $(GIT_VERSION),$(GIT_VERSION),dev)
-COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-LDFLAGS := -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT)' -X 'main.buildTime=$(BUILD_TIME)'
+VERSION     ?= $(if $(GIT_VERSION),$(GIT_VERSION),dev)
+COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME  := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS     := -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT)' -X 'main.buildTime=$(BUILD_TIME)'
 
-# Go commands
-GO := go
-GOTEST := $(GO) test
+# Go
+GO      := go
+GOTEST  := $(GO) test
 GOBUILD := $(GO) build
 
 # Docker compose
-DOCKER_COMPOSE := docker compose
-TEST_COMPOSE_FILE := docker/docker-compose.test.yml
+DOCKER_COMPOSE  := docker compose
+DEV_COMPOSE     := docker/docker-compose.dev.yml
+TEST_COMPOSE    := docker/docker-compose.test.yml
 
-# Test database environment variables
-export TEST_DB_HOST := localhost
-export TEST_DB_PORT := 5432
-export TEST_DB_NAME := scanorama_test
-export TEST_DB_USER := test_user
+# Dev config — copied to root on first `make run`
+DEV_CONFIG_SRC  := config/environments/config.dev.yaml
+DEV_CONFIG      := config.yaml
+
+# API server defaults (can override: make run PORT=9090)
+HOST ?= 127.0.0.1
+PORT ?= 8080
+
+# Test database (used by `make test` — on port 5433 to avoid clashing with dev DB)
+export TEST_DB_HOST     := localhost
+export TEST_DB_PORT     := 5433
+export TEST_DB_NAME     := scanorama_test
+export TEST_DB_USER     := test_user
 export TEST_DB_PASSWORD := test_password
 
+# ─── Default ─────────────────────────────────────────────────────────────────
+
+.DEFAULT_GOAL := help
+
 .PHONY: help
-help: ## Show this help message
-	@echo 'Scanorama - Quick Reference'
-	@echo ''
-	@echo 'Common Tasks:'
-	@echo '  make test          - Run all tests (starts DB automatically)'
-	@echo '  make test-unit     - Run only unit tests (no DB needed)'
-	@echo '  make coverage      - Generate coverage report'
-	@echo '  make build         - Build the binary'
-	@echo '  make clean         - Clean build artifacts'
-	@echo ''
-	@echo 'Database:'
-	@echo '  make db-up         - Start test database'
-	@echo '  make db-down       - Stop test database'
-	@echo '  make db-reset      - Reset test database (down + up)'
-	@echo ''
-	@echo 'Development:'
-	@echo '  make lint          - Run linter'
-	@echo '  make fmt           - Format code'
-	@echo ''
-	@echo 'All targets:'
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+help: ## Show this help
+	@printf '\n\033[1mScanorama\033[0m — $(VERSION)\n\n'
+	@printf '\033[1mQuick start:\033[0m\n'
+	@printf '  make run           Start dev DB + API server (localhost:$(PORT))\n'
+	@printf '  make test          Run all tests\n'
+	@printf '  make build         Build the binary\n'
+	@printf '\n'
+	@printf '\033[1mAll targets:\033[0m\n'
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@printf '\n'
+
+# ─── Build ───────────────────────────────────────────────────────────────────
 
 .PHONY: build
 build: ## Build the scanorama binary
 	@echo "Building $(BINARY_NAME) $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
 	@$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/scanorama
-	@echo "✓ Binary built: $(BUILD_DIR)/$(BINARY_NAME)"
+	@echo "✓ $(BUILD_DIR)/$(BINARY_NAME)"
 
 .PHONY: clean
-clean: ## Remove build artifacts and test files
-	@echo "Cleaning..."
+clean: ## Remove build artifacts and coverage files
 	@rm -rf $(BUILD_DIR)
 	@rm -f $(COVERAGE_FILE) $(COVERAGE_FILE).html
 	@find . -name "*.test" -type f -delete
 	@find . -name "coverage.txt" -type f -delete
-	@echo "✓ Clean complete"
+	@echo "✓ Clean"
 
 .PHONY: version
-version: ## Show version information
+version: ## Print version info
 	@echo "Version:    $(VERSION)"
 	@echo "Commit:     $(COMMIT)"
 	@echo "Build Time: $(BUILD_TIME)"
 
-# =============================================================================
-# Database Management
-# =============================================================================
+# ─── Run ─────────────────────────────────────────────────────────────────────
 
-.PHONY: db-up
-db-up: ## Start PostgreSQL test database
+.PHONY: run
+run: build dev-db-up dev-config ## Build and run the API server with dev database
+	@echo ""
+	@echo "Starting scanorama API server on $(HOST):$(PORT)..."
+	@echo "Press Ctrl-C to stop."
+	@echo ""
+	@$(BUILD_DIR)/$(BINARY_NAME) api \
+		--config $(DEV_CONFIG) \
+		--host $(HOST) \
+		--port $(PORT) \
+		--verbose
+
+.PHONY: dev
+dev: build dev-up dev-config ## Build and run with full dev stack (DB + pgAdmin + Redis)
+	@echo ""
+	@echo "Starting scanorama API server on $(HOST):$(PORT)..."
+	@echo "  pgAdmin:  http://localhost:5050"
+	@echo "  Redis:    localhost:6379"
+	@echo "Press Ctrl-C to stop."
+	@echo ""
+	@$(BUILD_DIR)/$(BINARY_NAME) api \
+		--config $(DEV_CONFIG) \
+		--host $(HOST) \
+		--port $(PORT) \
+		--verbose
+
+.PHONY: dev-config
+dev-config:
+	@if [ ! -f $(DEV_CONFIG) ]; then \
+		cp $(DEV_CONFIG_SRC) $(DEV_CONFIG); \
+		chmod 600 $(DEV_CONFIG); \
+		echo "✓ Created $(DEV_CONFIG) from $(DEV_CONFIG_SRC)"; \
+	fi
+
+# ─── Dev Infrastructure ─────────────────────────────────────────────────────
+
+.PHONY: dev-db-up
+dev-db-up: ## Start dev PostgreSQL (port 5432)
+	@echo "Starting dev database..."
+	@$(DOCKER_COMPOSE) -f $(DEV_COMPOSE) up -d --wait postgres
+	@echo "✓ Dev database ready (localhost:5432)"
+
+.PHONY: dev-up
+dev-up: ## Start full dev stack (DB + pgAdmin + Redis)
+	@echo "Starting dev stack..."
+	@$(DOCKER_COMPOSE) -f $(DEV_COMPOSE) --profile tools --profile cache up -d --wait
+	@echo "✓ Dev stack ready"
+
+.PHONY: dev-down
+dev-down: ## Stop dev infrastructure
+	@echo "Stopping dev stack..."
+	@$(DOCKER_COMPOSE) -f $(DEV_COMPOSE) --profile tools --profile cache --profile targets down
+	@echo "✓ Dev stack stopped"
+
+.PHONY: dev-nuke
+dev-nuke: ## Stop dev infrastructure and delete all data
+	@echo "Destroying dev stack and volumes..."
+	@$(DOCKER_COMPOSE) -f $(DEV_COMPOSE) --profile tools --profile cache --profile targets down -v
+	@echo "✓ Dev stack destroyed"
+
+.PHONY: dev-db-shell
+dev-db-shell: ## Open psql shell to dev database
+	@$(DOCKER_COMPOSE) -f $(DEV_COMPOSE) exec postgres psql -U scanorama_dev -d scanorama_dev
+
+.PHONY: dev-logs
+dev-logs: ## Tail dev infrastructure logs
+	@$(DOCKER_COMPOSE) -f $(DEV_COMPOSE) logs -f
+
+.PHONY: dev-targets
+dev-targets: ## Start scan test targets (nginx + SSH)
+	@$(DOCKER_COMPOSE) -f $(DEV_COMPOSE) --profile targets up -d
+	@echo "✓ Test targets: nginx (8081/8443), SSH (2222)"
+
+# ─── Test Database ───────────────────────────────────────────────────────────
+# Test DB runs on port 5433 so it never conflicts with the dev DB on 5432.
+
+.PHONY: test-db-up
+test-db-up: ## Start test database (port 5433)
 	@echo "Starting test database..."
-	@$(DOCKER_COMPOSE) -f $(TEST_COMPOSE_FILE) up -d --wait
-	@echo "✓ Database started"
+	@TEST_DB_PORT=$(TEST_DB_PORT) $(DOCKER_COMPOSE) -f $(TEST_COMPOSE) up -d --wait
+	@echo "✓ Test database ready (localhost:$(TEST_DB_PORT))"
 
-.PHONY: db-down
-db-down: ## Stop PostgreSQL test database
-	@echo "Stopping test database..."
-	@$(DOCKER_COMPOSE) -f $(TEST_COMPOSE_FILE) down -v
-	@echo "✓ Database stopped"
+.PHONY: test-db-down
+test-db-down: ## Stop test database
+	@$(DOCKER_COMPOSE) -f $(TEST_COMPOSE) down -v 2>/dev/null || true
+	@echo "✓ Test database stopped"
 
-.PHONY: db-reset
-db-reset: db-down db-up ## Reset test database (stop and start fresh)
+.PHONY: test-db-reset
+test-db-reset: test-db-down test-db-up ## Reset test database
 
-.PHONY: db-logs
-db-logs: ## Show database logs
-	@$(DOCKER_COMPOSE) -f $(TEST_COMPOSE_FILE) logs -f postgres
+.PHONY: test-db-shell
+test-db-shell: ## Open psql shell to test database
+	@$(DOCKER_COMPOSE) -f $(TEST_COMPOSE) exec postgres psql -U $(TEST_DB_USER) -d $(TEST_DB_NAME)
 
-.PHONY: db-shell
-db-shell: ## Connect to database with psql
-	@$(DOCKER_COMPOSE) -f $(TEST_COMPOSE_FILE) exec postgres psql -U $(TEST_DB_USER) -d $(TEST_DB_NAME)
-
-# =============================================================================
-# Testing
-# =============================================================================
+# ─── Testing ─────────────────────────────────────────────────────────────────
 
 .PHONY: test-unit
-test-unit: ## Run unit tests only (no database required)
+test-unit: ## Run unit tests (no database needed)
 	@echo "Running unit tests..."
-	@$(GOTEST) -short -v ./...
-	@echo "✓ Unit tests complete"
+	@$(GOTEST) -short ./...
+	@echo "✓ Unit tests passed"
 
 .PHONY: test
-test: ## Run all tests (starts database automatically)
-	@echo "Starting test database..."
-	@$(MAKE) db-up
+test: test-db-up ## Run all tests (starts test DB automatically)
 	@echo "Running all tests..."
-	@$(GOTEST) -v ./... || (echo "✗ Tests failed"; $(MAKE) db-down; exit 1)
-	@echo "✓ Tests passed"
-	@$(MAKE) db-down
+	@$(GOTEST) -v ./... || ($(MAKE) test-db-down; exit 1)
+	@echo "✓ All tests passed"
+	@$(MAKE) test-db-down
 
 .PHONY: test-keep-db
-test-keep-db: db-up ## Run all tests and keep database running
-	@echo "Running all tests (database will stay running)..."
+test-keep-db: test-db-up ## Run all tests, keep test DB running after
 	@$(GOTEST) -v ./...
 
 .PHONY: coverage
-coverage: ## Generate test coverage report
-	@echo "Starting test database..."
-	@$(MAKE) db-up
-	@echo "Generating coverage report..."
-	@$(GOTEST) -coverprofile=$(COVERAGE_FILE) -covermode=atomic ./... || (echo "✗ Coverage generation failed"; $(MAKE) db-down; exit 1)
-	@echo "✓ Tests passed"
-	@$(MAKE) db-down
-	@if [ -f $(COVERAGE_FILE) ]; then \
-		echo "Generating HTML report..."; \
-		$(GO) tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_FILE).html; \
-		echo ""; \
-		echo "Coverage Summary:"; \
-		$(GO) tool cover -func=$(COVERAGE_FILE) | tail -1; \
-		echo ""; \
-		echo "✓ Coverage report: $(COVERAGE_FILE).html"; \
-	fi
-
-.PHONY: coverage-keep-db
-coverage-keep-db: db-up ## Generate coverage and keep database running
-	@echo "Generating coverage report (database will stay running)..."
-	@$(GOTEST) -coverprofile=$(COVERAGE_FILE) -covermode=atomic ./...
-	@if [ -f $(COVERAGE_FILE) ]; then \
-		$(GO) tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_FILE).html; \
-		echo "Coverage report: $(COVERAGE_FILE).html"; \
-		$(GO) tool cover -func=$(COVERAGE_FILE) | tail -1; \
-	fi
+coverage: test-db-up ## Generate coverage report
+	@echo "Running tests with coverage..."
+	@$(GOTEST) -coverprofile=$(COVERAGE_FILE) -covermode=atomic ./... \
+		|| ($(MAKE) test-db-down; exit 1)
+	@$(MAKE) test-db-down
+	@$(GO) tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_FILE).html
+	@echo ""
+	@$(GO) tool cover -func=$(COVERAGE_FILE) | tail -1
+	@echo "✓ Report: $(COVERAGE_FILE).html"
 
 .PHONY: coverage-show
-coverage-show: ## Show coverage in browser (requires existing coverage.out)
-	@if [ ! -f $(COVERAGE_FILE) ]; then \
-		echo "✗ No coverage file found. Run 'make coverage' first."; \
-		exit 1; \
-	fi
+coverage-show: ## Open coverage report in browser
+	@test -f $(COVERAGE_FILE) || (echo "No coverage file. Run 'make coverage' first." && exit 1)
 	@$(GO) tool cover -html=$(COVERAGE_FILE)
 
-# =============================================================================
-# Code Quality
-# =============================================================================
+# ─── Code Quality ────────────────────────────────────────────────────────────
 
 .PHONY: fmt
-fmt: ## Format code with gofmt
-	@echo "Formatting code..."
+fmt: ## Format Go code
 	@gofmt -s -w .
-	@echo "✓ Code formatted"
-
-.PHONY: lint
-lint: ## Run golangci-lint
-	@echo "Running linter..."
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run ./...; \
-	else \
-		echo "✗ golangci-lint not installed"; \
-		echo "Install with: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \$$(go env GOPATH)/bin"; \
-		exit 1; \
-	fi
-	@echo "✓ Linting complete"
+	@echo "✓ Formatted"
 
 .PHONY: vet
 vet: ## Run go vet
-	@echo "Running go vet..."
 	@$(GO) vet ./...
-	@echo "✓ Vet complete"
+	@echo "✓ Vet passed"
+
+.PHONY: lint
+lint: ## Run golangci-lint
+	@command -v golangci-lint >/dev/null 2>&1 \
+		|| (echo "Install: https://golangci-lint.run/welcome/install/" && exit 1)
+	@golangci-lint run ./...
+	@echo "✓ Lint passed"
 
 .PHONY: check
-check: fmt vet test-unit ## Run quick checks (format, vet, unit tests)
-	@echo "✓ All checks passed"
+check: fmt vet test-unit ## Quick checks: format, vet, unit tests
 
-# =============================================================================
-# Dependencies
-# =============================================================================
+# ─── Dependencies ────────────────────────────────────────────────────────────
 
 .PHONY: deps
-deps: ## Download dependencies
-	@echo "Downloading dependencies..."
+deps: ## Download and tidy Go dependencies
 	@$(GO) mod download
 	@$(GO) mod tidy
-	@echo "✓ Dependencies updated"
+	@echo "✓ Dependencies ready"
 
 .PHONY: deps-upgrade
-deps-upgrade: ## Upgrade dependencies
-	@echo "Upgrading dependencies..."
+deps-upgrade: ## Upgrade all Go dependencies
 	@$(GO) get -u ./...
 	@$(GO) mod tidy
 	@echo "✓ Dependencies upgraded"
 
-# =============================================================================
-# CI/Development Workflow
-# =============================================================================
+# ─── Docs ────────────────────────────────────────────────────────────────────
+
+.PHONY: docs
+docs: ## Generate Swagger/OpenAPI docs
+	@command -v swag >/dev/null 2>&1 \
+		|| (echo "Install: go install github.com/swaggo/swag/cmd/swag@latest" && exit 1)
+	@cd docs && swag init -g swagger_docs.go -o ./swagger --parseDependency --parseInternal
+	@echo "✓ Swagger docs generated"
+
+# ─── Seed Data ───────────────────────────────────────────────────────────────
+
+.PHONY: seed
+seed: dev-db-up dev-config build ## Populate dev database with sample data
+	@echo "Seeding dev database..."
+	@echo "TODO: implement seed command or SQL script"
+	@echo "  For now, use the API to create test data:"
+	@echo "    curl -X POST http://localhost:$(PORT)/api/v1/networks -d '{\"name\":\"Lab\",\"cidr\":\"192.168.1.0/24\",\"discovery_method\":\"ping\"}'"
+	@echo ""
+
+# ─── CI / Workflows ─────────────────────────────────────────────────────────
 
 .PHONY: ci
 ci: deps check test ## Run full CI pipeline locally
-	@echo "✓ CI pipeline complete"
 
 .PHONY: dev-setup
-dev-setup: deps ## Setup development environment
-	@echo "Setting up development environment..."
+dev-setup: deps ## Set up dev environment (install tools + deps)
 	@if ! command -v golangci-lint >/dev/null 2>&1; then \
 		echo "Installing golangci-lint..."; \
-		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$(go env GOPATH)/bin; \
+		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+			| sh -s -- -b $$(go env GOPATH)/bin; \
 	fi
-	@echo "✓ Development environment ready"
 	@echo ""
-	@echo "Quick start:"
-	@echo "  make db-up        # Start test database"
-	@echo "  make test         # Run tests"
-	@echo "  make db-down      # Stop database when done"
+	@echo "✓ Ready. Run 'make run' to start developing."
 
 .PHONY: all
-all: clean deps build test ## Build everything from scratch
-	@echo "✓ Build complete"
-
-# =============================================================================
-# Documentation (for CI compatibility)
-# =============================================================================
-
-.PHONY: docs-generate
-docs-generate: ## Generate API documentation (placeholder for CI)
-	@echo "Generating API documentation..."
-	@if command -v swag >/dev/null 2>&1; then \
-		cd docs && swag init -g swagger_docs.go -o ./swagger --parseDependency --parseInternal; \
-		echo "✓ API documentation generated"; \
-	else \
-		echo "⚠ swag not installed, skipping documentation generation"; \
-		echo "Install with: go install github.com/swaggo/swag/cmd/swag@latest"; \
-	fi
+all: clean deps build test ## Full rebuild from scratch
