@@ -404,6 +404,11 @@ func parseTargetAddress(target string) (db.NetworkAddr, error) {
 	// Try to parse as IP address first
 	ip := net.ParseIP(target)
 	if ip == nil {
+		// Require at least one dot so bare words like "not-an-ip-address"
+		// are rejected while FQDNs like "example.com" are accepted.
+		if !strings.Contains(target, ".") {
+			return networkAddr, fmt.Errorf("invalid target address: %q is not a valid IP, CIDR, or hostname", target)
+		}
 		// For hostnames, create a placeholder network
 		// This will be resolved during scanning
 		ip = net.ParseIP("0.0.0.0")
