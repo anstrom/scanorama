@@ -28,12 +28,15 @@ const (
 // PrometheusMetrics holds all Prometheus metric collectors
 type PrometheusMetrics struct {
 	// Scan metrics
-	scansTotal   *prometheus.CounterVec
-	scanDuration *prometheus.HistogramVec
-	scanErrors   *prometheus.CounterVec
-	portsScanned *prometheus.CounterVec
-	hostsScanned *prometheus.CounterVec
-	activeScans  prometheus.Gauge
+	scansTotal        *prometheus.CounterVec
+	scanDuration      *prometheus.HistogramVec
+	scanErrors        *prometheus.CounterVec
+	portsScanned      *prometheus.CounterVec
+	hostsScanned      *prometheus.CounterVec
+	activeScans       prometheus.Gauge
+	scanQueueDepth    prometheus.Gauge
+	scansRejected     *prometheus.CounterVec
+	scanQueueCapacity prometheus.Gauge
 
 	// Discovery metrics
 	discoveryTotal    *prometheus.CounterVec
@@ -151,6 +154,34 @@ func (pm *PrometheusMetrics) initScanMetrics() {
 			Subsystem: subsystemScan,
 			Name:      "active",
 			Help:      "Number of currently active scans",
+		},
+	)
+
+	pm.scanQueueDepth = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystemScan,
+			Name:      "queue_depth",
+			Help:      "Number of scans waiting in the queue",
+		},
+	)
+
+	pm.scansRejected = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystemScan,
+			Name:      "rejected_total",
+			Help:      "Total number of scans rejected",
+		},
+		[]string{"reason"},
+	)
+
+	pm.scanQueueCapacity = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystemScan,
+			Name:      "queue_capacity",
+			Help:      "Maximum scan queue capacity",
 		},
 	)
 }
@@ -333,6 +364,9 @@ func (pm *PrometheusMetrics) registerMetrics() {
 	pm.registry.MustRegister(pm.portsScanned)
 	pm.registry.MustRegister(pm.hostsScanned)
 	pm.registry.MustRegister(pm.activeScans)
+	pm.registry.MustRegister(pm.scanQueueDepth)
+	pm.registry.MustRegister(pm.scansRejected)
+	pm.registry.MustRegister(pm.scanQueueCapacity)
 
 	// Discovery metrics
 	pm.registry.MustRegister(pm.discoveryTotal)
@@ -394,6 +428,21 @@ func (pm *PrometheusMetrics) IncrementHostsScanned(scanType, status string, coun
 // SetActiveScans sets the number of active scans
 func (pm *PrometheusMetrics) SetActiveScans(count int) {
 	pm.activeScans.Set(float64(count))
+}
+
+// SetScanQueueDepth sets the current scan queue depth
+func (pm *PrometheusMetrics) SetScanQueueDepth(depth float64) {
+	pm.scanQueueDepth.Set(depth)
+}
+
+// IncrementScansRejected increments the count of rejected scans by reason
+func (pm *PrometheusMetrics) IncrementScansRejected(reason string) {
+	pm.scansRejected.WithLabelValues(reason).Inc()
+}
+
+// SetScanQueueCapacity sets the maximum scan queue capacity
+func (pm *PrometheusMetrics) SetScanQueueCapacity(capacity float64) {
+	pm.scanQueueCapacity.Set(capacity)
 }
 
 // Discovery Metrics Methods
@@ -576,4 +625,19 @@ func RecordDatabaseQueryPrometheus(operation string, duration time.Duration, suc
 // SetActiveConnectionsPrometheus sets active database connections using global metrics
 func SetActiveConnectionsPrometheus(count int) {
 	GetGlobalMetrics().SetActiveConnections(count)
+}
+
+// SetScanQueueDepthPrometheus sets scan queue depth using global metrics
+func SetScanQueueDepthPrometheus(depth float64) {
+	GetGlobalMetrics().SetScanQueueDepth(depth)
+}
+
+// IncrementScansRejectedPrometheus increments scans rejected using global metrics
+func IncrementScansRejectedPrometheus(reason string) {
+	GetGlobalMetrics().IncrementScansRejected(reason)
+}
+
+// SetScanQueueCapacityPrometheus sets scan queue capacity using global metrics
+func SetScanQueueCapacityPrometheus(capacity float64) {
+	GetGlobalMetrics().SetScanQueueCapacity(capacity)
 }

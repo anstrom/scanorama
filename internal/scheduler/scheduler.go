@@ -48,7 +48,8 @@ type Scheduler struct {
 	running            bool
 	ctx                context.Context
 	cancel             context.CancelFunc
-	maxConcurrentScans int // bounded parallelism for per-host scans
+	maxConcurrentScans int                 // bounded parallelism for per-host scans
+	scanQueue          *scanning.ScanQueue // optional queue-based scan execution
 }
 
 // ScheduledJob represents a scheduled job wrapper.
@@ -102,6 +103,15 @@ func (s *Scheduler) WithMaxConcurrentScans(n int) *Scheduler {
 	if n > 0 {
 		s.maxConcurrentScans = n
 	}
+	return s
+}
+
+// WithScanQueue configures the scheduler to use the provided ScanQueue for
+// executing host scans instead of the default semaphore+goroutine pattern.
+// When set, processHostsForScanning submits scan requests to the queue and
+// waits for all results before returning. Pass nil to revert to the default.
+func (s *Scheduler) WithScanQueue(q *scanning.ScanQueue) *Scheduler {
+	s.scanQueue = q
 	return s
 }
 
@@ -532,6 +542,11 @@ func (s *Scheduler) processHostsForScanning(ctx context.Context, hosts []*db.Hos
 		return
 	}
 
+	if s.scanQueue != nil {
+		s.processHostsViaQueue(ctx, hosts, config)
+		return
+	}
+
 	// sem is a counting semaphore that limits concurrent scans.
 	sem := make(chan struct{}, s.maxConcurrentScans)
 	var wg sync.WaitGroup
@@ -603,6 +618,94 @@ hostLoop:
 
 	// Wait for all in-flight scans to finish before returning.
 	wg.Wait()
+}
+
+// processHostsViaQueue submits scan requests to the ScanQueue and waits for
+// all results before returning. This allows the scheduler to leverage the
+// queue's bounded worker pool instead of managing its own goroutines.
+func (s *Scheduler) processHostsViaQueue(ctx context.Context, hosts []*db.Host, config *ScanJobConfig) {
+	resultCh := make(chan *scanning.ScanQueueResult, len(hosts))
+	submitted := 0
+
+	for i, host := range hosts {
+		// Check for context cancellation before submitting the next request.
+		if ctx.Err() != nil {
+			log.Printf("Scan job context canceled after submitting %d/%d hosts to queue", i, len(hosts))
+			break
+		}
+
+		profileID := s.selectProfileForHost(ctx, host, config.ProfileID)
+		if profileID == "" {
+			log.Printf("No profile available for host %s, skipping", host.IPAddress)
+			continue
+		}
+
+		profile, err := s.profiles.GetByID(ctx, profileID)
+		if err != nil {
+			log.Printf("Failed to get profile %s for host %s: %v", profileID, host.IPAddress, err)
+			continue
+		}
+
+		scanConfig := &scanning.ScanConfig{
+			Targets:     []string{host.IPAddress.String()},
+			Ports:       profile.Ports,
+			ScanType:    profile.ScanType,
+			TimeoutSec:  timingToScanTimeout(profile.Timing),
+			Concurrency: 1,
+		}
+
+		req := &scanning.ScanQueueRequest{
+			ID:       fmt.Sprintf("sched-%s-%s", host.ID, host.IPAddress),
+			Config:   scanConfig,
+			Database: s.db,
+			ResultCh: resultCh,
+		}
+
+		if err := s.scanQueue.Submit(req); err != nil {
+			if err == scanning.ErrQueueFull {
+				log.Printf("Scan queue full, skipping host %s", host.IPAddress)
+			} else {
+				log.Printf("Failed to submit scan for host %s to queue: %v", host.IPAddress, err)
+			}
+			continue
+		}
+
+		submitted++
+		log.Printf("Submitted scan for host %s to queue (profile %s)", host.IPAddress, profileID)
+	}
+
+	if submitted == 0 {
+		log.Printf("No scans were submitted to the queue")
+		return
+	}
+
+	// Wait for all submitted scans to complete.
+	log.Printf("Waiting for %d queued scan(s) to complete", submitted)
+	successCount := 0
+	failCount := 0
+
+	for i := 0; i < submitted; i++ {
+		select {
+		case result := <-resultCh:
+			if result.Error != nil {
+				failCount++
+				log.Printf("Queued scan %s failed (%s): %v", result.ID, result.Duration, result.Error)
+			} else {
+				successCount++
+				hostCount := 0
+				if result.Result != nil {
+					hostCount = len(result.Result.Hosts)
+				}
+				log.Printf("Queued scan %s completed (%s): %d hosts found", result.ID, result.Duration, hostCount)
+			}
+		case <-ctx.Done():
+			log.Printf("Scan job context canceled while waiting for queued results (%d/%d received)", i, submitted)
+			return
+		}
+	}
+
+	log.Printf("All queued scans finished: %d succeeded, %d failed out of %d submitted",
+		successCount, failCount, submitted)
 }
 
 // timingToScanTimeout converts a profile timing string to a scan timeout in seconds.
