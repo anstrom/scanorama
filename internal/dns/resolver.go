@@ -5,9 +5,32 @@
 // including negative ones — is stored so that repeated queries hit the
 // database instead of the OS resolver.
 //
-// Concurrency: Resolver is safe for concurrent use.  A single-flight
-// group ensures that simultaneous callers for the same key share one
-// in-flight network lookup rather than fanning out N identical queries.
+// TTL behavior
+// -------------
+// Each cache row carries its own ttl_seconds value.  Two TTLs are in play:
+//
+//   - TTL (default 1 h)          — used for successful positive results.
+//   - NegativeTTL (default 5 min) — used for NXDOMAIN / empty answers and
+//     resolver errors, so transient failures do not get pinned for an hour.
+//
+// Both can be overridden at construction time via WithTTL / WithNegativeTTL.
+//
+// Cache invalidation
+// ------------------
+// Entries expire passively when their TTL window closes; the next lookup for
+// that key then triggers a fresh network query.  Two explicit invalidation
+// methods are also provided:
+//
+//   - Invalidate(ctx, direction, key) — removes all rows for one key.
+//   - InvalidateAll(ctx)              — truncates the entire dns_cache table.
+//
+// RefreshStale can be called from a background goroutine or scheduled job to
+// proactively re-resolve entries whose TTL has already expired.
+//
+// Concurrency
+// -----------
+// Resolver is safe for concurrent use.  A singleflight group ensures that
+// simultaneous callers for the same key share one in-flight network lookup.
 package dns
 
 import (
@@ -34,15 +57,17 @@ const (
 	DirectionReverse Direction = "reverse" // IP       → hostname
 )
 
-// DefaultTTL is used when the caller does not supply an explicit TTL.
+// DefaultTTL is used for successful positive cache entries when the caller
+// does not supply an explicit TTL via WithTTL.
 const DefaultTTL = time.Hour
 
-// negativeTTL is used for successful but empty responses (NXDOMAIN /
-// no records) and for lookup errors, so we don't hammer the resolver.
-const negativeTTL = 5 * time.Minute
+// DefaultNegativeTTL is used for NXDOMAIN / empty-answer / resolver-error
+// entries.  It is intentionally short so transient failures resolve quickly.
+const DefaultNegativeTTL = 5 * time.Minute
 
-// ErrNoRecords is returned by Lookup when the resolver returned a
-// successful response that contained no usable records.
+// ErrNoRecords is returned by a Lookup method when the resolver returned a
+// successful response that contained no usable records (NXDOMAIN / empty
+// answer section).
 var ErrNoRecords = errors.New("dns: lookup returned no records")
 
 // entry is one row from the dns_cache table.
@@ -63,17 +88,18 @@ func (e *entry) fresh() bool {
 
 // Resolver performs cached DNS lookups.
 type Resolver struct {
-	db     *db.DB
-	net    *net.Resolver // injectable for tests
-	logger *slog.Logger
-	ttl    time.Duration
+	db          *db.DB
+	net         *net.Resolver // injectable for tests
+	logger      *slog.Logger
+	ttl         time.Duration
+	negativeTTL time.Duration
 
 	// lookupHostFn and lookupAddrFn can be replaced in tests to avoid
 	// touching the network. When nil the real net.Resolver is used.
 	lookupHostFn func(ctx context.Context, host string) ([]string, error)
 	lookupAddrFn func(ctx context.Context, ip string) ([]string, error)
 
-	// singleflight: map key → *call
+	// singleflight: sfKey → *call
 	mu    sync.Mutex
 	calls map[string]*call
 }
@@ -88,17 +114,24 @@ type call struct {
 // Option configures a Resolver.
 type Option func(*Resolver)
 
-// WithTTL overrides the default TTL for fresh cache entries.
+// WithTTL overrides the default TTL for successful positive cache entries.
 func WithTTL(d time.Duration) Option {
 	return func(r *Resolver) { r.ttl = d }
 }
 
-// WithNetResolver replaces the underlying net.Resolver (useful in tests).
+// WithNegativeTTL overrides the default TTL used for NXDOMAIN / empty-answer
+// / resolver-error cache entries.
+func WithNegativeTTL(d time.Duration) Option {
+	return func(r *Resolver) { r.negativeTTL = d }
+}
+
+// WithNetResolver replaces the underlying net.Resolver (useful in tests that
+// want to verify the Option wiring without injecting lookupHostFn directly).
 func WithNetResolver(nr *net.Resolver) Option {
 	return func(r *Resolver) { r.net = nr }
 }
 
-// WithLogger sets the structured logger.
+// WithLogger sets the structured logger used for warnings and debug output.
 func WithLogger(l *slog.Logger) Option {
 	return func(r *Resolver) { r.logger = l }
 }
@@ -106,11 +139,12 @@ func WithLogger(l *slog.Logger) Option {
 // New creates a Resolver backed by the given database connection.
 func New(database *db.DB, opts ...Option) *Resolver {
 	r := &Resolver{
-		db:     database,
-		net:    net.DefaultResolver,
-		logger: slog.Default(),
-		ttl:    DefaultTTL,
-		calls:  make(map[string]*call),
+		db:          database,
+		net:         net.DefaultResolver,
+		logger:      slog.Default(),
+		ttl:         DefaultTTL,
+		negativeTTL: DefaultNegativeTTL,
+		calls:       make(map[string]*call),
 	}
 	for _, o := range opts {
 		o(r)
@@ -118,11 +152,13 @@ func New(database *db.DB, opts ...Option) *Resolver {
 	return r
 }
 
+// ─── public API ───────────────────────────────────────────────────────────────
+
 // LookupHost resolves a hostname to one or more IP address strings.
-// Results are cached; the cache is consulted first and a live lookup is
-// only performed when all cached entries are stale or absent.
+// The cache is consulted first; a live lookup is only performed when all
+// cached entries are stale or absent.
 //
-// On success the slice contains at least one element.
+// On success the returned slice contains at least one element.
 // ErrNoRecords is returned when the resolver returned an empty answer.
 func (r *Resolver) LookupHost(ctx context.Context, host string) ([]string, error) {
 	host = strings.ToLower(strings.TrimSpace(host))
@@ -137,19 +173,24 @@ func (r *Resolver) LookupHost(ctx context.Context, host string) ([]string, error
 		// Non-fatal: fall through to live lookup.
 	}
 	if len(cached) > 0 && cached[0].fresh() {
-		return extractValues(cached), nil
+		vals := extractValues(cached)
+		if len(vals) == 0 {
+			// Fresh negative-cache entry.
+			return nil, ErrNoRecords
+		}
+		return vals, nil
 	}
 
 	// Slow path: deduplicate concurrent callers via singleflight.
 	sfKey := "forward:" + host
-	return r.do(ctx, sfKey, func() ([]string, error) {
+	return r.do(sfKey, func() ([]string, error) {
 		return r.resolveForward(ctx, host)
 	})
 }
 
-// LookupAddr performs a reverse lookup for the given IP address and
-// returns the first PTR record (trimmed of any trailing dot).
-// Results are cached; ErrNoRecords is returned for empty responses.
+// LookupAddr performs a reverse PTR lookup for the given IP address and
+// returns the first hostname (trailing dot stripped).
+// Results are cached; ErrNoRecords is returned for empty / NXDOMAIN responses.
 func (r *Resolver) LookupAddr(ctx context.Context, ip string) (string, error) {
 	ip = strings.TrimSpace(ip)
 	if net.ParseIP(ip) == nil {
@@ -170,22 +211,49 @@ func (r *Resolver) LookupAddr(ctx context.Context, ip string) (string, error) {
 
 	// Slow path.
 	sfKey := "reverse:" + ip
-	results, err := r.do(ctx, sfKey, func() ([]string, error) {
+	results, err := r.do(sfKey, func() ([]string, error) {
 		return r.resolveReverse(ctx, ip)
 	})
 	if err != nil {
 		return "", err
 	}
-	if len(results) == 0 {
-		return "", ErrNoRecords
-	}
+	// resolveReverse always returns either (nil, err) or ([]string{primary}, nil),
+	// so results is guaranteed non-empty here.
 	return results[0], nil
 }
 
+// Invalidate removes all dns_cache entries for the given direction and key,
+// forcing the next lookup to perform a fresh network query.
+//
+// This is useful when an external event (e.g. a DHCP lease change or a manual
+// host update) makes the cached value known-stale before its TTL expires.
+func (r *Resolver) Invalidate(ctx context.Context, direction Direction, key string) error {
+	const query = `DELETE FROM dns_cache WHERE direction = $1 AND lookup_key = $2`
+	_, err := r.db.ExecContext(ctx, query, string(direction), key)
+	if err != nil {
+		return fmt.Errorf("dns: invalidate %s %q: %w", direction, key, err)
+	}
+	r.logger.Debug("dns: invalidated cache entry", "direction", direction, "key", key)
+	return nil
+}
+
+// InvalidateAll truncates the entire dns_cache table.  All subsequent lookups
+// will hit the network until their results are re-cached.
+//
+// Use with care — this is a heavy operation intended for administrative
+// resets, not routine use.
+func (r *Resolver) InvalidateAll(ctx context.Context) error {
+	const query = `DELETE FROM dns_cache`
+	if _, err := r.db.ExecContext(ctx, query); err != nil {
+		return fmt.Errorf("dns: invalidate all: %w", err)
+	}
+	r.logger.Info("dns: entire cache invalidated")
+	return nil
+}
+
 // RefreshStale finds all dns_cache rows whose TTL has expired and
-// re-resolves them.  It is intended to be called from a background
-// goroutine or scheduled job; it respects the supplied context for
-// cancellation.
+// re-resolves them.  It is intended to be called from a background goroutine
+// or scheduled job; it respects the supplied context for cancellation.
 func (r *Resolver) RefreshStale(ctx context.Context) error {
 	const query = `
 		SELECT id, direction, lookup_key, resolved_value, resolved_at,
@@ -205,8 +273,9 @@ func (r *Resolver) RefreshStale(ctx context.Context) error {
 		}
 	}()
 
-	// Collect unique (direction, lookup_key) pairs; skip duplicate keys
-	// that arise because a single name can have multiple resolved_value rows.
+	// Collect unique (direction, lookup_key) pairs — a single hostname can
+	// have multiple resolved_value rows (one per A record) and we only want
+	// to re-resolve each key once.
 	type workItem struct {
 		direction Direction
 		key       string
@@ -238,15 +307,16 @@ func (r *Resolver) RefreshStale(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		var lookupErr error
 		switch item.direction {
 		case DirectionForward:
-			_, err = r.LookupHost(ctx, item.key)
+			_, lookupErr = r.LookupHost(ctx, item.key)
 		case DirectionReverse:
-			_, err = r.LookupAddr(ctx, item.key)
+			_, lookupErr = r.LookupAddr(ctx, item.key)
 		}
-		if err != nil && !errors.Is(err, ErrNoRecords) {
+		if lookupErr != nil && !errors.Is(lookupErr, ErrNoRecords) {
 			r.logger.Warn("dns: stale refresh failed",
-				"direction", item.direction, "key", item.key, "error", err)
+				"direction", item.direction, "key", item.key, "error", lookupErr)
 		}
 	}
 	return nil
@@ -254,9 +324,10 @@ func (r *Resolver) RefreshStale(ctx context.Context) error {
 
 // ─── internal helpers ─────────────────────────────────────────────────────────
 
-// do deduplicates concurrent calls for the same sfKey using a simple
-// mutex-and-waitgroup singleflight.
-func (r *Resolver) do(_ context.Context, sfKey string, fn func() ([]string, error)) ([]string, error) {
+// do deduplicates concurrent callers for the same sfKey via a lightweight
+// singleflight: the first caller performs the work while subsequent callers
+// block and share the result.
+func (r *Resolver) do(sfKey string, fn func() ([]string, error)) ([]string, error) {
 	r.mu.Lock()
 	if c, ok := r.calls[sfKey]; ok {
 		r.mu.Unlock()
@@ -287,13 +358,12 @@ func (r *Resolver) resolveForward(ctx context.Context, host string) ([]string, e
 	addrs, lookupErr := lookupFn(ctx, host)
 
 	if lookupErr != nil {
-		// Cache the negative result so we don't hammer the resolver.
 		errStr := lookupErr.Error()
 		_ = r.upsertEntry(ctx, &entry{
 			Direction:     DirectionForward,
 			LookupKey:     host,
 			ResolvedValue: "",
-			TTLSeconds:    int(negativeTTL.Seconds()),
+			TTLSeconds:    int(r.negativeTTL.Seconds()),
 			LastError:     &errStr,
 		})
 		return nil, fmt.Errorf("dns: forward lookup for %q: %w", host, lookupErr)
@@ -305,7 +375,7 @@ func (r *Resolver) resolveForward(ctx context.Context, host string) ([]string, e
 			Direction:     DirectionForward,
 			LookupKey:     host,
 			ResolvedValue: "",
-			TTLSeconds:    int(negativeTTL.Seconds()),
+			TTLSeconds:    int(r.negativeTTL.Seconds()),
 			LastError:     &emptyMsg,
 		})
 		return nil, ErrNoRecords
@@ -322,8 +392,7 @@ func (r *Resolver) resolveForward(ctx context.Context, host string) ([]string, e
 		})
 	}
 
-	r.logger.Debug("dns: forward lookup complete",
-		"host", host, "addrs", addrs)
+	r.logger.Debug("dns: forward lookup complete", "host", host, "addrs", addrs)
 	return addrs, nil
 }
 
@@ -341,13 +410,13 @@ func (r *Resolver) resolveReverse(ctx context.Context, ip string) ([]string, err
 			Direction:     DirectionReverse,
 			LookupKey:     ip,
 			ResolvedValue: "",
-			TTLSeconds:    int(negativeTTL.Seconds()),
+			TTLSeconds:    int(r.negativeTTL.Seconds()),
 			LastError:     &errStr,
 		})
 		return nil, fmt.Errorf("dns: reverse lookup for %q: %w", ip, lookupErr)
 	}
 
-	// Normalise: strip trailing dots that some resolvers leave on PTR records.
+	// Strip trailing dots that some resolvers leave on PTR records.
 	cleaned := make([]string, 0, len(names))
 	for _, n := range names {
 		cleaned = append(cleaned, strings.TrimSuffix(n, "."))
@@ -360,7 +429,7 @@ func (r *Resolver) resolveReverse(ctx context.Context, ip string) ([]string, err
 
 	ttlSec := int(r.ttl.Seconds())
 	if primary == "" {
-		ttlSec = int(negativeTTL.Seconds())
+		ttlSec = int(r.negativeTTL.Seconds())
 	}
 
 	_ = r.upsertEntry(ctx, &entry{
@@ -371,8 +440,7 @@ func (r *Resolver) resolveReverse(ctx context.Context, ip string) ([]string, err
 		LastError:     nil,
 	})
 
-	r.logger.Debug("dns: reverse lookup complete",
-		"ip", ip, "names", cleaned)
+	r.logger.Debug("dns: reverse lookup complete", "ip", ip, "names", cleaned)
 
 	if primary == "" {
 		return nil, ErrNoRecords
@@ -419,7 +487,7 @@ func (r *Resolver) getCachedEntries(ctx context.Context, dir Direction, key stri
 
 // upsertEntry inserts or updates a single dns_cache row.
 // On conflict (direction, lookup_key, resolved_value) it refreshes
-// resolved_at, ttl_seconds, and last_error.
+// resolved_at, ttl_seconds, and last_error in-place.
 func (r *Resolver) upsertEntry(ctx context.Context, e *entry) error {
 	const query = `
 		INSERT INTO dns_cache
