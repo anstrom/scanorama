@@ -109,7 +109,7 @@ func setConfigDefaults() {
 
 	// Scanning configuration
 	viper.SetDefault("scanning.worker_pool_size", 10)
-	viper.SetDefault("scanning.default_scan_type", "connect")
+	viper.SetDefault("scanning.scan_mode", "syn")
 	viper.SetDefault("scanning.default_ports", "22,80,443,8080,8443")
 	viper.SetDefault("scanning.max_concurrent_targets", defaultMaxConcurrentTargets)
 

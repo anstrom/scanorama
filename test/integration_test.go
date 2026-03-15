@@ -415,7 +415,7 @@ func TestMultipleScanTypes(t *testing.T) {
 	// Clean up any existing test data to ensure isolation
 	suite.cleanupTestData(t)
 
-	scanTypes := []string{"connect", "version"}
+	scanTypes := []string{"connect", "syn"}
 
 	for _, scanType := range scanTypes {
 		t.Run(fmt.Sprintf("ScanType_%s", scanType), func(t *testing.T) {

@@ -321,7 +321,7 @@ func TestValidate(t *testing.T) {
 					DefaultInterval:        time.Hour,
 					MaxScanTimeout:         10 * time.Minute,
 					DefaultPorts:           "22,80,443",
-					DefaultScanType:        "connect",
+					ScanMode:               "syn",
 					EnableServiceDetection: true,
 					Retry: RetryConfig{
 						MaxRetries:        3,

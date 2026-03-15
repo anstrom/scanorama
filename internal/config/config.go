@@ -116,8 +116,8 @@ type ScanningConfig struct {
 	// Default ports to scan
 	DefaultPorts string `yaml:"default_ports" json:"default_ports"`
 
-	// Default scan type
-	DefaultScanType string `yaml:"default_scan_type" json:"default_scan_type"`
+	// Preferred scan mode
+	ScanMode string `yaml:"scan_mode" json:"scan_mode"`
 
 	// Maximum concurrent targets per job
 	MaxConcurrentTargets int `yaml:"max_concurrent_targets" json:"max_concurrent_targets"`
@@ -359,7 +359,7 @@ func defaultScanningConfig() ScanningConfig {
 		DefaultInterval:        1 * time.Hour,
 		MaxScanTimeout:         defaultScanTimeoutMin * time.Minute,
 		DefaultPorts:           "22,80,443,8080,8443",
-		DefaultScanType:        "connect",
+		ScanMode:               "syn",
 		MaxConcurrentTargets:   defaultMaxConcurrentTargets,
 		EnableServiceDetection: true,
 		EnableOSDetection:      false,
@@ -731,14 +731,17 @@ func (c *Config) validateScanning() error {
 		return fmt.Errorf("default scan interval must be positive")
 	}
 
-	// Validate scan type
+	// Validate scan mode
 	validScanTypes := map[string]bool{
-		"connect": true,
-		"syn":     true,
-		"version": true,
+		"connect":       true,
+		"syn":           true,
+		"ack":           true,
+		"udp":           true,
+		"aggressive":    true,
+		"comprehensive": true,
 	}
-	if !validScanTypes[c.Scanning.DefaultScanType] {
-		return fmt.Errorf("invalid default scan type: %s", c.Scanning.DefaultScanType)
+	if !validScanTypes[c.Scanning.ScanMode] {
+		return fmt.Errorf("invalid scan_mode: %s", c.Scanning.ScanMode)
 	}
 	return nil
 }

@@ -40,8 +40,10 @@ type ScanConfig struct {
 	Targets []string
 	// Ports specifies which ports to scan (e.g., "80,443" or "1-1000")
 	Ports string
-	// ScanType determines the type of scan: "connect", "syn", or "version"
+	// ScanType determines the type of scan: "connect", "syn", "ack", "udp", "aggressive", or "comprehensive"
 	ScanType string
+	// OSDetection enables nmap OS fingerprinting (-O)
+	OSDetection bool
 	// TimeoutSec specifies scan timeout in seconds (0 = default timeout)
 	TimeoutSec int
 	// Concurrency specifies the number of concurrent scans (0 = auto)
@@ -63,9 +65,9 @@ func (c *ScanConfig) Validate() error {
 	validScanTypes := map[string]bool{
 		"connect":       true,
 		"syn":           true,
-		"version":       true,
+		"ack":           true,
+		"udp":           true,
 		"aggressive":    true,
-		"stealth":       true,
 		"comprehensive": true,
 	}
 	if !validScanTypes[c.ScanType] {
@@ -76,6 +78,7 @@ func (c *ScanConfig) Validate() error {
 }
 
 // validatePorts validates the port specification.
+// Supports nmap mixed-protocol syntax e.g. "T:22,80,U:53,161".
 func (c *ScanConfig) validatePorts() error {
 	parts := strings.Split(c.Ports, ",")
 	for _, part := range parts {
@@ -86,8 +89,20 @@ func (c *ScanConfig) validatePorts() error {
 	return nil
 }
 
-// validatePortPart validates a single port or port range.
+// validatePortPart validates a single port or port range, stripping any
+// leading protocol prefix (T: or U:) before parsing.
 func (c *ScanConfig) validatePortPart(part string) error {
+	// Strip nmap protocol prefixes T: and U:
+	for _, prefix := range []string{"T:", "U:", "t:", "u:"} {
+		if strings.HasPrefix(part, prefix) {
+			part = part[len(prefix):]
+			break
+		}
+	}
+	// A prefix-only token (e.g. bare "T:") after stripping is empty — skip it.
+	if part == "" {
+		return nil
+	}
 	if strings.Contains(part, "-") {
 		return c.validatePortRange(part)
 	}

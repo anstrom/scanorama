@@ -130,11 +130,16 @@ func runScan(cmd *cobra.Command, _ []string) {
 		}
 	}()
 
-	// Create scan configuration
+	// Create scan configuration; if no --type flag was provided, fall back to
+	// the global default scan mode from config.
+	effectiveScanType := scanType
+	if effectiveScanType == "" {
+		effectiveScanType = cfg.Scanning.ScanMode
+	}
 	scanConfig := scanning.ScanConfig{
 		Targets:    []string{},
 		Ports:      scanPorts,
-		ScanType:   scanType,
+		ScanType:   effectiveScanType,
 		TimeoutSec: scanTimeout,
 	}
 
