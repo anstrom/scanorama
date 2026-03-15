@@ -4,4143 +4,4158 @@
  */
 
 export interface paths {
-    "/admin/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Admin status
-         * @description Returns administrative status information
-         */
-        get: operations["getAdminStatus"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+  "/admin/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/discovery": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List discovery jobs
-         * @description Get paginated list of discovery jobs
-         */
-        get: operations["listDiscoveryJobs"];
-        put?: never;
-        /**
-         * Create discovery job
-         * @description Create a new network discovery job
-         */
-        post: operations["createDiscoveryJob"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Admin status
+     * @description Returns administrative status information
+     */
+    get: operations["getAdminStatus"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/discovery": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/discovery/{discoveryId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get discovery job
-         * @description Get discovery job details by ID
-         */
-        get: operations["getDiscoveryJob"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List discovery jobs
+     * @description Get paginated list of discovery jobs
+     */
+    get: operations["listDiscoveryJobs"];
+    put?: never;
+    /**
+     * Create discovery job
+     * @description Create a new network discovery job
+     */
+    post: operations["createDiscoveryJob"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/discovery/{discoveryId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/discovery/{discoveryId}/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Start discovery
-         * @description Start a discovery job
-         */
-        post: operations["startDiscovery"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get discovery job
+     * @description Get discovery job details by ID
+     */
+    get: operations["getDiscoveryJob"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/discovery/{discoveryId}/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/discovery/{discoveryId}/stop": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stop discovery
-         * @description Stop a running discovery job
-         */
-        post: operations["stopDiscovery"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Start discovery
+     * @description Start a discovery job
+     */
+    post: operations["startDiscovery"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/discovery/{discoveryId}/stop": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/exclusions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List global exclusions
-         * @description Get all global exclusion rules not tied to a specific network
-         */
-        get: operations["listGlobalExclusions"];
-        put?: never;
-        /**
-         * Create global exclusion
-         * @description Create a global exclusion rule that applies to all networks
-         */
-        post: operations["createGlobalExclusion"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Stop discovery
+     * @description Stop a running discovery job
+     */
+    post: operations["stopDiscovery"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/exclusions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/exclusions/{exclusionId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete exclusion
-         * @description Delete an exclusion rule by ID
-         */
-        delete: operations["deleteExclusion"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List global exclusions
+     * @description Get all global exclusion rules not tied to a specific network
+     */
+    get: operations["listGlobalExclusions"];
+    put?: never;
+    /**
+     * Create global exclusion
+     * @description Create a global exclusion rule that applies to all networks
+     */
+    post: operations["createGlobalExclusion"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/exclusions/{exclusionId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Health check
-         * @description Returns service health status including database connectivity
-         */
-        get: operations["getHealth"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete exclusion
+     * @description Delete an exclusion rule by ID
+     */
+    delete: operations["deleteExclusion"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/health": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/hosts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List hosts
-         * @description Get paginated list of discovered hosts with optional filtering
-         */
-        get: operations["listHosts"];
-        put?: never;
-        /**
-         * Create host
-         * @description Manually add a host to the inventory
-         */
-        post: operations["createHost"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Health check
+     * @description Returns service health status including database connectivity
+     */
+    get: operations["getHealth"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/hosts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/hosts/{hostId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get host
-         * @description Get host details by ID
-         */
-        get: operations["getHost"];
-        /**
-         * Update host
-         * @description Update host information
-         */
-        put: operations["updateHost"];
-        post?: never;
-        /**
-         * Delete host
-         * @description Remove host from inventory
-         */
-        delete: operations["deleteHost"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List hosts
+     * @description Get paginated list of discovered hosts with optional filtering
+     */
+    get: operations["listHosts"];
+    put?: never;
+    /**
+     * Create host
+     * @description Manually add a host to the inventory
+     */
+    post: operations["createHost"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/hosts/{hostId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/hosts/{hostId}/scans": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get host scans
-         * @description Get scans associated with a specific host
-         */
-        get: operations["getHostScans"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get host
+     * @description Get host details by ID
+     */
+    get: operations["getHost"];
+    /**
+     * Update host
+     * @description Update host information
+     */
+    put: operations["updateHost"];
+    post?: never;
+    /**
+     * Delete host
+     * @description Remove host from inventory
+     */
+    delete: operations["deleteHost"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/hosts/{hostId}/scans": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/liveness": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Liveness check
-         * @description Returns simple liveness status without dependency checks
-         */
-        get: operations["getLiveness"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get host scans
+     * @description Get scans associated with a specific host
+     */
+    get: operations["getHostScans"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/liveness": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/metrics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Application metrics
-         * @description Returns Prometheus metrics for monitoring
-         */
-        get: operations["getMetrics"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Liveness check
+     * @description Returns simple liveness status without dependency checks
+     */
+    get: operations["getLiveness"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/metrics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/networks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List networks
-         * @description Get paginated list of networks with optional filtering
-         */
-        get: operations["listNetworks"];
-        put?: never;
-        /**
-         * Create network
-         * @description Create a new network for scanning and discovery
-         */
-        post: operations["createNetwork"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Application metrics
+     * @description Returns Prometheus metrics for monitoring
+     */
+    get: operations["getMetrics"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/networks": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/networks/{networkId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get network
-         * @description Get network details by ID
-         */
-        get: operations["getNetwork"];
-        /**
-         * Update network
-         * @description Update network configuration
-         */
-        put: operations["updateNetwork"];
-        post?: never;
-        /**
-         * Delete network
-         * @description Delete a network and its associated exclusions
-         */
-        delete: operations["deleteNetwork"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List networks
+     * @description Get paginated list of networks with optional filtering
+     */
+    get: operations["listNetworks"];
+    put?: never;
+    /**
+     * Create network
+     * @description Create a new network for scanning and discovery
+     */
+    post: operations["createNetwork"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/networks/{networkId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/networks/{networkId}/disable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Disable network
-         * @description Disable a network from scanning and discovery
-         */
-        post: operations["disableNetwork"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get network
+     * @description Get network details by ID
+     */
+    get: operations["getNetwork"];
+    /**
+     * Update network
+     * @description Update network configuration
+     */
+    put: operations["updateNetwork"];
+    post?: never;
+    /**
+     * Delete network
+     * @description Delete a network and its associated exclusions
+     */
+    delete: operations["deleteNetwork"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/networks/{networkId}/disable": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/networks/{networkId}/enable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Enable network
-         * @description Enable a network for scanning and discovery
-         */
-        post: operations["enableNetwork"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Disable network
+     * @description Disable a network from scanning and discovery
+     */
+    post: operations["disableNetwork"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/networks/{networkId}/enable": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/networks/{networkId}/exclusions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List network exclusions
-         * @description Get exclusion rules for a specific network
-         */
-        get: operations["listNetworkExclusions"];
-        put?: never;
-        /**
-         * Create network exclusion
-         * @description Add an exclusion rule to a specific network
-         */
-        post: operations["createNetworkExclusion"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Enable network
+     * @description Enable a network for scanning and discovery
+     */
+    post: operations["enableNetwork"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/networks/{networkId}/exclusions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/networks/{networkId}/rename": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Rename network
-         * @description Rename an existing network
-         */
-        put: operations["renameNetwork"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List network exclusions
+     * @description Get exclusion rules for a specific network
+     */
+    get: operations["listNetworkExclusions"];
+    put?: never;
+    /**
+     * Create network exclusion
+     * @description Add an exclusion rule to a specific network
+     */
+    post: operations["createNetworkExclusion"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/networks/{networkId}/rename": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/networks/stats": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get network statistics
-         * @description Returns aggregate statistics about networks, hosts, and exclusions
-         */
-        get: operations["getNetworkStats"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    /**
+     * Rename network
+     * @description Rename an existing network
+     */
+    put: operations["renameNetwork"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/networks/stats": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/profiles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List profiles
-         * @description Get paginated list of scan profiles
-         */
-        get: operations["listProfiles"];
-        put?: never;
-        /**
-         * Create profile
-         * @description Create a new scan profile
-         */
-        post: operations["createProfile"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get network statistics
+     * @description Returns aggregate statistics about networks, hosts, and exclusions
+     */
+    get: operations["getNetworkStats"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/profiles": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/profiles/{profileId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get profile
-         * @description Get scan profile details by ID
-         */
-        get: operations["getProfile"];
-        /**
-         * Update profile
-         * @description Update scan profile configuration
-         */
-        put: operations["updateProfile"];
-        post?: never;
-        /**
-         * Delete profile
-         * @description Delete scan profile
-         */
-        delete: operations["deleteProfile"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List profiles
+     * @description Get paginated list of scan profiles
+     */
+    get: operations["listProfiles"];
+    put?: never;
+    /**
+     * Create profile
+     * @description Create a new scan profile
+     */
+    post: operations["createProfile"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/profiles/{profileId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/scans": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List scans
-         * @description Get paginated list of scans with optional filtering
-         */
-        get: operations["listScans"];
-        put?: never;
-        /**
-         * Create scan
-         * @description Create a new network scan job
-         */
-        post: operations["createScan"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get profile
+     * @description Get scan profile details by ID
+     */
+    get: operations["getProfile"];
+    /**
+     * Update profile
+     * @description Update scan profile configuration
+     */
+    put: operations["updateProfile"];
+    post?: never;
+    /**
+     * Delete profile
+     * @description Delete scan profile
+     */
+    delete: operations["deleteProfile"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/scans": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/scans/{scanId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get scan
-         * @description Get scan details by ID
-         */
-        get: operations["getScan"];
-        /**
-         * Update scan
-         * @description Update an existing scan configuration
-         */
-        put: operations["updateScan"];
-        post?: never;
-        /**
-         * Delete scan
-         * @description Cancel running scan or delete completed scan
-         */
-        delete: operations["deleteScan"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List scans
+     * @description Get paginated list of scans with optional filtering
+     */
+    get: operations["listScans"];
+    put?: never;
+    /**
+     * Create scan
+     * @description Create a new network scan job
+     */
+    post: operations["createScan"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/scans/{scanId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/scans/{scanId}/results": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get scan results
-         * @description Get detailed results from a completed scan
-         */
-        get: operations["getScanResults"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get scan
+     * @description Get scan details by ID
+     */
+    get: operations["getScan"];
+    /**
+     * Update scan
+     * @description Update an existing scan configuration
+     */
+    put: operations["updateScan"];
+    post?: never;
+    /**
+     * Delete scan
+     * @description Cancel running scan or delete completed scan
+     */
+    delete: operations["deleteScan"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/scans/{scanId}/results": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/scans/{scanId}/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Start scan
-         * @description Start a pending scan
-         */
-        post: operations["startScan"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get scan results
+     * @description Get detailed results from a completed scan
+     */
+    get: operations["getScanResults"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/scans/{scanId}/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/scans/{scanId}/stop": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stop scan
-         * @description Stop a running scan
-         */
-        post: operations["stopScan"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Start scan
+     * @description Start a pending scan
+     */
+    post: operations["startScan"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/scans/{scanId}/stop": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/schedules": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List schedules
-         * @description Get paginated list of scheduled scans
-         */
-        get: operations["listSchedules"];
-        put?: never;
-        /**
-         * Create schedule
-         * @description Create a new scheduled scan
-         */
-        post: operations["createSchedule"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Stop scan
+     * @description Stop a running scan
+     */
+    post: operations["stopScan"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/schedules": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/schedules/{scheduleId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get schedule
-         * @description Get schedule details by ID
-         */
-        get: operations["getSchedule"];
-        /**
-         * Update schedule
-         * @description Update schedule configuration
-         */
-        put: operations["updateSchedule"];
-        post?: never;
-        /**
-         * Delete schedule
-         * @description Delete scheduled scan
-         */
-        delete: operations["deleteSchedule"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List schedules
+     * @description Get paginated list of scheduled scans
+     */
+    get: operations["listSchedules"];
+    put?: never;
+    /**
+     * Create schedule
+     * @description Create a new scheduled scan
+     */
+    post: operations["createSchedule"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/schedules/{scheduleId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/schedules/{scheduleId}/disable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Disable schedule
-         * @description Disable a scheduled scan
-         */
-        post: operations["disableSchedule"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get schedule
+     * @description Get schedule details by ID
+     */
+    get: operations["getSchedule"];
+    /**
+     * Update schedule
+     * @description Update schedule configuration
+     */
+    put: operations["updateSchedule"];
+    post?: never;
+    /**
+     * Delete schedule
+     * @description Delete scheduled scan
+     */
+    delete: operations["deleteSchedule"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/schedules/{scheduleId}/disable": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/schedules/{scheduleId}/enable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Enable schedule
-         * @description Enable a scheduled scan
-         */
-        post: operations["enableSchedule"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Disable schedule
+     * @description Disable a scheduled scan
+     */
+    post: operations["disableSchedule"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/schedules/{scheduleId}/enable": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * System status
-         * @description Returns detailed system status information
-         */
-        get: operations["getStatus"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Enable schedule
+     * @description Enable a scheduled scan
+     */
+    post: operations["enableSchedule"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/version": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Version information
-         * @description Returns version and build information
-         */
-        get: operations["getVersion"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * System status
+     * @description Returns detailed system status information
+     */
+    get: operations["getStatus"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/version": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
+    /**
+     * Version information
+     * @description Returns version and build information
+     */
+    get: operations["getVersion"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        "docs.AdminStatusResponse": {
-            /** @example active */
-            admin_status?: string;
-            server_info?: {
-                [key: string]: unknown;
-            };
-            timestamp?: string;
-        };
-        "docs.CreateDiscoveryJobRequest": {
-            /**
-             * @example tcp
-             * @enum {string}
-             */
-            method?: "tcp" | "icmp" | "arp";
-            /** @example Office Network Discovery */
-            name?: string;
-            /** @example 192.168.1.0/24 */
-            network?: string;
-        };
-        "docs.CreateExclusionRequest": {
-            /** @example 192.168.1.128/25 */
-            excluded_cidr?: string;
-            /** @example Reserved for printers */
-            reason?: string;
-        };
-        "docs.CreateNetworkRequest": {
-            /** @example 192.168.1.0/24 */
-            cidr?: string;
-            /** @example Main office network */
-            description?: string;
-            /**
-             * @example ping
-             * @enum {string}
-             */
-            discovery_method?: "ping" | "tcp" | "arp";
-            /** @example true */
-            is_active?: boolean;
-            /** @example Office Network */
-            name?: string;
-            /** @example true */
-            scan_enabled?: boolean;
-        };
-        "docs.CreateProfileRequest": {
-            /** @example Custom scan configuration */
-            description?: string;
-            /** @example Custom Scan Profile */
-            name?: string;
-            options?: {
-                [key: string]: unknown;
-            };
-            /** @example 22,80,443,8080 */
-            ports?: string;
-            /** @example connect */
-            scan_type?: string;
-        };
-        "docs.CreateScanRequest": {
-            /** @example Regular security assessment */
-            description?: string;
-            /** @example Weekly security scan */
-            name?: string;
-            /** @example 550e8400-e29b-41d4-a716-446655440001 */
-            profile_id?: string;
-            scan_options?: {
-                [key: string]: unknown;
-            };
-            /**
-             * @example [
-             *       "192.168.1.0/24"
-             *     ]
-             */
-            targets?: string[];
-        };
-        "docs.CreateScheduleRequest": {
-            /** @example 0 2 * * * */
-            cron_expression?: string;
-            /** @example true */
-            enabled?: boolean;
-            /** @example Daily Security Scan */
-            name?: string;
-            /** @example 550e8400-e29b-41d4-a716-446655440001 */
-            profile_id?: string;
-            /**
-             * @example [
-             *       "192.168.1.0/24"
-             *     ]
-             */
-            targets?: string[];
-        };
-        "docs.DiscoveryJobResponse": {
-            created_at?: string;
-            /** @example 550e8400-e29b-41d4-a716-446655440004 */
-            id?: string;
-            /**
-             * @example tcp
-             * @enum {string}
-             */
-            method?: "tcp" | "icmp" | "arp";
-            /** @example Network Discovery */
-            name?: string;
-            /** @example 192.168.1.0/24 */
-            network?: string;
-            /** @example 45.5 */
-            progress?: number;
-            started_at?: string;
-            /**
-             * @example running
-             * @enum {string}
-             */
-            status?: "pending" | "running" | "completed" | "failed";
-        };
-        "docs.ErrorResponse": {
-            /** @example Invalid request */
-            error?: string;
-            /** @example req-123 */
-            request_id?: string;
-            timestamp?: string;
-        };
-        "docs.HealthResponse": {
-            checks?: {
-                [key: string]: string;
-            };
-            /** @example healthy */
-            status?: string;
-            timestamp?: string;
-            /** @example 2h30m45s */
-            uptime?: string;
-        };
-        "docs.HostResponse": {
-            first_seen?: string;
-            /** @example server01.local */
-            hostname?: string;
-            /** @example 550e8400-e29b-41d4-a716-446655440002 */
-            id?: string;
-            /** @example 192.168.1.100 */
-            ip_address?: string;
-            last_seen?: string;
-            /** @example 00:1B:44:11:3A:B7 */
-            mac_address?: string;
-            /**
-             * @example [
-             *       22,
-             *       80,
-             *       443
-             *     ]
-             */
-            open_ports?: number[];
-            /** @example 5 */
-            scan_count?: number;
-            /**
-             * @example up
-             * @enum {string}
-             */
-            status?: "up" | "down" | "unknown";
-        };
-        "docs.LivenessResponse": {
-            /** @example alive */
-            status?: string;
-            timestamp?: string;
-            /** @example 2h30m45s */
-            uptime?: string;
-        };
-        "docs.NetworkExclusionResponse": {
-            created_at?: string;
-            /** @example admin */
-            created_by?: string;
-            /** @example true */
-            enabled?: boolean;
-            /** @example 192.168.1.128/25 */
-            excluded_cidr?: string;
-            /** @example 550e8400-e29b-41d4-a716-446655440011 */
-            id?: string;
-            /** @example 550e8400-e29b-41d4-a716-446655440010 */
-            network_id?: string;
-            /** @example Reserved for printers */
-            reason?: string;
-            updated_at?: string;
-        };
-        "docs.NetworkResponse": {
-            /** @example 20 */
-            active_host_count?: number;
-            /** @example 192.168.1.0/24 */
-            cidr?: string;
-            created_at?: string;
-            /** @example admin */
-            created_by?: string;
-            /** @example Main office network */
-            description?: string;
-            /**
-             * @example ping
-             * @enum {string}
-             */
-            discovery_method?: "ping" | "tcp" | "arp";
-            /** @example 25 */
-            host_count?: number;
-            /** @example 550e8400-e29b-41d4-a716-446655440010 */
-            id?: string;
-            /** @example true */
-            is_active?: boolean;
-            last_discovery?: string;
-            last_scan?: string;
-            /** @example Office Network */
-            name?: string;
-            /** @example true */
-            scan_enabled?: boolean;
-            updated_at?: string;
-        };
-        "docs.NetworkStatsResponse": {
-            exclusions?: {
-                [key: string]: unknown;
-            };
-            hosts?: {
-                [key: string]: unknown;
-            };
-            networks?: {
-                [key: string]: unknown;
-            };
-        };
-        "docs.PaginatedDiscoveryJobsResponse": {
-            data?: components["schemas"]["docs.DiscoveryJobResponse"][];
-            pagination?: components["schemas"]["docs.PaginationInfo"];
-        };
-        "docs.PaginatedHostsResponse": {
-            data?: components["schemas"]["docs.HostResponse"][];
-            pagination?: components["schemas"]["docs.PaginationInfo"];
-        };
-        "docs.PaginatedNetworksResponse": {
-            data?: components["schemas"]["docs.NetworkResponse"][];
-            pagination?: components["schemas"]["docs.PaginationInfo"];
-        };
-        "docs.PaginatedProfilesResponse": {
-            data?: components["schemas"]["docs.ProfileResponse"][];
-            pagination?: components["schemas"]["docs.PaginationInfo"];
-        };
-        "docs.PaginatedScansResponse": {
-            data?: components["schemas"]["docs.ScanResponse"][];
-            pagination?: components["schemas"]["docs.PaginationInfo"];
-        };
-        "docs.PaginatedSchedulesResponse": {
-            data?: components["schemas"]["docs.ScheduleResponse"][];
-            pagination?: components["schemas"]["docs.PaginationInfo"];
-        };
-        "docs.PaginationInfo": {
-            /** @example 1 */
-            page?: number;
-            /** @example 20 */
-            page_size?: number;
-            /** @example 150 */
-            total_items?: number;
-            /** @example 8 */
-            total_pages?: number;
-        };
-        "docs.ProfileResponse": {
-            created_at?: string;
-            /** @example Fast TCP connect scan */
-            description?: string;
-            /** @example 550e8400-e29b-41d4-a716-446655440003 */
-            id?: string;
-            /** @example Quick Connect Scan */
-            name?: string;
-            options?: {
-                [key: string]: unknown;
-            };
-            /** @example 22,80,443 */
-            ports?: string;
-            /** @example connect */
-            scan_type?: string;
-            updated_at?: string;
-        };
-        "docs.RenameNetworkRequest": {
-            /** @example New Office Network */
-            new_name?: string;
-        };
-        "docs.ScanResponse": {
-            completed_at?: string;
-            created_at?: string;
-            /** @example 14m30s */
-            duration?: string;
-            error_message?: string;
-            /** @example 25 */
-            hosts_discovered?: number;
-            /** @example 550e8400-e29b-41d4-a716-446655440000 */
-            id?: string;
-            /** @example 2500 */
-            ports_scanned?: number;
-            /** @example 550e8400-e29b-41d4-a716-446655440001 */
-            profile_id?: string;
-            /** @example 65.5 */
-            progress?: number;
-            started_at?: string;
-            /**
-             * @example running
-             * @enum {string}
-             */
-            status?: "pending" | "running" | "completed" | "failed" | "cancelled";
-            /**
-             * @example [
-             *       "192.168.1.0/24"
-             *     ]
-             */
-            targets?: string[];
-        };
-        "docs.ScheduleResponse": {
-            created_at?: string;
-            /** @example 0 2 * * 1 */
-            cron_expression?: string;
-            /** @example true */
-            enabled?: boolean;
-            /** @example 550e8400-e29b-41d4-a716-446655440005 */
-            id?: string;
-            last_run?: string;
-            /** @example Weekly Security Scan */
-            name?: string;
-            next_run?: string;
-            /** @example 550e8400-e29b-41d4-a716-446655440001 */
-            profile_id?: string;
-            /**
-             * @example [
-             *       "192.168.1.0/24"
-             *     ]
-             */
-            targets?: string[];
-            updated_at?: string;
-        };
-        "docs.StatusResponse": {
-            /** @example scanorama-api */
-            service?: string;
-            timestamp?: string;
-            /** @example 2h30m45s */
-            uptime?: string;
-            /** @example 0.7.0 */
-            version?: string;
-        };
-        "docs.UpdateNetworkRequest": {
-            /** @example 192.168.1.0/24 */
-            cidr?: string;
-            /** @example Main office network */
-            description?: string;
-            /**
-             * @example ping
-             * @enum {string}
-             */
-            discovery_method?: "ping" | "tcp" | "arp";
-            /** @example true */
-            is_active?: boolean;
-            /** @example Office Network */
-            name?: string;
-            /** @example true */
-            scan_enabled?: boolean;
-        };
-        "docs.UpdateScanRequest": {
-            /** @example Updated description */
-            description?: string;
-            /** @example Updated scan name */
-            name?: string;
-            options?: {
-                [key: string]: string;
-            };
-            /** @example 22,80,443 */
-            ports?: string;
-            profile_id?: number;
-            /**
-             * @example connect
-             * @enum {string}
-             */
-            scan_type?: "connect" | "syn" | "ack" | "aggressive" | "comprehensive";
-            schedule_id?: number;
-            tags?: string[];
-            /**
-             * @example [
-             *       "192.168.1.0/24"
-             *     ]
-             */
-            targets?: string[];
-        };
-        "docs.VersionResponse": {
-            /** @example scanorama */
-            service?: string;
-            timestamp?: string;
-            /** @example 0.7.0 */
-            version?: string;
-        };
+  schemas: {
+    "docs.AdminStatusResponse": {
+      /** @example active */
+      admin_status?: string;
+      server_info?: {
+        [key: string]: unknown;
+      };
+      timestamp?: string;
     };
-    responses: never;
-    parameters: never;
-    requestBodies: {
-        /** @description Exclusion configuration */
-        "docs.CreateExclusionRequest": {
-            content: {
-                "application/json": components["schemas"]["docs.CreateExclusionRequest"];
-            };
-        };
+    "docs.CreateDiscoveryJobRequest": {
+      /**
+       * @example tcp
+       * @enum {string}
+       */
+      method?: "tcp" | "icmp" | "arp";
+      /** @example Office Network Discovery */
+      name?: string;
+      /** @example 192.168.1.0/24 */
+      network?: string;
     };
-    headers: never;
-    pathItems: never;
+    "docs.CreateExclusionRequest": {
+      /** @example 192.168.1.128/25 */
+      excluded_cidr?: string;
+      /** @example Reserved for printers */
+      reason?: string;
+    };
+    "docs.CreateNetworkRequest": {
+      /** @example 192.168.1.0/24 */
+      cidr?: string;
+      /** @example Main office network */
+      description?: string;
+      /**
+       * @example ping
+       * @enum {string}
+       */
+      discovery_method?: "ping" | "tcp" | "arp";
+      /** @example true */
+      is_active?: boolean;
+      /** @example Office Network */
+      name?: string;
+      /** @example true */
+      scan_enabled?: boolean;
+    };
+    "docs.CreateProfileRequest": {
+      /** @example Custom scan configuration */
+      description?: string;
+      /** @example Custom Scan Profile */
+      name?: string;
+      options?: {
+        [key: string]: unknown;
+      };
+      /** @example 22,80,443,8080 */
+      ports?: string;
+      /** @example connect */
+      scan_type?: string;
+    };
+    "docs.CreateScanRequest": {
+      /** @example Regular security assessment */
+      description?: string;
+      /** @example Weekly security scan */
+      name?: string;
+      /** @example 550e8400-e29b-41d4-a716-446655440001 */
+      profile_id?: string;
+      scan_options?: {
+        [key: string]: unknown;
+      };
+      /**
+       * @example [
+       *       "192.168.1.0/24"
+       *     ]
+       */
+      targets?: string[];
+    };
+    "docs.CreateScheduleRequest": {
+      /** @example 0 2 * * * */
+      cron_expression?: string;
+      /** @example true */
+      enabled?: boolean;
+      /** @example Daily Security Scan */
+      name?: string;
+      /** @example 550e8400-e29b-41d4-a716-446655440001 */
+      profile_id?: string;
+      /**
+       * @example [
+       *       "192.168.1.0/24"
+       *     ]
+       */
+      targets?: string[];
+    };
+    "docs.DiscoveryJobResponse": {
+      created_at?: string;
+      /** @example 550e8400-e29b-41d4-a716-446655440004 */
+      id?: string;
+      /**
+       * @example tcp
+       * @enum {string}
+       */
+      method?: "tcp" | "icmp" | "arp";
+      /** @example Network Discovery */
+      name?: string;
+      /** @example 192.168.1.0/24 */
+      network?: string;
+      /** @example 45.5 */
+      progress?: number;
+      started_at?: string;
+      /**
+       * @example running
+       * @enum {string}
+       */
+      status?: "pending" | "running" | "completed" | "failed";
+    };
+    "docs.ErrorResponse": {
+      /** @example Invalid request */
+      error?: string;
+      /** @example req-123 */
+      request_id?: string;
+      timestamp?: string;
+    };
+    "docs.HealthResponse": {
+      checks?: {
+        [key: string]: string;
+      };
+      /** @example healthy */
+      status?: string;
+      timestamp?: string;
+      /** @example 2h30m45s */
+      uptime?: string;
+    };
+    "docs.HostResponse": {
+      first_seen?: string;
+      /** @example server01.local */
+      hostname?: string;
+      /** @example 550e8400-e29b-41d4-a716-446655440002 */
+      id?: string;
+      /** @example 192.168.1.100 */
+      ip_address?: string;
+      last_seen?: string;
+      /** @example 00:1B:44:11:3A:B7 */
+      mac_address?: string;
+      /**
+       * @example [
+       *       22,
+       *       80,
+       *       443
+       *     ]
+       */
+      open_ports?: number[];
+      /** @example 5 */
+      scan_count?: number;
+      /**
+       * @example up
+       * @enum {string}
+       */
+      status?: "up" | "down" | "unknown";
+    };
+    "docs.LivenessResponse": {
+      /** @example alive */
+      status?: string;
+      timestamp?: string;
+      /** @example 2h30m45s */
+      uptime?: string;
+    };
+    "docs.NetworkExclusionResponse": {
+      created_at?: string;
+      /** @example admin */
+      created_by?: string;
+      /** @example true */
+      enabled?: boolean;
+      /** @example 192.168.1.128/25 */
+      excluded_cidr?: string;
+      /** @example 550e8400-e29b-41d4-a716-446655440011 */
+      id?: string;
+      /** @example 550e8400-e29b-41d4-a716-446655440010 */
+      network_id?: string;
+      /** @example Reserved for printers */
+      reason?: string;
+      updated_at?: string;
+    };
+    "docs.NetworkResponse": {
+      /** @example 20 */
+      active_host_count?: number;
+      /** @example 192.168.1.0/24 */
+      cidr?: string;
+      created_at?: string;
+      /** @example admin */
+      created_by?: string;
+      /** @example Main office network */
+      description?: string;
+      /**
+       * @example ping
+       * @enum {string}
+       */
+      discovery_method?: "ping" | "tcp" | "arp";
+      /** @example 25 */
+      host_count?: number;
+      /** @example 550e8400-e29b-41d4-a716-446655440010 */
+      id?: string;
+      /** @example true */
+      is_active?: boolean;
+      last_discovery?: string;
+      last_scan?: string;
+      /** @example Office Network */
+      name?: string;
+      /** @example true */
+      scan_enabled?: boolean;
+      updated_at?: string;
+    };
+    "docs.NetworkStatsResponse": {
+      exclusions?: {
+        [key: string]: unknown;
+      };
+      hosts?: {
+        [key: string]: unknown;
+      };
+      networks?: {
+        [key: string]: unknown;
+      };
+    };
+    "docs.PaginatedDiscoveryJobsResponse": {
+      data?: components["schemas"]["docs.DiscoveryJobResponse"][];
+      pagination?: components["schemas"]["docs.PaginationInfo"];
+    };
+    "docs.PaginatedHostsResponse": {
+      data?: components["schemas"]["docs.HostResponse"][];
+      pagination?: components["schemas"]["docs.PaginationInfo"];
+    };
+    "docs.PaginatedNetworksResponse": {
+      data?: components["schemas"]["docs.NetworkResponse"][];
+      pagination?: components["schemas"]["docs.PaginationInfo"];
+    };
+    "docs.PaginatedProfilesResponse": {
+      data?: components["schemas"]["docs.ProfileResponse"][];
+      pagination?: components["schemas"]["docs.PaginationInfo"];
+    };
+    "docs.PaginatedScansResponse": {
+      data?: components["schemas"]["docs.ScanResponse"][];
+      pagination?: components["schemas"]["docs.PaginationInfo"];
+    };
+    "docs.PaginatedSchedulesResponse": {
+      data?: components["schemas"]["docs.ScheduleResponse"][];
+      pagination?: components["schemas"]["docs.PaginationInfo"];
+    };
+    "docs.PaginationInfo": {
+      /** @example 1 */
+      page?: number;
+      /** @example 20 */
+      page_size?: number;
+      /** @example 150 */
+      total_items?: number;
+      /** @example 8 */
+      total_pages?: number;
+    };
+    "docs.ProfileResponse": {
+      created_at?: string;
+      /** @example Fast TCP connect scan */
+      description?: string;
+      /** @example 550e8400-e29b-41d4-a716-446655440003 */
+      id?: string;
+      /** @example Quick Connect Scan */
+      name?: string;
+      options?: {
+        [key: string]: unknown;
+      };
+      /** @example 22,80,443 */
+      ports?: string;
+      /** @example connect */
+      scan_type?: string;
+      updated_at?: string;
+    };
+    "docs.RenameNetworkRequest": {
+      /** @example New Office Network */
+      new_name?: string;
+    };
+    "docs.ScanResponse": {
+      completed_at?: string;
+      created_at?: string;
+      /** @example 14m30s */
+      duration?: string;
+      error_message?: string;
+      /** @example 25 */
+      hosts_discovered?: number;
+      /** @example 550e8400-e29b-41d4-a716-446655440000 */
+      id?: string;
+      /** @example Ad-hoc scan: 192.168.1.0/24 */
+      name?: string;
+      /** @example 22,80,443 */
+      ports?: string;
+      /** @example 2500 */
+      ports_scanned?: number;
+      /** @example 550e8400-e29b-41d4-a716-446655440001 */
+      profile_id?: string;
+      /** @example 65.5 */
+      progress?: number;
+      /**
+       * @example connect
+       * @enum {string}
+       */
+      scan_type?:
+        | "connect"
+        | "syn"
+        | "version"
+        | "aggressive"
+        | "stealth"
+        | "comprehensive";
+      started_at?: string;
+      /**
+       * @example running
+       * @enum {string}
+       */
+      status?: "pending" | "running" | "completed" | "failed" | "cancelled";
+      /**
+       * @example [
+       *       "192.168.1.0/24"
+       *     ]
+       */
+      targets?: string[];
+    };
+    "docs.ScheduleResponse": {
+      created_at?: string;
+      /** @example 0 2 * * 1 */
+      cron_expression?: string;
+      /** @example true */
+      enabled?: boolean;
+      /** @example 550e8400-e29b-41d4-a716-446655440005 */
+      id?: string;
+      last_run?: string;
+      /** @example Weekly Security Scan */
+      name?: string;
+      next_run?: string;
+      /** @example 550e8400-e29b-41d4-a716-446655440001 */
+      profile_id?: string;
+      /**
+       * @example [
+       *       "192.168.1.0/24"
+       *     ]
+       */
+      targets?: string[];
+      updated_at?: string;
+    };
+    "docs.StatusResponse": {
+      /** @example scanorama-api */
+      service?: string;
+      timestamp?: string;
+      /** @example 2h30m45s */
+      uptime?: string;
+      /** @example 0.7.0 */
+      version?: string;
+    };
+    "docs.UpdateNetworkRequest": {
+      /** @example 192.168.1.0/24 */
+      cidr?: string;
+      /** @example Main office network */
+      description?: string;
+      /**
+       * @example ping
+       * @enum {string}
+       */
+      discovery_method?: "ping" | "tcp" | "arp";
+      /** @example true */
+      is_active?: boolean;
+      /** @example Office Network */
+      name?: string;
+      /** @example true */
+      scan_enabled?: boolean;
+    };
+    "docs.UpdateScanRequest": {
+      /** @example Updated description */
+      description?: string;
+      /** @example Updated scan name */
+      name?: string;
+      options?: {
+        [key: string]: string;
+      };
+      /** @example 22,80,443 */
+      ports?: string;
+      profile_id?: number;
+      /**
+       * @example connect
+       * @enum {string}
+       */
+      scan_type?: "connect" | "syn" | "ack" | "aggressive" | "comprehensive";
+      schedule_id?: number;
+      tags?: string[];
+      /**
+       * @example [
+       *       "192.168.1.0/24"
+       *     ]
+       */
+      targets?: string[];
+    };
+    "docs.VersionResponse": {
+      /** @example scanorama */
+      service?: string;
+      timestamp?: string;
+      /** @example 0.7.0 */
+      version?: string;
+    };
+  };
+  responses: never;
+  parameters: never;
+  requestBodies: {
+    /** @description Exclusion configuration */
+    "docs.CreateExclusionRequest": {
+      content: {
+        "application/json": components["schemas"]["docs.CreateExclusionRequest"];
+      };
+    };
+  };
+  headers: never;
+  pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    getAdminStatus: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.AdminStatusResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  getAdminStatus: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    listDiscoveryJobs: {
-        parameters: {
-            query?: {
-                /** @description Page number */
-                page?: number;
-                /** @description Items per page */
-                page_size?: number;
-                /** @description Filter by status */
-                status?: "pending" | "running" | "completed" | "failed";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.PaginatedDiscoveryJobsResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.AdminStatusResponse"];
         };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    createDiscoveryJob: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Discovery job configuration */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["docs.CreateDiscoveryJobRequest"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.DiscoveryJobResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  listDiscoveryJobs: {
+    parameters: {
+      query?: {
+        /** @description Page number */
+        page?: number;
+        /** @description Items per page */
+        page_size?: number;
+        /** @description Filter by status */
+        status?: "pending" | "running" | "completed" | "failed";
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    getDiscoveryJob: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Discovery Job ID */
-                discoveryId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.DiscoveryJobResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.PaginatedDiscoveryJobsResponse"];
         };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    startDiscovery: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Discovery Job ID */
-                discoveryId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.DiscoveryJobResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  createDiscoveryJob: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    stopDiscovery: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Discovery Job ID */
-                discoveryId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.DiscoveryJobResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+    /** @description Discovery job configuration */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["docs.CreateDiscoveryJobRequest"];
+      };
     };
-    listGlobalExclusions: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.NetworkExclusionResponse"][];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.DiscoveryJobResponse"];
         };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    createGlobalExclusion: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: components["requestBodies"]["docs.CreateExclusionRequest"];
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.NetworkExclusionResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  getDiscoveryJob: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Discovery Job ID */
+        discoveryId: string;
+      };
+      cookie?: never;
     };
-    deleteExclusion: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Exclusion ID */
-                exclusionId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successfully deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.DiscoveryJobResponse"];
         };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    getHealth: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.HealthResponse"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.HealthResponse"];
-                };
-            };
-        };
+  };
+  startDiscovery: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Discovery Job ID */
+        discoveryId: string;
+      };
+      cookie?: never;
     };
-    listHosts: {
-        parameters: {
-            query?: {
-                /** @description Page number */
-                page?: number;
-                /** @description Items per page */
-                page_size?: number;
-                /** @description Filter by IP address */
-                ip_address?: string;
-                /** @description Filter by hostname */
-                hostname?: string;
-                /** @description Filter by status */
-                status?: "up" | "down" | "unknown";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.PaginatedHostsResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.DiscoveryJobResponse"];
         };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    createHost: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Host information */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["docs.HostResponse"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.HostResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  stopDiscovery: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Discovery Job ID */
+        discoveryId: string;
+      };
+      cookie?: never;
     };
-    getHost: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Host ID */
-                hostId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.HostResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.DiscoveryJobResponse"];
         };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    updateHost: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Host ID */
-                hostId: string;
-            };
-            cookie?: never;
-        };
-        /** @description Updated host information */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["docs.HostResponse"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.HostResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  listGlobalExclusions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    deleteHost: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Host ID */
-                hostId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successfully deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.NetworkExclusionResponse"][];
         };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    getHostScans: {
-        parameters: {
-            query?: {
-                /** @description Page number */
-                page?: number;
-                /** @description Items per page */
-                page_size?: number;
-            };
-            header?: never;
-            path: {
-                /** @description Host ID */
-                hostId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.PaginatedScansResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  createGlobalExclusion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    getLiveness: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody: components["requestBodies"]["docs.CreateExclusionRequest"];
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.LivenessResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.NetworkExclusionResponse"];
         };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    getMetrics: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  deleteExclusion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Exclusion ID */
+        exclusionId: string;
+      };
+      cookie?: never;
     };
-    listNetworks: {
-        parameters: {
-            query?: {
-                /** @description Page number */
-                page?: number;
-                /** @description Items per page */
-                page_size?: number;
-                /** @description Include inactive networks */
-                show_inactive?: boolean;
-                /** @description Filter by network name */
-                name?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successfully deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.PaginatedNetworksResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content?: never;
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    createNetwork: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Network configuration */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["docs.CreateNetworkRequest"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.NetworkResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  getHealth: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    getNetwork: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Network ID */
-                networkId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.NetworkResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.HealthResponse"];
         };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Service Unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.HealthResponse"];
+        };
+      };
     };
-    updateNetwork: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Network ID */
-                networkId: string;
-            };
-            cookie?: never;
-        };
-        /** @description Updated network configuration */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["docs.UpdateNetworkRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.NetworkResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  listHosts: {
+    parameters: {
+      query?: {
+        /** @description Page number */
+        page?: number;
+        /** @description Items per page */
+        page_size?: number;
+        /** @description Filter by IP address */
+        ip_address?: string;
+        /** @description Filter by hostname */
+        hostname?: string;
+        /** @description Filter by status */
+        status?: "up" | "down" | "unknown";
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    deleteNetwork: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Network ID */
-                networkId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successfully deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.PaginatedHostsResponse"];
         };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    disableNetwork: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Network ID */
-                networkId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.NetworkResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  createHost: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    enableNetwork: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Network ID */
-                networkId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.NetworkResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+    /** @description Host information */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["docs.HostResponse"];
+      };
     };
-    listNetworkExclusions: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Network ID */
-                networkId: string;
-            };
-            cookie?: never;
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.NetworkExclusionResponse"][];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.HostResponse"];
         };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    createNetworkExclusion: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Network ID */
-                networkId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: components["requestBodies"]["docs.CreateExclusionRequest"];
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.NetworkExclusionResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  getHost: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Host ID */
+        hostId: string;
+      };
+      cookie?: never;
     };
-    renameNetwork: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Network ID */
-                networkId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        /** @description New network name */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["docs.RenameNetworkRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["docs.HostResponse"];
         };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.NetworkResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    getNetworkStats: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.NetworkStatsResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  updateHost: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Host ID */
+        hostId: string;
+      };
+      cookie?: never;
     };
-    listProfiles: {
-        parameters: {
-            query?: {
-                /** @description Page number */
-                page?: number;
-                /** @description Items per page */
-                page_size?: number;
-                /** @description Filter by scan type */
-                scan_type?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.PaginatedProfilesResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+    /** @description Updated host information */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["docs.HostResponse"];
+      };
     };
-    createProfile: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        /** @description Profile configuration */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["docs.CreateProfileRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["docs.HostResponse"];
         };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ProfileResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    getProfile: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Profile ID */
-                profileId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ProfileResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  deleteHost: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Host ID */
+        hostId: string;
+      };
+      cookie?: never;
     };
-    updateProfile: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Profile ID */
-                profileId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successfully deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        /** @description Updated profile configuration */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["docs.CreateProfileRequest"];
-            };
+        content?: never;
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
         };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ProfileResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
         };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    deleteProfile: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Profile ID */
-                profileId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successfully deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  getHostScans: {
+    parameters: {
+      query?: {
+        /** @description Page number */
+        page?: number;
+        /** @description Items per page */
+        page_size?: number;
+      };
+      header?: never;
+      path: {
+        /** @description Host ID */
+        hostId: string;
+      };
+      cookie?: never;
     };
-    listScans: {
-        parameters: {
-            query?: {
-                /** @description Page number */
-                page?: number;
-                /** @description Items per page */
-                page_size?: number;
-                /** @description Filter by status */
-                status?: "pending" | "running" | "completed" | "failed" | "cancelled";
-                /** @description Filter by target */
-                target?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.PaginatedScansResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.PaginatedScansResponse"];
         };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    createScan: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Scan configuration */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["docs.CreateScanRequest"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ScanResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  getLiveness: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    getScan: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Scan ID */
-                scanId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ScanResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.LivenessResponse"];
         };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    updateScan: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Scan ID */
-                scanId: string;
-            };
-            cookie?: never;
-        };
-        /** @description Updated scan configuration */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["docs.UpdateScanRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ScanResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  getMetrics: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    deleteScan: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Scan ID */
-                scanId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successfully deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "text/plain": string;
         };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/plain": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/plain": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    getScanResults: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Scan ID */
-                scanId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  listNetworks: {
+    parameters: {
+      query?: {
+        /** @description Page number */
+        page?: number;
+        /** @description Items per page */
+        page_size?: number;
+        /** @description Include inactive networks */
+        show_inactive?: boolean;
+        /** @description Filter by network name */
+        name?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    startScan: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Scan ID */
-                scanId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ScanResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.PaginatedNetworksResponse"];
         };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    stopScan: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Scan ID */
-                scanId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ScanResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  createNetwork: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    listSchedules: {
-        parameters: {
-            query?: {
-                /** @description Page number */
-                page?: number;
-                /** @description Items per page */
-                page_size?: number;
-                /** @description Filter by enabled status */
-                enabled?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.PaginatedSchedulesResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+    /** @description Network configuration */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["docs.CreateNetworkRequest"];
+      };
     };
-    createSchedule: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
         };
-        /** @description Schedule configuration */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["docs.CreateScheduleRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["docs.NetworkResponse"];
         };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ScheduleResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    getSchedule: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Schedule ID */
-                scheduleId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ScheduleResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  getNetwork: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Network ID */
+        networkId: string;
+      };
+      cookie?: never;
     };
-    updateSchedule: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Schedule ID */
-                scheduleId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        /** @description Updated schedule configuration */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["docs.CreateScheduleRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["docs.NetworkResponse"];
         };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ScheduleResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    deleteSchedule: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Schedule ID */
-                scheduleId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successfully deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  updateNetwork: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Network ID */
+        networkId: string;
+      };
+      cookie?: never;
     };
-    disableSchedule: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Schedule ID */
-                scheduleId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ScheduleResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+    /** @description Updated network configuration */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["docs.UpdateNetworkRequest"];
+      };
     };
-    enableSchedule: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Schedule ID */
-                scheduleId: string;
-            };
-            cookie?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ScheduleResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["docs.NetworkResponse"];
         };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
-    getStatus: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.StatusResponse"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-        };
+  };
+  deleteNetwork: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Network ID */
+        networkId: string;
+      };
+      cookie?: never;
     };
-    getVersion: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successfully deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.VersionResponse"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["docs.ErrorResponse"];
-                };
-            };
+        content?: never;
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
     };
+  };
+  disableNetwork: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Network ID */
+        networkId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.NetworkResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  enableNetwork: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Network ID */
+        networkId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.NetworkResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  listNetworkExclusions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Network ID */
+        networkId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.NetworkExclusionResponse"][];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  createNetworkExclusion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Network ID */
+        networkId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: components["requestBodies"]["docs.CreateExclusionRequest"];
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.NetworkExclusionResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  renameNetwork: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Network ID */
+        networkId: string;
+      };
+      cookie?: never;
+    };
+    /** @description New network name */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["docs.RenameNetworkRequest"];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.NetworkResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  getNetworkStats: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.NetworkStatsResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  listProfiles: {
+    parameters: {
+      query?: {
+        /** @description Page number */
+        page?: number;
+        /** @description Items per page */
+        page_size?: number;
+        /** @description Filter by scan type */
+        scan_type?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.PaginatedProfilesResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  createProfile: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Profile configuration */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["docs.CreateProfileRequest"];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ProfileResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  getProfile: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Profile ID */
+        profileId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ProfileResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  updateProfile: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Profile ID */
+        profileId: string;
+      };
+      cookie?: never;
+    };
+    /** @description Updated profile configuration */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["docs.CreateProfileRequest"];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ProfileResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  deleteProfile: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Profile ID */
+        profileId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successfully deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  listScans: {
+    parameters: {
+      query?: {
+        /** @description Page number */
+        page?: number;
+        /** @description Items per page */
+        page_size?: number;
+        /** @description Filter by status */
+        status?: "pending" | "running" | "completed" | "failed" | "cancelled";
+        /** @description Filter by target */
+        target?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.PaginatedScansResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  createScan: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Scan configuration */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["docs.CreateScanRequest"];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ScanResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  getScan: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Scan ID */
+        scanId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ScanResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  updateScan: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Scan ID */
+        scanId: string;
+      };
+      cookie?: never;
+    };
+    /** @description Updated scan configuration */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["docs.UpdateScanRequest"];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ScanResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  deleteScan: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Scan ID */
+        scanId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successfully deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  getScanResults: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Scan ID */
+        scanId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  startScan: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Scan ID */
+        scanId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ScanResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  stopScan: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Scan ID */
+        scanId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ScanResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  listSchedules: {
+    parameters: {
+      query?: {
+        /** @description Page number */
+        page?: number;
+        /** @description Items per page */
+        page_size?: number;
+        /** @description Filter by enabled status */
+        enabled?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.PaginatedSchedulesResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  createSchedule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Schedule configuration */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["docs.CreateScheduleRequest"];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ScheduleResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  getSchedule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Schedule ID */
+        scheduleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ScheduleResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  updateSchedule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Schedule ID */
+        scheduleId: string;
+      };
+      cookie?: never;
+    };
+    /** @description Updated schedule configuration */
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["docs.CreateScheduleRequest"];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ScheduleResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  deleteSchedule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Schedule ID */
+        scheduleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successfully deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  disableSchedule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Schedule ID */
+        scheduleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ScheduleResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  enableSchedule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Schedule ID */
+        scheduleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ScheduleResponse"];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  getStatus: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.StatusResponse"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
+  getVersion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.VersionResponse"];
+        };
+      };
+      /** @description Too Many Requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["docs.ErrorResponse"];
+        };
+      };
+    };
+  };
 }

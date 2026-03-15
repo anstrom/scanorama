@@ -1,7 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search } from "lucide-react";
+import { Search, ScanLine } from "lucide-react";
+import { Button } from "../components/button";
 import { useHosts } from "../api/hooks/use-hosts";
-import { StatusBadge, Skeleton, PaginationBar } from "../components";
+import {
+  StatusBadge,
+  Skeleton,
+  PaginationBar,
+  RunScanModal,
+} from "../components";
 import { formatRelativeTime } from "../lib/utils";
 import { cn } from "../lib/utils";
 
@@ -73,6 +79,7 @@ export function HostsPage() {
   const [statusFilter, setStatusFilter] = useState<HostStatus>("all");
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [scanIP, setScanIP] = useState<string | null>(null);
 
   // Debounce search input ~300ms
   useEffect(() => {
@@ -103,133 +110,167 @@ export function HostsPage() {
   const totalPages = pagination?.total_pages ?? 1;
 
   return (
-    <div className="space-y-4">
-      {/* Filter bar */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Search input */}
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search by IP or hostname…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className={cn(
-              "w-full pl-8 pr-3 py-1.5 text-xs rounded border border-border",
-              "bg-surface text-text-primary placeholder:text-text-muted",
-              "focus:outline-none focus:ring-1 focus:ring-border focus:border-border",
-            )}
-            aria-label="Search hosts"
-          />
-        </div>
-
-        {/* Status select */}
-        <select
-          value={statusFilter}
-          onChange={(e) => handleStatusChange(e.target.value as HostStatus)}
-          className={cn(
-            "px-3 py-1.5 text-xs rounded border border-border",
-            "bg-surface text-text-primary",
-            "focus:outline-none focus:ring-1 focus:ring-border",
-          )}
-          aria-label="Filter by status"
-        >
-          <option value="all">All statuses</option>
-          <option value="up">Up</option>
-          <option value="down">Down</option>
-          <option value="unknown">Unknown</option>
-        </select>
-      </div>
-
-      {/* Table card */}
-      <div className="bg-surface rounded-lg border border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border bg-surface">
-                <th className="text-left font-medium text-text-muted px-4 py-3 pr-4">
-                  IP Address
-                </th>
-                <th className="text-left font-medium text-text-muted py-3 pr-4">
-                  Hostname
-                </th>
-                <th className="text-left font-medium text-text-muted py-3 pr-4">
-                  Status
-                </th>
-                <th className="text-left font-medium text-text-muted py-3 pr-4">
-                  MAC Address
-                </th>
-                <th className="text-left font-medium text-text-muted py-3 pr-4">
-                  Open Ports
-                </th>
-                <th className="text-left font-medium text-text-muted py-3 pr-4">
-                  Last Seen
-                </th>
-                <th className="text-left font-medium text-text-muted py-3">
-                  Scans
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <SkeletonRows count={8} />
-              ) : hosts.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="py-10 text-center text-xs text-text-muted"
-                  >
-                    No hosts found.
-                  </td>
-                </tr>
-              ) : (
-                hosts.map((host) => (
-                  <tr
-                    key={host.id}
-                    className="border-b border-border/50 last:border-0 hover:bg-surface-raised/50 transition-colors"
-                  >
-                    <td className="py-3 px-4 pr-4 font-mono text-text-primary whitespace-nowrap">
-                      {host.ip_address ?? "—"}
-                    </td>
-                    <td className="py-3 pr-4 text-text-secondary">
-                      {host.hostname ?? "—"}
-                    </td>
-                    <td className="py-3 pr-4">
-                      <StatusBadge status={host.status ?? "unknown"} />
-                    </td>
-                    <td className="py-3 pr-4 font-mono text-text-muted whitespace-nowrap">
-                      {host.mac_address ?? "—"}
-                    </td>
-                    <td className="py-3 pr-4">
-                      <PortTags ports={host.open_ports} />
-                    </td>
-                    <td className="py-3 pr-4 text-text-muted whitespace-nowrap">
-                      {host.last_seen
-                        ? formatRelativeTime(host.last_seen)
-                        : "—"}
-                    </td>
-                    <td className="py-3 text-text-secondary tabular-nums">
-                      {host.scan_count ?? "—"}
-                    </td>
-                  </tr>
-                ))
+    <>
+      <div className="space-y-4">
+        {/* Filter bar */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Search input */}
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search by IP or hostname…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className={cn(
+                "w-full pl-8 pr-3 py-1.5 text-xs rounded border border-border",
+                "bg-surface text-text-primary placeholder:text-text-muted",
+                "focus:outline-none focus:ring-1 focus:ring-border focus:border-border",
               )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        {!isLoading && hosts.length > 0 && (
-          <div className="px-4 pb-3">
-            <PaginationBar
-              page={page}
-              totalPages={totalPages}
-              onPrev={() => setPage((p) => Math.max(1, p - 1))}
-              onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+              aria-label="Search hosts"
             />
           </div>
-        )}
+
+          {/* Status select */}
+          <select
+            value={statusFilter}
+            onChange={(e) => handleStatusChange(e.target.value as HostStatus)}
+            className={cn(
+              "px-3 py-1.5 text-xs rounded border border-border",
+              "bg-surface text-text-primary",
+              "focus:outline-none focus:ring-1 focus:ring-border",
+            )}
+            aria-label="Filter by status"
+          >
+            <option value="all">All statuses</option>
+            <option value="up">Up</option>
+            <option value="down">Down</option>
+            <option value="unknown">Unknown</option>
+          </select>
+
+          <Button
+            onClick={() => setScanIP("")}
+            icon={<ScanLine className="h-3.5 w-3.5" />}
+            className="sm:ml-auto"
+          >
+            New scan
+          </Button>
+        </div>
+
+        {/* Table card */}
+        <div className="bg-surface rounded-lg border border-border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border bg-surface">
+                  <th className="text-left font-medium text-text-muted px-4 py-3 pr-4">
+                    IP Address
+                  </th>
+                  <th className="text-left font-medium text-text-muted py-3 pr-4">
+                    Hostname
+                  </th>
+                  <th className="text-left font-medium text-text-muted py-3 pr-4">
+                    Status
+                  </th>
+                  <th className="text-left font-medium text-text-muted py-3 pr-4">
+                    MAC Address
+                  </th>
+                  <th className="text-left font-medium text-text-muted py-3 pr-4">
+                    Open Ports
+                  </th>
+                  <th className="text-left font-medium text-text-muted py-3 pr-4">
+                    Last Seen
+                  </th>
+                  <th className="text-left font-medium text-text-muted py-3 pr-4">
+                    Scans
+                  </th>
+                  <th className="py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <SkeletonRows count={8} />
+                ) : hosts.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="py-10 text-center text-xs text-text-muted"
+                    >
+                      No hosts found.
+                    </td>
+                  </tr>
+                ) : (
+                  hosts.map((host) => (
+                    <tr
+                      key={host.id}
+                      className="border-b border-border/50 last:border-0 hover:bg-surface-raised/50 transition-colors"
+                    >
+                      <td className="py-3 px-4 pr-4 font-mono text-text-primary whitespace-nowrap">
+                        {host.ip_address ?? "—"}
+                      </td>
+                      <td className="py-3 pr-4 text-text-secondary">
+                        {host.hostname ?? "—"}
+                      </td>
+                      <td className="py-3 pr-4">
+                        <StatusBadge status={host.status ?? "unknown"} />
+                      </td>
+                      <td className="py-3 pr-4 font-mono text-text-muted whitespace-nowrap">
+                        {host.mac_address ?? "—"}
+                      </td>
+                      <td className="py-3 pr-4">
+                        <PortTags ports={host.open_ports} />
+                      </td>
+                      <td className="py-3 pr-4 text-text-muted whitespace-nowrap">
+                        {host.last_seen
+                          ? formatRelativeTime(host.last_seen)
+                          : "—"}
+                      </td>
+                      <td className="py-3 pr-4 text-text-secondary tabular-nums">
+                        {host.scan_count ?? "—"}
+                      </td>
+                      <td className="py-3">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setScanIP(host.ip_address ?? "");
+                          }}
+                          aria-label={`Scan ${host.ip_address ?? "host"}`}
+                          className={cn(
+                            "flex items-center gap-1 px-2 py-1 rounded text-xs",
+                            "text-text-muted border border-border",
+                            "hover:text-accent hover:border-accent hover:bg-accent/5",
+                            "transition-colors",
+                          )}
+                        >
+                          <ScanLine className="h-3 w-3" />
+                          Scan
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {!isLoading && hosts.length > 0 && (
+            <div className="px-4 pb-3">
+              <PaginationBar
+                page={page}
+                totalPages={totalPages}
+                onPrev={() => setPage((p) => Math.max(1, p - 1))}
+                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+              />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {scanIP !== null && (
+        <RunScanModal initialTarget={scanIP} onClose={() => setScanIP(null)} />
+      )}
+    </>
   );
 }

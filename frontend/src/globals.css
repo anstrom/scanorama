@@ -1,32 +1,71 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: hsl(222, 47%, 6%);
-  --color-surface: hsl(222, 47%, 9%);
-  --color-surface-raised: hsl(222, 47%, 12%);
-  --color-border: hsl(222, 20%, 18%);
-  --color-text-primary: hsl(210, 40%, 96%);
-  --color-text-secondary: hsl(215, 20%, 60%);
-  --color-text-muted: hsl(215, 15%, 40%);
-  --color-accent: hsl(217, 91%, 60%);
-  --color-success: hsl(142, 71%, 45%);
-  --color-warning: hsl(38, 92%, 50%);
-  --color-danger: hsl(0, 84%, 60%);
-  --color-info: hsl(199, 89%, 48%);
+    /* ── Backgrounds ─────────────────────────────────────────────────────────── */
+    --color-background: hsl(222, 47%, 6%);
+    --color-surface: hsl(222, 47%, 9%);
+    --color-surface-raised: hsl(222, 47%, 12%);
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
-    Consolas, "Liberation Mono", "Courier New", monospace;
+    /* ── Borders ─────────────────────────────────────────────────────────────── */
+    --color-border: hsl(222, 20%, 18%);
+
+    /* ── Text ────────────────────────────────────────────────────────────────── */
+    --color-text-primary: hsl(210, 40%, 96%);
+    --color-text-secondary: hsl(215, 20%, 60%);
+    --color-text-muted: hsl(215, 15%, 40%);
+
+    /* ── Semantic status ─────────────────────────────────────────────────────── */
+    --color-accent: hsl(217, 91%, 60%);
+    --color-success: hsl(142, 71%, 45%);
+    --color-warning: hsl(38, 92%, 50%);
+    --color-danger: hsl(0, 84%, 60%);
+    --color-info: hsl(199, 89%, 48%);
+
+    /* ── Typography ──────────────────────────────────────────────────────────── */
+    --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --font-mono:
+        "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+
+    /* ── Radius ──────────────────────────────────────────────────────────────── */
+    /* Change --radius-base to restyle every component at once.                  */
+    --radius-none: 0;
+    --radius-sm: calc(var(--radius-base) * 0.5); /* tight elements          */
+    --radius-base: 0.375rem; /* default — matches rounded-md */
+    --radius-lg: calc(var(--radius-base) * 1.5); /* cards, modals           */
+    --radius-xl: calc(var(--radius-base) * 2.5); /* large surfaces          */
+    --radius-full: 9999px; /* pills, badges           */
 }
 
+/* ── Base styles ─────────────────────────────────────────────────────────────── */
 body {
-  background-color: var(--color-background);
-  color: var(--color-text-primary);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+    background-color: var(--color-background);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 .font-mono {
-  font-family: var(--font-mono);
+    font-family: var(--font-mono);
+}
+
+/* ── Light theme ─────────────────────────────────────────────────────────────── */
+/* Applied by setting data-theme="light" on <html>.                               */
+/* All semantic tokens are overridden here; components need no changes.           */
+[data-theme="light"] {
+    --color-background: hsl(210, 20%, 98%);
+    --color-surface: hsl(0, 0%, 100%);
+    --color-surface-raised: hsl(210, 17%, 95%);
+    --color-border: hsl(214, 13%, 86%);
+
+    --color-text-primary: hsl(222, 47%, 11%);
+    --color-text-secondary: hsl(215, 16%, 40%);
+    --color-text-muted: hsl(215, 13%, 60%);
+
+    --color-accent: hsl(217, 91%, 50%);
+    --color-success: hsl(142, 60%, 35%);
+    --color-warning: hsl(38, 85%, 40%);
+    --color-danger: hsl(0, 72%, 50%);
+    --color-info: hsl(199, 80%, 38%);
 }

@@ -7,7 +7,7 @@ const routeTitles: Record<string, string> = {
   "/scans": "Scans",
   "/hosts": "Hosts",
   "/networks": "Networks",
-  "/discovery": "Discovery",
+
   "/profiles": "Profiles",
   "/schedules": "Schedules",
   "/admin": "Admin",

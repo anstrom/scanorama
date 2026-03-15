@@ -1,8 +1,15 @@
 import { useState, useCallback } from "react";
-import { X } from "lucide-react";
+import { X, ScanLine } from "lucide-react";
+import { Button } from "../components/button";
 import { useScans } from "../api/hooks/use-scans";
 import { useScanResults } from "../api/hooks/use-scans";
-import { StatusBadge, Skeleton, PaginationBar } from "../components";
+import { useProfile } from "../api/hooks/use-profiles";
+import {
+  StatusBadge,
+  Skeleton,
+  PaginationBar,
+  RunScanModal,
+} from "../components";
 import { formatRelativeTime } from "../lib/utils";
 import { cn } from "../lib/utils";
 import type { components } from "../api/types";
@@ -30,9 +37,6 @@ function SkeletonRows({ count }: { count: number }) {
           </td>
           <td className="py-3 pr-4">
             <Skeleton className="h-5 w-20" />
-          </td>
-          <td className="py-3 pr-4">
-            <Skeleton className="h-3.5 w-10" />
           </td>
           <td className="py-3 pr-4">
             <Skeleton className="h-3.5 w-12" />
@@ -96,21 +100,39 @@ function ResultsSkeletonRows({ count }: { count: number }) {
   );
 }
 
-function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
+export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
   const [resultsPage, setResultsPage] = useState(1);
+  const { data: profileData, isLoading: profileLoading } = useProfile(
+    scan.profile_id,
+  );
   const { data: resultsData, isLoading: resultsLoading } = useScanResults(
     scan.id ?? "",
     { page: resultsPage, page_size: RESULTS_PAGE_SIZE },
+    scan.status,
   );
 
   const allResults = resultsData?.results ?? [];
-  // Client-side pagination of the results array since the endpoint returns
-  // the full result set in a single call (no server-side pagination param).
+
+  // Port state counts derived from the full result set.
+  const portCounts = allResults.reduce<Record<string, number>>((acc, r) => {
+    const state = r.state ?? "unknown";
+    acc[state] = (acc[state] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  // Unique IPs that responded in this scan.
+  const uniqueHostCount = new Set(
+    allResults.map((r) => r.host_ip).filter(Boolean),
+  ).size;
+
+  // Only show open ports in the results table.
+  const openResults = allResults.filter((r) => r.state === "open");
+
   const totalResultPages = Math.max(
     1,
-    Math.ceil(allResults.length / RESULTS_PAGE_SIZE),
+    Math.ceil(openResults.length / RESULTS_PAGE_SIZE),
   );
-  const pageResults = allResults.slice(
+  const pageResults = openResults.slice(
     (resultsPage - 1) * RESULTS_PAGE_SIZE,
     resultsPage * RESULTS_PAGE_SIZE,
   );
@@ -164,21 +186,29 @@ function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
             </h3>
             <div className="space-y-2">
               <MetaRow label="ID" value={scan.id} />
-              <MetaRow label="Profile ID" value={scan.profile_id} />
+              <MetaRow label="Name" value={scan.name} />
+              {scan.profile_id && (
+                <MetaRow
+                  label="Profile"
+                  value={
+                    profileLoading ? (
+                      <Skeleton className="h-3 w-28 inline-block" />
+                    ) : (
+                      (profileData?.name ?? scan.profile_id)
+                    )
+                  }
+                />
+              )}
+              <MetaRow label="Scan type" value={scan.scan_type} />
+              <MetaRow label="Ports" value={scan.ports} />
               <MetaRow
-                label="Created"
+                label="Hosts"
                 value={
-                  scan.created_at
-                    ? formatRelativeTime(scan.created_at)
-                    : undefined
-                }
-              />
-              <MetaRow
-                label="Started"
-                value={
-                  scan.started_at
-                    ? formatRelativeTime(scan.started_at)
-                    : undefined
+                  resultsLoading
+                    ? "…"
+                    : uniqueHostCount > 0
+                      ? `${uniqueHostCount} responding`
+                      : undefined
                 }
               />
               <MetaRow
@@ -190,8 +220,29 @@ function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
                 }
               />
               <MetaRow label="Duration" value={scan.duration} />
-              <MetaRow label="Hosts discovered" value={scan.hosts_discovered} />
-              <MetaRow label="Ports scanned" value={scan.ports_scanned} />
+              <MetaRow
+                label="Ports scanned"
+                value={
+                  resultsLoading ? (
+                    "…"
+                  ) : allResults.length > 0 ? (
+                    <span className="flex flex-wrap gap-2">
+                      {Object.entries(portCounts)
+                        .sort(([a], [b]) => a.localeCompare(b))
+                        .map(([state, count]) => (
+                          <span key={state} className="flex items-center gap-1">
+                            <StatusBadge status={state} />
+                            <span className="tabular-nums text-text-secondary">
+                              {count}
+                            </span>
+                          </span>
+                        ))}
+                    </span>
+                  ) : (
+                    (scan.ports_scanned ?? "—")
+                  )
+                }
+              />
               {scan.error_message && (
                 <MetaRow
                   label="Error"
@@ -206,7 +257,9 @@ function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
           {/* Results */}
           <section>
             <h3 className="text-xs font-medium text-text-primary mb-3">
-              Results
+              {resultsLoading
+                ? "Results"
+                : `Open Ports (${openResults.length})`}
             </h3>
 
             {resultsLoading ? (
@@ -224,7 +277,6 @@ function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
                       <th className="text-left font-medium pb-2 pr-3">
                         Protocol
                       </th>
-                      <th className="text-left font-medium pb-2 pr-3">State</th>
                       <th className="text-left font-medium pb-2">Service</th>
                     </tr>
                   </thead>
@@ -234,7 +286,11 @@ function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
                 </table>
               </div>
             ) : pageResults.length === 0 ? (
-              <p className="text-xs text-text-muted">No results found.</p>
+              <p className="text-xs text-text-muted">
+                {allResults.length > 0
+                  ? "No open ports found."
+                  : "No results found."}
+              </p>
             ) : (
               <>
                 <div className="overflow-x-auto">
@@ -252,9 +308,6 @@ function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
                         </th>
                         <th className="text-left font-medium pb-2 pr-3">
                           Protocol
-                        </th>
-                        <th className="text-left font-medium pb-2 pr-3">
-                          State
                         </th>
                         <th className="text-left font-medium pb-2">Service</th>
                       </tr>
@@ -276,13 +329,6 @@ function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
                           </td>
                           <td className="py-2 pr-3 text-text-muted">
                             {r.protocol ?? "—"}
-                          </td>
-                          <td className="py-2 pr-3">
-                            {r.state ? (
-                              <StatusBadge status={r.state} />
-                            ) : (
-                              <span className="text-text-muted">—</span>
-                            )}
                           </td>
                           <td className="py-2 text-text-secondary">
                             {r.service ?? "—"}
@@ -320,7 +366,8 @@ function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
 export function ScansPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<ScanStatus>("all");
-  const [selectedScan, setSelectedScan] = useState<ScanResponse | null>(null);
+  const [selectedScanId, setSelectedScanId] = useState<string | null>(null);
+  const [showRunScan, setShowRunScan] = useState(false);
 
   const handleStatusChange = useCallback((value: ScanStatus) => {
     setStatusFilter(value);
@@ -361,6 +408,14 @@ export function ScansPage() {
             <option value="failed">Failed</option>
             <option value="cancelled">Cancelled</option>
           </select>
+
+          <Button
+            onClick={() => setShowRunScan(true)}
+            icon={<ScanLine className="h-3.5 w-3.5" />}
+            className="sm:ml-auto"
+          >
+            New scan
+          </Button>
         </div>
 
         {/* Table card */}
@@ -374,9 +429,6 @@ export function ScansPage() {
                   </th>
                   <th className="text-left font-medium text-text-muted py-3 pr-4">
                     Status
-                  </th>
-                  <th className="text-left font-medium text-text-muted py-3 pr-4">
-                    Hosts
                   </th>
                   <th className="text-left font-medium text-text-muted py-3 pr-4">
                     Ports
@@ -395,7 +447,7 @@ export function ScansPage() {
                 ) : scans.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={5}
                       className="py-10 text-center text-xs text-text-muted"
                     >
                       No scans found.
@@ -405,7 +457,7 @@ export function ScansPage() {
                   scans.map((scan) => (
                     <tr
                       key={scan.id}
-                      onClick={() => setSelectedScan(scan)}
+                      onClick={() => setSelectedScanId(scan.id ?? null)}
                       className={cn(
                         "border-b border-border/50 last:border-0",
                         "hover:bg-surface-raised/50 transition-colors cursor-pointer",
@@ -416,9 +468,6 @@ export function ScansPage() {
                       </td>
                       <td className="py-3 pr-4">
                         <StatusBadge status={scan.status ?? "unknown"} />
-                      </td>
-                      <td className="py-3 pr-4 text-text-secondary tabular-nums">
-                        {scan.hosts_discovered ?? "—"}
                       </td>
                       <td className="py-3 pr-4 text-text-secondary tabular-nums">
                         {scan.ports_scanned ?? "—"}
@@ -453,12 +502,20 @@ export function ScansPage() {
       </div>
 
       {/* Detail panel */}
-      {selectedScan && (
-        <ScanDetailPanel
-          scan={selectedScan}
-          onClose={() => setSelectedScan(null)}
-        />
-      )}
+      {(() => {
+        const liveScan = selectedScanId
+          ? (scans.find((s) => s.id === selectedScanId) ?? null)
+          : null;
+        return liveScan ? (
+          <ScanDetailPanel
+            scan={liveScan}
+            onClose={() => setSelectedScanId(null)}
+          />
+        ) : null;
+      })()}
+
+      {/* Run scan modal */}
+      {showRunScan && <RunScanModal onClose={() => setShowRunScan(false)} />}
     </>
   );
 }

@@ -8,10 +8,16 @@ vi.mock("../api/hooks/use-scans", () => ({
   useScanResults: vi.fn(),
 }));
 
+vi.mock("../api/hooks/use-profiles", () => ({
+  useProfile: vi.fn(),
+}));
+
 import { useScans, useScanResults } from "../api/hooks/use-scans";
+import { useProfile } from "../api/hooks/use-profiles";
 
 const mockUseScans = vi.mocked(useScans);
 const mockUseScanResults = vi.mocked(useScanResults);
+const mockUseProfile = vi.mocked(useProfile);
 
 const mockScans = [
   {
@@ -24,6 +30,9 @@ const mockScans = [
     started_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
     completed_at: new Date().toISOString(),
+    name: "Weekly LAN scan",
+    scan_type: "connect" as const,
+    ports: "22,80,443",
     profile_id: "profile-abc",
     error_message: undefined,
   },
@@ -37,6 +46,9 @@ const mockScans = [
     started_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
     completed_at: undefined,
+    name: undefined,
+    scan_type: undefined,
+    ports: undefined,
     profile_id: undefined,
     error_message: undefined,
   },
@@ -50,6 +62,9 @@ const mockScans = [
     started_at: undefined,
     created_at: new Date().toISOString(),
     completed_at: undefined,
+    name: undefined,
+    scan_type: undefined,
+    ports: undefined,
     profile_id: undefined,
     error_message: "Connection refused",
   },
@@ -111,10 +126,19 @@ function makeUseScanResultsResult(overrides = {}) {
   } as unknown as ReturnType<typeof useScanResults>;
 }
 
+function makeUseProfileResult(overrides = {}) {
+  return {
+    data: { id: "profile-abc", name: "Weekly Connect Scan" },
+    isLoading: false,
+    ...overrides,
+  } as unknown as ReturnType<typeof useProfile>;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockUseScans.mockReturnValue(makeUseScansResult());
   mockUseScanResults.mockReturnValue(makeUseScanResultsResult());
+  mockUseProfile.mockReturnValue(makeUseProfileResult());
 });
 
 describe("ScansPage", () => {
@@ -188,9 +212,6 @@ describe("ScansPage", () => {
       screen.getByRole("columnheader", { name: "Status" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("columnheader", { name: "Hosts" }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole("columnheader", { name: "Ports" }),
     ).toBeInTheDocument();
     expect(
@@ -222,11 +243,9 @@ describe("ScansPage", () => {
     expect(screen.getByText("failed")).toBeInTheDocument();
   });
 
-  it("renders numeric hosts_discovered and ports_scanned", () => {
+  it("renders ports_scanned in the table", () => {
     render(<ScansPage />);
-    expect(screen.getByText("25")).toBeInTheDocument();
     expect(screen.getByText("2500")).toBeInTheDocument();
-    expect(screen.getByText("10")).toBeInTheDocument();
   });
 
   it("renders duration when present", () => {
@@ -249,8 +268,8 @@ describe("ScansPage", () => {
     const rows = screen.getAllByRole("row");
     // scan-2 is index 2
     const cells = within(rows[2]).getAllByRole("cell");
-    // Ports is index 3
-    expect(cells[3]).toHaveTextContent("—");
+    // Ports is index 2 (Targets, Status, Ports, Duration, Started)
+    expect(cells[2]).toHaveTextContent("—");
   });
 
   it("shows em-dash for missing duration", () => {
@@ -258,8 +277,8 @@ describe("ScansPage", () => {
     const rows = screen.getAllByRole("row");
     // scan-2 is index 2
     const cells = within(rows[2]).getAllByRole("cell");
-    // Duration is index 4
-    expect(cells[4]).toHaveTextContent("—");
+    // Duration is index 3 (Targets, Status, Ports, Duration, Started)
+    expect(cells[3]).toHaveTextContent("—");
   });
 
   it("shows em-dash for missing started_at", () => {
@@ -267,8 +286,8 @@ describe("ScansPage", () => {
     const rows = screen.getAllByRole("row");
     // scan-3 is index 3 — no started_at
     const cells = within(rows[3]).getAllByRole("cell");
-    // Started is index 5
-    expect(cells[5]).toHaveTextContent("—");
+    // Started is index 4 (Targets, Status, Ports, Duration, Started)
+    expect(cells[4]).toHaveTextContent("—");
   });
 
   // ── Status filter interaction ─────────────────────────────────
@@ -297,7 +316,9 @@ describe("ScansPage", () => {
     const rows = screen.getAllByRole("row");
     // Click scan-1 row (index 1)
     await userEvent.click(rows[1]);
-    expect(screen.getByRole("dialog", { name: /scan details/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: /scan details/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows the scan targets in the detail panel header", async () => {
@@ -326,12 +347,67 @@ describe("ScansPage", () => {
     expect(within(dialog).getByText("scan-1")).toBeInTheDocument();
   });
 
-  it("shows the profile ID in the detail panel when present", async () => {
+  it("shows the scan name in the detail panel when present", async () => {
+    render(<ScansPage />);
+    const rows = screen.getAllByRole("row");
+    await userEvent.click(rows[1]);
+    const dialog = screen.getByRole("dialog", { name: /scan details/i });
+    expect(within(dialog).getByText("Weekly LAN scan")).toBeInTheDocument();
+  });
+
+  it("shows the scan type in the detail panel when present", async () => {
+    render(<ScansPage />);
+    const rows = screen.getAllByRole("row");
+    await userEvent.click(rows[1]);
+    const dialog = screen.getByRole("dialog", { name: /scan details/i });
+    expect(within(dialog).getByText("connect")).toBeInTheDocument();
+  });
+
+  it("shows the ports in the detail panel when present", async () => {
+    render(<ScansPage />);
+    const rows = screen.getAllByRole("row");
+    await userEvent.click(rows[1]);
+    const dialog = screen.getByRole("dialog", { name: /scan details/i });
+    expect(within(dialog).getByText("22,80,443")).toBeInTheDocument();
+  });
+
+  it("shows responding host count in the detail panel", async () => {
+    render(<ScansPage />);
+    const rows = screen.getAllByRole("row");
+    await userEvent.click(rows[1]);
+    const dialog = screen.getByRole("dialog", { name: /scan details/i });
+    // mockResultsData has 2 distinct host_ips: 192.168.1.1 and 192.168.1.2
+    expect(within(dialog).getByText("2 responding")).toBeInTheDocument();
+  });
+
+  it("shows the profile name in the detail panel when present", async () => {
+    render(<ScansPage />);
+    const rows = screen.getAllByRole("row");
+    await userEvent.click(rows[1]);
+    const dialog = screen.getByRole("dialog", { name: /scan details/i });
+    expect(within(dialog).getByText("Weekly Connect Scan")).toBeInTheDocument();
+  });
+
+  it("falls back to profile ID when profile name is not yet loaded", async () => {
+    mockUseProfile.mockReturnValue(
+      makeUseProfileResult({ data: undefined, isLoading: false }),
+    );
     render(<ScansPage />);
     const rows = screen.getAllByRole("row");
     await userEvent.click(rows[1]);
     const dialog = screen.getByRole("dialog", { name: /scan details/i });
     expect(within(dialog).getByText("profile-abc")).toBeInTheDocument();
+  });
+
+  it("shows a loading skeleton for profile while loading", async () => {
+    mockUseProfile.mockReturnValue(
+      makeUseProfileResult({ data: undefined, isLoading: true }),
+    );
+    render(<ScansPage />);
+    const rows = screen.getAllByRole("row");
+    await userEvent.click(rows[1]);
+    const dialog = screen.getByRole("dialog", { name: /scan details/i });
+    expect(dialog.querySelector(".animate-pulse")).toBeInTheDocument();
   });
 
   it("shows the error message in the detail panel when present", async () => {
@@ -383,7 +459,9 @@ describe("ScansPage", () => {
     render(<ScansPage />);
     const rows = screen.getAllByRole("row");
     await userEvent.click(rows[1]);
-    expect(screen.getByRole("dialog", { name: /scan details/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: /scan details/i }),
+    ).toBeInTheDocument();
 
     const closeButton = screen.getByRole("button", { name: /close panel/i });
     await userEvent.click(closeButton);
@@ -396,7 +474,9 @@ describe("ScansPage", () => {
     render(<ScansPage />);
     const rows = screen.getAllByRole("row");
     await userEvent.click(rows[1]);
-    expect(screen.getByRole("dialog", { name: /scan details/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: /scan details/i }),
+    ).toBeInTheDocument();
 
     // The backdrop is the fixed overlay behind the dialog
     const backdrop = document.querySelector(".fixed.inset-0.bg-black\\/40");

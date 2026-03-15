@@ -1,4 +1,6 @@
+import { Link } from "@tanstack/react-router";
 import { formatRelativeTime } from "../lib/utils";
+import { cn } from "../lib/utils";
 import { StatusBadge } from "./status-badge";
 import { Skeleton } from "./skeleton";
 
@@ -15,18 +17,28 @@ interface Scan {
 interface RecentScansTableProps {
   scans?: Scan[];
   loading?: boolean;
+  onScanClick?: (scan: Scan) => void;
 }
 
 export function RecentScansTable({
   scans,
   loading = false,
+  onScanClick,
 }: RecentScansTableProps) {
   if (loading) {
     return (
       <div className="bg-surface rounded-lg border border-border p-4">
-        <h2 className="text-sm font-medium text-text-primary mb-3">
-          Recent Scans
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-medium text-text-primary">
+            Recent Scans
+          </h2>
+          <Link
+            to="/scans"
+            className="text-xs text-text-muted hover:text-text-primary transition-colors"
+          >
+            View all →
+          </Link>
+        </div>
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3">
@@ -45,9 +57,15 @@ export function RecentScansTable({
 
   return (
     <div className="bg-surface rounded-lg border border-border p-4">
-      <h2 className="text-sm font-medium text-text-primary mb-3">
-        Recent Scans
-      </h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-medium text-text-primary">Recent Scans</h2>
+        <Link
+          to="/scans"
+          className="text-xs text-text-muted hover:text-text-primary transition-colors"
+        >
+          View all →
+        </Link>
+      </div>
       {isEmpty ? (
         <p className="text-xs text-text-muted">No scans found.</p>
       ) : (
@@ -66,7 +84,11 @@ export function RecentScansTable({
               {scans.map((scan) => (
                 <tr
                   key={scan.id}
-                  className="border-b border-border/50 last:border-0"
+                  onClick={() => onScanClick?.(scan)}
+                  className={cn(
+                    "border-b border-border/50 last:border-0 transition-colors",
+                    onScanClick && "cursor-pointer hover:bg-surface-raised/60",
+                  )}
                 >
                   <td className="py-2 pr-4">
                     <StatusBadge status={scan.status ?? "unknown"} />

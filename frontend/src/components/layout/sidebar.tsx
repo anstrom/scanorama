@@ -5,7 +5,6 @@ import {
   Radar,
   Server,
   Network,
-  Search,
   SlidersHorizontal,
   Clock,
   Shield,
@@ -24,7 +23,7 @@ const mainNav: NavItem[] = [
   { label: "Scans", href: "#/scans", icon: Radar },
   { label: "Hosts", href: "#/hosts", icon: Server },
   { label: "Networks", href: "#/networks", icon: Network },
-  { label: "Discovery", href: "#/discovery", icon: Search },
+
   { label: "Profiles", href: "#/profiles", icon: SlidersHorizontal },
   { label: "Schedules", href: "#/schedules", icon: Clock },
 ];

@@ -1,4 +1,5 @@
 import type { ElementType } from "react";
+import { Link } from "@tanstack/react-router";
 import { cn } from "../lib/utils";
 
 interface StatCardProps {
@@ -8,7 +9,12 @@ interface StatCardProps {
   icon?: ElementType;
   trend?: { value: number; label?: string };
   loading?: boolean;
+  href?: string;
 }
+
+const cardBase = "bg-surface rounded-lg border border-border p-4";
+const cardInteractive =
+  "transition-colors hover:border-text-muted hover:bg-surface-raised/40 cursor-pointer";
 
 export function StatCard({
   label,
@@ -17,10 +23,11 @@ export function StatCard({
   icon: Icon,
   trend,
   loading = false,
+  href,
 }: StatCardProps) {
   if (loading) {
     return (
-      <div className="bg-surface rounded-lg border border-border p-4">
+      <div className={cardBase}>
         <div className="animate-pulse space-y-2">
           <div className="h-3 w-20 rounded bg-surface-raised" />
           <div className="h-7 w-16 rounded bg-surface-raised" />
@@ -30,8 +37,8 @@ export function StatCard({
     );
   }
 
-  return (
-    <div className="bg-surface rounded-lg border border-border p-4">
+  const body = (
+    <div className={cn(cardBase, href && cardInteractive)}>
       <div className="flex items-center justify-between mb-1">
         <p className="text-xs text-text-muted">{label}</p>
         {Icon && <Icon className="h-4 w-4 text-text-muted" />}
@@ -59,4 +66,17 @@ export function StatCard({
       )}
     </div>
   );
+
+  if (href) {
+    return (
+      <Link
+        to={href}
+        className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-border"
+      >
+        {body}
+      </Link>
+    );
+  }
+
+  return body;
 }
