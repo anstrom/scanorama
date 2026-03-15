@@ -52,7 +52,7 @@ func (nilScanStore) StartScan(_ context.Context, _ uuid.UUID) error {
 func (nilScanStore) CompleteScan(_ context.Context, _ uuid.UUID) error {
 	panic("nilScanStore: CompleteScan called unexpectedly")
 }
-func (nilScanStore) StopScan(_ context.Context, _ uuid.UUID) error {
+func (nilScanStore) StopScan(_ context.Context, _ uuid.UUID, _ ...string) error {
 	panic("nilScanStore: StopScan called unexpectedly")
 }
 func (nilScanStore) GetScanResults(_ context.Context, _ uuid.UUID, _, _ int) ([]*db.ScanResult, int64, error) {

@@ -17,9 +17,11 @@ func (s *Server) setupRoutes() {
 
 	s.setupSystemRoutes(api)
 
-	scanHandler := apihandlers.NewScanHandler(s.database, s.logger, s.metrics)
+	scanHandler := apihandlers.NewScanHandler(s.database, s.logger, s.metrics).
+		WithScanMode(s.config.Scanning.ScanMode)
 	hostHandler := apihandlers.NewHostHandler(s.database, s.logger, s.metrics)
-	discoveryHandler := apihandlers.NewDiscoveryHandler(s.database, s.logger, s.metrics)
+	discoveryHandler := apihandlers.NewDiscoveryHandler(s.database, s.logger, s.metrics).
+		WithEngine(s.discoveryEngine)
 	profileHandler := apihandlers.NewProfileHandler(s.database, s.logger, s.metrics)
 	scheduleHandler := apihandlers.NewScheduleHandler(s.database, s.logger, s.metrics)
 	networkHandler := apihandlers.NewNetworkHandler(services.NewNetworkService(s.database), s.logger, s.metrics)

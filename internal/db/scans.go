@@ -407,7 +407,7 @@ func buildScanFilters(filters ScanFilters) (whereClause string, args []interface
 		conditions = append(conditions, filterCondition{"sj.status", filters.Status})
 	}
 	if filters.ScanType != "" {
-		conditions = append(conditions, filterCondition{"COALESCE(sp.scan_type, 'connect')", filters.ScanType})
+		conditions = append(conditions, filterCondition{"COALESCE(sp.scan_type, st.scan_type)", filters.ScanType})
 	}
 	if filters.ProfileID != nil {
 		conditions = append(conditions, filterCondition{"sj.profile_id", *filters.ProfileID})
@@ -492,7 +492,7 @@ func (db *DB) ListScans(ctx context.Context, filters ScanFilters, offset, limit 
 			st.name,
 			st.description,
 			st.network::text as targets,
-			COALESCE(sp.scan_type, 'connect') as scan_type,
+			COALESCE(sp.scan_type, st.scan_type) as scan_type,
 			st.scan_ports as ports,
 			sj.profile_id,
 			sj.status,
@@ -1116,14 +1116,19 @@ func (db *DB) CompleteScan(ctx context.Context, id uuid.UUID) error {
 }
 
 // StopScan stops scan execution and marks it as failed.
-func (db *DB) StopScan(ctx context.Context, id uuid.UUID) error {
+func (db *DB) StopScan(ctx context.Context, id uuid.UUID, errMsg ...string) error {
+	var msg *string
+	if len(errMsg) > 0 && errMsg[0] != "" {
+		msg = &errMsg[0]
+	}
+
 	query := `
 		UPDATE scan_jobs
-		SET status = 'failed', completed_at = NOW()
+		SET status = 'failed', completed_at = NOW(), error_message = COALESCE($2, error_message)
 		WHERE id = $1 AND status = 'running'
 	`
 
-	result, err := db.ExecContext(ctx, query, id)
+	result, err := db.ExecContext(ctx, query, id, msg)
 	if err != nil {
 		return fmt.Errorf("failed to stop scan: %w", err)
 	}

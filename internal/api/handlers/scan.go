@@ -39,6 +39,7 @@ type ScanHandler struct {
 	metrics    *metrics.Registry
 	scanQueue  *scanning.ScanQueue
 	scanRunner scanRunnerFunc
+	scanMode   string
 }
 
 // NewScanHandler creates a new scan handler.
@@ -49,6 +50,25 @@ func NewScanHandler(database ScanStore, logger *slog.Logger, metricsManager *met
 		metrics:    metricsManager,
 		scanRunner: scanning.RunScanWithContext,
 	}
+}
+
+// WithScanMode sets the fallback scan mode used when a scan record does not
+// carry an explicit ScanType. The sentinel default "connect" is applied last
+// so callers may pass an empty string safely.
+func (h *ScanHandler) WithScanMode(mode string) *ScanHandler {
+	h.scanMode = mode
+	return h
+}
+
+// firstNonEmpty returns the first non-empty string from the provided values,
+// or an empty string if all values are empty.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // SetScanQueue configures an optional scan execution queue. When set, StartScan
@@ -62,7 +82,8 @@ type ScanRequest struct {
 	Name        string            `json:"name" validate:"required,min=1,max=255"`
 	Description string            `json:"description,omitempty"`
 	Targets     []string          `json:"targets" validate:"required,min=1"`
-	ScanType    string            `json:"scan_type" validate:"required,oneof=connect syn ack aggressive comprehensive"`
+	ScanType    string            `json:"scan_type" validate:"required,oneof=connect syn ack udp aggressive comprehensive"` //nolint:lll
+	OSDetection bool              `json:"os_detection,omitempty"`
 	Ports       string            `json:"ports,omitempty"`
 	ProfileID   *int64            `json:"profile_id,omitempty"`
 	Options     map[string]string `json:"options,omitempty"`
@@ -394,10 +415,11 @@ func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 // It returns the HTTP status code and error to write back, or 0/nil on success.
 func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error) {
 	scanConfig := &scanning.ScanConfig{
-		Targets:    scan.Targets,
-		Ports:      scan.Ports,
-		ScanType:   scan.ScanType,
-		TimeoutSec: 300,
+		Targets:     scan.Targets,
+		Ports:       scan.Ports,
+		ScanType:    firstNonEmpty(scan.ScanType, h.scanMode, "connect"),
+		TimeoutSec:  300,
+		OSDetection: getOptionBool(scan.Options, "os_detection"),
 	}
 
 	resultCh := make(chan *scanning.ScanQueueResult, 1)
@@ -428,13 +450,13 @@ func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error
 		if result.Error != nil {
 			h.logger.Error("Queued scan execution failed",
 				"scan_id", scanID, "error", result.Error)
+			if stopErr := h.database.StopScan(ctx, scanID, result.Error.Error()); stopErr != nil {
+				h.logger.Error("Failed to mark scan as stopped after queue execution",
+					"scan_id", scanID, "error", stopErr)
+			}
 		} else {
 			h.logger.Info("Queued scan execution completed",
 				"scan_id", scanID, "duration", result.Duration)
-		}
-		if stopErr := h.database.StopScan(ctx, scanID); stopErr != nil {
-			h.logger.Error("Failed to mark scan as stopped after queue execution",
-				"scan_id", scanID, "error", stopErr)
 		}
 	}()
 
@@ -446,10 +468,11 @@ func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 	h.logger.Info("Starting async scan execution", "scan_id", scanID, "scan_name", scan.Name)
 
 	scanConfig := &scanning.ScanConfig{
-		Targets:    scan.Targets,
-		Ports:      scan.Ports,
-		ScanType:   scan.ScanType,
-		TimeoutSec: 300, // Default 5 minute timeout
+		Targets:     scan.Targets,
+		Ports:       scan.Ports,
+		ScanType:    firstNonEmpty(scan.ScanType, h.scanMode, "connect"),
+		TimeoutSec:  300, // Default 5 minute timeout
+		OSDetection: getOptionBool(scan.Options, "os_detection"),
 	}
 
 	// Type-assert to *db.DB so the runner can persist hosts and ports.
@@ -462,7 +485,7 @@ func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 
 	if err != nil {
 		h.logger.Error("Scan execution failed", "scan_id", scanID, "error", err)
-		if stopErr := h.database.StopScan(ctx, scanID); stopErr != nil {
+		if stopErr := h.database.StopScan(ctx, scanID, err.Error()); stopErr != nil {
 			h.logger.Error("Failed to mark scan as failed after execution error",
 				"scan_id", scanID, "error", stopErr)
 		}
@@ -490,7 +513,9 @@ func (h *ScanHandler) StopScan(w http.ResponseWriter, r *http.Request) {
 		Metrics:    h.metrics,
 	}
 
-	jobOp.ExecuteStop(w, r, scanID, h.database.StopScan, "api_scans_stopped_total")
+	jobOp.ExecuteStop(w, r, scanID, func(ctx context.Context, id uuid.UUID) error {
+		return h.database.StopScan(ctx, id)
+	}, "api_scans_stopped_total")
 }
 
 // Helper methods
@@ -509,11 +534,12 @@ func (h *ScanHandler) validateScanRequest(req *ScanRequest) error {
 		return fmt.Errorf("at least one target is required")
 	}
 
-	// Validate scan type
+	// Validate scan type — must match the cases handled by buildScanOptions.
 	validScanTypes := map[string]bool{
 		"connect":       true,
 		"syn":           true,
 		"ack":           true,
+		"udp":           true,
 		"aggressive":    true,
 		"comprehensive": true,
 	}
@@ -565,17 +591,18 @@ func (h *ScanHandler) requestToDBScan(req *ScanRequest) interface{} {
 	// This should return the appropriate database scan type
 	// The exact structure would depend on the database package implementation
 	return map[string]interface{}{
-		"name":        req.Name,
-		"description": req.Description,
-		"targets":     req.Targets,
-		"scan_type":   req.ScanType,
-		"ports":       req.Ports,
-		"profile_id":  req.ProfileID,
-		"options":     req.Options,
-		"schedule_id": req.ScheduleID,
-		"tags":        req.Tags,
-		"status":      "pending",
-		"created_at":  time.Now().UTC(),
+		"name":         req.Name,
+		"description":  req.Description,
+		"targets":      req.Targets,
+		"scan_type":    req.ScanType,
+		"ports":        req.Ports,
+		"profile_id":   req.ProfileID,
+		"options":      req.Options,
+		"schedule_id":  req.ScheduleID,
+		"tags":         req.Tags,
+		"status":       "pending",
+		"created_at":   time.Now().UTC(),
+		"os_detection": req.OSDetection,
 	}
 }
 
@@ -633,6 +660,18 @@ func (h *ScanHandler) scanToResponse(scan *db.Scan) ScanResponse {
 }
 
 // resultToResponse converts a database scan result to response format.
+func getOptionBool(options map[string]interface{}, key string) bool {
+	if options == nil {
+		return false
+	}
+	v, ok := options[key]
+	if !ok {
+		return false
+	}
+	b, _ := v.(bool)
+	return b
+}
+
 func (h *ScanHandler) resultToResponse(result *db.ScanResult) ScanResult {
 	return ScanResult{
 		ID:       result.ID,
