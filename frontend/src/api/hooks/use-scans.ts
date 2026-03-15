@@ -50,6 +50,13 @@ export function useScans(params: ScanListParams = {}) {
       if (error) throw error;
       return data;
     },
+    refetchInterval: (query) => {
+      const scans = query.state.data?.data ?? [];
+      const hasActive = scans.some(
+        (s) => s.status === "pending" || s.status === "running",
+      );
+      return hasActive ? 3_000 : false;
+    },
   });
 }
 
@@ -67,17 +74,41 @@ export function useScan(id: string) {
   });
 }
 
+export function useStartScan() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (scanId: string) => {
+      const { data, error } = await api.POST("/scans/{scanId}/start", {
+        params: { path: { scanId } },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scans"] });
+    },
+  });
+}
+
 export function useCreateScan() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (body: {
-      name?: string;
-      targets?: string[];
-      profile_id?: string;
+      name: string;
+      targets: string[];
+      scan_type: string;
+      ports?: string;
+      os_detection?: boolean;
       description?: string;
     }) => {
       const { data, error } = await api.POST("/scans", { body });
-      if (error) throw error;
+      if (error) {
+        throw new Error(
+          typeof (error as { message?: string }).message === "string"
+            ? (error as { message: string }).message
+            : "Scan creation failed.",
+        );
+      }
       return data;
     },
     onSuccess: () => {
@@ -89,6 +120,7 @@ export function useCreateScan() {
 export function useScanResults(
   scanId: string,
   params: { page?: number; page_size?: number } = {},
+  scanStatus?: string,
 ) {
   return useQuery({
     queryKey: ["scans", scanId, "results", params],
@@ -100,6 +132,8 @@ export function useScanResults(
       return data as ScanResultsData | undefined;
     },
     enabled: !!scanId,
+    refetchInterval:
+      scanStatus === "pending" || scanStatus === "running" ? 3_000 : false,
   });
 }
 

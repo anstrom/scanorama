@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useHealth, useVersion } from "../api/hooks/use-system";
 import { useNetworkStats } from "../api/hooks/use-networks";
 import { useRecentScans } from "../api/hooks/use-scans";
@@ -5,7 +6,11 @@ import { useActiveHostCount } from "../api/hooks/use-hosts";
 import { StatusBadge } from "../components/status-badge";
 import { StatCard } from "../components/stat-card";
 import { RecentScansTable } from "../components/recent-scans-table";
+import { ScanDetailPanel } from "./scans";
 import { Network, Server, MonitorCheck, ShieldOff } from "lucide-react";
+import type { components } from "../api/types";
+
+type ScanResponse = components["schemas"]["docs.ScanResponse"];
 
 export function DashboardPage() {
   const { data: health, isLoading: healthLoading } = useHealth();
@@ -14,6 +19,8 @@ export function DashboardPage() {
   const { data: recentScans, isLoading: scansLoading } = useRecentScans();
   const { data: activeHostCount, isLoading: activeHostsLoading } =
     useActiveHostCount();
+
+  const [selectedScan, setSelectedScan] = useState<ScanResponse | null>(null);
 
   return (
     <>
@@ -41,18 +48,21 @@ export function DashboardPage() {
             value={(stats?.networks?.total as number) ?? "—"}
             icon={Network}
             loading={statsLoading}
+            href="/networks"
           />
           <StatCard
             label="Hosts"
             value={(stats?.hosts?.total as number) ?? "—"}
             icon={Server}
             loading={statsLoading}
+            href="/hosts"
           />
           <StatCard
             label="Active Hosts"
             value={activeHostCount ?? "—"}
             icon={MonitorCheck}
             loading={activeHostsLoading}
+            href="/hosts"
           />
           <StatCard
             label="Exclusions"
@@ -64,7 +74,19 @@ export function DashboardPage() {
       </div>
 
       {/* Recent scans */}
-      <RecentScansTable scans={recentScans?.data} loading={scansLoading} />
+      <RecentScansTable
+        scans={recentScans?.data}
+        loading={scansLoading}
+        onScanClick={(scan) => setSelectedScan(scan as ScanResponse)}
+      />
+
+      {/* Scan detail panel */}
+      {selectedScan && (
+        <ScanDetailPanel
+          scan={selectedScan}
+          onClose={() => setSelectedScan(null)}
+        />
+      )}
     </>
   );
 }
