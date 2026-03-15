@@ -92,7 +92,7 @@ type HostScanResponse struct {
 
 // ListHosts handles GET /api/v1/hosts - list all hosts with pagination.
 func (h *HostHandler) ListHosts(w http.ResponseWriter, r *http.Request) {
-	listOp := &ListOperation[*db.Host, db.HostFilters]{
+	listOp := &ListOperation[*db.Host, *db.HostFilters]{
 		EntityType: "hosts",
 		MetricName: "api_hosts_listed_total",
 		Logger:     h.logger,
@@ -309,8 +309,8 @@ func (h *HostHandler) validateHostRequest(req *HostRequest) error {
 }
 
 // getHostFilters extracts filter parameters from request.
-func (h *HostHandler) getHostFilters(r *http.Request) db.HostFilters {
-	filters := db.HostFilters{}
+func (h *HostHandler) getHostFilters(r *http.Request) *db.HostFilters {
+	filters := &db.HostFilters{}
 
 	if os := r.URL.Query().Get("os"); os != "" {
 		filters.OSFamily = os
@@ -322,6 +322,18 @@ func (h *HostHandler) getHostFilters(r *http.Request) db.HostFilters {
 
 	if network := r.URL.Query().Get("network"); network != "" {
 		filters.Network = network
+	}
+
+	if search := r.URL.Query().Get("search"); search != "" {
+		filters.Search = search
+	}
+
+	if sortBy := r.URL.Query().Get("sort_by"); sortBy != "" {
+		filters.SortBy = sortBy
+	}
+
+	if sortOrder := r.URL.Query().Get("sort_order"); sortOrder != "" {
+		filters.SortOrder = sortOrder
 	}
 
 	return filters

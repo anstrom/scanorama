@@ -639,14 +639,14 @@ func TestBuildScanFilters(t *testing.T) {
 // TestBuildHostFilters tests the buildHostFilters utility function behavior.
 func TestBuildHostFilters(t *testing.T) {
 	t.Run("empty_filters", func(t *testing.T) {
-		filters := HostFilters{}
+		filters := &HostFilters{}
 		whereClause, args := buildHostFilters(filters)
 		assert.Empty(t, whereClause)
 		assert.Nil(t, args)
 	})
 
 	t.Run("status_filter_only", func(t *testing.T) {
-		filters := HostFilters{Status: "up"}
+		filters := &HostFilters{Status: "up"}
 		whereClause, args := buildHostFilters(filters)
 
 		assert.Contains(t, whereClause, "WHERE")
@@ -656,7 +656,7 @@ func TestBuildHostFilters(t *testing.T) {
 	})
 
 	t.Run("os_family_filter_only", func(t *testing.T) {
-		filters := HostFilters{OSFamily: "linux"}
+		filters := &HostFilters{OSFamily: "linux"}
 		whereClause, args := buildHostFilters(filters)
 
 		assert.Contains(t, whereClause, "WHERE")
@@ -666,7 +666,7 @@ func TestBuildHostFilters(t *testing.T) {
 	})
 
 	t.Run("network_filter_only", func(t *testing.T) {
-		filters := HostFilters{Network: "192.168.1.0/24"}
+		filters := &HostFilters{Network: "192.168.1.0/24"}
 		whereClause, args := buildHostFilters(filters)
 
 		assert.Contains(t, whereClause, "WHERE")
@@ -676,7 +676,7 @@ func TestBuildHostFilters(t *testing.T) {
 	})
 
 	t.Run("all_filters", func(t *testing.T) {
-		filters := HostFilters{
+		filters := &HostFilters{
 			Status:   "up",
 			OSFamily: "windows",
 			Network:  "10.0.0.0/8",
