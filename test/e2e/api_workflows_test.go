@@ -152,7 +152,7 @@ func (suite *E2ETestSuite) setupConfiguration() {
 			WorkerPoolSize:         2,
 			MaxScanTimeout:         time.Minute,
 			DefaultPorts:           "22,80,443",
-			DefaultScanType:        "connect",
+			ScanMode:               "syn",
 			MaxConcurrentTargets:   5,
 			EnableServiceDetection: false,
 			EnableOSDetection:      false,
