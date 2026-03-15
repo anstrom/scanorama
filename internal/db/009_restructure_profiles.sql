@@ -1,5 +1,7 @@
 -- Migration 009: Restructure built-in scan profiles
 --
+-- Depends on: 008_update_builtin_profiles (which corrects scan types set by 007)
+--
 -- Replaces all previous built-in profiles (from migrations 001 and 005) with a
 -- new, consolidated set of six profiles that use nmap's mixed-protocol port
 -- syntax (T:<tcp-ports>,U:<udp-ports>). This allows a single profile to drive
