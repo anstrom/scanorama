@@ -17,4 +17,21 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov"],
+      reportsDirectory: "./coverage",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/api/types.ts", // generated — openapi-typescript output
+        "src/test/**", // test utilities and setup
+        "src/**/*.test.{ts,tsx}",
+        "src/main.tsx", // entry point
+        "src/router.tsx", // route wiring only
+      ],
+    },
+  },
 });

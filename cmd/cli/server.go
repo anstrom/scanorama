@@ -461,6 +461,9 @@ func createAndStartServer(cfg *config.Config, database *db.DB, logger *logging.L
 		"build_time", buildTime,
 		"address", cfg.GetAPIAddress())
 
+	// Pass build info through to the API server so handlers can report it correctly.
+	api.SetBuildInfo(version, commit, buildTime)
+
 	apiServer, err := api.New(cfg, database)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API server: %w", err)

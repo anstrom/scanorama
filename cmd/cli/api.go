@@ -215,6 +215,9 @@ func runAPIServer(_ *cobra.Command, _ []string) error {
 		}
 	}()
 
+	// Pass build info through to the API server so handlers can report it correctly.
+	api.SetBuildInfo(version, commit, buildTime)
+
 	// Create API server
 	apiServer, err := api.New(cfg, database)
 	if err != nil {

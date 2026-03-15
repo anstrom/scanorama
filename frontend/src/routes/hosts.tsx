@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search, ScanLine } from "lucide-react";
+import { Search, ScanLine, X } from "lucide-react";
 import { Button } from "../components/button";
-import { useHosts } from "../api/hooks/use-hosts";
+import { useHosts, useHost } from "../api/hooks/use-hosts";
 import {
   StatusBadge,
   Skeleton,
@@ -10,8 +10,197 @@ import {
 } from "../components";
 import { formatRelativeTime } from "../lib/utils";
 import { cn } from "../lib/utils";
+import type { components } from "../api/types";
+
+type HostResponse = components["schemas"]["docs.HostResponse"];
 
 const PAGE_SIZE = 25;
+
+// ──────────────────────────────────────────────
+// Host detail panel
+// ──────────────────────────────────────────────
+
+function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex gap-2 text-xs">
+      <span className="text-text-muted w-28 shrink-0">{label}</span>
+      <span className="text-text-secondary break-all">{value ?? "—"}</span>
+    </div>
+  );
+}
+
+function HostDetailPanel({
+  host,
+  onClose,
+  onScan,
+}: {
+  host: HostResponse;
+  onClose: () => void;
+  onScan: (ip: string) => void;
+}) {
+  const { data: full, isLoading } = useHost(host.id ?? "");
+  const h = full ?? host;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/40 z-40"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Panel */}
+      <div
+        role="dialog"
+        aria-label="Host details"
+        className={cn(
+          "fixed top-0 right-0 bottom-0 z-50",
+          "w-full max-w-[420px]",
+          "bg-surface border-l border-border",
+          "flex flex-col overflow-hidden",
+          "shadow-xl",
+        )}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border shrink-0">
+          <div className="flex flex-col gap-1.5 min-w-0">
+            <p className="text-xs text-text-muted">Host</p>
+            <p className="text-sm font-mono text-text-primary truncate">
+              {h.ip_address ?? "—"}
+            </p>
+            <StatusBadge status={h.status ?? "unknown"} />
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close panel"
+            className="shrink-0 p-1 rounded text-text-muted hover:text-text-primary hover:bg-surface-raised transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+          {/* Identity */}
+          <section>
+            <h3 className="text-xs font-medium text-text-primary mb-3">
+              Identity
+            </h3>
+            {isLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex gap-2">
+                    <Skeleton className="h-3 w-28 shrink-0" />
+                    <Skeleton className="h-3 w-40" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <MetaRow label="ID" value={h.id} />
+                <MetaRow
+                  label="IP Address"
+                  value={<span className="font-mono">{h.ip_address}</span>}
+                />
+                <MetaRow label="Hostname" value={h.hostname} />
+                <MetaRow
+                  label="MAC Address"
+                  value={
+                    h.mac_address ? (
+                      <span className="font-mono">{h.mac_address}</span>
+                    ) : undefined
+                  }
+                />
+                <MetaRow
+                  label="Status"
+                  value={<StatusBadge status={h.status ?? "unknown"} />}
+                />
+              </div>
+            )}
+          </section>
+
+          {/* Activity */}
+          <section>
+            <h3 className="text-xs font-medium text-text-primary mb-3">
+              Activity
+            </h3>
+            {isLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex gap-2">
+                    <Skeleton className="h-3 w-28 shrink-0" />
+                    <Skeleton className="h-3 w-32" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <MetaRow
+                  label="First seen"
+                  value={
+                    h.first_seen ? formatRelativeTime(h.first_seen) : undefined
+                  }
+                />
+                <MetaRow
+                  label="Last seen"
+                  value={
+                    h.last_seen ? formatRelativeTime(h.last_seen) : undefined
+                  }
+                />
+                <MetaRow label="Scan count" value={h.scan_count} />
+              </div>
+            )}
+          </section>
+
+          {/* Open ports */}
+          <section>
+            <h3 className="text-xs font-medium text-text-primary mb-3">
+              {isLoading
+                ? "Open Ports"
+                : `Open Ports (${h.open_ports?.length ?? 0})`}
+            </h3>
+            {isLoading ? (
+              <div className="flex flex-wrap gap-1.5">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-5 w-10 rounded" />
+                ))}
+              </div>
+            ) : !h.open_ports || h.open_ports.length === 0 ? (
+              <p className="text-xs text-text-muted">No open ports recorded.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {h.open_ports.map((port) => (
+                  <span
+                    key={port}
+                    className="inline-block px-2 py-0.5 rounded bg-surface-raised text-xs font-mono text-text-secondary border border-border"
+                  >
+                    {port}
+                  </span>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-border shrink-0">
+          <Button
+            icon={<ScanLine className="h-3.5 w-3.5" />}
+            onClick={() => {
+              onClose();
+              onScan(h.ip_address ?? "");
+            }}
+            className="w-full justify-center"
+          >
+            Scan this host
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
 
 type HostStatus = "all" | "up" | "down" | "unknown";
 
@@ -80,6 +269,7 @@ export function HostsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [scanIP, setScanIP] = useState<string | null>(null);
+  const [selectedHost, setSelectedHost] = useState<HostResponse | null>(null);
 
   // Debounce search input ~300ms
   useEffect(() => {
@@ -203,7 +393,8 @@ export function HostsPage() {
                   hosts.map((host) => (
                     <tr
                       key={host.id}
-                      className="border-b border-border/50 last:border-0 hover:bg-surface-raised/50 transition-colors"
+                      onClick={() => setSelectedHost(host)}
+                      className="border-b border-border/50 last:border-0 hover:bg-surface-raised/50 transition-colors cursor-pointer"
                     >
                       <td className="py-3 px-4 pr-4 font-mono text-text-primary whitespace-nowrap">
                         {host.ip_address ?? "—"}
@@ -270,6 +461,14 @@ export function HostsPage() {
 
       {scanIP !== null && (
         <RunScanModal initialTarget={scanIP} onClose={() => setScanIP(null)} />
+      )}
+
+      {selectedHost && (
+        <HostDetailPanel
+          host={selectedHost}
+          onClose={() => setSelectedHost(null)}
+          onScan={(ip) => setScanIP(ip)}
+        />
       )}
     </>
   );

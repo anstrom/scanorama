@@ -24,34 +24,36 @@ const mockScans = [
 
 describe("RecentScansTable", () => {
   // 1. Loading skeletons
-  it("shows loading skeletons when loading is true", () => {
-    const { container } = renderWithRouter(<RecentScansTable loading={true} />);
+  it("shows loading skeletons when loading is true", async () => {
+    const { container } = await renderWithRouter(
+      <RecentScansTable loading={true} />,
+    );
     const skeletons = container.querySelectorAll(".animate-pulse");
     // 4 skeleton divs per row × 5 rows = 20
     expect(skeletons).toHaveLength(20);
   });
 
-  it("does not show the table or empty message when loading", () => {
-    renderWithRouter(<RecentScansTable loading={true} />);
+  it("does not show the table or empty message when loading", async () => {
+    await renderWithRouter(<RecentScansTable loading={true} />);
     expect(screen.queryByText("No scans found.")).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
   // 2. No scans found — undefined
-  it("shows 'No scans found.' when scans is undefined", () => {
-    renderWithRouter(<RecentScansTable />);
+  it("shows 'No scans found.' when scans is undefined", async () => {
+    await renderWithRouter(<RecentScansTable />);
     expect(screen.getByText("No scans found.")).toBeInTheDocument();
   });
 
   // 3. No scans found — empty array
-  it("shows 'No scans found.' when scans is an empty array", () => {
-    renderWithRouter(<RecentScansTable scans={[]} />);
+  it("shows 'No scans found.' when scans is an empty array", async () => {
+    await renderWithRouter(<RecentScansTable scans={[]} />);
     expect(screen.getByText("No scans found.")).toBeInTheDocument();
   });
 
   // 4. Table headers
-  it("renders all table column headers when scans are provided", () => {
-    renderWithRouter(<RecentScansTable scans={mockScans} />);
+  it("renders all table column headers when scans are provided", async () => {
+    await renderWithRouter(<RecentScansTable scans={mockScans} />);
     expect(
       screen.getByRole("columnheader", { name: "Status" }),
     ).toBeInTheDocument();
@@ -70,15 +72,15 @@ describe("RecentScansTable", () => {
   });
 
   // 5. Scan data in rows
-  it("renders a row for each scan", () => {
-    renderWithRouter(<RecentScansTable scans={mockScans} />);
+  it("renders a row for each scan", async () => {
+    await renderWithRouter(<RecentScansTable scans={mockScans} />);
     const rows = screen.getAllByRole("row");
     // 1 header row + 2 data rows
     expect(rows).toHaveLength(3);
   });
 
-  it("renders numeric hosts_discovered and ports_scanned values", () => {
-    renderWithRouter(<RecentScansTable scans={mockScans} />);
+  it("renders numeric hosts_discovered and ports_scanned values", async () => {
+    await renderWithRouter(<RecentScansTable scans={mockScans} />);
     expect(screen.getByText("25")).toBeInTheDocument();
     expect(screen.getByText("2500")).toBeInTheDocument();
     expect(screen.getByText("10")).toBeInTheDocument();
@@ -86,27 +88,27 @@ describe("RecentScansTable", () => {
   });
 
   // 6. StatusBadge renders status text
-  it("displays the status text for each scan via StatusBadge", () => {
-    renderWithRouter(<RecentScansTable scans={mockScans} />);
+  it("displays the status text for each scan via StatusBadge", async () => {
+    await renderWithRouter(<RecentScansTable scans={mockScans} />);
     expect(screen.getByText("completed")).toBeInTheDocument();
     expect(screen.getByText("running")).toBeInTheDocument();
   });
 
   // 7. Multiple targets joined with comma
-  it("joins multiple targets with a comma separator", () => {
-    renderWithRouter(<RecentScansTable scans={mockScans} />);
+  it("joins multiple targets with a comma separator", async () => {
+    await renderWithRouter(<RecentScansTable scans={mockScans} />);
     expect(screen.getByText("10.0.0.0/8, 172.16.0.0/12")).toBeInTheDocument();
   });
 
-  it("renders a single target without a trailing comma", () => {
-    renderWithRouter(<RecentScansTable scans={mockScans} />);
+  it("renders a single target without a trailing comma", async () => {
+    await renderWithRouter(<RecentScansTable scans={mockScans} />);
     expect(screen.getByText("192.168.1.0/24")).toBeInTheDocument();
   });
 
   // 8. Em-dash for missing optional fields
-  it("shows em-dash for missing targets", () => {
+  it("shows em-dash for missing targets", async () => {
     const scans = [{ id: "scan-x", status: "completed" }];
-    renderWithRouter(<RecentScansTable scans={scans} />);
+    await renderWithRouter(<RecentScansTable scans={scans} />);
     const rows = screen.getAllByRole("row");
     const dataRow = rows[1];
     const cells = within(dataRow).getAllByRole("cell");
@@ -114,11 +116,11 @@ describe("RecentScansTable", () => {
     expect(cells[1]).toHaveTextContent("—");
   });
 
-  it("shows em-dash for missing hosts_discovered", () => {
+  it("shows em-dash for missing hosts_discovered", async () => {
     const scans = [
       { id: "scan-x", status: "completed", targets: ["10.0.0.1"] },
     ];
-    renderWithRouter(<RecentScansTable scans={scans} />);
+    await renderWithRouter(<RecentScansTable scans={scans} />);
     const rows = screen.getAllByRole("row");
     const dataRow = rows[1];
     const cells = within(dataRow).getAllByRole("cell");
@@ -126,11 +128,11 @@ describe("RecentScansTable", () => {
     expect(cells[2]).toHaveTextContent("—");
   });
 
-  it("shows em-dash for missing ports_scanned", () => {
+  it("shows em-dash for missing ports_scanned", async () => {
     const scans = [
       { id: "scan-x", status: "completed", targets: ["10.0.0.1"] },
     ];
-    renderWithRouter(<RecentScansTable scans={scans} />);
+    await renderWithRouter(<RecentScansTable scans={scans} />);
     const rows = screen.getAllByRole("row");
     const dataRow = rows[1];
     const cells = within(dataRow).getAllByRole("cell");
@@ -138,11 +140,11 @@ describe("RecentScansTable", () => {
     expect(cells[3]).toHaveTextContent("—");
   });
 
-  it("shows em-dash for missing created_at", () => {
+  it("shows em-dash for missing created_at", async () => {
     const scans = [
       { id: "scan-x", status: "completed", targets: ["10.0.0.1"] },
     ];
-    renderWithRouter(<RecentScansTable scans={scans} />);
+    await renderWithRouter(<RecentScansTable scans={scans} />);
     const rows = screen.getAllByRole("row");
     const dataRow = rows[1];
     const cells = within(dataRow).getAllByRole("cell");
@@ -151,22 +153,22 @@ describe("RecentScansTable", () => {
   });
 
   // 9. "Recent Scans" heading always present
-  it("shows the 'Recent Scans' heading when loading", () => {
-    renderWithRouter(<RecentScansTable loading={true} />);
+  it("shows the 'Recent Scans' heading when loading", async () => {
+    await renderWithRouter(<RecentScansTable loading={true} />);
     expect(
       screen.getByRole("heading", { name: "Recent Scans" }),
     ).toBeInTheDocument();
   });
 
-  it("shows the 'Recent Scans' heading when scans is undefined", () => {
-    renderWithRouter(<RecentScansTable />);
+  it("shows the 'Recent Scans' heading when scans is undefined", async () => {
+    await renderWithRouter(<RecentScansTable />);
     expect(
       screen.getByRole("heading", { name: "Recent Scans" }),
     ).toBeInTheDocument();
   });
 
-  it("shows the 'Recent Scans' heading when scans are provided", () => {
-    renderWithRouter(<RecentScansTable scans={mockScans} />);
+  it("shows the 'Recent Scans' heading when scans are provided", async () => {
+    await renderWithRouter(<RecentScansTable scans={mockScans} />);
     expect(
       screen.getByRole("heading", { name: "Recent Scans" }),
     ).toBeInTheDocument();

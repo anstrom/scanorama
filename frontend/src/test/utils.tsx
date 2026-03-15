@@ -1,4 +1,4 @@
-import { render, type RenderOptions } from "@testing-library/react";
+import { render, act, type RenderOptions } from "@testing-library/react";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -13,8 +13,11 @@ import type { ReactNode } from "react";
  * Wraps the given UI in a minimal TanStack Router context so that any
  * component that calls useRouter / Link / etc. does not throw
  * "useRouter must be used inside a RouterProvider".
+ *
+ * Returns a promise so callers can await the fully-rendered output after
+ * the router's async initialisation (Transitioner) has completed.
  */
-export function renderWithRouter(
+export async function renderWithRouter(
   ui: ReactNode,
   options?: Omit<RenderOptions, "wrapper">,
 ) {
@@ -30,5 +33,11 @@ export function renderWithRouter(
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
 
-  return render(<RouterProvider router={router} />, options);
+  let result!: ReturnType<typeof render>;
+
+  await act(async () => {
+    result = render(<RouterProvider router={router} />, options);
+  });
+
+  return result;
 }
