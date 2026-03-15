@@ -2,7 +2,10 @@ package scanning
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -20,53 +23,50 @@ func setupTestDB(t *testing.T) *db.DB {
 		t.Skip("Skipping database integration test in short mode")
 	}
 
-	// Try to get a test database connection
-	configs := getTestDatabaseConfigs()
+	cfg := getTestDatabaseConfig()
 
-	var database *db.DB
-	var lastErr error
-
-	for _, cfg := range configs {
-		var err error
-		database, err = db.ConnectAndMigrate(context.Background(), &cfg)
-		if err == nil {
-			return database
-		}
-		lastErr = err
+	database, err := db.ConnectAndMigrate(context.Background(), &cfg)
+	if err != nil {
+		t.Skipf("Could not connect to test database (%s:%d/%s): %v",
+			cfg.Host, cfg.Port, cfg.Database, err)
+		return nil
 	}
-
-	t.Skipf("Could not connect to test database: %v", lastErr)
-	return nil
+	return database
 }
 
-// getTestDatabaseConfigs returns potential database configurations for testing.
-func getTestDatabaseConfigs() []db.Config {
-	return []db.Config{
-		{
-			Host:            "localhost",
-			Port:            5432,
-			Database:        "scanorama_test",
-			Username:        "test_user",
-			Password:        "test_password",
-			SSLMode:         "disable",
-			MaxOpenConns:    2,
-			MaxIdleConns:    2,
-			ConnMaxLifetime: time.Minute,
-			ConnMaxIdleTime: time.Minute,
-		},
-		{
-			Host:            "localhost",
-			Port:            5432,
-			Database:        "scanorama_dev",
-			Username:        "scanorama_dev",
-			Password:        "dev_password",
-			SSLMode:         "disable",
-			MaxOpenConns:    2,
-			MaxIdleConns:    2,
-			ConnMaxLifetime: time.Minute,
-			ConnMaxIdleTime: time.Minute,
-		},
+// getTestDatabaseConfig returns the database configuration for testing,
+// read from TEST_DB_* environment variables (defaulting to the dedicated
+// test database on port 5433, which is kept separate from the dev DB).
+func getTestDatabaseConfig() db.Config {
+	return db.Config{
+		Host:            getEnvOrDefault("TEST_DB_HOST", "localhost"),
+		Port:            getEnvIntOrDefault("TEST_DB_PORT", 5433),
+		Database:        getEnvOrDefault("TEST_DB_NAME", "scanorama_test"),
+		Username:        getEnvOrDefault("TEST_DB_USER", "test_user"),
+		Password:        getEnvOrDefault("TEST_DB_PASSWORD", "test_password"),
+		SSLMode:         "disable",
+		MaxOpenConns:    2,
+		MaxIdleConns:    2,
+		ConnMaxLifetime: time.Minute,
+		ConnMaxIdleTime: time.Minute,
 	}
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if val, ok := os.LookupEnv(key); ok && val != "" {
+		return val
+	}
+	return defaultValue
+}
+
+func getEnvIntOrDefault(key string, defaultValue int) int {
+	if val, ok := os.LookupEnv(key); ok && val != "" {
+		if n, err := strconv.Atoi(val); err == nil {
+			return n
+		}
+		fmt.Printf("warning: could not parse %s=%q as int, using default %d\n", key, val, defaultValue)
+	}
+	return defaultValue
 }
 
 // TestStoreScanResults_SuccessfulStorage tests that scan results are correctly persisted.

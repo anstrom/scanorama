@@ -28,10 +28,10 @@ func setupBenchmarkSuite(b *testing.B) *BenchmarkSuite {
 	// Set up test database
 	cfg := db.Config{
 		Host:            getEnvOrDefault("TEST_DB_HOST", "localhost"),
-		Port:            getEnvIntOrDefault("TEST_DB_PORT", 5432),
-		Database:        getEnvOrDefault("TEST_DB_NAME", "scanorama_dev"),
-		Username:        getEnvOrDefault("TEST_DB_USER", "scanorama_dev"),
-		Password:        getEnvOrDefault("TEST_DB_PASSWORD", "dev_password"),
+		Port:            getEnvIntOrDefault("TEST_DB_PORT", 5433),
+		Database:        getEnvOrDefault("TEST_DB_NAME", "scanorama_test"),
+		Username:        getEnvOrDefault("TEST_DB_USER", "test_user"),
+		Password:        getEnvOrDefault("TEST_DB_PASSWORD", "test_password"),
 		SSLMode:         "disable",
 		MaxOpenConns:    25,
 		MaxIdleConns:    10,
