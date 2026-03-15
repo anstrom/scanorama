@@ -802,8 +802,10 @@ func TestDiscoveryHandler_DiscoveryToResponse_Running(t *testing.T) {
 	logger := createTestLogger()
 	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
-	_, ipnet, _ := net.ParseCIDR("10.0.0.0/8")
-	startedAt := time.Now().Add(-1 * time.Minute)
+	// Use a small /24 network started 30 seconds ago so the expected duration
+	// is deterministic and the progress estimate is clearly > 0 and < 99.
+	_, ipnet, _ := net.ParseCIDR("192.168.1.0/24")
+	startedAt := time.Now().Add(-30 * time.Second)
 
 	job := &db.DiscoveryJob{
 		ID:              uuid.New(),
@@ -818,10 +820,55 @@ func TestDiscoveryHandler_DiscoveryToResponse_Running(t *testing.T) {
 	response := handler.discoveryToResponse(job)
 
 	assert.Equal(t, "running", response.Status)
-	assert.Equal(t, 50.0, response.Progress)
+	// Progress must be a time-based estimate: strictly between 0 and the 99%
+	// running cap, and must advance as time passes (not hardcoded).
+	assert.Greater(t, response.Progress, 0.0, "progress should be > 0 after 30s")
+	assert.Less(t, response.Progress, 99.0, "progress should be capped below 99 while running")
 	assert.Equal(t, 5, response.HostsFound)
 	assert.True(t, response.Enabled)
 	assert.Equal(t, &startedAt, response.LastRun)
+}
+
+func TestDiscoveryHandler_DiscoveryToResponse_Running_ProgressAdvances(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
+
+	_, ipnet, _ := net.ParseCIDR("192.168.1.0/24")
+
+	// A job started 10s ago should have lower progress than one started 60s ago.
+	startedRecently := time.Now().Add(-10 * time.Second)
+	startedLongerAgo := time.Now().Add(-60 * time.Second)
+
+	jobRecent := &db.DiscoveryJob{
+		Network: db.NetworkAddr{IPNet: *ipnet}, Status: "running", StartedAt: &startedRecently,
+	}
+	jobLonger := &db.DiscoveryJob{
+		Network: db.NetworkAddr{IPNet: *ipnet}, Status: "running", StartedAt: &startedLongerAgo,
+	}
+
+	progressRecent := handler.discoveryToResponse(jobRecent).Progress
+	progressLonger := handler.discoveryToResponse(jobLonger).Progress
+
+	assert.Greater(t, progressLonger, progressRecent,
+		"a job running longer should report higher progress")
+}
+
+func TestDiscoveryHandler_DiscoveryToResponse_Running_NilStartedAt(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
+
+	_, ipnet, _ := net.ParseCIDR("192.168.1.0/24")
+
+	job := &db.DiscoveryJob{
+		Network:   db.NetworkAddr{IPNet: *ipnet},
+		Status:    "running",
+		StartedAt: nil, // edge case: status flipped before started_at was written
+	}
+
+	response := handler.discoveryToResponse(job)
+
+	assert.Equal(t, "running", response.Status)
+	assert.Equal(t, 0.0, response.Progress, "nil started_at should yield 0% progress")
 }
 
 func TestDiscoveryHandler_DiscoveryToResponse_Pending(t *testing.T) {
