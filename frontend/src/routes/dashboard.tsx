@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { useHealth, useVersion } from "../api/hooks/use-system";
+import { useVersion } from "../api/hooks/use-system";
 import { useNetworkStats } from "../api/hooks/use-networks";
 import { useRecentScans } from "../api/hooks/use-scans";
 import { useActiveHostCount } from "../api/hooks/use-hosts";
-import { StatusBadge } from "../components/status-badge";
 import { StatCard } from "../components/stat-card";
+import { SystemInfoCard } from "../components/system-info-card";
 import { RecentScansTable } from "../components/recent-scans-table";
 import { ScanDetailPanel } from "./scans";
 import { Network, Server, MonitorCheck, ShieldOff } from "lucide-react";
@@ -13,8 +13,7 @@ import type { components } from "../api/types";
 type ScanResponse = components["schemas"]["docs.ScanResponse"];
 
 export function DashboardPage() {
-  const { data: health, isLoading: healthLoading } = useHealth();
-  const { data: version } = useVersion();
+  const { data: version, isLoading: versionLoading } = useVersion();
   const { data: stats, isLoading: statsLoading } = useNetworkStats();
   const { data: recentScans, isLoading: scansLoading } = useRecentScans();
   const { data: activeHostCount, isLoading: activeHostsLoading } =
@@ -26,20 +25,8 @@ export function DashboardPage() {
     <>
       {/* System status */}
       <div className="mb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <h2 className="text-lg font-medium text-text-primary">System</h2>
-          {healthLoading ? (
-            <span className="text-xs text-text-muted">Checking...</span>
-          ) : health ? (
-            <StatusBadge status={health.status ?? "unknown"} />
-          ) : (
-            <StatusBadge status="error" />
-          )}
-          {version && (
-            <span className="text-xs font-mono text-text-muted">
-              {version.version}
-            </span>
-          )}
+        <div className="mb-3">
+          <SystemInfoCard version={version} loading={versionLoading} />
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

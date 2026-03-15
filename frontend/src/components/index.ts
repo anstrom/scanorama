@@ -1,4 +1,5 @@
 export { Button } from "./button";
+export { SystemInfoCard } from "./system-info-card";
 export { StatusBadge } from "./status-badge";
 export { StatCard } from "./stat-card";
 export { PlaceholderPage } from "./placeholder-page";

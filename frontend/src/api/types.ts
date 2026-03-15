@@ -1135,6 +1135,10 @@ export interface components {
       timestamp?: string;
       /** @example 0.7.0 */
       version?: string;
+      /** @example abc1234 */
+      commit?: string;
+      /** @example 2024-01-01T00:00:00Z */
+      build_time?: string;
     };
   };
   responses: never;

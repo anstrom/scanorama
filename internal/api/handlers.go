@@ -9,6 +9,24 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// Build information - set via SetBuildInfo, which should be called during server startup.
+var (
+	buildVersion   = "dev"
+	buildCommit    = "none"
+	buildTimestamp = "unknown"
+)
+
+// SetBuildInfo sets the build information for use in status and version handlers.
+func SetBuildInfo(version, commit, buildTime string) {
+	buildVersion = version
+	buildCommit = commit
+	buildTimestamp = buildTime
+}
+
+func getVersion() string {
+	return buildVersion
+}
+
 // System handler constants.
 const (
 	healthCheckTimeout = 5 * time.Second
@@ -90,8 +108,8 @@ func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"service":   "scanorama-api",
 		"timestamp": time.Now().UTC(),
-		"uptime":    time.Since(time.Now()).String(), // Placeholder
-		"version":   "0.2.0",
+		"uptime":    time.Since(s.startTime).String(),
+		"version":   getVersion(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -108,9 +126,11 @@ func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
 // @Router /version [get]
 func (s *Server) versionHandler(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
-		"version":   "0.2.0",
-		"timestamp": time.Now().UTC(),
-		"service":   "scanorama",
+		"version":    getVersion(),
+		"commit":     buildCommit,
+		"build_time": buildTimestamp,
+		"timestamp":  time.Now().UTC(),
+		"service":    "scanorama",
 	}
 
 	s.WriteJSON(w, r, http.StatusOK, response)
