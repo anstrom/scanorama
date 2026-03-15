@@ -247,6 +247,33 @@ func TestHostHandler_GetHostFilters(t *testing.T) {
 				Network:  "10.0.0.0/8",
 			},
 		},
+		{
+			name:        "search filter",
+			queryParams: "?search=myhost",
+			expectedFilter: db.HostFilters{
+				Search: "myhost",
+			},
+		},
+		{
+			name:        "sort_by and sort_order",
+			queryParams: "?sort_by=hostname&sort_order=asc",
+			expectedFilter: db.HostFilters{
+				SortBy:    "hostname",
+				SortOrder: "asc",
+			},
+		},
+		{
+			name:        "all filters combined",
+			queryParams: "?status=up&os=linux&network=10.0.0.0/8&search=web&sort_by=last_seen&sort_order=desc",
+			expectedFilter: db.HostFilters{
+				Status:    "up",
+				OSFamily:  "linux",
+				Network:   "10.0.0.0/8",
+				Search:    "web",
+				SortBy:    "last_seen",
+				SortOrder: "desc",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -257,6 +284,9 @@ func TestHostHandler_GetHostFilters(t *testing.T) {
 			assert.Equal(t, tt.expectedFilter.Status, filters.Status)
 			assert.Equal(t, tt.expectedFilter.OSFamily, filters.OSFamily)
 			assert.Equal(t, tt.expectedFilter.Network, filters.Network)
+			assert.Equal(t, tt.expectedFilter.Search, filters.Search)
+			assert.Equal(t, tt.expectedFilter.SortBy, filters.SortBy)
+			assert.Equal(t, tt.expectedFilter.SortOrder, filters.SortOrder)
 		})
 	}
 }

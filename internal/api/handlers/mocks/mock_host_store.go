@@ -199,7 +199,7 @@ func (c *MockHostStoreGetHostScansCall) DoAndReturn(f func(context.Context, uuid
 }
 
 // ListHosts mocks base method.
-func (m *MockHostStore) ListHosts(ctx context.Context, filters db.HostFilters, offset, limit int) ([]*db.Host, int64, error) {
+func (m *MockHostStore) ListHosts(ctx context.Context, filters *db.HostFilters, offset, limit int) ([]*db.Host, int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListHosts", ctx, filters, offset, limit)
 	ret0, _ := ret[0].([]*db.Host)
@@ -227,13 +227,13 @@ func (c *MockHostStoreListHostsCall) Return(arg0 []*db.Host, arg1 int64, arg2 er
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockHostStoreListHostsCall) Do(f func(context.Context, db.HostFilters, int, int) ([]*db.Host, int64, error)) *MockHostStoreListHostsCall {
+func (c *MockHostStoreListHostsCall) Do(f func(context.Context, *db.HostFilters, int, int) ([]*db.Host, int64, error)) *MockHostStoreListHostsCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockHostStoreListHostsCall) DoAndReturn(f func(context.Context, db.HostFilters, int, int) ([]*db.Host, int64, error)) *MockHostStoreListHostsCall {
+func (c *MockHostStoreListHostsCall) DoAndReturn(f func(context.Context, *db.HostFilters, int, int) ([]*db.Host, int64, error)) *MockHostStoreListHostsCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

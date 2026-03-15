@@ -119,7 +119,7 @@ func (nilDiscoveryStore) StopDiscoveryJob(_ context.Context, _ uuid.UUID) error 
 // nilHostStore is a HostStore that panics if any method is called.
 type nilHostStore struct{}
 
-func (nilHostStore) ListHosts(_ context.Context, _ db.HostFilters, _, _ int) ([]*db.Host, int64, error) {
+func (nilHostStore) ListHosts(_ context.Context, _ *db.HostFilters, _, _ int) ([]*db.Host, int64, error) {
 	panic("nilHostStore: ListHosts called unexpectedly")
 }
 func (nilHostStore) CreateHost(_ context.Context, _ interface{}) (*db.Host, error) {
