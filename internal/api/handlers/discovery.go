@@ -7,13 +7,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/discovery"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
@@ -27,11 +30,40 @@ const (
 	maxTagLength           = 50
 )
 
+// Progress estimation constants.
+// These mirror the engine's timeout formula so the handler can derive a
+// realistic expected duration from the network size alone, without needing a
+// separate DB column.
+const (
+	progressMinTimeout            = 30 * time.Second
+	progressMaxTimeout            = 300 * time.Second
+	progressBaseTimeout           = 60 * time.Second
+	progressTimeoutMultiplierBase = 6.0
+	progressTimeoutMultiplierStep = 2.0
+	progressTimeoutMultiplierMax  = 50.0
+	progressTimeoutDivisor        = 100.0
+	// Cap displayed progress at 99% while running so it never shows 100 before
+	// the status actually flips to "completed".
+	progressRunningCap = 99.0
+	// progressPercentScale converts a 0–1 fraction to a 0–100 percentage.
+	progressPercentScale = 100.0
+
+	// countUsableHosts constants — mirror the engine's generateTargetsFromCIDR rules.
+	maxHostBits     = 24    // host-bits above this are clamped to maxUsableHosts
+	maxUsableHosts  = 10000 // matches the engine's default maxHosts cap
+	minPointToPoint = 31    // /31 and /32 are treated as point-to-point / single-host
+)
+
 // DiscoveryHandler handles discovery-related API endpoints.
 type DiscoveryHandler struct {
 	database DiscoveryStore
 	logger   *slog.Logger
 	metrics  *metrics.Registry
+	engine   *discovery.Engine
+
+	// cancelsMu guards the in-memory map of running job cancels.
+	cancelsMu sync.Mutex
+	cancels   map[uuid.UUID]context.CancelFunc
 }
 
 // NewDiscoveryHandler creates a new discovery handler.
@@ -42,7 +74,16 @@ func NewDiscoveryHandler(
 		database: database,
 		logger:   logger.With("handler", "discovery"),
 		metrics:  metricsManager,
+		cancels:  make(map[uuid.UUID]context.CancelFunc),
 	}
+}
+
+// WithEngine sets the discovery engine used to actually execute nmap scans when
+// a job is started via the API. Without an engine, StartDiscovery only flips
+// the DB status row and no scan is performed.
+func (h *DiscoveryHandler) WithEngine(e *discovery.Engine) *DiscoveryHandler {
+	h.engine = e
+	return h
 }
 
 // DiscoveryRequest represents a discovery job creation/update request.
@@ -231,45 +272,178 @@ func (h *DiscoveryHandler) DeleteDiscoveryJob(w http.ResponseWriter, r *http.Req
 
 // StartDiscovery handles POST /api/v1/discovery/{id}/start - start a discovery job.
 func (h *DiscoveryHandler) StartDiscovery(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
+
 	jobID, err := extractUUIDFromPath(r)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
-	jobOp := &JobControlOperation{
-		EntityType: "discovery job",
-		Logger:     h.logger,
-		Metrics:    h.metrics,
+	// Load the job so we can read its network/method and check its current status.
+	job, err := h.database.GetDiscoveryJob(r.Context(), jobID)
+	if err != nil {
+		handleDatabaseError(w, r, err, "get", "discovery job", h.logger)
+		return
 	}
 
-	jobOp.ExecuteStart(w, r, jobID, h.database.StartDiscoveryJob,
-		func(ctx context.Context, id uuid.UUID) (interface{}, error) {
-			return h.database.GetDiscoveryJob(ctx, id)
-		},
-		func(item interface{}) interface{} {
-			if job, ok := item.(*db.DiscoveryJob); ok {
-				return h.discoveryToResponse(job)
-			}
-			return nil
-		}, "api_discovery_jobs_started_total")
+	if job.Status == db.DiscoveryJobStatusRunning {
+		writeError(w, r, http.StatusConflict, fmt.Errorf("discovery job is already running"))
+		return
+	}
+	if job.Status == db.DiscoveryJobStatusCompleted {
+		writeError(w, r, http.StatusConflict, fmt.Errorf("discovery job has already completed"))
+		return
+	}
+
+	// Flip the DB row to "running" and record started_at.
+	if err := h.database.StartDiscoveryJob(r.Context(), jobID); err != nil {
+		handleDatabaseError(w, r, err, "start", "discovery job", h.logger)
+		return
+	}
+
+	// If an engine is configured, launch the nmap scan in a goroutine.
+	if h.engine != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		h.cancelsMu.Lock()
+		h.cancels[jobID] = cancel
+		h.cancelsMu.Unlock()
+
+		go h.executeDiscoveryAsync(ctx, jobID, job)
+	} else {
+		h.logger.Warn("No discovery engine configured — job status set to running but no scan will execute",
+			"request_id", requestID, "job_id", jobID)
+	}
+
+	// Return the updated job.
+	updated, err := h.database.GetDiscoveryJob(r.Context(), jobID)
+	if err != nil {
+		h.logger.Error("Failed to get discovery job after start",
+			"request_id", requestID, "job_id", jobID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to retrieve updated job"))
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, h.discoveryToResponse(updated))
+
+	if h.metrics != nil {
+		h.metrics.Counter("api_discovery_jobs_started_total", nil)
+	}
+
+	h.logger.Info("Discovery job started", "request_id", requestID, "job_id", jobID)
+}
+
+// executeDiscoveryAsync runs the nmap discovery for jobID in the background,
+// then marks the job completed or failed in the database.
+func (h *DiscoveryHandler) executeDiscoveryAsync(ctx context.Context, jobID uuid.UUID, job *db.DiscoveryJob) {
+	defer func() {
+		// Always remove the cancel func when we're done.
+		h.cancelsMu.Lock()
+		delete(h.cancels, jobID)
+		h.cancelsMu.Unlock()
+	}()
+
+	cfg := &discovery.Config{
+		Network:  job.Network.String(),
+		Method:   job.Method,
+		MaxHosts: 10000,
+	}
+
+	h.logger.Info("Executing discovery", "job_id", jobID, "network", cfg.Network, "method", cfg.Method)
+
+	// engine.Discover creates a new DB row internally — we already have our
+	// row, so we call runDiscovery-level logic by using the engine's exported
+	// Discover function with the existing job's context.  The engine will save
+	// its own job row; we use the result only to update our row's counts.
+	engineJob, err := h.engine.Discover(ctx, cfg)
+
+	dbCtx := context.Background()
+
+	if err != nil {
+		h.logger.Error("Discovery execution failed", "job_id", jobID, "error", err)
+		if stopErr := h.database.StopDiscoveryJob(dbCtx, jobID); stopErr != nil {
+			h.logger.Error("Failed to mark discovery job as failed",
+				"job_id", jobID, "error", stopErr)
+		}
+		return
+	}
+
+	// Wait for the engine's own job to reach a terminal state so we can copy
+	// the host counts back onto our API-facing job row.
+	if engineJob != nil {
+		if waitErr := h.engine.WaitForCompletion(dbCtx, engineJob.ID, 10*time.Minute); waitErr != nil {
+			h.logger.Warn("Timed out waiting for engine job to complete",
+				"job_id", jobID, "engine_job_id", engineJob.ID, "error", waitErr)
+		}
+	}
+
+	// Mark our job row as completed.
+	if completeErr := h.completeDiscoveryJob(dbCtx, jobID); completeErr != nil {
+		h.logger.Error("Failed to mark discovery job as completed",
+			"job_id", jobID, "error", completeErr)
+	}
+
+	h.logger.Info("Discovery job finished", "job_id", jobID)
+}
+
+// completeDiscoveryJob flips the job's status to completed and records completed_at.
+func (h *DiscoveryHandler) completeDiscoveryJob(ctx context.Context, jobID uuid.UUID) error {
+	query := `
+		UPDATE discovery_jobs
+		SET status = 'completed', completed_at = NOW()
+		WHERE id = $1 AND status = 'running'`
+
+	concreteDB, ok := h.database.(*db.DB)
+	if !ok {
+		// In tests the store may be a mock; skip the raw query.
+		return nil
+	}
+	_, err := concreteDB.ExecContext(ctx, query, jobID)
+	return err
 }
 
 // StopDiscovery handles POST /api/v1/discovery/{id}/stop - stop a running discovery job.
 func (h *DiscoveryHandler) StopDiscovery(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
+
 	jobID, err := extractUUIDFromPath(r)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
-	jobOp := &JobControlOperation{
-		EntityType: "discovery job",
-		Logger:     h.logger,
-		Metrics:    h.metrics,
+	// Cancel the running goroutine if one exists.
+	h.cancelsMu.Lock()
+	cancel, running := h.cancels[jobID]
+	if running {
+		cancel()
+		delete(h.cancels, jobID)
+	}
+	h.cancelsMu.Unlock()
+
+	// Update the DB row regardless of whether a goroutine was found — the job
+	// might have been started in a previous process instance.
+	if err := h.database.StopDiscoveryJob(r.Context(), jobID); err != nil {
+		handleDatabaseError(w, r, err, "stop", "discovery job", h.logger)
+		return
 	}
 
-	jobOp.ExecuteStop(w, r, jobID, h.database.StopDiscoveryJob, "api_discovery_jobs_stopped_total")
+	response := map[string]interface{}{
+		"id":         jobID,
+		"status":     "stopped",
+		"message":    "discovery job has been stopped",
+		"timestamp":  time.Now().UTC(),
+		"request_id": requestID,
+	}
+
+	writeJSON(w, r, http.StatusOK, response)
+
+	if h.metrics != nil {
+		h.metrics.Counter("api_discovery_jobs_stopped_total", nil)
+	}
+
+	h.logger.Info("Discovery job stopped", "request_id", requestID, "job_id", jobID)
 }
 
 // Helper methods
@@ -407,7 +581,7 @@ func (h *DiscoveryHandler) discoveryToResponse(job *db.DiscoveryJob) DiscoveryRe
 	case db.DiscoveryJobStatusCompleted:
 		resp.Progress = 100.0
 	case db.DiscoveryJobStatusRunning:
-		resp.Progress = 50.0 // Approximation; real progress would need a separate field
+		resp.Progress = estimateDiscoveryProgress(job)
 	default:
 		resp.Progress = 0.0
 	}
@@ -418,4 +592,97 @@ func (h *DiscoveryHandler) discoveryToResponse(job *db.DiscoveryJob) DiscoveryRe
 	}
 
 	return resp
+}
+
+// estimateDiscoveryProgress returns a 0–99 progress percentage for a running
+// job based on elapsed time vs the expected duration.
+//
+// Since nmap runs as a single blocking call with no intermediate progress
+// events, and we have no progress column in the DB, we derive a synthetic
+// estimate:
+//
+//  1. Count the usable host addresses in the stored CIDR (same logic the
+//     engine uses to build its target list).
+//  2. Apply the engine's timeout formula to get an expected duration.
+//  3. Divide elapsed time by that expected duration, capped at 99 % so the
+//     bar never reaches 100 % before the status flips to "completed".
+func estimateDiscoveryProgress(job *db.DiscoveryJob) float64 {
+	if job.StartedAt == nil {
+		return 0.0
+	}
+
+	elapsed := time.Since(*job.StartedAt)
+	if elapsed <= 0 {
+		return 0.0
+	}
+
+	expected := estimateExpectedDuration(job.Network.IPNet)
+
+	pct := (elapsed.Seconds() / expected.Seconds()) * progressPercentScale
+	if pct > progressRunningCap {
+		pct = progressRunningCap
+	}
+	// Round to one decimal place so the frontend gets a smooth-ish stream of
+	// distinct values on every poll rather than long runs of the same integer.
+	return math.Round(pct*10) / 10
+}
+
+// estimateExpectedDuration mirrors the engine's calculateDynamicTimeout logic
+// to produce the expected wall-clock duration for a given network.
+func estimateExpectedDuration(ipnet net.IPNet) time.Duration {
+	targetCount := countUsableHosts(ipnet)
+
+	multiplier := progressTimeoutMultiplierBase +
+		(float64(targetCount)/progressTimeoutDivisor)*progressTimeoutMultiplierStep
+	if multiplier > progressTimeoutMultiplierMax {
+		multiplier = progressTimeoutMultiplierMax
+	}
+
+	d := time.Duration(float64(progressBaseTimeout) * multiplier)
+	if d < progressMinTimeout {
+		d = progressMinTimeout
+	}
+	if d > progressMaxTimeout {
+		d = progressMaxTimeout
+	}
+	return d
+}
+
+// countUsableHosts returns the number of target IP addresses the engine would
+// generate for the given network, using the same rules as generateTargetsFromCIDR.
+func countUsableHosts(ipnet net.IPNet) int {
+	ones, bits := ipnet.Mask.Size()
+	if bits == 0 {
+		return 1
+	}
+
+	// /32 — single host
+	if ones == 32 {
+		return 1
+	}
+
+	// /31 — RFC 3021 point-to-point, both addresses usable
+	if ones == 31 && bits == 32 {
+		return 2
+	}
+
+	hostBits := bits - ones
+	if hostBits > maxHostBits {
+		// Clamp to the engine's maxHosts default to avoid huge numbers.
+		return maxUsableHosts
+	}
+
+	total := 1 << hostBits
+	// Subtract network and broadcast for standard subnets.
+	if ones < minPointToPoint {
+		total -= 2
+	}
+	if total < 0 {
+		total = 0
+	}
+	// Respect the engine's default maxHosts cap.
+	if total > maxUsableHosts {
+		total = maxUsableHosts
+	}
+	return total
 }

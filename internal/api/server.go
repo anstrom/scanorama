@@ -16,6 +16,7 @@ import (
 
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/discovery"
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
@@ -28,14 +29,15 @@ const (
 
 // Server represents the API server.
 type Server struct {
-	httpServer *http.Server
-	router     *mux.Router
-	config     *config.Config
-	database   *db.DB
-	logger     *slog.Logger
-	metrics    *metrics.Registry
-	prom       *metrics.PrometheusMetrics
-	startTime  time.Time
+	httpServer      *http.Server
+	router          *mux.Router
+	config          *config.Config
+	database        *db.DB
+	discoveryEngine *discovery.Engine
+	logger          *slog.Logger
+	metrics         *metrics.Registry
+	prom            *metrics.PrometheusMetrics
+	startTime       time.Time
 
 	// State management
 	mu      sync.RWMutex
@@ -97,14 +99,18 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 	// Get API config from main config
 	apiConfig := getAPIConfigFromConfig(cfg)
 
+	// Create the discovery engine so API-triggered jobs actually run nmap.
+	discoveryEngine := discovery.NewEngine(database)
+
 	server := &Server{
-		router:    router,
-		config:    cfg,
-		database:  database,
-		logger:    logger,
-		metrics:   metricsManager,
-		prom:      promMetrics,
-		startTime: time.Now(),
+		router:          router,
+		config:          cfg,
+		database:        database,
+		discoveryEngine: discoveryEngine,
+		logger:          logger,
+		metrics:         metricsManager,
+		prom:            promMetrics,
+		startTime:       time.Now(),
 	}
 
 	// Setup routes
