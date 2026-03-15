@@ -97,7 +97,10 @@ type AdminStatusResponse struct {
 // ScanResponse represents a scan object
 type ScanResponse struct {
 	ID              string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Name            string     `json:"name" example:"Ad-hoc scan: 192.168.1.0/24"`
 	ProfileID       string     `json:"profile_id" example:"550e8400-e29b-41d4-a716-446655440001"`
+	ScanType        string     `json:"scan_type" example:"connect" enums:"connect,syn,ack,udp,aggressive,comprehensive"`
+	Ports           string     `json:"ports,omitempty" example:"22,80,443"`
 	Targets         []string   `json:"targets" example:"192.168.1.0/24"`
 	Status          string     `json:"status" example:"running" enums:"pending,running,completed,failed,cancelled"`
 	Progress        float64    `json:"progress" example:"65.5"`
@@ -117,6 +120,7 @@ type CreateScanRequest struct {
 	Name        *string                `json:"name,omitempty" example:"Weekly security scan"`
 	Description *string                `json:"description,omitempty" example:"Regular security assessment"`
 	ScanOptions map[string]interface{} `json:"scan_options,omitempty"`
+	OSDetection bool                   `json:"os_detection,omitempty" example:"false"`
 }
 
 // HostResponse represents a discovered host
@@ -319,12 +323,13 @@ type UpdateScanRequest struct {
 	Name        string            `json:"name" example:"Updated scan name"`
 	Description string            `json:"description,omitempty" example:"Updated description"`
 	Targets     []string          `json:"targets" example:"192.168.1.0/24"`
-	ScanType    string            `json:"scan_type" example:"connect" enums:"connect,syn,ack,aggressive,comprehensive"`
+	ScanType    string            `json:"scan_type" example:"connect" enums:"connect,syn,ack,udp,aggressive,comprehensive"`
 	Ports       string            `json:"ports,omitempty" example:"22,80,443"`
 	ProfileID   *int64            `json:"profile_id,omitempty"`
 	Options     map[string]string `json:"options,omitempty"`
 	ScheduleID  *int64            `json:"schedule_id,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
+	OSDetection bool              `json:"os_detection,omitempty" example:"false"`
 }
 
 // Health godoc

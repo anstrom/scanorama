@@ -3732,6 +3732,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
                 },
+                "name": {
+                    "type": "string",
+                    "example": "Ad-hoc scan: 192.168.1.0/24"
+                },
+                "ports": {
+                    "type": "string",
+                    "example": "22,80,443"
+                },
                 "ports_scanned": {
                     "type": "integer",
                     "example": 2500
@@ -3743,6 +3751,18 @@ const docTemplate = `{
                 "progress": {
                     "type": "number",
                     "example": 65.5
+                },
+                "scan_type": {
+                    "type": "string",
+                    "enum": [
+                        "connect",
+                        "syn",
+                        "version",
+                        "aggressive",
+                        "stealth",
+                        "comprehensive"
+                    ],
+                    "example": "connect"
                 },
                 "started_at": {
                     "type": "string"

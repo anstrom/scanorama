@@ -428,6 +428,12 @@ definitions:
       id:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
+      name:
+        example: 'Ad-hoc scan: 192.168.1.0/24'
+        type: string
+      ports:
+        example: 22,80,443
+        type: string
       ports_scanned:
         example: 2500
         type: integer
@@ -437,6 +443,16 @@ definitions:
       progress:
         example: 65.5
         type: number
+      scan_type:
+        enum:
+        - connect
+        - syn
+        - version
+        - aggressive
+        - stealth
+        - comprehensive
+        example: connect
+        type: string
       started_at:
         type: string
       status:
