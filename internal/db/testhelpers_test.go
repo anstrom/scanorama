@@ -22,7 +22,7 @@ func getTestConfigs() []Config {
 	isCI := os.Getenv("GITHUB_ACTIONS") == trueString
 	isDebug := os.Getenv("DB_DEBUG") == trueString
 
-	const defaultPort = 5432
+	const defaultPort = 5433
 
 	configs := []Config{
 		{

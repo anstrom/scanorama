@@ -40,11 +40,11 @@ type TestDatabase struct {
 func NewTestDatabase(t *testing.T) *TestDatabase {
 	t.Helper()
 
-	host := getEnvOrDefault("POSTGRES_HOST", "localhost")
-	port := getEnvOrDefault("POSTGRES_PORT", "5432")
-	dbname := getEnvOrDefault("POSTGRES_DB", "scanorama_test")
-	user := getEnvOrDefault("POSTGRES_USER", "scanorama")
-	password := getEnvOrDefault("POSTGRES_PASSWORD", "scanorama123")
+	host := getEnvOrDefault("TEST_DB_HOST", "localhost")
+	port := getEnvOrDefault("TEST_DB_PORT", "5433")
+	dbname := getEnvOrDefault("TEST_DB_NAME", "scanorama_test")
+	user := getEnvOrDefault("TEST_DB_USER", "test_user")
+	password := getEnvOrDefault("TEST_DB_PASSWORD", "test_password")
 	sslmode := getEnvOrDefault("POSTGRES_SSLMODE", "disable")
 
 	dsn := fmt.Sprintf("host=%s port=%s dbname=%s user=%s password=%s sslmode=%s",

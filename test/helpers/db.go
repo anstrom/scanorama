@@ -16,7 +16,7 @@ import (
 
 // Constants for database testing.
 const (
-	defaultPostgreSQLPort = 5432
+	defaultPostgreSQLPort = 5433
 	dbConnectionTimeout   = 5 * time.Second
 	minRequiredTables     = 3
 	retryDelay            = 500 * time.Millisecond
@@ -295,10 +295,10 @@ func GetDatabaseStatus() string {
 		configs := GetTestDatabaseConfigs()
 		for _, config := range configs {
 			if IsDatabaseAvailable(&config) {
-				return fmt.Sprintf("✅ %s database available on localhost:5432", config.Database)
+				return fmt.Sprintf("✅ %s database available on localhost:%d", config.Database, config.Port)
 			}
 		}
-		return "⚠️ PostgreSQL running but no test databases accessible"
+		return fmt.Sprintf("⚠️ PostgreSQL running but no test databases accessible on port %d", defaultPostgreSQLPort)
 	}
-	return "❌ No PostgreSQL found on localhost:5432"
+	return fmt.Sprintf("❌ No PostgreSQL found on localhost:%d", defaultPostgreSQLPort)
 }
