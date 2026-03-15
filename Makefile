@@ -6,7 +6,8 @@
 BINARY_NAME  ?= scanorama
 BUILD_DIR    := build
 COVERAGE_FILE := coverage.out
-PID_FILE     := .backend.pid
+PID_FILE         := .backend.pid
+FRONTEND_PID_FILE := .frontend.pid
 
 # Version from git
 GIT_VERSION := $(shell git describe --tags --always 2>/dev/null)
@@ -48,7 +49,8 @@ export TEST_DB_PASSWORD := test_password
 help: ## Show this help
 	@printf '\n\033[1mScanorama\033[0m — $(VERSION)\n\n'
 	@printf '\033[1mQuick start:\033[0m\n'
-	@printf '  make run           Start backend + frontend (localhost:5173)\n'
+	@printf '  make dev           Ensure DB is up; rebuild + restart backend + frontend in the background\n'
+	@printf '  make stop          Stop background backend and frontend\n'
 	@printf '  make test          Run all tests\n'
 	@printf '  make build         Build the binary\n'
 	@printf '\n'
@@ -75,64 +77,69 @@ clean: ## Remove build artifacts and coverage files
 
 # ─── Run ─────────────────────────────────────────────────────────────────────
 
-.PHONY: run
-run: build dev-db-up dev-config frontend-deps ## Start backend + frontend dev server
-	@echo ""
-	@echo "Starting scanorama..."
-	@echo "  Backend:  http://$(HOST):$(PORT)/api/v1/health"
-	@echo "  Frontend: http://localhost:5173"
-	@echo "Press Ctrl-C to stop."
-	@echo ""
-	@cd frontend && npx vite --clearScreen false &
-	@$(BUILD_DIR)/$(BINARY_NAME) api \
-		--config $(DEV_CONFIG) \
-		--host $(HOST) \
-		--port $(PORT) \
-		--verbose
+.PHONY: stop
+stop: ## Stop background backend and frontend (started by 'make dev')
+	@if [ -f $(PID_FILE) ]; then \
+		PID=$$(cat $(PID_FILE)); \
+		if kill -0 "$$PID" 2>/dev/null; then \
+			kill "$$PID" && echo "✓ Backend stopped  (pid $$PID)"; \
+		else \
+			echo "  Backend pid $$PID is not running"; \
+		fi; \
+		rm -f $(PID_FILE); \
+	else \
+		echo "  No backend PID file found"; \
+	fi
+	@if [ -f $(FRONTEND_PID_FILE) ]; then \
+		PID=$$(cat $(FRONTEND_PID_FILE)); \
+		if kill -0 "$$PID" 2>/dev/null; then \
+			kill "$$PID" && echo "✓ Frontend stopped (pid $$PID)"; \
+		else \
+			echo "  Frontend pid $$PID is not running"; \
+		fi; \
+		rm -f $(FRONTEND_PID_FILE); \
+	else \
+		echo "  No frontend PID file found"; \
+	fi
 
-.PHONY: run-backend
-run-backend: build dev-db-up dev-config ## Start only the backend API server (restarts if running)
+
+
+.PHONY: dev
+dev: build dev-db-up dev-config frontend-deps ## Ensure DB is up; rebuild + restart backend + frontend in the background
+	@# ── backend ────────────────────────────────────────────────────────────
 	@if [ -f $(PID_FILE) ]; then \
 		PID=$$(cat $(PID_FILE)); \
 		if kill -0 "$$PID" 2>/dev/null; then \
 			kill "$$PID" && echo "↺ Stopped existing backend (pid $$PID)"; \
-			sleep 0.5; \
+			sleep 0.3; \
 		fi; \
 		rm -f $(PID_FILE); \
 	fi
-	@echo ""
-	@echo "Starting scanorama API server on $(HOST):$(PORT)..."
-	@echo "Press Ctrl-C to stop."
-	@echo ""
-	@trap 'rm -f $(PID_FILE)' EXIT; \
-	$(BUILD_DIR)/$(BINARY_NAME) api \
+	@$(BUILD_DIR)/$(BINARY_NAME) api \
 		--config $(DEV_CONFIG) \
 		--host $(HOST) \
 		--port $(PORT) \
-		--verbose & \
-	echo $$! > $(PID_FILE); \
-	wait $$!
-
-.PHONY: frontend
-frontend: frontend-deps ## Start the frontend dev server (needs backend running)
-	@echo "Starting frontend dev server..."
-	@echo "  Open http://localhost:5173"
-	@echo ""
-	@cd frontend && npx vite
-
-.PHONY: stop-backend
-stop-backend: ## Stop a background backend started by run-backend
-	@if [ -f $(PID_FILE) ]; then \
-		PID=$$(cat $(PID_FILE)); \
+		--verbose \
+		> /tmp/scanorama-backend.log 2>&1 & \
+	echo $$! > $(PID_FILE)
+	@echo "✓ Backend  (pid $$(cat $(PID_FILE))) — http://$(HOST):$(PORT)/api/v1/health"
+	@echo "  logs: tail -f /tmp/scanorama-backend.log"
+	@# ── frontend ───────────────────────────────────────────────────────────
+	@if [ -f $(FRONTEND_PID_FILE) ]; then \
+		PID=$$(cat $(FRONTEND_PID_FILE)); \
 		if kill -0 "$$PID" 2>/dev/null; then \
-			kill "$$PID" && echo "✓ Backend stopped (pid $$PID)"; \
-		else \
-			echo "Backend pid $$PID is not running"; \
+			kill "$$PID" && echo "↺ Stopped existing frontend (pid $$PID)"; \
+			sleep 0.3; \
 		fi; \
-		rm -f $(PID_FILE); \
-	else \
-		echo "No PID file found ($(PID_FILE))"; \
+		rm -f $(FRONTEND_PID_FILE); \
 	fi
+	@cd frontend && npx vite --clearScreen false \
+		> /tmp/scanorama-frontend.log 2>&1 & \
+	echo $$! > ../$(FRONTEND_PID_FILE)
+	@echo "✓ Frontend (pid $$(cat $(FRONTEND_PID_FILE))) — http://localhost:5173"
+	@echo "  logs: tail -f /tmp/scanorama-frontend.log"
+
+
 
 .PHONY: frontend-deps
 frontend-deps:
@@ -170,9 +177,7 @@ dev-nuke: ## Stop dev infrastructure and delete all data
 dev-db-shell: ## Open psql shell to dev database
 	@$(DOCKER_COMPOSE) -f $(DEV_COMPOSE) exec postgres psql -U scanorama_dev -d scanorama_dev
 
-.PHONY: dev-logs
-dev-logs: ## Tail dev infrastructure logs
-	@$(DOCKER_COMPOSE) -f $(DEV_COMPOSE) logs -f
+
 
 .PHONY: dev-targets
 dev-targets: ## Start scan test targets (nginx + SSH)
@@ -193,8 +198,7 @@ test-db-down: ## Stop test database
 	@$(DOCKER_COMPOSE) -f $(TEST_COMPOSE) down -v 2>/dev/null || true
 	@echo "✓ Test database stopped"
 
-.PHONY: test-db-reset
-test-db-reset: test-db-down test-db-up ## Reset test database
+
 
 .PHONY: test-db-shell
 test-db-shell: ## Open psql shell to test database
@@ -215,9 +219,7 @@ test: test-db-up ## Run all tests (starts test DB automatically)
 	@echo "✓ All tests passed"
 	@$(MAKE) test-db-down
 
-.PHONY: test-keep-db
-test-keep-db: test-db-up ## Run all tests, keep test DB running after
-	@$(GOTEST) -v ./...
+
 
 .PHONY: coverage
 coverage: test-db-up ## Generate coverage report
@@ -230,10 +232,7 @@ coverage: test-db-up ## Generate coverage report
 	@$(GO) tool cover -func=$(COVERAGE_FILE) | tail -1
 	@echo "✓ Report: $(COVERAGE_FILE).html"
 
-.PHONY: coverage-show
-coverage-show: ## Open coverage report in browser
-	@test -f $(COVERAGE_FILE) || (echo "No coverage file. Run 'make coverage' first." && exit 1)
-	@$(GO) tool cover -html=$(COVERAGE_FILE)
+
 
 # ─── Code Quality ────────────────────────────────────────────────────────────
 
@@ -265,11 +264,7 @@ deps: ## Download and tidy Go dependencies
 	@$(GO) mod tidy
 	@echo "✓ Dependencies ready"
 
-.PHONY: deps-upgrade
-deps-upgrade: ## Upgrade all Go dependencies
-	@$(GO) get -u ./...
-	@$(GO) mod tidy
-	@echo "✓ Dependencies upgraded"
+
 
 # ─── Docs ────────────────────────────────────────────────────────────────────
 
@@ -293,7 +288,4 @@ dev-setup: deps frontend-deps ## Set up dev environment (install tools + deps)
 			| sh -s -- -b $$(go env GOPATH)/bin; \
 	fi
 	@echo ""
-	@echo "✓ Ready. Run 'make run' to start developing."
-
-.PHONY: all
-all: clean deps build test ## Full rebuild from scratch
+	@echo "✓ Ready. Run 'make dev' to start developing."
