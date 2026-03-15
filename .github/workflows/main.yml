@@ -18,10 +18,37 @@ permissions:
   security-events: write
 
 jobs:
+  # Stage 0: Detect which paths changed so downstream jobs can skip if irrelevant
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - '.github/workflows/**'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/**'
+
   # Stage 1: Code Quality & Security (runs in parallel)
   code-quality:
     name: Code Quality
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.backend == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -57,6 +84,8 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.backend == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -87,7 +116,11 @@ jobs:
   frontend-tests:
     name: Frontend Tests
     runs-on: ubuntu-latest
-    needs: [unit-tests]
+    needs: [changes, unit-tests]
+    if: |
+      always() &&
+      needs.changes.outputs.frontend == 'true' &&
+      (needs.unit-tests.result == 'success' || needs.unit-tests.result == 'skipped')
 
     steps:
       - name: Checkout code
@@ -110,7 +143,11 @@ jobs:
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
-    needs: [unit-tests]
+    needs: [changes, unit-tests]
+    if: |
+      always() &&
+      needs.changes.outputs.backend == 'true' &&
+      needs.unit-tests.result == 'success'
 
     services:
       postgres:
@@ -246,8 +283,12 @@ jobs:
   e2e-tests:
     name: End-to-End Tests
     runs-on: ubuntu-latest
-    needs: [unit-tests]
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    needs: [changes, unit-tests]
+    if: |
+      always() &&
+      needs.changes.outputs.backend == 'true' &&
+      needs.unit-tests.result == 'success' &&
+      (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main'))
 
     services:
       postgres:
