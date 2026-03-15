@@ -61,7 +61,7 @@ type DiscoveryStore interface {
 //
 //go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_host_store.go -package mocks github.com/anstrom/scanorama/internal/api/handlers HostStore
 type HostStore interface {
-	ListHosts(ctx context.Context, filters db.HostFilters, offset, limit int) ([]*db.Host, int64, error)
+	ListHosts(ctx context.Context, filters *db.HostFilters, offset, limit int) ([]*db.Host, int64, error)
 	CreateHost(ctx context.Context, hostData interface{}) (*db.Host, error)
 	GetHost(ctx context.Context, id uuid.UUID) (*db.Host, error)
 	UpdateHost(ctx context.Context, id uuid.UUID, hostData interface{}) (*db.Host, error)

@@ -110,13 +110,26 @@ func (r *HostRepository) GetActiveHosts(ctx context.Context) ([]*ActiveHost, err
 
 // HostFilters represents filters for listing hosts.
 type HostFilters struct {
-	Status   string
-	OSFamily string
-	Network  string
+	Status    string
+	OSFamily  string
+	Network   string
+	Search    string // searches ip_address and hostname
+	SortBy    string // column to sort by: ip_address, hostname, os_family, status, last_seen, first_seen
+	SortOrder string // asc or desc
+}
+
+// validHostSortColumns is the allowlist of columns that may be used in ORDER BY.
+var validHostSortColumns = map[string]string{
+	"ip_address": "h.ip_address",
+	"hostname":   "h.hostname",
+	"os_family":  "h.os_family",
+	"status":     "h.status",
+	"last_seen":  "h.last_seen",
+	"first_seen": "h.first_seen",
 }
 
 // ListHosts retrieves hosts with filtering and pagination.
-func (db *DB) ListHosts(ctx context.Context, filters HostFilters, offset, limit int) ([]*Host, int64, error) {
+func (db *DB) ListHosts(ctx context.Context, filters *HostFilters, offset, limit int) ([]*Host, int64, error) {
 	// Build the base query with joins.
 	baseQuery := `
 		SELECT
@@ -157,8 +170,19 @@ func (db *DB) ListHosts(ctx context.Context, filters HostFilters, offset, limit 
 			h.response_time_ms, h.ignore_scanning, h.first_seen, h.last_seen, h.status
 	`
 
+	// Resolve ORDER BY clause from validated sort parameters.
+	orderCol := "h.last_seen"
+	if col, ok := validHostSortColumns[filters.SortBy]; ok {
+		orderCol = col
+	}
+	orderDir := "DESC"
+	if strings.EqualFold(filters.SortOrder, "ASC") {
+		orderDir = "ASC"
+	}
+	orderClause := fmt.Sprintf(" ORDER BY %s %s NULLS LAST", orderCol, orderDir)
+
 	// Combine query parts.
-	fullQuery := baseQuery + whereClause + groupByClause + " ORDER BY h.last_seen DESC LIMIT $" +
+	fullQuery := baseQuery + whereClause + groupByClause + orderClause + " LIMIT $" +
 		fmt.Sprintf("%d", len(args)+1) + " OFFSET $" + fmt.Sprintf("%d", len(args)+2)
 
 	args = append(args, limit, offset)
@@ -600,7 +624,7 @@ func assignBoolFromPtr(target, source *bool) {
 }
 
 // buildHostFilters creates WHERE clause and args for host filtering.
-func buildHostFilters(filters HostFilters) (whereClause string, args []interface{}) {
+func buildHostFilters(filters *HostFilters) (whereClause string, args []interface{}) {
 	var conditions []filterCondition
 
 	if filters.Status != "" {
@@ -613,7 +637,30 @@ func buildHostFilters(filters HostFilters) (whereClause string, args []interface
 		conditions = append(conditions, filterCondition{"h.ip_address <<", filters.Network})
 	}
 
-	return buildWhereClause(conditions)
+	whereClause, args = buildWhereClause(conditions)
+
+	// Search is an ILIKE across ip_address (cast to text) and hostname.
+	// It cannot be represented as a simple equality filterCondition, so we
+	// append it manually after the standard conditions have been built.
+	if filters.Search != "" {
+		paramIdx := len(args) + 1
+		pattern := "%" + filters.Search + "%"
+		searchFragment := fmt.Sprintf(
+			" AND (h.ip_address::text ILIKE $%d OR h.hostname ILIKE $%d)",
+			paramIdx, paramIdx,
+		)
+		if whereClause == "" {
+			whereClause = fmt.Sprintf(
+				"WHERE (h.ip_address::text ILIKE $%d OR h.hostname ILIKE $%d)",
+				paramIdx, paramIdx,
+			)
+		} else {
+			whereClause += searchFragment
+		}
+		args = append(args, pattern)
+	}
+
+	return whereClause, args
 }
 
 // getHostCount gets total count of hosts matching filters.
