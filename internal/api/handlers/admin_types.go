@@ -105,7 +105,7 @@ type ScanningConfigUpdate struct {
 	DefaultInterval        *string `json:"default_interval,omitempty"`
 	MaxScanTimeout         *string `json:"max_scan_timeout,omitempty"`
 	DefaultPorts           *string `json:"default_ports,omitempty" validate:"omitempty,max=1000"`
-	DefaultScanType        *string `json:"default_scan_type,omitempty" validate:"omitempty,oneof=connect syn ack window fin null xmas maimon"` //nolint:lll
+	ScanMode               *string `json:"scan_mode,omitempty" validate:"omitempty,oneof=connect syn ack udp aggressive comprehensive"`
 	MaxConcurrentTargets   *int    `json:"max_concurrent_targets,omitempty" validate:"omitempty,min=1,max=10000"`
 	EnableServiceDetection *bool   `json:"enable_service_detection,omitempty"`
 	EnableOSDetection      *bool   `json:"enable_os_detection,omitempty"`

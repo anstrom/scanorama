@@ -221,8 +221,8 @@ func normalizeDaemonConfig(cfg *DaemonConfig) {
 // normalizeScanningConfig cleans up scanning configuration
 // values.
 func normalizeScanningConfig(cfg *ScanningConfig) {
-	cfg.DefaultScanType = strings.ToLower(
-		strings.TrimSpace(cfg.DefaultScanType),
+	cfg.ScanMode = strings.ToLower(
+		strings.TrimSpace(cfg.ScanMode),
 	)
 	cfg.DefaultPorts = strings.TrimSpace(cfg.DefaultPorts)
 }
@@ -526,22 +526,26 @@ func ValidateScanningConfig(
 		)
 	}
 
-	// Validate scan type
+	// Validate scan mode
 	validScanTypes := map[string]bool{
-		"connect": true,
-		"syn":     true,
-		"version": true,
+		"connect":       true,
+		"syn":           true,
+		"ack":           true,
+		"udp":           true,
+		"aggressive":    true,
+		"comprehensive": true,
 	}
 	scanType := strings.ToLower(
-		strings.TrimSpace(cfg.DefaultScanType),
+		strings.TrimSpace(cfg.ScanMode),
 	)
 	if !validScanTypes[scanType] {
 		result.addError(
-			section, "default_scan_type",
+			section, "scan_mode",
 			fmt.Sprintf(
-				"invalid default scan type: %q"+
-					" (valid: connect, syn, version)",
-				cfg.DefaultScanType,
+				"invalid scan_mode: %q"+
+					" (valid: connect, syn, ack, udp,"+
+					" aggressive, comprehensive)",
+				cfg.ScanMode,
 			),
 		)
 	}

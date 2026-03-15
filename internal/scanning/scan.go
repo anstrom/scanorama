@@ -6,8 +6,8 @@ package scanning
 import (
 	"context"
 	"fmt"
-
 	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -28,6 +28,7 @@ const (
 	ipv6CIDRBits          = 128
 	defaultTargetCapacity = 10
 	nullMethodValue       = "NULL"
+	scanTypeConnect       = "connect"
 )
 
 const (
@@ -63,6 +64,9 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 		"scan_type", config.ScanType,
 		"target_count", len(config.Targets),
 		"ports", config.Ports)
+
+	// Resolve scan type, downgrading to connect scan when root is required but not available.
+	config.ScanType = resolveScanType(config.ScanType)
 
 	// Validate the configuration
 	if err := validateScanConfig(config); err != nil {
@@ -154,36 +158,40 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 		nmap.WithPorts(config.Ports),
 	}
 
+	// Mixed-protocol support: if the port spec contains UDP ports (e.g. "T:22,80,U:53,161"),
+	// add an explicit UDP scan so nmap handles both TCP and UDP in a single run.
+	if strings.Contains(config.Ports, "U:") {
+		options = append(options, nmap.WithUDPScan())
+	}
+
 	// Add scan type options with enhanced capabilities
 	switch config.ScanType {
-	case "connect":
+	case scanTypeConnect:
 		options = append(options, nmap.WithConnectScan())
 	case "syn":
 		options = append(options, nmap.WithSYNScan())
-	case "version":
-		options = append(options,
-			nmap.WithServiceInfo(),
-			nmap.WithVersionAll(),
-		)
+	case "ack":
+		options = append(options, nmap.WithACKScan())
+	case "udp":
+		options = append(options, nmap.WithUDPScan())
 	case "aggressive":
 		options = append(options,
-			nmap.WithConnectScan(),
+			nmap.WithSYNScan(),
 			nmap.WithServiceInfo(),
 			nmap.WithVersionAll(),
 			nmap.WithAggressiveScan(),
 		)
-	case "stealth":
-		options = append(options,
-			nmap.WithConnectScan(),
-			nmap.WithTimingTemplate(nmap.TimingPolite),
-		)
 	case "comprehensive":
 		options = append(options,
-			nmap.WithConnectScan(),
+			nmap.WithSYNScan(),
 			nmap.WithServiceInfo(),
 			nmap.WithVersionAll(),
 			nmap.WithDefaultScript(),
 		)
+	}
+
+	if config.OSDetection {
+		options = append(options, nmap.WithOSDetection())
 	}
 
 	// Add timing template based on configuration
@@ -212,6 +220,23 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 	)
 
 	return options
+}
+
+// resolveScanType returns the scan type to use, falling back to "connect" when the
+// requested type requires raw-socket / root privileges and the process is not root.
+func resolveScanType(requested string) string {
+	rootRequired := map[string]bool{
+		"syn":           true,
+		"aggressive":    true,
+		"comprehensive": true,
+	}
+	if rootRequired[requested] && os.Getuid() != 0 {
+		logging.Warn("scan type requires root privileges, falling back to connect scan",
+			"requested", requested,
+			"effective", scanTypeConnect)
+		return scanTypeConnect
+	}
+	return requested
 }
 
 // convertNmapResults converts nmap results to our internal format.
@@ -444,7 +469,7 @@ func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetReposit
 	case "comprehensive", "aggressive":
 		dbScanType = "version" // Map complex scan types to version detection
 	case "stealth":
-		dbScanType = "connect" // Map stealth to basic connect scan
+		dbScanType = scanTypeConnect // Map stealth to basic connect scan
 	}
 
 	scanTarget := &db.ScanTarget{

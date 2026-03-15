@@ -33,7 +33,7 @@ func (h *AdminHandler) getCurrentConfig(_ context.Context, section string) (map[
 		},
 		Scanning: map[string]interface{}{
 			"worker_pool_size":         10,
-			"default_scan_type":        "connect",
+			"scan_mode":                "syn",
 			"max_concurrent_targets":   100,
 			"default_ports":            "22,80,443,8080,8443",
 			"enable_service_detection": true,

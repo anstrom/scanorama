@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/scanning"
 	"github.com/spf13/cobra"
@@ -126,6 +127,13 @@ func runProfilesTest(_ *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	// Load config so that the global scan mode is available for the test scan.
+	cfg, err := config.Load(getConfigFilePath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
+		os.Exit(1)
+	}
+
 	withDatabaseOrExit(func(database *db.DB) {
 		profile, err := getProfileByName(database, profileName)
 		if err != nil {
@@ -136,7 +144,7 @@ func runProfilesTest(_ *cobra.Command, args []string) {
 		if profileTestDryRun {
 			displayTestConfiguration(profile, profileTestTarget)
 		} else {
-			runTestScan(database, profile, profileTestTarget)
+			runTestScan(database, profile, profileTestTarget, cfg)
 		}
 	})
 }
@@ -336,23 +344,26 @@ func displayTestConfiguration(profile *db.ScanProfile, target string) {
 	fmt.Printf("  scanorama profiles test %s --target %s\n", profile.Name, target)
 }
 
-func runTestScan(database *db.DB, profile *db.ScanProfile, target string) {
+func runTestScan(database *db.DB, profile *db.ScanProfile, target string, cfg *config.Config) {
 	fmt.Printf("Testing profile '%s' against target '%s'...\n", profile.Name, target)
 	fmt.Println(strings.Repeat("-", profileDetailSeparator))
 
 	fmt.Printf("Scan configuration:\n")
 	fmt.Printf("  Target: %s\n", target)
 	fmt.Printf("  Profile: %s (%s)\n", profile.Name, profile.Description)
-	fmt.Printf("  Scan type: %s\n", profile.ScanType)
+	effectiveScanType := cfg.Scanning.ScanMode
+	fmt.Printf("  Scan type: %s\n", effectiveScanType)
 	fmt.Printf("  Ports: %s\n", profile.Ports)
 	fmt.Printf("  Timing: %s\n", profile.Timing)
 	fmt.Println()
 
-	// Create scan configuration from profile
+	// Create scan configuration from profile; scan type comes from the global
+	// config rather than the profile so that the operator's configured default
+	// is always honored.
 	scanConfig := &scanning.ScanConfig{
 		Targets:    []string{target},
 		Ports:      profile.Ports,
-		ScanType:   profile.ScanType,
+		ScanType:   effectiveScanType,
 		TimeoutSec: 300, // Default timeout
 	}
 

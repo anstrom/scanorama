@@ -36,7 +36,7 @@ func validFullConfig() *Config {
 			DefaultInterval:        1 * time.Hour,
 			MaxScanTimeout:         10 * time.Minute,
 			DefaultPorts:           "22,80,443,8080,8443",
-			DefaultScanType:        "connect",
+			ScanMode:               "syn",
 			MaxConcurrentTargets:   100,
 			EnableServiceDetection: true,
 			EnableOSDetection:      false,
@@ -434,24 +434,24 @@ func TestValidateLoggingConfig_DirectoryTraversal(t *testing.T) {
 
 func TestValidateScanningConfig_InvalidScanType(t *testing.T) {
 	// Note: the validator lowercases before checking, so "CONNECT" -> "connect" is valid.
-	tests := []string{"udp", "stealth", "", "bogus"}
+	tests := []string{"version", "stealth", "", "bogus"}
 	for _, st := range tests {
 		t.Run("type_"+st, func(t *testing.T) {
 			cfg := validScanningConfig()
-			cfg.DefaultScanType = st
+			cfg.ScanMode = st
 			result := ValidateScanningConfig(cfg)
-			assertHasError(t, result, "default_scan_type")
+			assertHasError(t, result, "scan_mode")
 		})
 	}
 }
 
 func TestValidateScanningConfig_ValidScanTypes(t *testing.T) {
-	for _, st := range []string{"connect", "syn", "version"} {
+	for _, st := range []string{"connect", "syn", "ack", "udp", "aggressive", "comprehensive"} {
 		t.Run("type_"+st, func(t *testing.T) {
 			cfg := validScanningConfig()
-			cfg.DefaultScanType = st
+			cfg.ScanMode = st
 			result := ValidateScanningConfig(cfg)
-			assertNoError(t, result, "default_scan_type")
+			assertNoError(t, result, "scan_mode")
 		})
 	}
 }
@@ -1019,7 +1019,7 @@ func TestValidateConfig_CollectsAllSectionErrors(t *testing.T) {
 		Scanning: ScanningConfig{
 			WorkerPoolSize:       0,  // error
 			MaxConcurrentTargets: 0,  // error
-			DefaultScanType:      "", // error
+			ScanMode:             "", // error
 		},
 		API: APIConfig{
 			Enabled: true,
@@ -1073,7 +1073,7 @@ func TestValidateAndNormalize_NilConfig(t *testing.T) {
 
 func TestValidateAndNormalize_NormalizesValues(t *testing.T) {
 	cfg := validFullConfig()
-	cfg.Scanning.DefaultScanType = "  CONNECT  "
+	cfg.Scanning.ScanMode = "  SYN  "
 	cfg.Logging.Level = "  INFO  "
 	cfg.Logging.Format = "  JSON  "
 	cfg.Daemon.PIDFile = "/var/run/../run/scanorama.pid"
@@ -1084,8 +1084,8 @@ func TestValidateAndNormalize_NormalizesValues(t *testing.T) {
 		t.Errorf("expected normalization to fix issues, got errors: %s", result.Error())
 	}
 
-	if cfg.Scanning.DefaultScanType != "connect" {
-		t.Errorf("expected scan type to be normalized to 'connect', got %q", cfg.Scanning.DefaultScanType)
+	if cfg.Scanning.ScanMode != "syn" {
+		t.Errorf("expected scan mode to be normalized to 'syn', got %q", cfg.Scanning.ScanMode)
 	}
 	if cfg.Logging.Level != "info" {
 		t.Errorf("expected log level to be normalized to 'info', got %q", cfg.Logging.Level)
@@ -1264,7 +1264,7 @@ func validScanningConfig() *ScanningConfig {
 		DefaultInterval:        1 * time.Hour,
 		MaxScanTimeout:         10 * time.Minute,
 		DefaultPorts:           "22,80,443",
-		DefaultScanType:        "connect",
+		ScanMode:               "syn",
 		MaxConcurrentTargets:   100,
 		EnableServiceDetection: true,
 		Retry: RetryConfig{
