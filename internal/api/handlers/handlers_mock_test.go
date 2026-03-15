@@ -533,8 +533,8 @@ func TestScanHandler_ExecuteScanAsync(t *testing.T) {
 		}
 
 		store.EXPECT().
-			StopScan(gomock.Any(), id).
-			DoAndReturn(func(_ context.Context, _ uuid.UUID) error {
+			StopScan(gomock.Any(), id, gomock.Any()).
+			DoAndReturn(func(_ context.Context, _ uuid.UUID, _ ...string) error {
 				close(done)
 				return nil
 			})
@@ -561,8 +561,8 @@ func TestScanHandler_ExecuteScanAsync(t *testing.T) {
 		}
 
 		// Only StopScan should be called — CompleteScan must not be.
-		store.EXPECT().StopScan(gomock.Any(), id).
-			DoAndReturn(func(_ context.Context, _ uuid.UUID) error {
+		store.EXPECT().StopScan(gomock.Any(), id, gomock.Any()).
+			DoAndReturn(func(_ context.Context, _ uuid.UUID, _ ...string) error {
 				close(done)
 				return nil
 			})
@@ -1117,10 +1117,16 @@ func TestDiscoveryHandler_StartStopDiscovery_Mock(t *testing.T) {
 		defer ctrl.Finish()
 
 		id := uuid.New()
+		// First call: load the job to check status and read network/method.
+		pending := makeDiscoveryJob(id, "ping", "pending")
+		// Second call: return the updated job after StartDiscoveryJob flips it to running.
 		running := makeDiscoveryJob(id, "ping", "running")
 
-		store.EXPECT().StartDiscoveryJob(gomock.Any(), id).Return(nil)
-		store.EXPECT().GetDiscoveryJob(gomock.Any(), id).Return(running, nil)
+		gomock.InOrder(
+			store.EXPECT().GetDiscoveryJob(gomock.Any(), id).Return(pending, nil),
+			store.EXPECT().StartDiscoveryJob(gomock.Any(), id).Return(nil),
+			store.EXPECT().GetDiscoveryJob(gomock.Any(), id).Return(running, nil),
+		)
 
 		router, _ := routerWithID(http.MethodPost, "/api/v1/discovery/{id}/start", h.StartDiscovery)
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/discovery/%s/start", id), nil)
@@ -1128,6 +1134,40 @@ func TestDiscoveryHandler_StartStopDiscovery_Mock(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("start returns 409 when already running", func(t *testing.T) {
+		h, store, ctrl := newDiscoveryHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		running := makeDiscoveryJob(id, "ping", "running")
+
+		store.EXPECT().GetDiscoveryJob(gomock.Any(), id).Return(running, nil)
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/discovery/{id}/start", h.StartDiscovery)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/discovery/%s/start", id), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
+	})
+
+	t.Run("start returns 409 when already completed", func(t *testing.T) {
+		h, store, ctrl := newDiscoveryHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		completed := makeDiscoveryJob(id, "ping", "completed")
+
+		store.EXPECT().GetDiscoveryJob(gomock.Any(), id).Return(completed, nil)
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/discovery/{id}/start", h.StartDiscovery)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/discovery/%s/start", id), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
 	})
 
 	t.Run("stop returns 200 with updated job", func(t *testing.T) {
@@ -1151,9 +1191,10 @@ func TestDiscoveryHandler_StartStopDiscovery_Mock(t *testing.T) {
 		defer ctrl.Finish()
 
 		id := uuid.New()
+		// The initial GetDiscoveryJob returns not-found before we even try to start.
 		store.EXPECT().
-			StartDiscoveryJob(gomock.Any(), id).
-			Return(notFoundErr("discovery job", id.String()))
+			GetDiscoveryJob(gomock.Any(), id).
+			Return(nil, notFoundErr("discovery job", id.String()))
 
 		router, _ := routerWithID(http.MethodPost, "/api/v1/discovery/{id}/start", h.StartDiscovery)
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/discovery/%s/start", id), nil)

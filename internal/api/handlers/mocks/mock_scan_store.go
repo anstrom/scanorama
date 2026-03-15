@@ -354,17 +354,22 @@ func (c *MockScanStoreStartScanCall) DoAndReturn(f func(context.Context, uuid.UU
 }
 
 // StopScan mocks base method.
-func (m *MockScanStore) StopScan(ctx context.Context, id uuid.UUID) error {
+func (m *MockScanStore) StopScan(ctx context.Context, id uuid.UUID, errMsg ...string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StopScan", ctx, id)
+	varargs := []any{ctx, id}
+	for _, a := range errMsg {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "StopScan", varargs...)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // StopScan indicates an expected call of StopScan.
-func (mr *MockScanStoreMockRecorder) StopScan(ctx, id any) *MockScanStoreStopScanCall {
+func (mr *MockScanStoreMockRecorder) StopScan(ctx, id any, errMsg ...any) *MockScanStoreStopScanCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopScan", reflect.TypeOf((*MockScanStore)(nil).StopScan), ctx, id)
+	varargs := append([]any{ctx, id}, errMsg...)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopScan", reflect.TypeOf((*MockScanStore)(nil).StopScan), varargs...)
 	return &MockScanStoreStopScanCall{Call: call}
 }
 
@@ -380,13 +385,13 @@ func (c *MockScanStoreStopScanCall) Return(arg0 error) *MockScanStoreStopScanCal
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockScanStoreStopScanCall) Do(f func(context.Context, uuid.UUID) error) *MockScanStoreStopScanCall {
+func (c *MockScanStoreStopScanCall) Do(f func(context.Context, uuid.UUID, ...string) error) *MockScanStoreStopScanCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockScanStoreStopScanCall) DoAndReturn(f func(context.Context, uuid.UUID) error) *MockScanStoreStopScanCall {
+func (c *MockScanStoreStopScanCall) DoAndReturn(f func(context.Context, uuid.UUID, ...string) error) *MockScanStoreStopScanCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
