@@ -8,26 +8,14 @@
     "group:allNonMajor",
     "schedule:weekly"
   ],
-  "labels": [
-    "dependencies"
-  ],
-  "assignees": [
-    "anstrom"
-  ],
-  "reviewers": [
-    "anstrom"
-  ],
+  "labels": ["dependencies"],
+  "assignees": ["anstrom"],
+  "reviewers": ["anstrom"],
   "vulnerabilityAlerts": {
     "enabled": true,
-    "labels": [
-      "security"
-    ],
-    "assignees": [
-      "anstrom"
-    ],
-    "reviewers": [
-      "anstrom"
-    ]
+    "labels": ["security"],
+    "assignees": ["anstrom"],
+    "reviewers": ["anstrom"]
   },
   "osvVulnerabilityAlerts": true,
   "separateMajorMinor": true,
@@ -42,9 +30,7 @@
     {
       "description": "Keep GO_VERSION env var in CI workflows in sync with go.mod",
       "customType": "regex",
-      "managerFilePatterns": [
-        "/^\\.github/workflows/.+\\.ya?ml$/"
-      ],
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
       "matchStrings": [
         "# renovate: datasource=golang-version depName=go\\s+GO_VERSION: \"(?<currentValue>[^\"]+)\""
       ],
@@ -56,95 +42,68 @@
   "packageRules": [
     {
       "description": "Group Go module updates and workflow GO_VERSION together",
-      "matchManagers": [
-        "gomod",
-        "custom.regex"
-      ],
-      "matchDepNames": [
-        "go"
-      ],
+      "matchManagers": ["gomod", "custom.regex"],
+      "matchDepNames": ["go"],
       "groupName": "Go modules",
-      "labels": [
-        "dependencies",
-        "go"
-      ],
+      "labels": ["dependencies", "go"],
       "commitMessagePrefix": "deps(go):"
     },
     {
+      "description": "Group all @tanstack/react-router packages together regardless of dep type so peer dependencies always stay in sync",
+      "matchManagers": ["npm"],
+      "matchPackageNames": [
+        "@tanstack/react-router",
+        "@tanstack/react-router-devtools",
+        "@tanstack/router-core",
+        "@tanstack/router-devtools-core"
+      ],
+      "groupName": "TanStack Router",
+      "labels": ["dependencies", "npm"],
+      "commitMessagePrefix": "deps(npm):",
+      "minimumReleaseAge": "3 days"
+    },
+    {
       "description": "Group npm dev dependencies",
-      "matchManagers": [
-        "npm"
-      ],
-      "matchDepTypes": [
-        "devDependencies"
-      ],
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
       "groupName": "npm dev dependencies",
-      "labels": [
-        "dependencies",
-        "npm"
-      ],
+      "labels": ["dependencies", "npm"],
       "commitMessagePrefix": "deps(npm):"
     },
     {
       "description": "Group GitHub Actions updates",
-      "matchManagers": [
-        "github-actions"
-      ],
+      "matchManagers": ["github-actions"],
       "groupName": "GitHub Actions",
-      "labels": [
-        "dependencies",
-        "github-actions"
-      ],
+      "labels": ["dependencies", "github-actions"],
       "commitMessagePrefix": "ci(actions):"
     },
     {
       "description": "Auto-merge security patches for npm",
-      "matchManagers": [
-        "npm"
-      ],
-      "matchUpdateTypes": [
-        "patch"
-      ],
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["patch"],
       "matchCurrentVersion": "!/^0/",
       "automerge": false,
-      "matchPackageNames": [
-        "*"
-      ]
+      "matchPackageNames": ["*"]
     },
     {
       "description": "Pin npm overrides to exact versions",
-      "matchManagers": [
-        "npm"
-      ],
-      "matchDepTypes": [
-        "overrides"
-      ],
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["overrides"],
       "rangeStrategy": "pin",
-      "labels": [
-        "dependencies",
-        "npm",
-        "overrides"
-      ],
+      "labels": ["dependencies", "npm", "overrides"],
       "commitMessagePrefix": "fix(deps):"
     },
     {
       "description": "Security vulnerability updates have high priority",
-      "matchUpdateTypes": [
-        "patch"
-      ],
+      "matchUpdateTypes": ["patch"],
       "matchCurrentVersion": "!/^0/",
-      "labels": [
-        "security",
-        "dependencies"
-      ],
+      "labels": ["security", "dependencies"],
       "commitMessagePrefix": "fix(security):",
       "prPriority": 10
     },
     {
       "description": "Ignore major version updates to prevent breaking changes",
-      "matchUpdateTypes": [
-        "major"
-      ],
+      "matchUpdateTypes": ["major"],
       "enabled": false
     }
   ],
