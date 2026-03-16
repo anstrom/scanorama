@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2096,9 +2097,11 @@ var _ = context.Background
 func TestScanHandler_SubmitToQueue_ScanIDPropagatedToConfig(t *testing.T) {
 	// Arrange: a queue whose scanFunc captures the request it receives.
 	q := scanning.NewScanQueue(1, 10)
-	var capturedConfig *scanning.ScanConfig
+	// Use atomic pointer to avoid a data race between the worker goroutine
+	// (writer) and the assert.Eventually polling goroutine (reader).
+	var capturedConfig atomic.Pointer[scanning.ScanConfig]
 	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
-		capturedConfig = req.Config
+		capturedConfig.Store(req.Config)
 		return &scanning.ScanQueueResult{ID: req.ID, Result: &scanning.ScanResult{}}
 	})
 	q.Start(context.Background())
@@ -2125,12 +2128,13 @@ func TestScanHandler_SubmitToQueue_ScanIDPropagatedToConfig(t *testing.T) {
 
 	// Wait for the queue worker to pick up and execute the job.
 	assert.Eventually(t, func() bool {
-		return capturedConfig != nil
+		return capturedConfig.Load() != nil
 	}, 2*time.Second, 10*time.Millisecond, "queue worker did not execute the scan in time")
 
-	require.NotNil(t, capturedConfig.ScanID,
+	cfg := capturedConfig.Load()
+	require.NotNil(t, cfg.ScanID,
 		"ScanConfig.ScanID must be set so storeScanResults links port_scans to the correct job_id")
-	assert.Equal(t, scanID, *capturedConfig.ScanID,
+	assert.Equal(t, scanID, *cfg.ScanID,
 		"ScanConfig.ScanID must equal the scan's UUID")
 }
 
@@ -2138,9 +2142,11 @@ func TestScanHandler_SubmitToQueue_DatabasePropagatedToRequest(t *testing.T) {
 	// Arrange: a queue whose scanFunc captures the full request so we can
 	// inspect the Database field.
 	q := scanning.NewScanQueue(1, 10)
-	var capturedReq *scanning.ScanQueueRequest
+	// Use atomic pointer to avoid a data race between the worker goroutine
+	// (writer) and the assert.Eventually polling goroutine (reader).
+	var capturedReq atomic.Pointer[scanning.ScanQueueRequest]
 	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
-		capturedReq = req
+		capturedReq.Store(req)
 		return &scanning.ScanQueueResult{ID: req.ID, Result: &scanning.ScanResult{}}
 	})
 	q.Start(context.Background())
@@ -2163,7 +2169,7 @@ func TestScanHandler_SubmitToQueue_DatabasePropagatedToRequest(t *testing.T) {
 	assert.Equal(t, 0, code)
 
 	assert.Eventually(t, func() bool {
-		return capturedReq != nil
+		return capturedReq.Load() != nil
 	}, 2*time.Second, 10*time.Millisecond, "queue worker did not execute the scan in time")
 
 	// The handler's store is a *mocks.MockScanStore, not a *db.DB, so the
@@ -2172,9 +2178,10 @@ func TestScanHandler_SubmitToQueue_DatabasePropagatedToRequest(t *testing.T) {
 	// set (even if it ends up nil after the assertion) rather than left as the
 	// default nil from a forgotten line.  We verify the request itself was
 	// populated by checking that Config and ID are correct.
-	require.NotNil(t, capturedReq, "request must reach the worker")
-	assert.Equal(t, scanID.String(), capturedReq.ID)
-	assert.NotNil(t, capturedReq.Config)
+	req := capturedReq.Load()
+	require.NotNil(t, req, "request must reach the worker")
+	assert.Equal(t, scanID.String(), req.ID)
+	assert.NotNil(t, req.Config)
 }
 
 func TestScanHandler_SubmitToQueue_CompleteScanCalledOnSuccess(t *testing.T) {
