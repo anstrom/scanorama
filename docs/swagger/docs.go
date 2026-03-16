@@ -3414,6 +3414,26 @@ const docTemplate = `{
                         443
                     ]
                 },
+                "os_confidence": {
+                    "type": "integer",
+                    "description": "nmap OS detection confidence percentage (0-100)",
+                    "example": 95
+                },
+                "os_family": {
+                    "type": "string",
+                    "description": "Broad OS family detected by nmap",
+                    "example": "Linux"
+                },
+                "os_name": {
+                    "type": "string",
+                    "description": "Full OS name returned by nmap",
+                    "example": "Linux 5.15"
+                },
+                "os_version_detail": {
+                    "type": "string",
+                    "description": "OS generation or version string returned by nmap",
+                    "example": "5.15"
+                },
                 "scan_count": {
                     "type": "integer",
                     "example": 5

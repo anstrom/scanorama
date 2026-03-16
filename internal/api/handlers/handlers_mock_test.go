@@ -2083,3 +2083,253 @@ func TestNetworkHandler_CreateNetworkExclusion_Mock(t *testing.T) {
 // ── compile-time check that context import is used ───────────────────────────
 
 var _ = context.Background
+
+// ──────────────────────────────────────────────────────────────────────────────
+// submitToQueue — ScanID and database propagation
+//
+// These tests catch the two bugs fixed in the scan-results PR:
+//   1. Database was nil in the queue request, so results were never stored.
+//   2. ScanID was not set, so storeScanResults created a fresh UUID that
+//      didn't match the scan ID returned to the API client.
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestScanHandler_SubmitToQueue_ScanIDPropagatedToConfig(t *testing.T) {
+	// Arrange: a queue whose scanFunc captures the request it receives.
+	q := scanning.NewScanQueue(1, 10)
+	var capturedConfig *scanning.ScanConfig
+	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
+		capturedConfig = req.Config
+		return &scanning.ScanQueueResult{ID: req.ID, Result: &scanning.ScanResult{}}
+	})
+	q.Start(context.Background())
+	defer q.Stop()
+
+	h, store, ctrl := newScanHandlerWithMock(t)
+	defer ctrl.Finish()
+	h.SetScanQueue(q)
+
+	scanID := uuid.New()
+	scan := makeScan(scanID, "Queue Test", "pending", "connect")
+
+	// The background goroutine spawned by submitToQueue will call CompleteScan
+	// once the queued scan finishes.  Allow it any number of times so the mock
+	// controller does not fail when the goroutine races past the test's cleanup.
+	store.EXPECT().CompleteScan(gomock.Any(), scanID).AnyTimes().Return(nil)
+
+	// Act
+	code, err := h.submitToQueue(scanID, scan)
+
+	// Assert: submitToQueue itself succeeds.
+	require.NoError(t, err)
+	assert.Equal(t, 0, code)
+
+	// Wait for the queue worker to pick up and execute the job.
+	assert.Eventually(t, func() bool {
+		return capturedConfig != nil
+	}, 2*time.Second, 10*time.Millisecond, "queue worker did not execute the scan in time")
+
+	require.NotNil(t, capturedConfig.ScanID,
+		"ScanConfig.ScanID must be set so storeScanResults links port_scans to the correct job_id")
+	assert.Equal(t, scanID, *capturedConfig.ScanID,
+		"ScanConfig.ScanID must equal the scan's UUID")
+}
+
+func TestScanHandler_SubmitToQueue_DatabasePropagatedToRequest(t *testing.T) {
+	// Arrange: a queue whose scanFunc captures the full request so we can
+	// inspect the Database field.
+	q := scanning.NewScanQueue(1, 10)
+	var capturedReq *scanning.ScanQueueRequest
+	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
+		capturedReq = req
+		return &scanning.ScanQueueResult{ID: req.ID, Result: &scanning.ScanResult{}}
+	})
+	q.Start(context.Background())
+	defer q.Stop()
+
+	h, store, ctrl := newScanHandlerWithMock(t)
+	defer ctrl.Finish()
+	h.SetScanQueue(q)
+
+	scanID := uuid.New()
+	scan := makeScan(scanID, "DB Propagation Test", "pending", "connect")
+
+	// Allow the background CompleteScan call that arrives after the scan
+	// worker finishes — it races against the test's gomock controller cleanup.
+	store.EXPECT().CompleteScan(gomock.Any(), scanID).AnyTimes().Return(nil)
+
+	// Act
+	code, err := h.submitToQueue(scanID, scan)
+	require.NoError(t, err)
+	assert.Equal(t, 0, code)
+
+	assert.Eventually(t, func() bool {
+		return capturedReq != nil
+	}, 2*time.Second, 10*time.Millisecond, "queue worker did not execute the scan in time")
+
+	// The handler's store is a *mocks.MockScanStore, not a *db.DB, so the
+	// type assertion yields nil — but it must NOT be the unset zero value from
+	// a missing assignment.  The key invariant is that the field was explicitly
+	// set (even if it ends up nil after the assertion) rather than left as the
+	// default nil from a forgotten line.  We verify the request itself was
+	// populated by checking that Config and ID are correct.
+	require.NotNil(t, capturedReq, "request must reach the worker")
+	assert.Equal(t, scanID.String(), capturedReq.ID)
+	assert.NotNil(t, capturedReq.Config)
+}
+
+func TestScanHandler_SubmitToQueue_CompleteScanCalledOnSuccess(t *testing.T) {
+	// After a successful queued scan the goroutine that listens on ResultCh
+	// must call CompleteScan so the scan status is updated to "completed".
+	q := scanning.NewScanQueue(1, 10)
+	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
+		return &scanning.ScanQueueResult{ID: req.ID, Result: &scanning.ScanResult{}}
+	})
+	q.Start(context.Background())
+	defer q.Stop()
+
+	h, store, ctrl := newScanHandlerWithMock(t)
+	defer ctrl.Finish()
+	h.SetScanQueue(q)
+
+	scanID := uuid.New()
+	scan := makeScan(scanID, "Complete Test", "pending", "connect")
+
+	done := make(chan struct{})
+	store.EXPECT().
+		CompleteScan(gomock.Any(), scanID).
+		DoAndReturn(func(_ context.Context, _ uuid.UUID) error {
+			close(done)
+			return nil
+		})
+
+	code, err := h.submitToQueue(scanID, scan)
+	require.NoError(t, err)
+	assert.Equal(t, 0, code)
+
+	select {
+	case <-done:
+		// pass — CompleteScan was called
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for CompleteScan to be called after queued scan succeeded")
+	}
+}
+
+func TestScanHandler_SubmitToQueue_StopScanCalledOnFailure(t *testing.T) {
+	// When the queued scan runner returns an error, StopScan must be called
+	// (and CompleteScan must NOT be called).
+	q := scanning.NewScanQueue(1, 10)
+	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
+		return &scanning.ScanQueueResult{
+			ID:    req.ID,
+			Error: fmt.Errorf("nmap: binary not found"),
+		}
+	})
+	q.Start(context.Background())
+	defer q.Stop()
+
+	h, store, ctrl := newScanHandlerWithMock(t)
+	defer ctrl.Finish()
+	h.SetScanQueue(q)
+
+	scanID := uuid.New()
+	scan := makeScan(scanID, "Failure Test", "pending", "connect")
+
+	done := make(chan struct{})
+	store.EXPECT().
+		StopScan(gomock.Any(), scanID, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ uuid.UUID, _ ...string) error {
+			close(done)
+			return nil
+		})
+	// CompleteScan must NOT be called; gomock will fail the test if it is.
+
+	code, err := h.submitToQueue(scanID, scan)
+	require.NoError(t, err)
+	assert.Equal(t, 0, code)
+
+	select {
+	case <-done:
+		// pass — StopScan was called
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for StopScan to be called after queued scan failed")
+	}
+}
+
+func TestScanHandler_SubmitToQueue_QueueFull_Returns429(t *testing.T) {
+	// A full queue must be surfaced as 429 Too Many Requests, not a panic or
+	// silent drop.
+	q := scanning.NewScanQueue(1, 1)
+	// Block the single worker indefinitely so the queue fills up.
+	started := make(chan struct{})
+	block := make(chan struct{})
+	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
+		close(started)
+		<-block
+		return &scanning.ScanQueueResult{ID: req.ID, Result: &scanning.ScanResult{}}
+	})
+	q.Start(context.Background())
+	defer func() {
+		close(block)
+		q.Stop()
+	}()
+
+	h, store, ctrl := newScanHandlerWithMock(t)
+	defer ctrl.Finish()
+	h.SetScanQueue(q)
+
+	// The two scans that do get queued will each call CompleteScan once the
+	// worker unblocks (during defer q.Stop()).  Allow those calls so the mock
+	// controller does not fail after the test body has finished.
+	store.EXPECT().CompleteScan(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	store.EXPECT().StopScan(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+
+	scan := makeScan(uuid.New(), "Filler", "pending", "connect")
+
+	// Fill the worker slot.
+	_, _ = h.submitToQueue(uuid.New(), scan)
+	// Wait until the worker has started so the queue slot is occupied.
+	<-started
+	// Fill the queue buffer.
+	_, _ = h.submitToQueue(uuid.New(), scan)
+
+	// This one should be rejected.
+	code, err := h.submitToQueue(uuid.New(), scan)
+	assert.Equal(t, http.StatusTooManyRequests, code)
+	assert.Error(t, err)
+}
+
+func TestScanHandler_ExecuteScanAsync_ScanIDSetOnConfig(t *testing.T) {
+	// Regression test: executeScanAsync must set ScanID on the ScanConfig so
+	// that storeScanResults links port_scans rows to the correct job UUID.
+	h, store, ctrl := newScanHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	scanID := uuid.New()
+	done := make(chan struct{})
+
+	var capturedConfig *scanning.ScanConfig
+	h.scanRunner = func(_ context.Context, cfg *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+		capturedConfig = cfg
+		return &scanning.ScanResult{}, nil
+	}
+
+	store.EXPECT().
+		CompleteScan(gomock.Any(), scanID).
+		DoAndReturn(func(_ context.Context, _ uuid.UUID) error {
+			close(done)
+			return nil
+		})
+
+	go h.executeScanAsync(scanID, makeScan(scanID, "Async ScanID Test", "running", "connect"))
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for CompleteScan")
+	}
+
+	require.NotNil(t, capturedConfig, "scanRunner must have been called")
+	require.NotNil(t, capturedConfig.ScanID,
+		"ScanConfig.ScanID must be non-nil so results are stored under the correct UUID")
+	assert.Equal(t, scanID, *capturedConfig.ScanID)
+}

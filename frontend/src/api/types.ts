@@ -886,6 +886,26 @@ export interface components {
        *     ]
        */
       open_ports?: number[];
+      /**
+       * nmap OS detection confidence percentage (0-100)
+       * @example 95
+       */
+      os_confidence?: number;
+      /**
+       * Broad OS family detected by nmap
+       * @example Linux
+       */
+      os_family?: string;
+      /**
+       * Full OS name returned by nmap
+       * @example Linux 5.15
+       */
+      os_name?: string;
+      /**
+       * OS generation or version string returned by nmap
+       * @example 5.15
+       */
+      os_version_detail?: string;
       /** @example 5 */
       scan_count?: number;
       /**

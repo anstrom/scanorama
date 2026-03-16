@@ -57,17 +57,28 @@ type HostRequest struct {
 
 // HostResponse represents a host response.
 type HostResponse struct {
-	ID           string            `json:"id"`
-	IPAddress    string            `json:"ip_address"`
-	Hostname     string            `json:"hostname,omitempty"`
-	Description  string            `json:"description,omitempty"`
-	OS           string            `json:"os,omitempty"`
-	OSVersion    string            `json:"os_version,omitempty"`
+	ID          string `json:"id"`
+	IPAddress   string `json:"ip_address"`
+	Hostname    string `json:"hostname,omitempty"`
+	Description string `json:"description,omitempty"`
+	// Deprecated: use OSFamily instead.
+	OS string `json:"os,omitempty"`
+	// Deprecated: use OSName / OSVersion instead.
+	OSVersionLegacy string `json:"os_version,omitempty"`
+	// OSFamily is the broad OS family detected by nmap (e.g. "Linux", "Windows").
+	OSFamily string `json:"os_family,omitempty"`
+	// OSName is the full OS name returned by nmap (e.g. "Linux 5.15").
+	OSName string `json:"os_name,omitempty"`
+	// OSVersion is the OS generation / version string returned by nmap.
+	OSVersion string `json:"os_version_detail,omitempty"`
+	// OSConfidence is the nmap detection confidence percentage (0–100).
+	OSConfidence *int              `json:"os_confidence,omitempty"`
 	Tags         []string          `json:"tags,omitempty"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
 	Status       string            `json:"status"`
 	MACAddress   string            `json:"mac_address,omitempty"`
 	OpenPortNums []int             `json:"open_ports,omitempty"`
+	FirstSeen    time.Time         `json:"first_seen"`
 	LastSeen     *time.Time        `json:"last_seen,omitempty"`
 	LastScanID   *int64            `json:"last_scan_id,omitempty"`
 	ScanCount    int               `json:"scan_count"`
@@ -403,6 +414,7 @@ func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 		ID:        host.ID.String(),
 		IPAddress: host.IPAddress.String(),
 		Status:    host.Status,
+		FirstSeen: host.FirstSeen,
 		CreatedAt: host.FirstSeen,
 		UpdatedAt: host.LastSeen,
 	}
@@ -412,16 +424,32 @@ func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 		response.Hostname = *host.Hostname
 	}
 
+	// Populate all OS fields individually so the frontend can display each one.
 	if host.OSFamily != nil {
+		response.OSFamily = *host.OSFamily
+		// Keep legacy field populated for backwards compatibility.
 		response.OS = *host.OSFamily
 	}
 
-	if host.OSName != nil && host.OSVersion != nil {
-		response.OSVersion = fmt.Sprintf("%s %s", *host.OSName, *host.OSVersion)
-	} else if host.OSName != nil {
-		response.OSVersion = *host.OSName
-	} else if host.OSVersion != nil {
+	if host.OSName != nil {
+		response.OSName = *host.OSName
+	}
+
+	if host.OSVersion != nil {
 		response.OSVersion = *host.OSVersion
+	}
+
+	if host.OSConfidence != nil {
+		response.OSConfidence = host.OSConfidence
+	}
+
+	// Legacy combined field: "<OSName> <OSVersion>" for old consumers.
+	if host.OSName != nil && host.OSVersion != nil {
+		response.OSVersionLegacy = fmt.Sprintf("%s %s", *host.OSName, *host.OSVersion)
+	} else if host.OSName != nil {
+		response.OSVersionLegacy = *host.OSName
+	} else if host.OSVersion != nil {
+		response.OSVersionLegacy = *host.OSVersion
 	}
 
 	// Set last seen time
