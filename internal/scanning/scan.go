@@ -5,6 +5,7 @@ package scanning
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"net"
 	"os"
@@ -17,7 +18,6 @@ import (
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
 )
 
 // Constants for scan configuration validation.
@@ -29,6 +29,7 @@ const (
 	defaultTargetCapacity = 10
 	nullMethodValue       = "NULL"
 	scanTypeConnect       = "connect"
+	scanTypeAggressive    = "aggressive"
 )
 
 const (
@@ -174,7 +175,7 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 		options = append(options, nmap.WithACKScan())
 	case "udp":
 		options = append(options, nmap.WithUDPScan())
-	case "aggressive":
+	case scanTypeAggressive:
 		options = append(options,
 			nmap.WithSYNScan(),
 			nmap.WithServiceInfo(),
@@ -194,20 +195,22 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 		options = append(options, nmap.WithOSDetection())
 	}
 
-	// Add timing template based on configuration
-	if config.TimeoutSec > 0 {
-		if config.TimeoutSec <= minTimeoutSeconds {
-			options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
-		} else if config.TimeoutSec <= mediumTimeoutSeconds {
-			options = append(options, nmap.WithTimingTemplate(nmap.TimingNormal))
-		} else {
-			options = append(options, nmap.WithTimingTemplate(nmap.TimingPolite))
-		}
-	}
-
-	// Add performance optimizations
-	if config.Concurrency > 0 {
-		// nmap library doesn't directly expose parallelism, but we can use timing
+	// Add nmap timing template. The Timing field (set from the scan profile) takes
+	// precedence. If not set, fall back to a concurrency-based heuristic.
+	switch config.Timing {
+	case "paranoid":
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingSlowest))
+	case "polite":
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingSneaky))
+	case "normal":
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingNormal))
+	case scanTypeAggressive:
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
+	case "insane":
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingFastest))
+	default:
+		// No explicit timing — apply T4 when high concurrency is requested,
+		// otherwise leave nmap to use its own default (T3).
 		if config.Concurrency > maxConcurrency {
 			options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
 		}
@@ -226,9 +229,9 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 // requested type requires raw-socket / root privileges and the process is not root.
 func resolveScanType(requested string) string {
 	rootRequired := map[string]bool{
-		"syn":           true,
-		"aggressive":    true,
-		"comprehensive": true,
+		"syn":              true,
+		scanTypeAggressive: true,
+		"comprehensive":    true,
 	}
 	if rootRequired[requested] && os.Getuid() != 0 {
 		logging.Warn("scan type requires root privileges, falling back to connect scan",
@@ -466,7 +469,7 @@ func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetReposit
 	// Map scan types to database-compatible values
 	dbScanType := config.ScanType
 	switch config.ScanType {
-	case "comprehensive", "aggressive":
+	case "comprehensive", scanTypeAggressive:
 		dbScanType = "version" // Map complex scan types to version detection
 	case "stealth":
 		dbScanType = scanTypeConnect // Map stealth to basic connect scan
@@ -503,26 +506,6 @@ func debugHostLookup(ctx context.Context, database *db.DB, hostAddress string, i
 	}
 }
 
-// debugListExistingHosts lists current hosts in database for debugging.
-func debugListExistingHosts(ctx context.Context, database *db.DB) {
-	var debugHosts []struct {
-		IP     string  `db:"ip_address"`
-		Method *string `db:"discovery_method"`
-		ID     string  `db:"id"`
-	}
-	debugQuery := `SELECT ip_address::text, discovery_method, id::text FROM hosts LIMIT 5`
-	if err := database.SelectContext(ctx, &debugHosts, debugQuery); err == nil {
-		logging.Debug("Current hosts in database", "count", len(debugHosts))
-		for _, h := range debugHosts {
-			method := nullValue
-			if h.Method != nil {
-				method = *h.Method
-			}
-			logging.Debug("Database host", "ip", h.IP, "method", method, "id", h.ID)
-		}
-	}
-}
-
 // processHostForScan processes a single host for scanning, preserving discovery data.
 // Uses transaction-safe approach to handle race conditions between discovery and scan.
 func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostRepository,
@@ -530,7 +513,6 @@ func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostR
 	ipAddr := db.IPAddr{IP: net.ParseIP(host.Address)}
 	debugHostLookup(ctx, database, host.Address, ipAddr)
 
-	// Use transaction-safe host lookup with retries for CI consistency
 	dbHost, err := getOrCreateHostSafely(ctx, database, hostRepo, ipAddr, host)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create host %s: %w", host.Address, err)
@@ -545,11 +527,6 @@ func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostR
 			}
 			return nullValue
 		}())
-
-	// Final verification that host exists before creating port scans
-	if err := verifyHostExists(ctx, database, dbHost.ID); err != nil {
-		return nil, fmt.Errorf("host verification failed for %s: %w", host.Address, err)
-	}
 
 	// Create port scan records
 	portScans := make([]*db.PortScan, 0, len(host.Ports))
@@ -579,127 +556,61 @@ func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostR
 	return portScans, nil
 }
 
-// getOrCreateHostSafely performs transaction-safe host lookup with retries
-// to handle race conditions between discovery and scan operations.
-func getOrCreateHostSafely(ctx context.Context, database *db.DB, hostRepo *db.HostRepository,
+// getOrCreateHostSafely looks up a host by IP address and creates it if it does
+// not yet exist. It uses the repository's GetByIP (sqlx tag-based scanning) so
+// there is no dependency on physical column order in the hosts table.
+func getOrCreateHostSafely(ctx context.Context, _ *db.DB, hostRepo *db.HostRepository,
 	ipAddr db.IPAddr, host Host) (*db.Host, error) {
-	const maxRetries = 3
-	const retryDelay = 100 * time.Millisecond
+	logging.Debug("Looking up host by IP", "ip", ipAddr.String())
 
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		logging.Debug("Attempting host lookup", "ip", ipAddr.String(), "attempt", attempt, "max_retries", maxRetries)
-
-		// Use explicit transaction for consistent reads
-		tx, err := database.BeginTx(ctx)
-		if err != nil {
-			logging.Error("Failed to begin transaction", "ip", ipAddr.String(), "error", err)
-			if attempt == maxRetries {
-				return nil, fmt.Errorf("failed to begin transaction after %d attempts: %w", maxRetries, err)
-			}
-			time.Sleep(retryDelay)
-			continue
-		}
-
-		// Try to find existing host within transaction
-		var existingHost db.Host
-		query := `SELECT * FROM hosts WHERE ip_address = $1`
-		err = tx.QueryRowContext(ctx, query, ipAddr).Scan(
-			&existingHost.ID, &existingHost.IPAddress, &existingHost.Hostname,
-			&existingHost.MACAddress, &existingHost.Vendor, &existingHost.OSFamily,
-			&existingHost.OSName, &existingHost.OSVersion, &existingHost.OSConfidence,
-			&existingHost.OSDetectedAt, &existingHost.OSMethod, &existingHost.OSDetails,
-			&existingHost.DiscoveryMethod, &existingHost.ResponseTimeMS,
-			&existingHost.DiscoveryCount, &existingHost.IgnoreScanning,
-			&existingHost.FirstSeen, &existingHost.LastSeen, &existingHost.Status)
-
-		if err == nil {
-			// Found existing host - handle commit and return
-			result, commitErr := handleHostCommit(tx, &existingHost, host, ipAddr)
-			if commitErr != nil {
-				if attempt == maxRetries {
-					return nil, commitErr
+	existing, err := hostRepo.GetByIP(ctx, ipAddr)
+	if err == nil {
+		// Host already exists — update status but preserve all discovery data.
+		existing.Status = host.Status
+		logging.Debug("Found existing host",
+			"ip", ipAddr.String(),
+			"id", existing.ID.String(),
+			"discovery_method", func() string {
+				if existing.DiscoveryMethod != nil {
+					return *existing.DiscoveryMethod
 				}
-				time.Sleep(retryDelay)
-				continue
-			}
-			return result, nil
-		}
-
-		// Host not found - rollback read transaction
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			logging.Error("Failed to rollback read transaction", "ip", ipAddr.String(), "error", rollbackErr)
-		}
-
-		if attempt == maxRetries {
-			// Create new host if all retries exhausted
-			logging.Debug("Creating new host after lookup attempts", "ip", ipAddr.String(), "attempts", maxRetries)
-			debugListExistingHosts(ctx, database)
-
-			newHost := &db.Host{
-				ID:        uuid.New(),
-				IPAddress: ipAddr,
-				Status:    host.Status,
-				// Note: discovery_method will be NULL for hosts created during scan
-			}
-
-			// Create the new host with CreateOrUpdate to handle potential race condition
-			if createErr := hostRepo.CreateOrUpdate(ctx, newHost); createErr != nil {
-				return nil, fmt.Errorf("failed to create new host: %w", createErr)
-			}
-
-			logging.Debug("Successfully created new host", "ip", ipAddr.String())
-			return newHost, nil
-		}
-
-		logging.Debug("Host lookup attempt failed, retrying", "attempt", attempt, "ip", ipAddr.String())
-		time.Sleep(retryDelay)
+				return nullValue
+			}())
+		return existing, nil
 	}
 
-	return nil, fmt.Errorf("failed to get or create host after %d attempts", maxRetries)
+	// Any error other than not-found is unexpected.
+	if !isNotFoundError(err) {
+		return nil, fmt.Errorf("failed to look up host %s: %w", ipAddr, err)
+	}
+
+	// Host does not exist yet — create it.
+	logging.Debug("Creating new host", "ip", ipAddr.String())
+	newHost := &db.Host{
+		ID:        uuid.New(),
+		IPAddress: ipAddr,
+		Status:    host.Status,
+	}
+	if createErr := hostRepo.CreateOrUpdate(ctx, newHost); createErr != nil {
+		return nil, fmt.Errorf("failed to create new host %s: %w", ipAddr, createErr)
+	}
+
+	logging.Debug("Successfully created new host", "ip", ipAddr.String())
+	return newHost, nil
 }
 
-// verifyHostExists ensures the host record exists before creating port scans
-// to prevent foreign key constraint violations.
-func verifyHostExists(ctx context.Context, database *db.DB, hostID uuid.UUID) error {
-	var exists bool
-	query := `SELECT EXISTS(SELECT 1 FROM hosts WHERE id = $1)`
-
-	err := database.QueryRowContext(ctx, query, hostID).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("failed to verify host existence: %w", err)
+// isNotFoundError reports whether err represents a "not found" condition
+// returned by the db layer (wraps sql.ErrNoRows or our own CodeNotFound error).
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
 	}
-
-	if !exists {
-		return fmt.Errorf("host with ID %s does not exist", hostID.String())
+	// Our sanitizeDBError wraps sql.ErrNoRows as errors.DatabaseError with CodeNotFound.
+	var dbErr *errors.DatabaseError
+	if stderrors.As(err, &dbErr) {
+		return dbErr.Code == errors.CodeNotFound
 	}
-
-	logging.Debug("Verified host exists in database", "host_id", hostID.String())
-	return nil
-}
-
-// handleHostCommit handles the transaction commit for found hosts.
-func handleHostCommit(tx *sqlx.Tx, existingHost *db.Host, host Host, ipAddr db.IPAddr) (*db.Host, error) {
-	if commitErr := tx.Commit(); commitErr != nil {
-		logging.Error("Failed to commit read transaction", "ip", ipAddr.String(), "error", commitErr)
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			logging.Error("Failed to rollback after commit error", "ip", ipAddr.String(), "error", rollbackErr)
-		}
-		return nil, fmt.Errorf("failed to commit read transaction: %w", commitErr)
-	}
-
-	logging.Debug("Found existing host",
-		"ip", ipAddr.String(),
-		"id", existingHost.ID.String(),
-		"discovery_method", func() string {
-			if existingHost.DiscoveryMethod != nil {
-				return *existingHost.DiscoveryMethod
-			}
-			return nullValue
-		}())
-
-	// Update status but preserve discovery data
-	existingHost.Status = host.Status
-	return existingHost, nil
+	return false
 }
 
 // storeHostResults stores host and port scan results in the database.
