@@ -362,49 +362,57 @@ func storeScanResults(
 ) error {
 	logging.Debug("Storing scan results", "targets", config.Targets)
 
-	// Create a scan job record - for now we'll create a minimal scan target
-	scanTarget, err := createOrGetScanTarget(ctx, database, config)
-	if err != nil {
-		logging.Error("Failed to create scan target", "error", err)
-		return fmt.Errorf("failed to create scan target: %w", err)
-	}
-	logging.Debug("Created/retrieved scan target", "target_id", scanTarget.ID, "target_name", scanTarget.Name)
-
-	// Reuse the caller-supplied scan ID when available so that port_scans rows
-	// are linked to the same UUID that the API exposed to the client.
-	jobID := uuid.New()
-	if scanID != nil {
-		jobID = *scanID
-	}
-
-	// Create scan job
-	scanJob := &db.ScanJob{
-		ID:       jobID,
-		TargetID: scanTarget.ID,
-		Status:   db.ScanJobStatusCompleted,
-	}
-	logging.Debug("Creating scan job", "job_id", scanJob.ID, "target_id", scanJob.TargetID)
-
-	now := time.Now()
-	scanJob.StartedAt = &result.StartTime
-	scanJob.CompletedAt = &now
-
-	// Store scan statistics
 	statsJSON := fmt.Sprintf(`{"hosts_up": %d, "hosts_down": %d, "total_hosts": %d, "duration_seconds": %d}`,
 		result.Stats.Up, result.Stats.Down, result.Stats.Total, int(result.Duration.Seconds()))
-	scanJob.ScanStats = db.JSONB(statsJSON)
 
 	jobRepo := db.NewScanJobRepository(database)
-	if err := jobRepo.Create(ctx, scanJob); err != nil {
-		logging.Error("Failed to create scan job", "error", err)
-		return fmt.Errorf("failed to create scan job: %w", err)
-	}
-	logging.Debug("Successfully created scan job", "job_id", scanJob.ID)
 
-	// Store host and port scan results
+	var jobID uuid.UUID
+
+	if scanID != nil {
+		// The scan_job row was already created by CreateScan/StartScan.
+		// Updating stats on the existing row avoids a PK conflict on insert.
+		jobID = *scanID
+		logging.Debug("Updating existing scan job stats", "job_id", jobID)
+		if _, err := database.ExecContext(ctx,
+			`UPDATE scan_jobs SET scan_stats = $1 WHERE id = $2`,
+			db.JSONB(statsJSON), jobID,
+		); err != nil {
+			// Non-fatal: log and continue so port results are still stored.
+			logging.Warn("Failed to update scan job stats", "job_id", jobID, "error", err)
+		}
+	} else {
+		// No caller-supplied ID — standalone (non-API) scan run.
+		// Create a scan target and a brand-new scan_job row from scratch.
+		scanTarget, err := createOrGetScanTarget(ctx, database, config)
+		if err != nil {
+			logging.Error("Failed to create scan target", "error", err)
+			return fmt.Errorf("failed to create scan target: %w", err)
+		}
+		logging.Debug("Created/retrieved scan target", "target_id", scanTarget.ID, "target_name", scanTarget.Name)
+
+		jobID = uuid.New()
+		now := time.Now()
+		scanJob := &db.ScanJob{
+			ID:       jobID,
+			TargetID: scanTarget.ID,
+			Status:   db.ScanJobStatusCompleted,
+		}
+		scanJob.StartedAt = &result.StartTime
+		scanJob.CompletedAt = &now
+		scanJob.ScanStats = db.JSONB(statsJSON)
+
+		logging.Debug("Creating scan job", "job_id", scanJob.ID, "target_id", scanJob.TargetID)
+		if err := jobRepo.Create(ctx, scanJob); err != nil {
+			logging.Error("Failed to create scan job", "error", err)
+			return fmt.Errorf("failed to create scan job: %w", err)
+		}
+		logging.Debug("Successfully created scan job", "job_id", scanJob.ID)
+	}
+
+	// Store host and port scan results.
 	logging.Debug("Storing host results", "host_count", len(result.Hosts))
-	err = storeHostResults(ctx, database, scanJob.ID, result.Hosts)
-	if err != nil {
+	if err := storeHostResults(ctx, database, jobID, result.Hosts); err != nil {
 		logging.Error("Failed to store host results", "error", err)
 		return err
 	}
