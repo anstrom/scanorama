@@ -1,0 +1,605 @@
+package scanning
+
+import (
+	"context"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Ullaakut/nmap/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+// scanArgs builds a throw-away nmap.Scanner using a non-nmap binary path so
+// that NewScanner succeeds without requiring the real nmap binary on PATH,
+// then returns the composed CLI argument slice for inspection.
+//
+// We point the scanner at "/usr/bin/true" (always present on macOS/Linux).
+// The scanner is never Run(), so the binary is never actually executed.
+func scanArgs(t *testing.T, opts []nmap.Option) []string {
+	t.Helper()
+	// Use a real executable so WithBinaryPath bypasses the exec.LookPath("nmap")
+	// call inside NewScanner, making the helper work even without nmap installed.
+	opts = append(opts, nmap.WithBinaryPath("/usr/bin/true"))
+	s, err := nmap.NewScanner(context.Background(), opts...)
+	require.NoError(t, err)
+	return s.Args()
+}
+
+// hasArg returns true when any element of args contains substr.
+func hasArg(args []string, substr string) bool {
+	for _, a := range args {
+		if strings.Contains(a, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+// isRoot returns true when the current process runs as uid 0.
+func isRoot() bool { return os.Getuid() == 0 }
+
+// ─── buildScanOptions — scan-type branch ──────────────────────────────────────
+
+func TestBuildScanOptions_ScanTypeConnect(t *testing.T) {
+	cfg := &ScanConfig{Targets: []string{"127.0.0.1"}, Ports: "80", ScanType: scanTypeConnect}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-sT"), "connect scan should produce -sT; args=%v", args)
+}
+
+func TestBuildScanOptions_ScanTypeSYN(t *testing.T) {
+	cfg := &ScanConfig{Targets: []string{"127.0.0.1"}, Ports: "80", ScanType: "syn"}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-sS"), "syn scan should produce -sS; args=%v", args)
+}
+
+func TestBuildScanOptions_ScanTypeACK(t *testing.T) {
+	cfg := &ScanConfig{Targets: []string{"127.0.0.1"}, Ports: "80", ScanType: "ack"}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-sA"), "ack scan should produce -sA; args=%v", args)
+}
+
+func TestBuildScanOptions_ScanTypeUDP(t *testing.T) {
+	cfg := &ScanConfig{Targets: []string{"127.0.0.1"}, Ports: "53", ScanType: "udp"}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-sU"), "udp scan should produce -sU; args=%v", args)
+}
+
+func TestBuildScanOptions_ScanTypeAggressive(t *testing.T) {
+	cfg := &ScanConfig{Targets: []string{"127.0.0.1"}, Ports: "80", ScanType: "aggressive"}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-sS"), "aggressive scan should include -sS; args=%v", args)
+	assert.True(t, hasArg(args, "-A"), "aggressive scan should include -A; args=%v", args)
+}
+
+func TestBuildScanOptions_ScanTypeComprehensive(t *testing.T) {
+	cfg := &ScanConfig{Targets: []string{"127.0.0.1"}, Ports: "80", ScanType: "comprehensive"}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-sS"), "comprehensive scan should include -sS; args=%v", args)
+	assert.True(t, hasArg(args, "-sC"), "comprehensive scan should include -sC; args=%v", args)
+}
+
+func TestBuildScanOptions_ScanTypeEmpty(t *testing.T) {
+	// An empty ScanType should not inject any scan-method flag.
+	cfg := &ScanConfig{Targets: []string{"127.0.0.1"}, Ports: "80", ScanType: ""}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.NotEmpty(t, args)
+	for _, flag := range []string{"-sT", "-sS", "-sA", "-A", "-sC"} {
+		assert.False(t, hasArg(args, flag),
+			"empty ScanType should not emit %s; args=%v", flag, args)
+	}
+}
+
+// ─── buildScanOptions — OS detection ─────────────────────────────────────────
+
+func TestBuildScanOptions_OSDetectionOn(t *testing.T) {
+	cfg := &ScanConfig{
+		Targets:     []string{"127.0.0.1"},
+		Ports:       "80",
+		ScanType:    scanTypeConnect,
+		OSDetection: true,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-O"), "OSDetection=true should add -O; args=%v", args)
+}
+
+func TestBuildScanOptions_OSDetectionOff(t *testing.T) {
+	cfg := &ScanConfig{
+		Targets:     []string{"127.0.0.1"},
+		Ports:       "80",
+		ScanType:    scanTypeConnect,
+		OSDetection: false,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.False(t, hasArg(args, "-O"), "OSDetection=false must not add -O; args=%v", args)
+}
+
+// ─── buildScanOptions — timing template driven by TimeoutSec ─────────────────
+
+func TestBuildScanOptions_TimeoutZero_NoTimingFlag(t *testing.T) {
+	// TimeoutSec == 0 → timeout branch is skipped; no -T flag from it.
+	cfg := &ScanConfig{
+		Targets:    []string{"127.0.0.1"},
+		Ports:      "80",
+		ScanType:   scanTypeConnect,
+		TimeoutSec: 0,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	for _, f := range []string{"-T2", "-T3", "-T4"} {
+		assert.False(t, hasArg(args, f),
+			"TimeoutSec=0 should not add %s; args=%v", f, args)
+	}
+}
+
+func TestBuildScanOptions_TimeoutAtMin_AggressiveTiming(t *testing.T) {
+	// TimeoutSec <= minTimeoutSeconds (5) → TimingAggressive == -T4
+	cfg := &ScanConfig{
+		Targets:    []string{"127.0.0.1"},
+		Ports:      "80",
+		ScanType:   scanTypeConnect,
+		TimeoutSec: minTimeoutSeconds,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-T4"), "short timeout should produce -T4; args=%v", args)
+}
+
+func TestBuildScanOptions_TimeoutBelowMin_AggressiveTiming(t *testing.T) {
+	// TimeoutSec = 1 (< minTimeoutSeconds) → TimingAggressive == -T4
+	cfg := &ScanConfig{
+		Targets:    []string{"127.0.0.1"},
+		Ports:      "80",
+		ScanType:   scanTypeConnect,
+		TimeoutSec: 1,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-T4"), "very short timeout should produce -T4; args=%v", args)
+}
+
+func TestBuildScanOptions_TimeoutAtMedium_NormalTiming(t *testing.T) {
+	// TimeoutSec == mediumTimeoutSeconds (15) → TimingNormal == -T3
+	cfg := &ScanConfig{
+		Targets:    []string{"127.0.0.1"},
+		Ports:      "80",
+		ScanType:   scanTypeConnect,
+		TimeoutSec: mediumTimeoutSeconds,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-T3"), "medium timeout should produce -T3; args=%v", args)
+}
+
+func TestBuildScanOptions_TimeoutBetweenMinAndMedium_NormalTiming(t *testing.T) {
+	// minTimeoutSeconds < TimeoutSec < mediumTimeoutSeconds → -T3
+	cfg := &ScanConfig{
+		Targets:    []string{"127.0.0.1"},
+		Ports:      "80",
+		ScanType:   scanTypeConnect,
+		TimeoutSec: minTimeoutSeconds + 1,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-T3"),
+		"timeout between min and medium should produce -T3; args=%v", args)
+}
+
+func TestBuildScanOptions_TimeoutAboveMedium_PoliteTiming(t *testing.T) {
+	// TimeoutSec > mediumTimeoutSeconds → TimingPolite == -T2
+	cfg := &ScanConfig{
+		Targets:    []string{"127.0.0.1"},
+		Ports:      "80",
+		ScanType:   scanTypeConnect,
+		TimeoutSec: mediumTimeoutSeconds + 1,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-T2"), "long timeout should produce -T2; args=%v", args)
+}
+
+// ─── buildScanOptions — concurrency ──────────────────────────────────────────
+
+func TestBuildScanOptions_HighConcurrency_AggressiveTiming(t *testing.T) {
+	// Concurrency > maxConcurrency (20) → TimingAggressive (-T4)
+	cfg := &ScanConfig{
+		Targets:     []string{"127.0.0.1"},
+		Ports:       "80",
+		ScanType:    scanTypeConnect,
+		Concurrency: maxConcurrency + 1,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-T4"),
+		"concurrency > max should produce -T4; args=%v", args)
+}
+
+func TestBuildScanOptions_ConcurrencyAtMax_NoExtraFlag(t *testing.T) {
+	// Concurrency == maxConcurrency → still within bounds, no extra flag.
+	cfg := &ScanConfig{
+		Targets:     []string{"127.0.0.1"},
+		Ports:       "80",
+		ScanType:    scanTypeConnect,
+		TimeoutSec:  0,
+		Concurrency: maxConcurrency,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.False(t, hasArg(args, "-T4"),
+		"concurrency==max should not add -T4; args=%v", args)
+}
+
+func TestBuildScanOptions_LowConcurrency_NoExtraFlag(t *testing.T) {
+	cfg := &ScanConfig{
+		Targets:     []string{"127.0.0.1"},
+		Ports:       "80",
+		ScanType:    scanTypeConnect,
+		TimeoutSec:  0,
+		Concurrency: 5,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.False(t, hasArg(args, "-T4"),
+		"low concurrency should not add -T4; args=%v", args)
+}
+
+func TestBuildScanOptions_ZeroConcurrency_NoExtraFlag(t *testing.T) {
+	cfg := &ScanConfig{
+		Targets:     []string{"127.0.0.1"},
+		Ports:       "80",
+		ScanType:    scanTypeConnect,
+		TimeoutSec:  0,
+		Concurrency: 0,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.False(t, hasArg(args, "-T4"),
+		"zero concurrency should not add -T4; args=%v", args)
+}
+
+// ─── buildScanOptions — always-present flags ──────────────────────────────────
+
+func TestBuildScanOptions_AlwaysSkipsHostDiscovery(t *testing.T) {
+	cfg := &ScanConfig{Targets: []string{"127.0.0.1"}, Ports: "80", ScanType: scanTypeConnect}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-Pn"),
+		"should always include -Pn (skip host discovery); args=%v", args)
+}
+
+func TestBuildScanOptions_AlwaysIncludesVerbosity(t *testing.T) {
+	cfg := &ScanConfig{Targets: []string{"127.0.0.1"}, Ports: "80", ScanType: scanTypeConnect}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-v"),
+		"should always include -v (verbosity); args=%v", args)
+}
+
+func TestBuildScanOptions_MultipleTargets_NoError(t *testing.T) {
+	cfg := &ScanConfig{
+		Targets:  []string{"192.168.1.1", "192.168.1.2", "10.0.0.0/24"},
+		Ports:    "22,80,443",
+		ScanType: scanTypeConnect,
+	}
+	opts := buildScanOptions(cfg)
+	assert.NotEmpty(t, opts)
+}
+
+// ─── buildScanOptions — mixed-protocol UDP port spec ─────────────────────────
+
+func TestBuildScanOptions_UDPPortSpec_InjectsUDPScan(t *testing.T) {
+	// A port spec containing "U:" should trigger an extra -sU even when
+	// ScanType is "connect" (not "udp").
+	cfg := &ScanConfig{
+		Targets:  []string{"127.0.0.1"},
+		Ports:    "T:80,443,U:53,161",
+		ScanType: scanTypeConnect,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-sU"),
+		"port spec with U: prefix should add -sU; args=%v", args)
+}
+
+func TestBuildScanOptions_TCPOnlyPortSpec_NoUDPFlag(t *testing.T) {
+	cfg := &ScanConfig{
+		Targets:  []string{"127.0.0.1"},
+		Ports:    "80,443,8080",
+		ScanType: scanTypeConnect,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.False(t, hasArg(args, "-sU"),
+		"TCP-only port spec must not inject -sU; args=%v", args)
+}
+
+// ─── resolveScanType ──────────────────────────────────────────────────────────
+
+func TestResolveScanType_ConnectPassthrough(t *testing.T) {
+	assert.Equal(t, "connect", resolveScanType("connect"))
+}
+
+func TestResolveScanType_ACKPassthrough(t *testing.T) {
+	// "ack" is not in the rootRequired map — always passes through.
+	assert.Equal(t, "ack", resolveScanType("ack"))
+}
+
+func TestResolveScanType_UDPPassthrough(t *testing.T) {
+	assert.Equal(t, "udp", resolveScanType("udp"))
+}
+
+func TestResolveScanType_EmptyPassthrough(t *testing.T) {
+	assert.Equal(t, "", resolveScanType(""))
+}
+
+func TestResolveScanType_UnknownPassthrough(t *testing.T) {
+	assert.Equal(t, "stealth", resolveScanType("stealth"))
+}
+
+func TestResolveScanType_SYN_AsRoot(t *testing.T) {
+	if !isRoot() {
+		t.Skip("requires root uid")
+	}
+	assert.Equal(t, "syn", resolveScanType("syn"),
+		"root: 'syn' should be kept as-is")
+}
+
+func TestResolveScanType_SYN_NotRoot_FallsBackToConnect(t *testing.T) {
+	if isRoot() {
+		t.Skip("requires non-root uid")
+	}
+	assert.Equal(t, scanTypeConnect, resolveScanType("syn"),
+		"non-root: 'syn' should fall back to 'connect'")
+}
+
+func TestResolveScanType_Aggressive_AsRoot(t *testing.T) {
+	if !isRoot() {
+		t.Skip("requires root uid")
+	}
+	assert.Equal(t, "aggressive", resolveScanType("aggressive"))
+}
+
+func TestResolveScanType_Aggressive_NotRoot_FallsBackToConnect(t *testing.T) {
+	if isRoot() {
+		t.Skip("requires non-root uid")
+	}
+	assert.Equal(t, scanTypeConnect, resolveScanType("aggressive"),
+		"non-root: 'aggressive' should fall back to 'connect'")
+}
+
+func TestResolveScanType_Comprehensive_AsRoot(t *testing.T) {
+	if !isRoot() {
+		t.Skip("requires root uid")
+	}
+	assert.Equal(t, "comprehensive", resolveScanType("comprehensive"))
+}
+
+func TestResolveScanType_Comprehensive_NotRoot_FallsBackToConnect(t *testing.T) {
+	if isRoot() {
+		t.Skip("requires non-root uid")
+	}
+	assert.Equal(t, scanTypeConnect, resolveScanType("comprehensive"),
+		"non-root: 'comprehensive' should fall back to 'connect'")
+}
+
+// ─── FixedResourceManager.Close ───────────────────────────────────────────────
+
+func TestClose_IdleManager_NoError(t *testing.T) {
+	rm := NewFixedResourceManager(4)
+	assert.NoError(t, rm.Close())
+}
+
+func TestClose_MarksManagerUnhealthy(t *testing.T) {
+	rm := NewFixedResourceManager(4)
+	require.True(t, rm.IsHealthy(), "should be healthy before Close")
+	require.NoError(t, rm.Close())
+	assert.False(t, rm.IsHealthy(), "closed manager should report unhealthy")
+}
+
+func TestClose_ClearsActiveScans(t *testing.T) {
+	rm := NewFixedResourceManager(4)
+	ctx := context.Background()
+	require.NoError(t, rm.Acquire(ctx, "s1"))
+	require.NoError(t, rm.Acquire(ctx, "s2"))
+	require.Equal(t, 2, rm.GetActiveScans())
+
+	require.NoError(t, rm.Close())
+	assert.Equal(t, 0, rm.GetActiveScans(),
+		"Close should wipe the active-scan map")
+}
+
+func TestClose_Idempotent(t *testing.T) {
+	rm := NewFixedResourceManager(2)
+	require.NoError(t, rm.Close())
+	assert.NoError(t, rm.Close(), "second Close must be a no-op without error")
+}
+
+func TestClose_BlocksSubsequentAcquire(t *testing.T) {
+	rm := NewFixedResourceManager(2)
+	require.NoError(t, rm.Close())
+
+	err := rm.Acquire(context.Background(), "late-scan")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "closed")
+}
+
+func TestClose_AvailableSlotsEqualCapacityAfterClose(t *testing.T) {
+	const capacity = 3
+	rm := NewFixedResourceManager(capacity)
+	ctx := context.Background()
+	require.NoError(t, rm.Acquire(ctx, "a"))
+	require.NoError(t, rm.Acquire(ctx, "b"))
+
+	require.NoError(t, rm.Close())
+	// Active map is cleared, so available slots should equal full capacity.
+	assert.Equal(t, capacity, rm.GetAvailableSlots())
+}
+
+func TestClose_ClosedFlagSetInGetStats(t *testing.T) {
+	rm := NewFixedResourceManager(2)
+	require.NoError(t, rm.Close())
+	stats := rm.GetStats()
+	assert.Equal(t, true, stats["closed"])
+}
+
+// ─── FixedResourceManager.GetStats ────────────────────────────────────────────
+
+func TestGetStats_ContainsRequiredKeys(t *testing.T) {
+	rm := NewFixedResourceManager(5)
+	stats := rm.GetStats()
+	for _, key := range []string{"capacity", "active_scans", "available_slots", "is_healthy", "closed"} {
+		_, ok := stats[key]
+		assert.True(t, ok, "GetStats must contain key %q", key)
+	}
+}
+
+func TestGetStats_InitialValues(t *testing.T) {
+	const capacity = 7
+	rm := NewFixedResourceManager(capacity)
+	stats := rm.GetStats()
+
+	assert.Equal(t, capacity, stats["capacity"])
+	assert.Equal(t, 0, stats["active_scans"])
+	assert.Equal(t, capacity, stats["available_slots"])
+	assert.Equal(t, true, stats["is_healthy"])
+	assert.Equal(t, false, stats["closed"])
+}
+
+func TestGetStats_ReflectsActiveScans(t *testing.T) {
+	rm := NewFixedResourceManager(5)
+	ctx := context.Background()
+	require.NoError(t, rm.Acquire(ctx, "x1"))
+	require.NoError(t, rm.Acquire(ctx, "x2"))
+
+	stats := rm.GetStats()
+	assert.Equal(t, 2, stats["active_scans"])
+	assert.Equal(t, 3, stats["available_slots"])
+
+	rm.Release("x1")
+	rm.Release("x2")
+
+	stats2 := rm.GetStats()
+	assert.Equal(t, 0, stats2["active_scans"])
+	assert.Equal(t, 5, stats2["available_slots"])
+}
+
+func TestGetStats_AfterClose(t *testing.T) {
+	rm := NewFixedResourceManager(3)
+	ctx := context.Background()
+	require.NoError(t, rm.Acquire(ctx, "pre-close"))
+	require.NoError(t, rm.Close())
+
+	stats := rm.GetStats()
+	assert.Equal(t, true, stats["closed"])
+	assert.Equal(t, false, stats["is_healthy"])
+	assert.Equal(t, 0, stats["active_scans"])
+}
+
+func TestGetStats_CapacityClampedToOne_ZeroInput(t *testing.T) {
+	// Constructor clamps capacity ≤ 0 to 1.
+	rm := NewFixedResourceManager(0)
+	stats := rm.GetStats()
+	assert.Equal(t, 1, stats["capacity"])
+}
+
+func TestGetStats_CapacityClampedToOne_NegativeInput(t *testing.T) {
+	rm := NewFixedResourceManager(-42)
+	stats := rm.GetStats()
+	assert.Equal(t, 1, stats["capacity"])
+}
+
+func TestGetStats_AvailableSlotsConsistency(t *testing.T) {
+	rm := NewFixedResourceManager(4)
+	ctx := context.Background()
+
+	for i, id := range []string{"a", "b", "c"} {
+		require.NoError(t, rm.Acquire(ctx, id))
+		stats := rm.GetStats()
+		assert.Equal(t, i+1, stats["active_scans"])
+		assert.Equal(t, 4-(i+1), stats["available_slots"])
+	}
+
+	rm.Release("a")
+	stats := rm.GetStats()
+	assert.Equal(t, 2, stats["active_scans"])
+	assert.Equal(t, 2, stats["available_slots"])
+
+	rm.Release("b")
+	rm.Release("c")
+	stats = rm.GetStats()
+	assert.Equal(t, 0, stats["active_scans"])
+	assert.Equal(t, 4, stats["available_slots"])
+}
+
+// ─── sendResult ───────────────────────────────────────────────────────────────
+
+func TestSendResult_NilChannel_NoPanic(t *testing.T) {
+	q := &ScanQueue{}
+	req := &ScanQueueRequest{ID: "nil-ch", ResultCh: nil}
+	result := &ScanQueueResult{ID: "nil-ch"}
+	assert.NotPanics(t, func() { q.sendResult(req, result) })
+}
+
+func TestSendResult_BufferedChannel_DeliveredSuccessfully(t *testing.T) {
+	q := &ScanQueue{}
+	ch := make(chan *ScanQueueResult, 1)
+	req := &ScanQueueRequest{ID: "buffered", ResultCh: ch}
+	want := &ScanQueueResult{ID: "buffered"}
+
+	q.sendResult(req, want)
+
+	select {
+	case got := <-ch:
+		assert.Equal(t, want, got)
+	default:
+		t.Fatal("result was not delivered to the buffered channel")
+	}
+}
+
+func TestSendResult_UnbufferedChannel_DoesNotBlock(t *testing.T) {
+	// An unbuffered channel with no reader must not cause sendResult to block.
+	q := &ScanQueue{}
+	ch := make(chan *ScanQueueResult) // unbuffered, nobody reading
+	req := &ScanQueueRequest{ID: "full-ch", ResultCh: ch}
+	result := &ScanQueueResult{ID: "full-ch"}
+
+	done := make(chan struct{})
+	go func() {
+		q.sendResult(req, result)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// returned without blocking — correct behavior
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("sendResult blocked on an unread unbuffered channel")
+	}
+}
+
+func TestSendResult_MultipleResultsSameChannel(t *testing.T) {
+	q := &ScanQueue{}
+	const n = 5
+	ch := make(chan *ScanQueueResult, n)
+
+	for i := 0; i < n; i++ {
+		req := &ScanQueueRequest{ID: "multi", ResultCh: ch}
+		result := &ScanQueueResult{ID: "multi"}
+		q.sendResult(req, result)
+	}
+	assert.Equal(t, n, len(ch),
+		"all %d results should be queued in the buffered channel", n)
+}
+
+func TestSendResult_FullBufferedChannel_DoesNotBlock(t *testing.T) {
+	// Fill the channel to capacity first, then a further send must not block.
+	q := &ScanQueue{}
+	ch := make(chan *ScanQueueResult, 1)
+	ch <- &ScanQueueResult{ID: "pre-fill"} // channel is now full
+
+	req := &ScanQueueRequest{ID: "overflow", ResultCh: ch}
+	result := &ScanQueueResult{ID: "overflow"}
+
+	done := make(chan struct{})
+	go func() {
+		q.sendResult(req, result)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// non-blocking send dropped the result silently — correct
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("sendResult blocked on a full buffered channel")
+	}
+}
