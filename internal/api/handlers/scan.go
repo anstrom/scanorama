@@ -414,19 +414,25 @@ func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 // submitToQueue enqueues the scan for execution via the bounded scan queue.
 // It returns the HTTP status code and error to write back, or 0/nil on success.
 func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error) {
+	// Type-assert to *db.DB so the runner can persist hosts and ports.
+	// If the store is a test double the cast yields nil, which RunScanWithContext
+	// handles gracefully (it skips persistence when database is nil).
+	concreteDB, _ := h.database.(*db.DB)
+
 	scanConfig := &scanning.ScanConfig{
 		Targets:     scan.Targets,
 		Ports:       scan.Ports,
 		ScanType:    firstNonEmpty(scan.ScanType, h.scanMode, "connect"),
 		TimeoutSec:  300,
 		OSDetection: getOptionBool(scan.Options, "os_detection"),
+		ScanID:      &scanID,
 	}
 
 	resultCh := make(chan *scanning.ScanQueueResult, 1)
 	req := &scanning.ScanQueueRequest{
 		ID:       scanID.String(),
 		Config:   scanConfig,
-		Database: nil,
+		Database: concreteDB,
 		ResultCh: resultCh,
 	}
 
@@ -457,6 +463,10 @@ func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error
 		} else {
 			h.logger.Info("Queued scan execution completed",
 				"scan_id", scanID, "duration", result.Duration)
+			if completeErr := h.database.CompleteScan(ctx, scanID); completeErr != nil {
+				h.logger.Error("Failed to mark scan as completed after queue execution",
+					"scan_id", scanID, "error", completeErr)
+			}
 		}
 	}()
 
@@ -473,6 +483,7 @@ func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 		ScanType:    firstNonEmpty(scan.ScanType, h.scanMode, "connect"),
 		TimeoutSec:  300, // Default 5 minute timeout
 		OSDetection: getOptionBool(scan.Options, "os_detection"),
+		ScanID:      &scanID,
 	}
 
 	// Type-assert to *db.DB so the runner can persist hosts and ports.

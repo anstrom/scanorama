@@ -119,7 +119,7 @@ func TestStoreScanResults_SuccessfulStorage(t *testing.T) {
 	}
 
 	// Store the results
-	err := storeScanResults(ctx, database, config, result)
+	err := storeScanResults(ctx, database, config, result, nil)
 	require.NoError(t, err, "storing scan results should succeed")
 
 	// Verify scan job was created by querying directly
@@ -185,7 +185,7 @@ func TestStoreScanResults_MultipleHosts(t *testing.T) {
 		},
 	}
 
-	err := storeScanResults(ctx, database, config, result)
+	err := storeScanResults(ctx, database, config, result, nil)
 	require.NoError(t, err, "should handle multiple hosts")
 
 	// Verify all hosts were stored
@@ -224,7 +224,7 @@ func TestStoreScanResults_InvalidTarget(t *testing.T) {
 	}
 
 	// Should handle empty results gracefully
-	err := storeScanResults(ctx, database, config, result)
+	err := storeScanResults(ctx, database, config, result, nil)
 	// The function may return an error or succeed with empty results
 	// Both are acceptable behaviors for edge cases
 	if err != nil {

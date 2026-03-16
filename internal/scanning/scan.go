@@ -119,7 +119,7 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 
 	// Store results in database if provided
 	if database != nil {
-		if err := storeScanResults(ctx, database, config, scanResult); err != nil {
+		if err := storeScanResults(ctx, database, config, scanResult, config.ScanID); err != nil {
 			logging.ErrorDatabase("Failed to store scan results", err,
 				"scan_type", config.ScanType,
 				"host_count", len(scanResult.Hosts))
@@ -285,6 +285,17 @@ func convertNmapHost(h *nmap.Host) *Host {
 		host.Ports = append(host.Ports, port)
 	}
 
+	// Capture OS detection data from the best match (highest accuracy).
+	if len(h.OS.Matches) > 0 {
+		best := h.OS.Matches[0]
+		host.OSName = best.Name
+		host.OSAccuracy = best.Accuracy
+		if len(best.Classes) > 0 {
+			host.OSFamily = best.Classes[0].Family
+			host.OSVersion = best.Classes[0].OSGeneration
+		}
+	}
+
 	return host
 }
 
@@ -342,7 +353,11 @@ func PrintResults(result *ScanResult) {
 }
 
 // storeScanResults stores scan results in the database.
-func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, result *ScanResult) error {
+// storeScanResults persists the results of a scan run.
+// When scanID is non-nil it is reused as the scan_jobs row ID so that
+// GetScanResults (which queries port_scans by job_id) can find the data.
+// When scanID is nil a fresh UUID is generated (legacy / CLI path).
+func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, result *ScanResult, scanID *uuid.UUID) error {
 	logging.Debug("Storing scan results", "targets", config.Targets)
 
 	// Create a scan job record - for now we'll create a minimal scan target
@@ -353,9 +368,16 @@ func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, 
 	}
 	logging.Debug("Created/retrieved scan target", "target_id", scanTarget.ID, "target_name", scanTarget.Name)
 
+	// Reuse the caller-supplied scan ID when available so that port_scans rows
+	// are linked to the same UUID that the API exposed to the client.
+	jobID := uuid.New()
+	if scanID != nil {
+		jobID = *scanID
+	}
+
 	// Create scan job
 	scanJob := &db.ScanJob{
-		ID:       uuid.New(),
+		ID:       jobID,
 		TargetID: scanTarget.ID,
 		Status:   db.ScanJobStatusCompleted,
 	}
@@ -432,13 +454,14 @@ func parseTargetAddress(target string) (db.NetworkAddr, error) {
 	// Try to parse as IP address first
 	ip := net.ParseIP(target)
 	if ip == nil {
-		// Require at least one dot so bare words like "not-an-ip-address"
-		// are rejected while FQDNs like "example.com" are accepted.
-		if !strings.Contains(target, ".") {
+		// Accept hostnames: either containing a dot (FQDNs like "example.com")
+		// or well-known single-label names like "localhost".
+		// Reject bare words that look neither like an IP nor a plausible hostname.
+		isHostname := strings.Contains(target, ".") || target == "localhost"
+		if !isHostname {
 			return networkAddr, fmt.Errorf("invalid target address: %q is not a valid IP, CIDR, or hostname", target)
 		}
-		// For hostnames, create a placeholder network
-		// This will be resolved during scanning
+		// For hostnames, create a placeholder network; nmap will resolve it.
 		ip = net.ParseIP("0.0.0.0")
 	}
 
@@ -516,6 +539,26 @@ func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostR
 	dbHost, err := getOrCreateHostSafely(ctx, database, hostRepo, ipAddr, host)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create host %s: %w", host.Address, err)
+	}
+
+	// Persist OS detection data when nmap returned results.
+	if host.OSName != "" || host.OSFamily != "" {
+		if host.OSFamily != "" {
+			dbHost.OSFamily = &host.OSFamily
+		}
+		if host.OSName != "" {
+			dbHost.OSName = &host.OSName
+		}
+		if host.OSVersion != "" {
+			dbHost.OSVersion = &host.OSVersion
+		}
+		if host.OSAccuracy > 0 {
+			dbHost.OSConfidence = &host.OSAccuracy
+		}
+		if updateErr := hostRepo.CreateOrUpdate(ctx, dbHost); updateErr != nil {
+			logging.Warn("Failed to update OS detection data for host",
+				"address", host.Address, "error", updateErr)
+		}
 	}
 
 	logging.Debug("Using host for scan",
@@ -614,6 +657,8 @@ func isNotFoundError(err error) bool {
 }
 
 // storeHostResults stores host and port scan results in the database.
+// storeHostResults stores host and port scan results in the database,
+// updating OS fields on the host record when OS detection data is present.
 func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hosts []Host) error {
 	hostRepo := db.NewHostRepository(database)
 	portRepo := db.NewPortScanRepository(database)
