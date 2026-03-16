@@ -42,6 +42,9 @@ type ScanConfig struct {
 	Ports string
 	// ScanType determines the type of scan: "connect", "syn", "ack", "udp", "aggressive", or "comprehensive"
 	ScanType string
+	// Timing sets the nmap timing template explicitly: "paranoid", "polite", "normal", "aggressive", "insane".
+	// When set, this takes precedence over any timing derived from TimeoutSec.
+	Timing string
 	// OSDetection enables nmap OS fingerprinting (-O)
 	OSDetection bool
 	// TimeoutSec specifies scan timeout in seconds (0 = default timeout)

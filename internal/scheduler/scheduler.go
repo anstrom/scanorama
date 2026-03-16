@@ -580,7 +580,7 @@ hostLoop:
 		}
 
 		wg.Add(1)
-		go func(h *db.Host, pID string, ports, scanType string, timeoutSec int) {
+		go func(h *db.Host, pID string, ports, scanType, timing string, timeoutSec int) {
 			defer func() {
 				<-sem // release semaphore slot
 				wg.Done()
@@ -598,6 +598,7 @@ hostLoop:
 				Targets:     []string{h.IPAddress.String()},
 				Ports:       ports,
 				ScanType:    scanType,
+				Timing:      timing,
 				TimeoutSec:  timeoutSec,
 				Concurrency: 1,
 			}
@@ -613,7 +614,7 @@ hostLoop:
 
 			log.Printf("Completed scan of host %s: %d hosts responded, %d up",
 				h.IPAddress, result.Stats.Total, result.Stats.Up)
-		}(host, profileID, profile.Ports, profile.ScanType, timingToScanTimeout(profile.Timing))
+		}(host, profileID, profile.Ports, profile.ScanType, profile.Timing, timingToScanTimeout(profile.Timing))
 	}
 
 	// Wait for all in-flight scans to finish before returning.
@@ -650,6 +651,7 @@ func (s *Scheduler) processHostsViaQueue(ctx context.Context, hosts []*db.Host, 
 			Targets:     []string{host.IPAddress.String()},
 			Ports:       profile.Ports,
 			ScanType:    profile.ScanType,
+			Timing:      profile.Timing,
 			TimeoutSec:  timingToScanTimeout(profile.Timing),
 			Concurrency: 1,
 		}

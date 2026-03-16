@@ -118,82 +118,112 @@ func TestBuildScanOptions_OSDetectionOff(t *testing.T) {
 	assert.False(t, hasArg(args, "-O"), "OSDetection=false must not add -O; args=%v", args)
 }
 
-// ─── buildScanOptions — timing template driven by TimeoutSec ─────────────────
+// ─── buildScanOptions — timing template driven by Timing field ───────────────
 
-func TestBuildScanOptions_TimeoutZero_NoTimingFlag(t *testing.T) {
-	// TimeoutSec == 0 → timeout branch is skipped; no -T flag from it.
+func TestBuildScanOptions_TimingParanoid(t *testing.T) {
+	// "paranoid" → nmap T0 (-T0)
 	cfg := &ScanConfig{
-		Targets:    []string{"127.0.0.1"},
-		Ports:      "80",
-		ScanType:   scanTypeConnect,
-		TimeoutSec: 0,
+		Targets:  []string{"127.0.0.1"},
+		Ports:    "80",
+		ScanType: scanTypeConnect,
+		Timing:   "paranoid",
 	}
 	args := scanArgs(t, buildScanOptions(cfg))
-	for _, f := range []string{"-T2", "-T3", "-T4"} {
+	assert.True(t, hasArg(args, "-T0"), "paranoid timing should produce -T0; args=%v", args)
+}
+
+func TestBuildScanOptions_TimingPolite(t *testing.T) {
+	// "polite" → nmap T1 (-T1)
+	cfg := &ScanConfig{
+		Targets:  []string{"127.0.0.1"},
+		Ports:    "80",
+		ScanType: scanTypeConnect,
+		Timing:   "polite",
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-T1"), "polite timing should produce -T1; args=%v", args)
+}
+
+func TestBuildScanOptions_TimingNormal(t *testing.T) {
+	// "normal" → nmap T3 (-T3)
+	cfg := &ScanConfig{
+		Targets:  []string{"127.0.0.1"},
+		Ports:    "80",
+		ScanType: scanTypeConnect,
+		Timing:   "normal",
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-T3"), "normal timing should produce -T3; args=%v", args)
+}
+
+func TestBuildScanOptions_TimingAggressive(t *testing.T) {
+	// "aggressive" → nmap T4 (-T4)
+	cfg := &ScanConfig{
+		Targets:  []string{"127.0.0.1"},
+		Ports:    "80",
+		ScanType: scanTypeConnect,
+		Timing:   "aggressive",
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-T4"), "aggressive timing should produce -T4; args=%v", args)
+}
+
+func TestBuildScanOptions_TimingInsane(t *testing.T) {
+	// "insane" → nmap T5 (-T5)
+	cfg := &ScanConfig{
+		Targets:  []string{"127.0.0.1"},
+		Ports:    "80",
+		ScanType: scanTypeConnect,
+		Timing:   "insane",
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-T5"), "insane timing should produce -T5; args=%v", args)
+}
+
+func TestBuildScanOptions_TimingEmpty_NoTimingFlag(t *testing.T) {
+	// Empty Timing and no high concurrency → no -T flag added.
+	cfg := &ScanConfig{
+		Targets:     []string{"127.0.0.1"},
+		Ports:       "80",
+		ScanType:    scanTypeConnect,
+		Timing:      "",
+		Concurrency: 0,
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	for _, f := range []string{"-T0", "-T1", "-T2", "-T3", "-T4", "-T5"} {
 		assert.False(t, hasArg(args, f),
-			"TimeoutSec=0 should not add %s; args=%v", f, args)
+			"empty Timing with no concurrency should not add %s; args=%v", f, args)
 	}
 }
 
-func TestBuildScanOptions_TimeoutAtMin_AggressiveTiming(t *testing.T) {
-	// TimeoutSec <= minTimeoutSeconds (5) → TimingAggressive == -T4
+func TestBuildScanOptions_TimingUnknown_NoTimingFlag(t *testing.T) {
+	// Unrecognized Timing string → falls through to default, no -T flag.
 	cfg := &ScanConfig{
-		Targets:    []string{"127.0.0.1"},
-		Ports:      "80",
-		ScanType:   scanTypeConnect,
-		TimeoutSec: minTimeoutSeconds,
+		Targets:     []string{"127.0.0.1"},
+		Ports:       "80",
+		ScanType:    scanTypeConnect,
+		Timing:      "unknown-value",
+		Concurrency: 0,
 	}
 	args := scanArgs(t, buildScanOptions(cfg))
-	assert.True(t, hasArg(args, "-T4"), "short timeout should produce -T4; args=%v", args)
+	for _, f := range []string{"-T0", "-T1", "-T2", "-T3", "-T4", "-T5"} {
+		assert.False(t, hasArg(args, f),
+			"unknown Timing should not add %s; args=%v", f, args)
+	}
 }
 
-func TestBuildScanOptions_TimeoutBelowMin_AggressiveTiming(t *testing.T) {
-	// TimeoutSec = 1 (< minTimeoutSeconds) → TimingAggressive == -T4
+func TestBuildScanOptions_TimingTakesPrecedenceOverConcurrency(t *testing.T) {
+	// Explicit Timing field wins even when Concurrency > maxConcurrency.
 	cfg := &ScanConfig{
-		Targets:    []string{"127.0.0.1"},
-		Ports:      "80",
-		ScanType:   scanTypeConnect,
-		TimeoutSec: 1,
+		Targets:     []string{"127.0.0.1"},
+		Ports:       "80",
+		ScanType:    scanTypeConnect,
+		Timing:      "polite",
+		Concurrency: maxConcurrency + 1,
 	}
 	args := scanArgs(t, buildScanOptions(cfg))
-	assert.True(t, hasArg(args, "-T4"), "very short timeout should produce -T4; args=%v", args)
-}
-
-func TestBuildScanOptions_TimeoutAtMedium_NormalTiming(t *testing.T) {
-	// TimeoutSec == mediumTimeoutSeconds (15) → TimingNormal == -T3
-	cfg := &ScanConfig{
-		Targets:    []string{"127.0.0.1"},
-		Ports:      "80",
-		ScanType:   scanTypeConnect,
-		TimeoutSec: mediumTimeoutSeconds,
-	}
-	args := scanArgs(t, buildScanOptions(cfg))
-	assert.True(t, hasArg(args, "-T3"), "medium timeout should produce -T3; args=%v", args)
-}
-
-func TestBuildScanOptions_TimeoutBetweenMinAndMedium_NormalTiming(t *testing.T) {
-	// minTimeoutSeconds < TimeoutSec < mediumTimeoutSeconds → -T3
-	cfg := &ScanConfig{
-		Targets:    []string{"127.0.0.1"},
-		Ports:      "80",
-		ScanType:   scanTypeConnect,
-		TimeoutSec: minTimeoutSeconds + 1,
-	}
-	args := scanArgs(t, buildScanOptions(cfg))
-	assert.True(t, hasArg(args, "-T3"),
-		"timeout between min and medium should produce -T3; args=%v", args)
-}
-
-func TestBuildScanOptions_TimeoutAboveMedium_PoliteTiming(t *testing.T) {
-	// TimeoutSec > mediumTimeoutSeconds → TimingPolite == -T2
-	cfg := &ScanConfig{
-		Targets:    []string{"127.0.0.1"},
-		Ports:      "80",
-		ScanType:   scanTypeConnect,
-		TimeoutSec: mediumTimeoutSeconds + 1,
-	}
-	args := scanArgs(t, buildScanOptions(cfg))
-	assert.True(t, hasArg(args, "-T2"), "long timeout should produce -T2; args=%v", args)
+	assert.True(t, hasArg(args, "-T1"), "explicit Timing=polite should produce -T1; args=%v", args)
+	assert.False(t, hasArg(args, "-T4"), "explicit Timing should prevent concurrency fallback to -T4; args=%v", args)
 }
 
 // ─── buildScanOptions — concurrency ──────────────────────────────────────────
