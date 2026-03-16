@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -55,6 +57,11 @@ type ScanConfig struct {
 	RetryCount int
 	// RetryDelay specifies the delay between retries
 	RetryDelay time.Duration
+	// ScanID is the UUID of the existing scan_jobs row that triggered this scan.
+	// When set, storeScanResults reuses this ID so that port_scans rows are
+	// linked to the same UUID exposed to the API client via GetScanResults.
+	// When nil a fresh UUID is generated (CLI / legacy path).
+	ScanID *uuid.UUID
 }
 
 // Validate checks if the scan configuration is valid.
@@ -193,6 +200,14 @@ type Host struct {
 	Status string
 	// Ports contains information about all scanned ports
 	Ports []Port
+	// OSName is the detected operating system name, if available
+	OSName string
+	// OSFamily is the detected operating system family (e.g. "Linux", "Windows")
+	OSFamily string
+	// OSVersion is the detected operating system version, if available
+	OSVersion string
+	// OSAccuracy is the confidence percentage (0-100) of the OS detection
+	OSAccuracy int
 }
 
 // Port represents the scan results for a single port.
