@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search, ScanLine, X } from "lucide-react";
+import { Search, ScanLine, X, Monitor } from "lucide-react";
 import { Button } from "../components/button";
 import { useHosts, useHost } from "../api/hooks/use-hosts";
 import {
@@ -83,6 +83,50 @@ function HostDetailPanel({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+          {/* OS Detection */}
+          {(isLoading || h.os_family || h.os_name || h.os_version_detail) && (
+            <section>
+              <h3 className="text-xs font-medium text-text-primary mb-3 flex items-center gap-1.5">
+                <Monitor className="h-3.5 w-3.5 text-text-muted" />
+                OS Detection
+              </h3>
+              {isLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="flex gap-2">
+                      <Skeleton className="h-3 w-28 shrink-0" />
+                      <Skeleton className="h-3 w-40" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <MetaRow label="Family" value={h.os_family} />
+                  <MetaRow label="Name" value={h.os_name} />
+                  <MetaRow label="Version" value={h.os_version_detail} />
+                  <MetaRow
+                    label="Confidence"
+                    value={
+                      h.os_confidence != null ? (
+                        <span className="flex items-center gap-1.5">
+                          <span className="tabular-nums">
+                            {h.os_confidence}%
+                          </span>
+                          <span className="w-20 h-1.5 rounded-full bg-surface-raised overflow-hidden">
+                            <span
+                              className="block h-full rounded-full bg-accent/70"
+                              style={{ width: `${h.os_confidence}%` }}
+                            />
+                          </span>
+                        </span>
+                      ) : undefined
+                    }
+                  />
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Identity */}
           <section>
             <h3 className="text-xs font-medium text-text-primary mb-3">

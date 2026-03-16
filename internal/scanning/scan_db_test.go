@@ -433,6 +433,197 @@ func TestParseTargetAddress_InvalidCIDR(t *testing.T) {
 	}
 }
 
+// TestStoreScanResults_ScanIDRoundTrip verifies the critical invariant that
+// when a ScanID is passed to storeScanResults the resulting port_scans rows
+// are stored with that exact job_id, so GetScanResults can retrieve them.
+// This is the integration-level regression test for the bug where
+// storeScanResults always called uuid.New(), breaking the API lookup.
+func TestStoreScanResults_ScanIDRoundTrip(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+
+	// Use a fixed scan ID — this simulates the UUID the API exposes to the client.
+	scanID := uuid.New()
+
+	config := &ScanConfig{
+		Targets:  []string{"10.42.0.1"},
+		Ports:    "22,80",
+		ScanType: "connect",
+		ScanID:   &scanID,
+	}
+
+	result := &ScanResult{
+		StartTime: time.Now(),
+		Duration:  5 * time.Second,
+		Stats:     HostStats{Up: 1, Down: 0, Total: 1},
+		Hosts: []Host{
+			{
+				Address: "10.42.0.1",
+				Status:  "up",
+				Ports: []Port{
+					{Number: 22, Protocol: "tcp", State: "open", Service: "ssh"},
+					{Number: 80, Protocol: "tcp", State: "open", Service: "http"},
+				},
+			},
+		},
+	}
+
+	err := storeScanResults(ctx, database, config, result, &scanID)
+	require.NoError(t, err, "storeScanResults should succeed")
+
+	// Query port_scans using the same scanID — this mirrors what GetScanResults does.
+	var portCount int
+	err = database.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM port_scans WHERE job_id = $1`, scanID,
+	).Scan(&portCount)
+	require.NoError(t, err, "should be able to query port_scans by scanID")
+	assert.Equal(t, 2, portCount,
+		"both port_scans rows must be retrievable by the original scan UUID; "+
+			"if 0 rows are found the ScanID was not propagated to the ScanJob")
+
+	// Also verify the scan_jobs row itself uses the correct ID.
+	var jobExists bool
+	err = database.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE id = $1)`, scanID,
+	).Scan(&jobExists)
+	require.NoError(t, err)
+	assert.True(t, jobExists,
+		"scan_jobs row must use the caller-supplied UUID, not a fresh one")
+}
+
+// TestStoreScanResults_NilScanID_GeneratesFreshUUID verifies that when no
+// ScanID is provided (CLI / legacy path) a fresh UUID is generated and the
+// rows are still stored correctly.
+func TestStoreScanResults_NilScanID_GeneratesFreshUUID(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+
+	config := &ScanConfig{
+		Targets:  []string{"10.43.0.1"},
+		Ports:    "443",
+		ScanType: "connect",
+		// ScanID intentionally nil — legacy path.
+	}
+
+	result := &ScanResult{
+		StartTime: time.Now(),
+		Duration:  2 * time.Second,
+		Stats:     HostStats{Up: 1, Down: 0, Total: 1},
+		Hosts: []Host{
+			{
+				Address: "10.43.0.1",
+				Status:  "up",
+				Ports:   []Port{{Number: 443, Protocol: "tcp", State: "open", Service: "https"}},
+			},
+		},
+	}
+
+	err := storeScanResults(ctx, database, config, result, nil)
+	require.NoError(t, err, "storeScanResults with nil ScanID should succeed")
+
+	// A scan_jobs row must have been created.
+	var jobCount int
+	err = database.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM scan_jobs WHERE started_at >= $1`,
+		result.StartTime.Add(-time.Minute),
+	).Scan(&jobCount)
+	require.NoError(t, err)
+	assert.Greater(t, jobCount, 0, "a scan_jobs row should exist")
+}
+
+// TestStoreScanResults_OSFieldsPersisted verifies that OS detection data
+// on the Host struct is persisted to the hosts table.
+func TestStoreScanResults_OSFieldsPersisted(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	scanID := uuid.New()
+
+	config := &ScanConfig{
+		Targets:  []string{"10.44.0.1"},
+		Ports:    "22",
+		ScanType: "connect",
+		ScanID:   &scanID,
+	}
+
+	result := &ScanResult{
+		StartTime: time.Now(),
+		Duration:  3 * time.Second,
+		Stats:     HostStats{Up: 1, Down: 0, Total: 1},
+		Hosts: []Host{
+			{
+				Address:    "10.44.0.1",
+				Status:     "up",
+				OSName:     "Linux 5.15",
+				OSFamily:   "Linux",
+				OSVersion:  "5.15",
+				OSAccuracy: 96,
+				Ports:      []Port{{Number: 22, Protocol: "tcp", State: "open", Service: "ssh"}},
+			},
+		},
+	}
+
+	err := storeScanResults(ctx, database, config, result, &scanID)
+	require.NoError(t, err, "storeScanResults with OS data should succeed")
+
+	// Read back the host and verify OS fields were written.
+	hostRepo := db.NewHostRepository(database)
+	ipAddr := db.IPAddr{IP: net.ParseIP("10.44.0.1")}
+	host, err := hostRepo.GetByIP(ctx, ipAddr)
+	require.NoError(t, err, "host should be retrievable after scan")
+
+	require.NotNil(t, host.OSName, "OSName should be persisted")
+	assert.Equal(t, "Linux 5.15", *host.OSName)
+
+	require.NotNil(t, host.OSFamily, "OSFamily should be persisted")
+	assert.Equal(t, "Linux", *host.OSFamily)
+
+	require.NotNil(t, host.OSVersion, "OSVersion should be persisted")
+	assert.Equal(t, "5.15", *host.OSVersion)
+
+	require.NotNil(t, host.OSConfidence, "OSConfidence should be persisted")
+	assert.Equal(t, 96, *host.OSConfidence)
+}
+
+// TestCreateAdhocScanTarget_Localhost verifies that "localhost" is accepted
+// as a target hostname (regression: it was rejected because it contains no dot).
+func TestCreateAdhocScanTarget_Localhost(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	targetRepo := db.NewScanTargetRepository(database)
+
+	config := &ScanConfig{
+		ScanType: "connect",
+		Ports:    "80",
+	}
+
+	target, err := createAdhocScanTarget(ctx, targetRepo, "localhost", config)
+	require.NoError(t, err,
+		"createAdhocScanTarget should accept 'localhost'; "+
+			"if this fails the hostname check still requires a dot")
+	assert.NotNil(t, target)
+	assert.NotEqual(t, uuid.Nil, target.ID)
+}
+
 // TestRunScanWithDB_IntegrationTest is an end-to-end test of scanning with database storage.
 func TestRunScanWithDB_IntegrationTest(t *testing.T) {
 	database := setupTestDB(t)
