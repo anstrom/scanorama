@@ -289,14 +289,13 @@ func TestXMLRoundTrip(t *testing.T) {
 func compareResults(t *testing.T, original, loaded *ScanResult) {
 	require.Equal(t, len(original.Hosts), len(loaded.Hosts), "Host count mismatch")
 
-	for i, origHost := range original.Hosts {
-		loadedHost := loaded.Hosts[i]
-		compareHosts(t, origHost, loadedHost)
+	for i := range original.Hosts {
+		compareHosts(t, &original.Hosts[i], &loaded.Hosts[i])
 	}
 }
 
 // compareHosts compares two Host objects for equality.
-func compareHosts(t *testing.T, original, loaded Host) {
+func compareHosts(t *testing.T, original, loaded *Host) {
 	assert.Equal(t, original.Address, loaded.Address, "Host address mismatch")
 	assert.Equal(t, original.Status, loaded.Status, "Host status mismatch")
 	assert.Equal(t, len(original.Ports), len(loaded.Ports), "Port count mismatch")

@@ -620,10 +620,10 @@ func TestSendResult_MultipleResultsSameChannel(t *testing.T) {
 // convertNmapHost — OS detection
 // ──────────────────────────────────────────────────────────────────────────────
 
-func makeNmapHost(addr, status string, ports []nmap.Port, osMatches []nmap.OSMatch) nmap.Host {
+func makeNmapHost(addr string, ports []nmap.Port, osMatches []nmap.OSMatch) nmap.Host {
 	h := nmap.Host{}
 	h.Addresses = []nmap.Address{{Addr: addr}}
-	h.Status.State = status
+	h.Status.State = "up"
 	h.Ports = ports
 	h.OS.Matches = osMatches
 	return h
@@ -638,7 +638,7 @@ func TestConvertNmapHost_NoAddresses_ReturnsNil(t *testing.T) {
 }
 
 func TestConvertNmapHost_NoOSMatches_OSFieldsEmpty(t *testing.T) {
-	h := makeNmapHost("10.0.0.1", "up", nil, nil)
+	h := makeNmapHost("10.0.0.1", nil, nil)
 	result := convertNmapHost(&h)
 	if result == nil {
 		t.Fatal("expected non-nil result")
@@ -665,7 +665,7 @@ func TestConvertNmapHost_SingleOSMatch_FieldsPopulated(t *testing.T) {
 			{Family: "Linux", OSGeneration: "5.15"},
 		},
 	}
-	h := makeNmapHost("10.0.0.2", "up", nil, []nmap.OSMatch{match})
+	h := makeNmapHost("10.0.0.2", nil, []nmap.OSMatch{match})
 
 	result := convertNmapHost(&h)
 	if result == nil {
@@ -691,7 +691,7 @@ func TestConvertNmapHost_BestMatchIsFirst(t *testing.T) {
 		{Name: "Linux 5.15", Accuracy: 97, Classes: []nmap.OSClass{{Family: "Linux", OSGeneration: "5.15"}}},
 		{Name: "Linux 4.19", Accuracy: 85, Classes: []nmap.OSClass{{Family: "Linux", OSGeneration: "4.19"}}},
 	}
-	h := makeNmapHost("10.0.0.3", "up", nil, matches)
+	h := makeNmapHost("10.0.0.3", nil, matches)
 
 	result := convertNmapHost(&h)
 	if result == nil {
@@ -713,7 +713,7 @@ func TestConvertNmapHost_OSMatchNoClasses_FamilyAndVersionEmpty(t *testing.T) {
 		Accuracy: 50,
 		Classes:  nil,
 	}
-	h := makeNmapHost("10.0.0.4", "up", nil, []nmap.OSMatch{match})
+	h := makeNmapHost("10.0.0.4", nil, []nmap.OSMatch{match})
 
 	result := convertNmapHost(&h)
 	if result == nil {
@@ -741,7 +741,7 @@ func TestConvertNmapHost_WindowsOSMatch(t *testing.T) {
 			{Family: "Windows", OSGeneration: "10"},
 		},
 	}
-	h := makeNmapHost("192.168.1.50", "up", nil, []nmap.OSMatch{match})
+	h := makeNmapHost("192.168.1.50", nil, []nmap.OSMatch{match})
 
 	result := convertNmapHost(&h)
 	if result == nil {
@@ -771,7 +771,7 @@ func TestConvertNmapHost_PortsConvertedAlongWithOS(t *testing.T) {
 		Accuracy: 90,
 		Classes:  []nmap.OSClass{{Family: "Linux", OSGeneration: "5.4"}},
 	}
-	h := makeNmapHost("10.1.1.1", "up", ports, []nmap.OSMatch{match})
+	h := makeNmapHost("10.1.1.1", ports, []nmap.OSMatch{match})
 
 	result := convertNmapHost(&h)
 	if result == nil {
