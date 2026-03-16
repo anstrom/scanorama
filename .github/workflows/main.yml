@@ -109,8 +109,16 @@ jobs:
           go test -short -race -coverprofile=coverage.out -covermode=atomic ./...
           go tool cover -func=coverage.out | tail -1
 
-      # Note: Unit test coverage not uploaded to avoid partial coverage reports.
-      # Integration tests run all tests (including unit tests) and upload complete coverage.
+      - name: Upload unit test coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.out
+          name: unit-coverage
+          slug: anstrom/scanorama
+          flags: unit
+          fail_ci_if_error: true
+          verbose: true
 
   # Stage 3: Frontend Tests (runs in parallel with integration and e2e)
   frontend-tests:
@@ -140,14 +148,20 @@ jobs:
         run: npm test --prefix frontend
 
   # Stage 3: Integration Tests (requires database and services)
+  # Always runs on pushes to main (to keep coverage data fresh) and on PRs
+  # that touch backend code.  The path filter is bypassed on main so that
+  # non-Go commits (docs, renovate, frontend) don't leave the Codecov badge
+  # showing "unknown" due to a missing upload.
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
     needs: [changes, unit-tests]
     if: |
       always() &&
-      needs.changes.outputs.backend == 'true' &&
-      needs.unit-tests.result == 'success'
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (needs.changes.outputs.backend == 'true' && needs.unit-tests.result == 'success')
+      )
 
     services:
       postgres:
@@ -269,11 +283,18 @@ jobs:
 
       - name: Upload complete coverage to Codecov
         uses: codecov/codecov-action@v5
-        continue-on-error: true
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./integration_coverage.out
           name: codecov-umbrella
+          slug: anstrom/scanorama
+          flags: integration
+          fail_ci_if_error: true
+          verbose: true
+          # Carry forward coverage from the previous upload for any flags not
+          # present in this run (e.g. unit flag when only integration runs).
+          # This prevents the badge dropping to "unknown" on non-Go commits.
+          carryforward: unit
 
       - name: Run database migration tests
         run: |

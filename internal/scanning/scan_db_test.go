@@ -362,7 +362,7 @@ func TestGetOrCreateHostSafely_NewHost(t *testing.T) {
 	ipAddr := db.IPAddr{IP: net.ParseIP("203.0.113.42")}
 	hostInput := Host{Address: "203.0.113.42", Status: "up"}
 
-	host, err := getOrCreateHostSafely(ctx, database, hostRepo, ipAddr, hostInput)
+	host, err := getOrCreateHostSafely(ctx, database, hostRepo, ipAddr, &hostInput)
 	require.NoError(t, err, "should create new host")
 	assert.NotNil(t, host)
 	assert.NotEqual(t, uuid.Nil, host.ID)
@@ -383,12 +383,12 @@ func TestGetOrCreateHostSafely_ExistingHost(t *testing.T) {
 	// Create initial host
 	ipAddr := db.IPAddr{IP: net.ParseIP("198.51.100.1")}
 	hostInput := Host{Address: "198.51.100.1", Status: "up"}
-	firstHost, err := getOrCreateHostSafely(ctx, database, hostRepo, ipAddr, hostInput)
+	firstHost, err := getOrCreateHostSafely(ctx, database, hostRepo, ipAddr, &hostInput)
 	require.NoError(t, err)
 	firstID := firstHost.ID
 
 	// Try to create same host again
-	secondHost, err := getOrCreateHostSafely(ctx, database, hostRepo, ipAddr, hostInput)
+	secondHost, err := getOrCreateHostSafely(ctx, database, hostRepo, ipAddr, &hostInput)
 	require.NoError(t, err, "should retrieve existing host")
 	assert.Equal(t, firstID, secondHost.ID, "should return same host ID")
 }

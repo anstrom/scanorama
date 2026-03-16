@@ -357,7 +357,9 @@ func PrintResults(result *ScanResult) {
 // When scanID is non-nil it is reused as the scan_jobs row ID so that
 // GetScanResults (which queries port_scans by job_id) can find the data.
 // When scanID is nil a fresh UUID is generated (legacy / CLI path).
-func storeScanResults(ctx context.Context, database *db.DB, config *ScanConfig, result *ScanResult, scanID *uuid.UUID) error {
+func storeScanResults(
+	ctx context.Context, database *db.DB, config *ScanConfig, result *ScanResult, scanID *uuid.UUID,
+) error {
 	logging.Debug("Storing scan results", "targets", config.Targets)
 
 	// Create a scan job record - for now we'll create a minimal scan target
@@ -532,7 +534,7 @@ func debugHostLookup(ctx context.Context, database *db.DB, hostAddress string, i
 // processHostForScan processes a single host for scanning, preserving discovery data.
 // Uses transaction-safe approach to handle race conditions between discovery and scan.
 func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostRepository,
-	host Host, jobID uuid.UUID) ([]*db.PortScan, error) {
+	host *Host, jobID uuid.UUID) ([]*db.PortScan, error) {
 	ipAddr := db.IPAddr{IP: net.ParseIP(host.Address)}
 	debugHostLookup(ctx, database, host.Address, ipAddr)
 
@@ -543,22 +545,7 @@ func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostR
 
 	// Persist OS detection data when nmap returned results.
 	if host.OSName != "" || host.OSFamily != "" {
-		if host.OSFamily != "" {
-			dbHost.OSFamily = &host.OSFamily
-		}
-		if host.OSName != "" {
-			dbHost.OSName = &host.OSName
-		}
-		if host.OSVersion != "" {
-			dbHost.OSVersion = &host.OSVersion
-		}
-		if host.OSAccuracy > 0 {
-			dbHost.OSConfidence = &host.OSAccuracy
-		}
-		if updateErr := hostRepo.CreateOrUpdate(ctx, dbHost); updateErr != nil {
-			logging.Warn("Failed to update OS detection data for host",
-				"address", host.Address, "error", updateErr)
-		}
+		persistOSData(ctx, hostRepo, dbHost, host)
 	}
 
 	logging.Debug("Using host for scan",
@@ -599,11 +586,31 @@ func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostR
 	return portScans, nil
 }
 
+// persistOSData writes OS detection fields from a scan Host onto the db.Host record.
+func persistOSData(ctx context.Context, hostRepo *db.HostRepository, dbHost *db.Host, host *Host) {
+	if host.OSFamily != "" {
+		dbHost.OSFamily = &host.OSFamily
+	}
+	if host.OSName != "" {
+		dbHost.OSName = &host.OSName
+	}
+	if host.OSVersion != "" {
+		dbHost.OSVersion = &host.OSVersion
+	}
+	if host.OSAccuracy > 0 {
+		dbHost.OSConfidence = &host.OSAccuracy
+	}
+	if updateErr := hostRepo.CreateOrUpdate(ctx, dbHost); updateErr != nil {
+		logging.Warn("Failed to update OS detection data for host",
+			"address", host.Address, "error", updateErr)
+	}
+}
+
 // getOrCreateHostSafely looks up a host by IP address and creates it if it does
 // not yet exist. It uses the repository's GetByIP (sqlx tag-based scanning) so
 // there is no dependency on physical column order in the hosts table.
 func getOrCreateHostSafely(ctx context.Context, _ *db.DB, hostRepo *db.HostRepository,
-	ipAddr db.IPAddr, host Host) (*db.Host, error) {
+	ipAddr db.IPAddr, host *Host) (*db.Host, error) {
 	logging.Debug("Looking up host by IP", "ip", ipAddr.String())
 
 	existing, err := hostRepo.GetByIP(ctx, ipAddr)
@@ -665,10 +672,10 @@ func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hos
 
 	var allPortScans []*db.PortScan
 
-	for _, host := range hosts {
-		portScans, err := processHostForScan(ctx, database, hostRepo, host, jobID)
+	for i := range hosts {
+		portScans, err := processHostForScan(ctx, database, hostRepo, &hosts[i], jobID)
 		if err != nil {
-			logging.Error("Failed to process host", "address", host.Address, "error", err)
+			logging.Error("Failed to process host", "address", hosts[i].Address, "error", err)
 			continue
 		}
 		allPortScans = append(allPortScans, portScans...)
