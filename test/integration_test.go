@@ -3,6 +3,7 @@ package test
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"strconv"
@@ -506,6 +507,102 @@ func TestNmapAvailability(t *testing.T) {
 	}
 
 	t.Log("nmap availability test passed")
+}
+
+// TestScanWithPreExistingScanJob verifies the API path for Bug A + Bug B:
+//
+//   - Bug A: storeScanResults must reuse the caller-supplied UUID (ScanConfig.ScanID)
+//     rather than generating a fresh one, so that port_scans rows end up linked
+//     to the UUID that was returned to the API client.
+//   - Bug B: when ScanID is supplied the existing scan_jobs row must be UPDATEd
+//     (not INSERTed), so the PK constraint is not violated and port scan results
+//     are actually written.
+//
+// The test simulates what the API does: it pre-inserts a scan_jobs row with a
+// known UUID (as CreateScan does), then calls RunScanWithContext with that UUID
+// in ScanConfig.ScanID, and finally asserts that:
+//  1. port_scans rows exist that reference the known UUID via job_id.
+//  2. Exactly one scan_jobs row with the known UUID exists (no duplicate).
+func TestScanWithPreExistingScanJob(t *testing.T) {
+	suite := setupTestSuite(t)
+
+	// Clean up any existing test data to ensure isolation.
+	suite.cleanupTestData(t)
+
+	// --- Step 1: pre-insert a scan_jobs row, mimicking what CreateScan does. ---
+
+	knownUUID := uuid.New()
+
+	// We need a scan_targets row first (scan_jobs.target_id has a FK).
+	_, ipNet, err := net.ParseCIDR(testLocalhostIP + "/32")
+	require.NoError(t, err, "Should parse CIDR")
+
+	targetID := uuid.New()
+	targetRepo := db.NewScanTargetRepository(suite.database)
+	scanTarget := &db.ScanTarget{
+		ID:                  targetID,
+		Name:                "pre-existing-api-target",
+		Network:             db.NetworkAddr{IPNet: *ipNet},
+		ScanIntervalSeconds: 0,
+		ScanPorts:           "8080,8022",
+		ScanType:            "connect",
+		Enabled:             false,
+	}
+	require.NoError(t, targetRepo.Create(suite.ctx, scanTarget),
+		"Should create scan target")
+
+	// Insert the scan_jobs row with 'pending' status, exactly as CreateScan does.
+	jobRepo := db.NewScanJobRepository(suite.database)
+	preInsertedJob := &db.ScanJob{
+		ID:       knownUUID,
+		TargetID: targetID,
+		Status:   db.ScanJobStatusPending,
+	}
+	require.NoError(t, jobRepo.Create(suite.ctx, preInsertedJob),
+		"Should pre-insert scan job (simulating API CreateScan)")
+
+	// --- Step 2: run the scan with ScanID set to the known UUID. ---
+
+	scanConfig := &scanning.ScanConfig{
+		Targets:     []string{testLocalhostIP},
+		Ports:       "8080,8022",
+		ScanType:    "connect",
+		TimeoutSec:  15,
+		Concurrency: 1,
+		ScanID:      &knownUUID,
+	}
+
+	result, err := scanning.RunScanWithContext(suite.ctx, scanConfig, suite.database)
+	require.NoError(t, err, "Scan with pre-existing scan job should succeed")
+	require.NotEmpty(t, result.Hosts, "Scan should return at least one host")
+
+	// --- Step 3: assert port_scans are linked to knownUUID (Bug A regression). ---
+
+	var portScanCount int
+	portQuery := `
+		SELECT COUNT(*)
+		FROM port_scans
+		WHERE job_id = $1`
+	err = suite.database.QueryRowContext(suite.ctx, portQuery, knownUUID).Scan(&portScanCount)
+	require.NoError(t, err, "Should be able to query port_scans by job_id")
+	assert.GreaterOrEqual(t, portScanCount, 1,
+		"port_scans must be stored under the pre-existing job UUID (Bug A: UUID must not be regenerated)")
+
+	// --- Step 4: assert the scan_jobs row was updated, not duplicated (Bug B regression). ---
+
+	var jobRowCount int
+	jobQuery := `
+		SELECT COUNT(*)
+		FROM scan_jobs
+		WHERE id = $1`
+	err = suite.database.QueryRowContext(suite.ctx, jobQuery, knownUUID).Scan(&jobRowCount)
+	require.NoError(t, err, "Should be able to count scan_jobs rows by UUID")
+	assert.Equal(t, 1, jobRowCount,
+		"There must be exactly one scan_jobs row for the known UUID "+
+			"(Bug B: INSERT must not duplicate the pre-existing row)")
+
+	t.Logf("TestScanWithPreExistingScanJob passed: job_id=%s, port_scans=%d, scan_jobs rows=%d",
+		knownUUID, portScanCount, jobRowCount)
 }
 
 // TestNetworkRangeDiscovery tests discovery job creation for network ranges.
