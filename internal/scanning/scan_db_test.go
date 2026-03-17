@@ -438,6 +438,40 @@ func TestParseTargetAddress_InvalidCIDR(t *testing.T) {
 // are stored with that exact job_id, so GetScanResults can retrieve them.
 // This is the integration-level regression test for the bug where
 // storeScanResults always called uuid.New(), breaking the API lookup.
+// createScanJobForTest inserts a minimal scan_job row using the given UUID,
+// mirroring what CreateScan/StartScan do before RunScanWithContext is called.
+// It creates the required scan_target row first to satisfy the FK constraint.
+func createScanJobForTest(t *testing.T, ctx context.Context, database *db.DB, scanID uuid.UUID, network string) {
+	t.Helper()
+
+	targetRepo := db.NewScanTargetRepository(database)
+	scanTarget := &db.ScanTarget{
+		ID:       uuid.New(),
+		Name:     "test-target-" + scanID.String()[:8],
+		Network:  mustParseNetwork(t, network),
+		ScanType: "connect",
+		Enabled:  false,
+	}
+	require.NoError(t, targetRepo.Create(ctx, scanTarget), "pre-create scan_target for test")
+
+	_, err := database.ExecContext(ctx,
+		`INSERT INTO scan_jobs (id, target_id, status, started_at, created_at)`+
+			` VALUES ($1, $2, 'running', NOW(), NOW())`,
+		scanID, scanTarget.ID,
+	)
+	require.NoError(t, err, "pre-create scan_job row for test")
+}
+
+// mustParseNetwork parses a CIDR string into a db.NetworkAddr or fails the test.
+func mustParseNetwork(t *testing.T, cidr string) db.NetworkAddr {
+	t.Helper()
+	var na db.NetworkAddr
+	_, ipNet, err := net.ParseCIDR(cidr)
+	require.NoError(t, err, "mustParseNetwork: invalid CIDR %q", cidr)
+	na.IPNet = *ipNet
+	return na
+}
+
 func TestStoreScanResults_ScanIDRoundTrip(t *testing.T) {
 	database := setupTestDB(t)
 	if database == nil {
@@ -449,6 +483,11 @@ func TestStoreScanResults_ScanIDRoundTrip(t *testing.T) {
 
 	// Use a fixed scan ID — this simulates the UUID the API exposes to the client.
 	scanID := uuid.New()
+
+	// Pre-create the scan_job row exactly as CreateScan/StartScan would, so
+	// storeScanResults (which now UPDATEs rather than INSERTs when a scanID is
+	// supplied) finds the row it expects.
+	createScanJobForTest(t, ctx, database, scanID, "10.42.0.1/32")
 
 	config := &ScanConfig{
 		Targets:  []string{"10.42.0.1"},
@@ -486,7 +525,7 @@ func TestStoreScanResults_ScanIDRoundTrip(t *testing.T) {
 		"both port_scans rows must be retrievable by the original scan UUID; "+
 			"if 0 rows are found the ScanID was not propagated to the ScanJob")
 
-	// Also verify the scan_jobs row itself uses the correct ID.
+	// Verify the scan_jobs row still uses the correct ID (was updated, not replaced).
 	var jobExists bool
 	err = database.QueryRowContext(ctx,
 		`SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE id = $1)`, scanID,
@@ -494,6 +533,110 @@ func TestStoreScanResults_ScanIDRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, jobExists,
 		"scan_jobs row must use the caller-supplied UUID, not a fresh one")
+}
+
+// TestStoreScanResults_ExistingJobUpdatesStats verifies that when a scanID is
+// supplied and a scan_job row already exists, storeScanResults updates
+// scan_stats on the existing row and does NOT insert a duplicate.
+func TestStoreScanResults_ExistingJobUpdatesStats(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	scanID := uuid.New()
+
+	createScanJobForTest(t, ctx, database, scanID, "10.45.0.1/32")
+
+	config := &ScanConfig{
+		Targets:  []string{"10.45.0.1"},
+		Ports:    "443",
+		ScanType: "connect",
+		ScanID:   &scanID,
+	}
+	result := &ScanResult{
+		StartTime: time.Now(),
+		Duration:  2 * time.Second,
+		Stats:     HostStats{Up: 1, Down: 0, Total: 1},
+		Hosts: []Host{
+			{
+				Address: "10.45.0.1",
+				Status:  "up",
+				Ports:   []Port{{Number: 443, Protocol: "tcp", State: "open", Service: "https"}},
+			},
+		},
+	}
+
+	require.NoError(t, storeScanResults(ctx, database, config, result, &scanID))
+
+	// Exactly one scan_jobs row must exist for this ID — no duplicate inserted.
+	var jobCount int
+	require.NoError(t, database.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM scan_jobs WHERE id = $1`, scanID,
+	).Scan(&jobCount))
+	assert.Equal(t, 1, jobCount, "storeScanResults must not insert a duplicate scan_job row")
+
+	// scan_stats must have been written.
+	var scanStats []byte
+	require.NoError(t, database.QueryRowContext(ctx,
+		`SELECT COALESCE(scan_stats::text, '') FROM scan_jobs WHERE id = $1`, scanID,
+	).Scan(&scanStats))
+	assert.Contains(t, string(scanStats), "hosts_up",
+		"scan_stats should be updated on the existing row")
+
+	// port_scans must be present.
+	var portCount int
+	require.NoError(t, database.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM port_scans WHERE job_id = $1`, scanID,
+	).Scan(&portCount))
+	assert.Equal(t, 1, portCount, "port scan row should be stored")
+}
+
+// TestStoreScanResults_UpdatePath_DoesNotDuplicateJob is a focused regression
+// test: calling storeScanResults twice with the same scanID must not insert a
+// second scan_job row (previously it would fail with a PK conflict and swallow
+// the error, leaving zero port_scans rows).
+func TestStoreScanResults_UpdatePath_DoesNotDuplicateJob(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	scanID := uuid.New()
+
+	createScanJobForTest(t, ctx, database, scanID, "10.46.0.1/32")
+
+	config := &ScanConfig{
+		Targets:  []string{"10.46.0.1"},
+		Ports:    "22",
+		ScanType: "connect",
+		ScanID:   &scanID,
+	}
+	makeResult := func() *ScanResult {
+		return &ScanResult{
+			StartTime: time.Now(),
+			Duration:  time.Second,
+			Stats:     HostStats{Up: 1, Total: 1},
+			Hosts: []Host{
+				{Address: "10.46.0.1", Status: "up",
+					Ports: []Port{{Number: 22, Protocol: "tcp", State: "open", Service: "ssh"}}},
+			},
+		}
+	}
+
+	require.NoError(t, storeScanResults(ctx, database, config, makeResult(), &scanID), "first call")
+	// Second call must not error — previously this would hit a PK conflict and swallow all results.
+	require.NoError(t, storeScanResults(ctx, database, config, makeResult(), &scanID), "second call")
+
+	var jobCount int
+	require.NoError(t, database.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM scan_jobs WHERE id = $1`, scanID,
+	).Scan(&jobCount))
+	assert.Equal(t, 1, jobCount, "still exactly one scan_job row after two calls")
 }
 
 // TestStoreScanResults_NilScanID_GeneratesFreshUUID verifies that when no
@@ -552,6 +695,9 @@ func TestStoreScanResults_OSFieldsPersisted(t *testing.T) {
 
 	ctx := context.Background()
 	scanID := uuid.New()
+
+	// Pre-create the scan_job row so the UPDATE path in storeScanResults finds it.
+	createScanJobForTest(t, ctx, database, scanID, "10.44.0.1/32")
 
 	config := &ScanConfig{
 		Targets:  []string{"10.44.0.1"},
