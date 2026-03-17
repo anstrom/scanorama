@@ -152,7 +152,7 @@ export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
         aria-label="Scan details"
         className={cn(
           "fixed top-0 right-0 bottom-0 z-50",
-          "w-full max-w-[480px]",
+          "w-full max-w-120",
           "bg-surface border-l border-border",
           "flex flex-col overflow-hidden",
           "shadow-xl",
@@ -463,7 +463,7 @@ export function ScansPage() {
                         "hover:bg-surface-raised/50 transition-colors cursor-pointer",
                       )}
                     >
-                      <td className="py-3 px-4 pr-4 font-mono text-text-secondary max-w-[200px] truncate">
+                      <td className="py-3 px-4 pr-4 font-mono text-text-secondary max-w-50 truncate">
                         {scan.targets?.join(", ") ?? "—"}
                       </td>
                       <td className="py-3 pr-4">

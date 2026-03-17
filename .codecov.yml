@@ -18,12 +18,14 @@ coverage:
         target: auto # Compare to base branch coverage
         threshold: 2% # Allow 2% decrease without failing
         if_ci_failed: error # Fail if CI tests fail
+        after_n_builds: 2 # Wait for both unit and integration uploads
 
     patch:
       default:
         target: 40% # Fixed threshold for new/changed code
         threshold: 0% # No additional slack on top of target
         if_ci_failed: error
+        after_n_builds: 2 # Wait for both unit and integration uploads
 
 # Ignore patterns - exclude test files and non-production code from coverage
 # This is the key section that excludes test files from coverage statistics

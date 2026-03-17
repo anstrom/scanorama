@@ -291,10 +291,6 @@ jobs:
           flags: integration
           fail_ci_if_error: true
           verbose: true
-          # Carry forward coverage from the previous upload for any flags not
-          # present in this run (e.g. unit flag when only integration runs).
-          # This prevents the badge dropping to "unknown" on non-Go commits.
-          carryforward: unit
 
       - name: Run database migration tests
         run: |
