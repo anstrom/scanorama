@@ -277,8 +277,9 @@ jobs:
 
       - name: Run integration tests
         run: |
-          # Run all tests (including integration tests that need database) with coverage
-          go test -v -p 1 -coverprofile=integration_coverage.out -covermode=atomic ./...
+          # Run all tests with -tags=integration so build-tagged files (migration,
+          # schema validation, etc.) are included in the coverage profile.
+          go test -v -p 1 -tags=integration -coverprofile=integration_coverage.out -covermode=atomic ./...
           go tool cover -func=integration_coverage.out | tail -1
 
       - name: Upload complete coverage to Codecov
@@ -291,7 +292,3 @@ jobs:
           flags: integration
           fail_ci_if_error: true
           verbose: true
-
-      - name: Run database migration tests
-        run: |
-          go test -v ./internal/db/... -tags=integration
