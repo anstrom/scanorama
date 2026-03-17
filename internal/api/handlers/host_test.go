@@ -43,12 +43,20 @@ func setupHostHandlerTest(t *testing.T) (*HostHandler, *db.DB, func()) {
 	metricsRegistry := metrics.NewRegistry()
 	handler := NewHostHandler(database, logger, metricsRegistry)
 
-	// Clean up any leftover test data
+	// Clean up any leftover test data (hostname-based and hardcoded IPs used in integration tests)
 	_, _ = database.Exec(`DELETE FROM hosts WHERE hostname LIKE 'HostTest%'`)
+	_, _ = database.Exec(`DELETE FROM hosts WHERE ip_address IN (
+		'192.168.1.100'::inet, '192.168.1.101'::inet, '192.168.1.150'::inet,
+		'192.168.1.200'::inet, '192.168.1.201'::inet, '192.168.1.202'::inet
+	)`)
 
 	cleanup := func() {
 		// Clean up test data
 		_, _ = database.Exec(`DELETE FROM hosts WHERE hostname LIKE 'HostTest%'`)
+		_, _ = database.Exec(`DELETE FROM hosts WHERE ip_address IN (
+			'192.168.1.100'::inet, '192.168.1.101'::inet, '192.168.1.150'::inet,
+			'192.168.1.200'::inet, '192.168.1.201'::inet, '192.168.1.202'::inet
+		)`)
 		database.Close()
 	}
 

@@ -78,6 +78,7 @@ func TestStoreScanResults_SuccessfulStorage(t *testing.T) {
 	defer database.Close()
 
 	ctx := context.Background()
+	cleanupHost(t, database, "192.168.1.100")
 
 	// Create a scan configuration
 	config := &ScanConfig{
@@ -163,6 +164,9 @@ func TestStoreScanResults_MultipleHosts(t *testing.T) {
 	defer database.Close()
 
 	ctx := context.Background()
+	cleanupHost(t, database, "10.0.0.1")
+	cleanupHost(t, database, "10.0.0.2")
+	cleanupHost(t, database, "10.0.0.3")
 
 	config := &ScanConfig{
 		Targets:  []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"},
@@ -327,6 +331,7 @@ func TestStoreHostResults_HostWithNoPorts(t *testing.T) {
 	defer database.Close()
 
 	ctx := context.Background()
+	cleanupHost(t, database, "172.16.0.1")
 	jobID := uuid.New()
 
 	hosts := []Host{
@@ -357,6 +362,7 @@ func TestGetOrCreateHostSafely_NewHost(t *testing.T) {
 	defer database.Close()
 
 	ctx := context.Background()
+	cleanupHost(t, database, "203.0.113.42")
 	hostRepo := db.NewHostRepository(database)
 
 	ipAddr := db.IPAddr{IP: net.ParseIP("203.0.113.42")}
@@ -462,6 +468,14 @@ func createScanJobForTest(t *testing.T, ctx context.Context, database *db.DB, sc
 	require.NoError(t, err, "pre-create scan_job row for test")
 }
 
+// cleanupHost removes a host row by IP address (and its dependent port_scans) so
+// each test starts from a known-clean state regardless of prior runs.
+func cleanupHost(t *testing.T, database *db.DB, ip string) {
+	t.Helper()
+	_, _ = database.ExecContext(context.Background(),
+		`DELETE FROM hosts WHERE ip_address = $1::inet`, ip)
+}
+
 // mustParseNetwork parses a CIDR string into a db.NetworkAddr or fails the test.
 func mustParseNetwork(t *testing.T, cidr string) db.NetworkAddr {
 	t.Helper()
@@ -484,6 +498,7 @@ func TestStoreScanResults_ScanIDRoundTrip(t *testing.T) {
 	// Use a fixed scan ID — this simulates the UUID the API exposes to the client.
 	scanID := uuid.New()
 
+	cleanupHost(t, database, "10.42.0.1")
 	// Pre-create the scan_job row exactly as CreateScan/StartScan would, so
 	// storeScanResults (which now UPDATEs rather than INSERTs when a scanID is
 	// supplied) finds the row it expects.
@@ -548,6 +563,7 @@ func TestStoreScanResults_ExistingJobUpdatesStats(t *testing.T) {
 	ctx := context.Background()
 	scanID := uuid.New()
 
+	cleanupHost(t, database, "10.45.0.1")
 	createScanJobForTest(t, ctx, database, scanID, "10.45.0.1/32")
 
 	config := &ScanConfig{
@@ -608,6 +624,7 @@ func TestStoreScanResults_UpdatePath_DoesNotDuplicateJob(t *testing.T) {
 	ctx := context.Background()
 	scanID := uuid.New()
 
+	cleanupHost(t, database, "10.46.0.1")
 	createScanJobForTest(t, ctx, database, scanID, "10.46.0.1/32")
 
 	config := &ScanConfig{
@@ -696,6 +713,7 @@ func TestStoreScanResults_OSFieldsPersisted(t *testing.T) {
 	ctx := context.Background()
 	scanID := uuid.New()
 
+	cleanupHost(t, database, "10.44.0.1")
 	// Pre-create the scan_job row so the UPDATE path in storeScanResults finds it.
 	createScanJobForTest(t, ctx, database, scanID, "10.44.0.1/32")
 

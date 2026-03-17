@@ -32,12 +32,12 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 	query := `
 		INSERT INTO hosts (
 			id, ip_address, hostname, mac_address, vendor,
-			os_family, os_version, status, discovery_method,
+			os_family, os_name, os_version, os_confidence, status, discovery_method,
 			response_time_ms, discovery_count
 		)
 		VALUES (
 			:id, :ip_address, :hostname, :mac_address, :vendor,
-			:os_family, :os_version, :status, :discovery_method,
+			:os_family, :os_name, :os_version, :os_confidence, :status, :discovery_method,
 			:response_time_ms, :discovery_count
 		)
 		ON CONFLICT (ip_address)
@@ -46,7 +46,9 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 			mac_address = COALESCE(EXCLUDED.mac_address, hosts.mac_address),
 			vendor = COALESCE(EXCLUDED.vendor, hosts.vendor),
 			os_family = COALESCE(EXCLUDED.os_family, hosts.os_family),
+			os_name = COALESCE(EXCLUDED.os_name, hosts.os_name),
 			os_version = COALESCE(EXCLUDED.os_version, hosts.os_version),
+			os_confidence = COALESCE(EXCLUDED.os_confidence, hosts.os_confidence),
 			status = EXCLUDED.status,
 			discovery_method = EXCLUDED.discovery_method,
 			response_time_ms = EXCLUDED.response_time_ms,
