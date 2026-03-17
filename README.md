@@ -5,163 +5,251 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/anstrom/scanorama)](https://goreportcard.com/report/github.com/anstrom/scanorama)
 [![codecov](https://codecov.io/gh/anstrom/scanorama/branch/main/graph/badge.svg)](https://codecov.io/gh/anstrom/scanorama)
 
-A network scanning and discovery tool built on nmap with database persistence, REST API, and automated scheduling capabilities.
-
-## Quick Start
-
-### Running Tests
-
-```bash
-# Start test database and run all tests
-make test
-
-# Run only unit tests (no database needed)
-make test-unit
-
-# Generate coverage report
-make coverage
-
-# Start database manually (for development)
-make db-up
-
-# Stop database
-make db-down
-```
-
-### Database Management
-
-The test database runs in Docker and is managed automatically:
-- `make test` - Starts DB, runs tests, stops DB
-- `make db-up` - Start test database
-- `make db-down` - Stop test database
-- `make db-reset` - Reset database (down + up)
-- `make db-shell` - Connect with psql
-
-### Development
-
-```bash
-# Format code
-make fmt
-
-# Run linter
-make lint
-
-# Build binary
-make build
-
-# See all targets
-make help
-```
-
-## Features
-
-- **Network Discovery**: Host discovery and port scanning using nmap
-- **Multiple Scan Types**: Connect, SYN, version detection, aggressive, stealth
-- **Database Integration**: PostgreSQL persistence with automatic migrations
-- **REST API**: RESTful API with Swagger documentation
-- **Scheduling**: Automated scan jobs with cron-like scheduling
-- **Monitoring**: Structured logging, metrics, and health checks
-- **Docker Support**: Containerized deployment ready
+A network scanning and discovery daemon built on nmap with PostgreSQL persistence, a REST API, and automated scheduling. Scanorama runs continuously in the background, discovers hosts on your networks, tracks open ports and OS fingerprints, and exposes everything over a REST API with Swagger documentation.
 
 ## Requirements
 
-- Go 1.25.3+
-- **nmap 7.0+** (required)
-- PostgreSQL (for persistence)
+- **nmap 7.0+** — required at runtime
+- **PostgreSQL 14+** — required for persistence
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/anstrom/scanorama.git
 cd scanorama
-make setup-dev-db   # Initialize database
-make build          # Build binary
+make build
+
+cp config/environments/config.example.yaml config.yaml
+# edit config.yaml — set database credentials and API key
+
+./build/scanorama api
 ```
 
-## Usage
+The API is available at `http://localhost:8080` and Swagger UI at `http://localhost:8080/swagger/`.
+
+Create your first API key:
 
 ```bash
-# Discover hosts on a network
-./scanorama discover 192.168.1.0/24
+./build/scanorama apikeys create --name "My Key"
+# → sk_live_abc123...
 
+export SCANORAMA_API_KEY=sk_live_abc123...
+```
+
+## CLI Reference
+
+### Discovery
+
+```bash
+# Discover a CIDR
+scanorama discover 192.168.1.0/24
+
+# Discover and save the network to the database
+scanorama discover 192.168.1.0/24 --add --name "home-lan"
+
+# Discover all configured networks
+scanorama discover --configured-networks
+
+# Auto-detect and scan all local interfaces
+scanorama discover --all-networks
+
+# Discovery methods: ping (default), tcp, arp
+scanorama discover 10.0.0.0/24 --method tcp
+
+# Enable OS fingerprinting during discovery
+scanorama discover 192.168.1.0/24 --detect-os
+```
+
+### Scanning
+
+```bash
 # Scan specific targets
-./scanorama scan --targets localhost --ports 80,443,8080
-./scanorama scan --targets 192.168.1.1 --type aggressive
+scanorama scan --targets 192.168.1.1
+scanorama scan --targets "192.168.1.1,192.168.1.10" --ports "22,80,443"
 
-# View discovered hosts
-./scanorama hosts
+# Scan all previously discovered live hosts
+scanorama scan --live-hosts
 
-# Run as daemon with API server
-./scanorama daemon
+# Filter live hosts by OS family
+scanorama scan --live-hosts --os-family windows
+
+# Use a built-in scan profile
+scanorama scan --targets 192.168.1.1 --profile linux-server
+
+# Scan types
+scanorama scan --targets 192.168.1.1 --type connect       # TCP connect (default)
+scanorama scan --targets 192.168.1.1 --type syn           # SYN stealth (requires root)
+scanorama scan --targets 192.168.1.1 --type version       # Service version detection
+scanorama scan --targets 192.168.1.1 --type aggressive    # OS + version + scripts
+scanorama scan --targets 192.168.1.1 --type comprehensive # Full port range
 ```
 
-### Scan Types
-
-- `connect` - TCP connect scanning (default)
-- `syn` - SYN stealth scanning (requires privileges)
-- `version` - Service version detection
-- `comprehensive` - Full port range scanning
-- `aggressive` - OS detection + version scanning + scripts
-- `stealth` - Slow, evasive scanning
-
-## API
-
-Start the daemon and access the REST API:
+### Scheduling
 
 ```bash
-./scanorama daemon
-# API available at http://localhost:8080
-# Swagger docs at http://localhost:8080/swagger/
+# List scheduled jobs
+scanorama schedule list
+
+# Schedule a weekly discovery (every Sunday at 02:00)
+scanorama schedule add-discovery "weekly-sweep" "0 2 * * 0" "10.0.0.0/8"
+
+# Schedule a scan every 6 hours against live hosts
+scanorama schedule add-scan "frequent-scan" "0 */6 * * *" --live-hosts
+
+# Remove a scheduled job
+scanorama schedule remove weekly-sweep
+```
+
+### Running as a Daemon
+
+```bash
+scanorama daemon start   # Start background daemon with API server
+scanorama daemon status  # Check status
+scanorama daemon stop    # Stop daemon
+
+scanorama api            # Run API server in the foreground
 ```
 
 ## Configuration
 
-Create `config.yaml`:
+```bash
+cp config/environments/config.example.yaml config.yaml
+```
 
 ```yaml
 database:
   host: localhost
   port: 5432
-  name: scanorama
-  user: scanorama
-  password: your_password
+  database: scanorama
+  username: scanorama
+  password: your_secure_password
+  ssl_mode: prefer          # disable | require | verify-full
 
 api:
-  host: 0.0.0.0
+  enabled: true
+  listen_addr: "127.0.0.1"
   port: 8080
+  auth_enabled: true
+
+scanning:
+  worker_pool_size: 10
+  default_ports: "22,80,443,8080,8443"
+  default_scan_type: connect
+  enable_os_detection: false  # requires root
 
 logging:
-  level: info
-  format: json
+  level: info          # debug | info | warn | error
+  format: text         # text | json
+  output: stdout
 ```
 
-## Development
+### Environment Variables
+
+| Variable | Description |
+|---|---|
+| `SCANORAMA_DB_HOST` | Database host |
+| `SCANORAMA_DB_PORT` | Database port |
+| `SCANORAMA_DB_NAME` | Database name |
+| `SCANORAMA_DB_USER` | Database username |
+| `SCANORAMA_DB_PASSWORD` | Database password |
+| `SCANORAMA_DB_SSLMODE` | SSL mode |
+| `SCANORAMA_API_KEY` | API key for CLI and client authentication |
+| `SCANORAMA_LOG_LEVEL` | Log level |
+| `SCANORAMA_LOG_FORMAT` | Log format (`text` or `json`) |
+
+## API
+
+All endpoints require an `X-API-Key` header except `/health`.
+
+```
+GET    /health
+
+GET    /api/v1/hosts
+GET    /api/v1/hosts/:id
+GET    /api/v1/hosts/:id/scans
+
+GET    /api/v1/scans
+POST   /api/v1/scans
+GET    /api/v1/scans/:id
+PUT    /api/v1/scans/:id
+DELETE /api/v1/scans/:id
+GET    /api/v1/scans/:id/results
+
+GET    /api/v1/profiles
+POST   /api/v1/profiles
+GET    /api/v1/profiles/:id
+PUT    /api/v1/profiles/:id
+DELETE /api/v1/profiles/:id
+
+GET    /api/v1/networks
+POST   /api/v1/networks
+DELETE /api/v1/networks/:id
+
+GET    /api/v1/schedules
+POST   /api/v1/schedules
+GET    /api/v1/schedules/:id
+PUT    /api/v1/schedules/:id
+DELETE /api/v1/schedules/:id
+
+GET    /api/v1/apikeys
+POST   /api/v1/apikeys
+DELETE /api/v1/apikeys/:id
+```
+
+Full interactive documentation at `http://localhost:8080/swagger/`.
+
+### Example: submit a scan
 
 ```bash
-make setup-hooks     # Set up Git hooks
-make ci              # Run full CI pipeline
-make test            # Run tests
-make coverage        # Generate coverage reports
-make lint            # Run linter
+curl -X POST http://localhost:8080/api/v1/scans \
+  -H "X-API-Key: $SCANORAMA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "quick-check",
+    "targets": ["192.168.1.0/24"],
+    "scan_type": "connect",
+    "ports": "22,80,443"
+  }'
+
+# Poll for completion
+curl -s http://localhost:8080/api/v1/scans/<id> \
+  -H "X-API-Key: $SCANORAMA_API_KEY" | jq .status
+
+# Fetch results
+curl -s "http://localhost:8080/api/v1/scans/<id>/results?limit=50" \
+  -H "X-API-Key: $SCANORAMA_API_KEY" | jq .
 ```
 
 ## Docker
 
+The production compose stack includes Scanorama, PostgreSQL, and Nginx, with optional Redis, Prometheus, and Grafana profiles.
+
 ```bash
-docker run -p 8080:8080 ghcr.io/anstrom/scanorama:latest
+cd docker
+
+# Create secrets
+echo "strong_db_password" > secrets/postgres_password.txt
+echo "your-api-key"       > secrets/api_key.txt
+
+# Start core services
+docker compose up -d
+
+# With monitoring (Prometheus + Grafana)
+docker compose --profile monitoring up -d
+
+# With Redis
+docker compose --profile cache up -d
 ```
 
-## Contributing
-
-1. Fork and clone the repository
-2. Run `make setup-hooks` to install Git hooks
-3. Run `make setup-dev-db` to set up development database
-4. Make your changes with tests
-5. Run `make ci` to ensure quality checks pass
-6. Create a pull request
-
-See [Contributing Guidelines](CONTRIBUTING.md) for more details.
+| Service | Port | Notes |
+|---|---|---|
+| Nginx (HTTP) | 80 | Reverse proxy |
+| Nginx (HTTPS) | 443 | Reverse proxy (TLS) |
+| Scanorama API | 8080 | Direct access |
+| PostgreSQL | 5432 | Internal only |
+| Prometheus | 9090 | `--profile monitoring` |
+| Grafana | 3000 | `--profile monitoring` |
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE) for details.
