@@ -56,7 +56,7 @@ function HostDetailPanel({
         aria-label="Host details"
         className={cn(
           "fixed top-0 right-0 bottom-0 z-50",
-          "w-full max-w-[420px]",
+          "w-full max-w-105",
           "bg-surface border-l border-border",
           "flex flex-col overflow-hidden",
           "shadow-xl",
