@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -448,23 +446,6 @@ func TestMultipleScanTypes(t *testing.T) {
 			assert.GreaterOrEqual(t, portScanCount, 1, "Should have port scan results for %s", scanType)
 		})
 	}
-}
-
-// Helper functions for environment variables.
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func getEnvIntOrDefault(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
-	}
-	return defaultValue
 }
 
 // TestNmapAvailability tests that nmap is available and functional in the test environment.
