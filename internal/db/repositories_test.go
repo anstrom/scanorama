@@ -1,0 +1,840 @@
+//go:build integration
+
+package db
+
+import (
+	"context"
+	"net"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// ── Scan repository ───────────────────────────────────────────────────────────
+
+func TestScanRepository_CreateAndGet(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	input := map[string]interface{}{
+		"name":      "test-scan-create",
+		"targets":   []string{"127.0.0.1"},
+		"scan_type": "connect",
+		"ports":     "22,80",
+	}
+
+	scan, err := db.CreateScan(ctx, input)
+	require.NoError(t, err)
+	require.NotNil(t, scan)
+	assert.NotEqual(t, uuid.Nil, scan.ID)
+	assert.Equal(t, "test-scan-create", scan.Name)
+	assert.Equal(t, "connect", scan.ScanType)
+	assert.Equal(t, "22,80", scan.Ports)
+
+	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+
+	got, err := db.GetScan(ctx, scan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, scan.ID, got.ID)
+	assert.Equal(t, scan.Name, got.Name)
+	assert.Equal(t, "pending", got.Status)
+}
+
+func TestScanRepository_GetScan_NotFound(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	_, err := db.GetScan(context.Background(), uuid.New())
+	require.Error(t, err)
+}
+
+func TestScanRepository_ListScans(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	scan, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "test-scan-list",
+		"targets":   []string{"127.0.0.2"},
+		"scan_type": "connect",
+		"ports":     "443",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+
+	scans, total, err := db.ListScans(ctx, ScanFilters{}, 0, 100)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, total, int64(1))
+	assert.GreaterOrEqual(t, len(scans), 1)
+}
+
+func TestScanRepository_UpdateScan(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	scan, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "test-scan-update",
+		"targets":   []string{"127.0.0.1"},
+		"scan_type": "connect",
+		"ports":     "22",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+
+	updated, err := db.UpdateScan(ctx, scan.ID, map[string]interface{}{
+		"ports": "22,443",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "22,443", updated.Ports)
+}
+
+func TestScanRepository_UpdateScan_NotFound(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	_, err := db.UpdateScan(context.Background(), uuid.New(), map[string]interface{}{
+		"ports": "80",
+	})
+	require.Error(t, err)
+}
+
+func TestScanRepository_DeleteScan(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	scan, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "test-scan-delete",
+		"targets":   []string{"127.0.0.1"},
+		"scan_type": "connect",
+		"ports":     "22",
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, db.DeleteScan(ctx, scan.ID))
+
+	_, err = db.GetScan(ctx, scan.ID)
+	require.Error(t, err)
+}
+
+func TestScanRepository_DeleteScan_NotFound(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	err := db.DeleteScan(context.Background(), uuid.New())
+	require.Error(t, err)
+}
+
+func TestScanRepository_StartCompleteScan(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	scan, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "test-scan-lifecycle",
+		"targets":   []string{"127.0.0.1"},
+		"scan_type": "connect",
+		"ports":     "22",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+
+	require.NoError(t, db.StartScan(ctx, scan.ID))
+
+	started, err := db.GetScan(ctx, scan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "running", started.Status)
+	assert.NotNil(t, started.StartedAt)
+
+	require.NoError(t, db.CompleteScan(ctx, scan.ID))
+
+	completed, err := db.GetScan(ctx, scan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "completed", completed.Status)
+	assert.NotNil(t, completed.CompletedAt)
+}
+
+func TestScanRepository_StopScan(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	scan, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "test-scan-stop",
+		"targets":   []string{"127.0.0.1"},
+		"scan_type": "connect",
+		"ports":     "22",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+
+	require.NoError(t, db.StartScan(ctx, scan.ID))
+	require.NoError(t, db.StopScan(ctx, scan.ID))
+
+	stopped, err := db.GetScan(ctx, scan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "failed", stopped.Status)
+}
+
+func TestScanRepository_GetScanResults(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	scan, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "test-scan-results",
+		"targets":   []string{"127.0.0.1"},
+		"scan_type": "connect",
+		"ports":     "22",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+
+	// No results yet — should return empty slice, not error.
+	results, total, err := db.GetScanResults(ctx, scan.ID, 0, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), total)
+	assert.Empty(t, results)
+}
+
+func TestScanRepository_GetScanSummary(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	scan, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "test-scan-summary",
+		"targets":   []string{"127.0.0.1"},
+		"scan_type": "connect",
+		"ports":     "22",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+
+	summary, err := db.GetScanSummary(ctx, scan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, scan.ID, summary.ScanID)
+	assert.Equal(t, 0, summary.TotalPorts)
+}
+
+// ── ScanJob repository ────────────────────────────────────────────────────────
+
+func TestScanJobRepository_CreateAndGet(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	_, ipNet, err := net.ParseCIDR("10.0.0.1/32")
+	require.NoError(t, err)
+
+	targetRepo := NewScanTargetRepository(db)
+	targetID := uuid.New()
+	require.NoError(t, targetRepo.Create(ctx, &ScanTarget{
+		ID:                  targetID,
+		Name:                "job-repo-target",
+		Network:             NetworkAddr{IPNet: *ipNet},
+		ScanIntervalSeconds: 0,
+		ScanPorts:           "22",
+		ScanType:            "connect",
+		Enabled:             false,
+	}))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM scan_targets WHERE id = $1", targetID)
+	})
+
+	jobRepo := NewScanJobRepository(db)
+	jobID := uuid.New()
+	job := &ScanJob{ID: jobID, TargetID: targetID, Status: ScanJobStatusPending}
+	require.NoError(t, jobRepo.Create(ctx, job))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", jobID)
+	})
+
+	got, err := jobRepo.GetByID(ctx, jobID)
+	require.NoError(t, err)
+	assert.Equal(t, jobID, got.ID)
+	assert.Equal(t, ScanJobStatusPending, got.Status)
+}
+
+func TestScanJobRepository_UpdateStatus(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	_, ipNet, err := net.ParseCIDR("10.0.0.2/32")
+	require.NoError(t, err)
+
+	targetRepo := NewScanTargetRepository(db)
+	targetID := uuid.New()
+	require.NoError(t, targetRepo.Create(ctx, &ScanTarget{
+		ID:                  targetID,
+		Name:                "job-status-target",
+		Network:             NetworkAddr{IPNet: *ipNet},
+		ScanIntervalSeconds: 0,
+		ScanPorts:           "22",
+		ScanType:            "connect",
+		Enabled:             false,
+	}))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM scan_targets WHERE id = $1", targetID)
+	})
+
+	jobRepo := NewScanJobRepository(db)
+	jobID := uuid.New()
+	require.NoError(t, jobRepo.Create(ctx, &ScanJob{
+		ID: jobID, TargetID: targetID, Status: ScanJobStatusPending,
+	}))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", jobID)
+	})
+
+	require.NoError(t, jobRepo.UpdateStatus(ctx, jobID, ScanJobStatusRunning, nil))
+
+	got, err := jobRepo.GetByID(ctx, jobID)
+	require.NoError(t, err)
+	assert.Equal(t, ScanJobStatusRunning, got.Status)
+}
+
+// ── PortScan repository ───────────────────────────────────────────────────────
+
+func TestPortScanRepository_CreateBatchAndGetByHost(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Insert a host to attach port scans to.
+	hostRepo := NewHostRepository(db)
+	hostID := uuid.New()
+	ip := IPAddr{IP: net.ParseIP("10.0.1.1")}
+	_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = $1::inet", "10.0.1.1")
+	require.NoError(t, hostRepo.CreateOrUpdate(ctx, &Host{
+		ID:        hostID,
+		IPAddress: ip,
+		Status:    HostStatusUp,
+	}))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = $1::inet", "10.0.1.1")
+	})
+
+	// Insert a scan job to attach port scans to.
+	_, ipNet, _ := net.ParseCIDR("10.0.1.1/32")
+	targetRepo := NewScanTargetRepository(db)
+	targetID := uuid.New()
+	require.NoError(t, targetRepo.Create(ctx, &ScanTarget{
+		ID:                  targetID,
+		Name:                "port-scan-batch-target",
+		Network:             NetworkAddr{IPNet: *ipNet},
+		ScanIntervalSeconds: 0,
+		ScanPorts:           "22,80",
+		ScanType:            "connect",
+		Enabled:             false,
+	}))
+	jobRepo := NewScanJobRepository(db)
+	jobID := uuid.New()
+	require.NoError(t, jobRepo.Create(ctx, &ScanJob{
+		ID: jobID, TargetID: targetID, Status: ScanJobStatusPending,
+	}))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", jobID)
+		_, _ = db.ExecContext(ctx, "DELETE FROM scan_targets WHERE id = $1", targetID)
+	})
+
+	portRepo := NewPortScanRepository(db)
+	batch := []*PortScan{
+		{ID: uuid.New(), JobID: jobID, HostID: hostID, Port: 22, Protocol: "tcp", State: "open"},
+		{ID: uuid.New(), JobID: jobID, HostID: hostID, Port: 80, Protocol: "tcp", State: "open"},
+	}
+	require.NoError(t, portRepo.CreateBatch(ctx, batch))
+
+	got, err := portRepo.GetByHost(ctx, hostID)
+	require.NoError(t, err)
+	assert.Len(t, got, 2)
+}
+
+// ── ScanTarget repository ─────────────────────────────────────────────────────
+
+func TestScanTargetRepository_CRUD(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	_, ipNet, _ := net.ParseCIDR("192.168.99.0/24")
+	repo := NewScanTargetRepository(db)
+	id := uuid.New()
+
+	require.NoError(t, repo.Create(ctx, &ScanTarget{
+		ID:                  id,
+		Name:                "crud-target",
+		Network:             NetworkAddr{IPNet: *ipNet},
+		ScanIntervalSeconds: 3600,
+		ScanPorts:           "22",
+		ScanType:            "connect",
+		Enabled:             true,
+	}))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM scan_targets WHERE id = $1", id)
+	})
+
+	got, err := repo.GetByID(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, "crud-target", got.Name)
+	assert.True(t, got.Enabled)
+
+	all, err := repo.GetAll(ctx)
+	require.NoError(t, err)
+	var found bool
+	for _, st := range all {
+		if st.ID == id {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "created target should appear in GetAll")
+
+	enabled, err := repo.GetEnabled(ctx)
+	require.NoError(t, err)
+	var foundEnabled bool
+	for _, st := range enabled {
+		if st.ID == id {
+			foundEnabled = true
+			break
+		}
+	}
+	assert.True(t, foundEnabled, "enabled target should appear in GetEnabled")
+
+	require.NoError(t, repo.Delete(ctx, id))
+	_, err = repo.GetByID(ctx, id)
+	require.Error(t, err)
+}
+
+// ── Profile repository ────────────────────────────────────────────────────────
+
+func TestProfileRepository_CRUD(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create.
+	profile, err := db.CreateProfile(ctx, map[string]interface{}{
+		"name":      "test-profile-crud",
+		"scan_type": "connect",
+		"ports":     "22,80,443",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, profile)
+	assert.Equal(t, "test-profile-crud", profile.Name)
+	t.Cleanup(func() { _ = db.DeleteProfile(ctx, profile.ID) })
+
+	// Get.
+	got, err := db.GetProfile(ctx, profile.ID)
+	require.NoError(t, err)
+	assert.Equal(t, profile.ID, got.ID)
+	assert.Equal(t, "connect", got.ScanType)
+	assert.Equal(t, "22,80,443", got.Ports)
+
+	// List.
+	profiles, total, err := db.ListProfiles(ctx, ProfileFilters{}, 0, 100)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, total, int64(1))
+	var found bool
+	for _, p := range profiles {
+		if p.ID == profile.ID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "created profile should appear in ListProfiles")
+
+	// List with filter.
+	filtered, _, err := db.ListProfiles(ctx, ProfileFilters{ScanType: "connect"}, 0, 100)
+	require.NoError(t, err)
+	for _, p := range filtered {
+		assert.Equal(t, "connect", p.ScanType)
+	}
+
+	// Update.
+	updated, err := db.UpdateProfile(ctx, profile.ID, map[string]interface{}{
+		"ports": "22,443",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "22,443", updated.Ports)
+
+	// Delete.
+	require.NoError(t, db.DeleteProfile(ctx, profile.ID))
+	_, err = db.GetProfile(ctx, profile.ID)
+	require.Error(t, err)
+}
+
+func TestProfileRepository_GetProfile_NotFound(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	_, err := db.GetProfile(context.Background(), "nonexistent-profile-id")
+	require.Error(t, err)
+}
+
+func TestProfileRepository_UpdateBuiltIn_Rejected(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Find a built-in profile (seeded by migrations).
+	var builtInID string
+	err := db.QueryRowContext(ctx,
+		"SELECT id FROM scan_profiles WHERE built_in = true LIMIT 1").Scan(&builtInID)
+	if err != nil {
+		t.Skip("no built-in profiles found, skipping")
+	}
+
+	_, err = db.UpdateProfile(ctx, builtInID, map[string]interface{}{"ports": "9999"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "built-in")
+}
+
+func TestProfileRepository_DeleteBuiltIn_Rejected(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	var builtInID string
+	err := db.QueryRowContext(ctx,
+		"SELECT id FROM scan_profiles WHERE built_in = true LIMIT 1").Scan(&builtInID)
+	if err != nil {
+		t.Skip("no built-in profiles found, skipping")
+	}
+
+	err = db.DeleteProfile(ctx, builtInID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "built-in")
+}
+
+// ── Schedule repository ───────────────────────────────────────────────────────
+
+func TestScheduleRepository_CRUD(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create.
+	schedule, err := db.CreateSchedule(ctx, map[string]interface{}{
+		"name":            "test-schedule-crud",
+		"job_type":        "discovery",
+		"cron_expression": "0 * * * *",
+		"enabled":         true,
+		"job_config": map[string]interface{}{
+			"network": "10.0.0.0/24",
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, schedule)
+	assert.Equal(t, "test-schedule-crud", schedule.Name)
+	assert.Equal(t, "discovery", schedule.JobType)
+	assert.True(t, schedule.Enabled)
+	t.Cleanup(func() { _ = db.DeleteSchedule(ctx, schedule.ID) })
+
+	// Get.
+	got, err := db.GetSchedule(ctx, schedule.ID)
+	require.NoError(t, err)
+	assert.Equal(t, schedule.ID, got.ID)
+	assert.Equal(t, "0 * * * *", got.CronExpression)
+
+	// List.
+	schedules, total, err := db.ListSchedules(ctx, ScheduleFilters{}, 0, 100)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, total, int64(1))
+	var found bool
+	for _, s := range schedules {
+		if s.ID == schedule.ID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found)
+
+	// List with job_type filter.
+	filtered, _, err := db.ListSchedules(ctx, ScheduleFilters{JobType: "discovery"}, 0, 100)
+	require.NoError(t, err)
+	for _, s := range filtered {
+		assert.Equal(t, "discovery", s.JobType)
+	}
+
+	// Update.
+	updated, err := db.UpdateSchedule(ctx, schedule.ID, map[string]interface{}{
+		"cron_expression": "30 * * * *",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "30 * * * *", updated.CronExpression)
+
+	// Disable / Enable.
+	require.NoError(t, db.DisableSchedule(ctx, schedule.ID))
+	disabled, err := db.GetSchedule(ctx, schedule.ID)
+	require.NoError(t, err)
+	assert.False(t, disabled.Enabled)
+
+	require.NoError(t, db.EnableSchedule(ctx, schedule.ID))
+	enabled, err := db.GetSchedule(ctx, schedule.ID)
+	require.NoError(t, err)
+	assert.True(t, enabled.Enabled)
+
+	// Delete.
+	require.NoError(t, db.DeleteSchedule(ctx, schedule.ID))
+	_, err = db.GetSchedule(ctx, schedule.ID)
+	require.Error(t, err)
+}
+
+func TestScheduleRepository_GetSchedule_NotFound(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	_, err := db.GetSchedule(context.Background(), uuid.New())
+	require.Error(t, err)
+}
+
+func TestScheduleRepository_UpdateSchedule_NotFound(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	_, err := db.UpdateSchedule(context.Background(), uuid.New(), map[string]interface{}{
+		"name": "ghost",
+	})
+	require.Error(t, err)
+}
+
+func TestScheduleRepository_DeleteSchedule_NotFound(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	err := db.DeleteSchedule(context.Background(), uuid.New())
+	require.Error(t, err)
+}
+
+// ── Discovery job repository ──────────────────────────────────────────────────
+
+func TestDiscoveryJobRepository_CRUD(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create.
+	job, err := db.CreateDiscoveryJob(ctx, map[string]interface{}{
+		"networks": []string{"10.10.0.0/24"},
+		"method":   "tcp",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	assert.NotEqual(t, uuid.Nil, job.ID)
+	assert.Equal(t, "pending", job.Status)
+	t.Cleanup(func() { _ = db.DeleteDiscoveryJob(ctx, job.ID) })
+
+	// Get.
+	got, err := db.GetDiscoveryJob(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, job.ID, got.ID)
+	assert.Equal(t, "tcp", got.Method)
+
+	// List.
+	jobs, total, err := db.ListDiscoveryJobs(ctx, DiscoveryFilters{}, 0, 100)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, total, int64(1))
+	var found bool
+	for _, j := range jobs {
+		if j.ID == job.ID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found)
+
+	// List with filters.
+	filtered, _, err := db.ListDiscoveryJobs(ctx, DiscoveryFilters{Status: "pending"}, 0, 100)
+	require.NoError(t, err)
+	for _, j := range filtered {
+		assert.Equal(t, "pending", j.Status)
+	}
+
+	// Start → running.
+	require.NoError(t, db.StartDiscoveryJob(ctx, job.ID))
+	running, err := db.GetDiscoveryJob(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "running", running.Status)
+
+	// Stop → failed.
+	require.NoError(t, db.StopDiscoveryJob(ctx, job.ID))
+	stopped, err := db.GetDiscoveryJob(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "failed", stopped.Status)
+
+	// Update.
+	now := time.Now().UTC()
+	updated, err := db.UpdateDiscoveryJob(ctx, job.ID, map[string]interface{}{
+		"hosts_discovered": 5,
+		"hosts_responsive": 3,
+		"completed_at":     now,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 5, updated.HostsDiscovered)
+	assert.Equal(t, 3, updated.HostsResponsive)
+
+	// Delete.
+	require.NoError(t, db.DeleteDiscoveryJob(ctx, job.ID))
+	_, err = db.GetDiscoveryJob(ctx, job.ID)
+	require.Error(t, err)
+}
+
+func TestDiscoveryJobRepository_GetDiscoveryJob_NotFound(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	_, err := db.GetDiscoveryJob(context.Background(), uuid.New())
+	require.Error(t, err)
+}
+
+func TestDiscoveryJobRepository_DeleteDiscoveryJob_NotFound(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	err := db.DeleteDiscoveryJob(context.Background(), uuid.New())
+	require.Error(t, err)
+}
+
+// ── Host repository (extended) ────────────────────────────────────────────────
+
+func TestHostRepository_GetActiveHosts(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	ip := IPAddr{IP: net.ParseIP("203.0.113.50")}
+	_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = $1::inet", "203.0.113.50")
+
+	repo := NewHostRepository(db)
+	require.NoError(t, repo.CreateOrUpdate(ctx, &Host{
+		ID:        uuid.New(),
+		IPAddress: ip,
+		Status:    HostStatusUp,
+	}))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = $1::inet", "203.0.113.50")
+	})
+
+	hosts, err := repo.GetActiveHosts(ctx)
+	require.NoError(t, err)
+
+	var found bool
+	for _, h := range hosts {
+		if h.IPAddress.String() == "203.0.113.50" {
+			found = true
+			assert.Equal(t, HostStatusUp, h.Status)
+			break
+		}
+	}
+	assert.True(t, found, "newly inserted host should appear in GetActiveHosts")
+}
+
+func TestHostRepository_ListHosts(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	ip := IPAddr{IP: net.ParseIP("203.0.113.51")}
+	_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = $1::inet", "203.0.113.51")
+
+	repo := NewHostRepository(db)
+	require.NoError(t, repo.CreateOrUpdate(ctx, &Host{
+		ID:        uuid.New(),
+		IPAddress: ip,
+		Status:    HostStatusUp,
+	}))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = $1::inet", "203.0.113.51")
+	})
+
+	hosts, total, err := db.ListHosts(ctx, &HostFilters{}, 0, 100)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, total, int64(1))
+	assert.GreaterOrEqual(t, len(hosts), 1)
+}
+
+func TestHostRepository_CreateGetUpdateDelete(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = $1::inet", "203.0.113.52")
+
+	// CreateHost.
+	host, err := db.CreateHost(ctx, map[string]interface{}{
+		"ip_address": "203.0.113.52",
+		"status":     "up",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, host)
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = $1::inet", "203.0.113.52")
+	})
+
+	// GetHost.
+	got, err := db.GetHost(ctx, host.ID)
+	require.NoError(t, err)
+	assert.Equal(t, host.ID, got.ID)
+	assert.Equal(t, "up", got.Status)
+
+	// UpdateHost.
+	updated, err := db.UpdateHost(ctx, host.ID, map[string]interface{}{
+		"status": "down",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "down", updated.Status)
+
+	// DeleteHost.
+	require.NoError(t, db.DeleteHost(ctx, host.ID))
+	_, err = db.GetHost(ctx, host.ID)
+	require.Error(t, err)
+}
+
+func TestHostRepository_GetHost_NotFound(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	_, err := db.GetHost(context.Background(), uuid.New())
+	require.Error(t, err)
+}
+
+// ── NetworkSummary repository ─────────────────────────────────────────────────
+
+func TestNetworkSummaryRepository_GetAll(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	repo := NewNetworkSummaryRepository(db)
+
+	// network_summary is a view — just verify it doesn't error.
+	summaries, err := repo.GetAll(context.Background())
+	require.NoError(t, err)
+	assert.NotNil(t, summaries)
+}
