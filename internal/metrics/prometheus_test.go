@@ -9,6 +9,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPrometheusMetrics_InitializationAndUpdate(t *testing.T) {
@@ -26,11 +27,11 @@ func TestPrometheusMetrics_InitializationAndUpdate(t *testing.T) {
 	pm.UpdateSystemMetrics()
 	// Uptime should be increasing
 	before := pm.GetUptime()
-	time.Sleep(10 * time.Millisecond)
-	after := pm.GetUptime()
-	if before >= after {
-		t.Fatalf("expected uptime to increase, before=%v after=%v", before, after)
-	}
+	var after time.Duration
+	require.Eventually(t, func() bool {
+		after = pm.GetUptime()
+		return after > before
+	}, time.Second, time.Millisecond, "uptime should increase")
 }
 
 func TestPrometheusMetrics_HTTPHandlerServes(t *testing.T) {
@@ -296,14 +297,13 @@ func TestPrometheusMetrics_StartPeriodicUpdates(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait for context to expire
+	// Wait for context to expire and goroutine to finish
 	<-ctx.Done()
 	<-done
 
-	// Verify metrics were updated at least once
-	count := testutil.CollectAndCount(pm.uptime)
-	if count != 1 {
-		t.Errorf("expected metrics to be updated, got %d uptime metrics", count)
+	// Verify uptime was updated at least once by the periodic updater
+	if pm.GetUptime() == 0 {
+		t.Error("expected uptime to be non-zero after periodic updates ran")
 	}
 }
 

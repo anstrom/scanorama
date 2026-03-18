@@ -102,18 +102,13 @@ func TestRateLimiter_Allow(t *testing.T) {
 
 func TestRateLimiter_WindowExpiry(t *testing.T) {
 	limiter := NewRateLimiter(1, 100*time.Millisecond)
-
-	// First request should be allowed
 	assert.True(t, limiter.Allow("1.1.1.1"))
-
-	// Second request should be blocked
 	assert.False(t, limiter.Allow("1.1.1.1"))
 
-	// Wait for window to expire
-	time.Sleep(150 * time.Millisecond)
-
-	// Request should be allowed again
-	assert.True(t, limiter.Allow("1.1.1.1"))
+	// Wait for the window to expire — use Eventually instead of a fixed sleep.
+	require.Eventually(t, func() bool {
+		return limiter.Allow("1.1.1.1")
+	}, time.Second, 10*time.Millisecond, "rate limit window should expire")
 }
 
 func TestRateLimiter_Cleanup(t *testing.T) {

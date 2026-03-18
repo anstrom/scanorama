@@ -185,9 +185,6 @@ func TestHealthHandler_UptimeCalculation(t *testing.T) {
 
 	handler := NewHealthHandler(nil, logger, mockMetrics)
 
-	// Wait a small amount to ensure uptime is measurable
-	time.Sleep(10 * time.Millisecond)
-
 	req := httptest.NewRequest("GET", "/health", http.NoBody)
 	w := httptest.NewRecorder()
 
@@ -197,6 +194,9 @@ func TestHealthHandler_UptimeCalculation(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
+	// Verify uptime is present and non-zero
+	assert.NotEmpty(t, response.Uptime, "Uptime should be non-empty")
+	assert.NotEqual(t, "0s", response.Uptime, "Uptime should be non-zero")
 	// Verify uptime format (should contain time units)
 	assert.True(t,
 		strings.Contains(response.Uptime, "s") ||
@@ -231,7 +231,7 @@ func TestHealthHandler_SystemInfo(t *testing.T) {
 	assert.NotNil(t, response.Checks)
 
 	// Verify timestamp is recent
-	assert.True(t, time.Since(response.Timestamp) < time.Minute)
+	assert.True(t, time.Since(response.Timestamp) < 5*time.Second)
 }
 
 func TestHealthHandler_RequestIDHandling(t *testing.T) {

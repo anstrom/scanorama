@@ -126,6 +126,11 @@ func getVersion() string {
 	return fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, buildTime)
 }
 
+// GetVersion returns the formatted version string (exported for testing).
+func GetVersion() string {
+	return getVersion()
+}
+
 // SetVersion sets the version information (called from main).
 func SetVersion(v, c, bt string) {
 	version = v

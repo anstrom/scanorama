@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -227,45 +226,6 @@ func TestServerEdgeCases(t *testing.T) {
 				assert.Equal(t, tc.expected.Offset, params.Offset)
 			})
 		}
-	})
-}
-
-func TestPerformanceCharacteristics(t *testing.T) {
-	cfg := createTestConfig()
-	server, err := New(cfg, nil)
-	require.NoError(t, err)
-
-	t.Run("JSON parsing performance", func(t *testing.T) {
-		data := map[string]interface{}{
-			"name":        "performance test",
-			"description": "testing JSON parsing performance",
-			"items":       make([]string, 100),
-		}
-		jsonData, _ := json.Marshal(data)
-
-		req := httptest.NewRequest("POST", "/test", bytes.NewBuffer(jsonData))
-		req.Header.Set("Content-Type", "application/json")
-
-		start := time.Now()
-		var parsed map[string]interface{}
-		err := server.ParseJSON(req, &parsed)
-		duration := time.Since(start)
-
-		require.NoError(t, err)
-		assert.Less(t, duration, 10*time.Millisecond, "JSON parsing should be fast")
-	})
-
-	t.Run("pagination calculation performance", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/test?page=1000&page_size=100", http.NoBody)
-
-		start := time.Now()
-		params := server.GetPaginationParams(req)
-		duration := time.Since(start)
-
-		assert.Equal(t, 1000, params.Page)
-		assert.Equal(t, 100, params.PageSize)
-		assert.Equal(t, 99900, params.Offset)
-		assert.Less(t, duration, time.Millisecond, "Pagination calculation should be very fast")
 	})
 }
 

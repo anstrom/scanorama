@@ -149,7 +149,14 @@ func TestJobSubmission(t *testing.T) {
 		}
 
 		// Wait for jobs to complete
-		time.Sleep(200 * time.Millisecond)
+		require.Eventually(t, func() bool {
+			for _, job := range jobs {
+				if job.ExecutedCount() != 1 {
+					return false
+				}
+			}
+			return true
+		}, 2*time.Second, 10*time.Millisecond, "all jobs should be executed within timeout")
 
 		for i, job := range jobs {
 			assert.Equal(t, int32(1), job.ExecutedCount(), "Job %d should be executed once", i)
@@ -239,7 +246,14 @@ func TestConcurrentJobProcessing(t *testing.T) {
 		}
 
 		// Wait for all jobs to complete
-		time.Sleep(500 * time.Millisecond)
+		require.Eventually(t, func() bool {
+			for _, job := range jobs {
+				if job.ExecutedCount() != 1 {
+					return false
+				}
+			}
+			return true
+		}, 3*time.Second, 20*time.Millisecond, "all concurrent jobs should complete within timeout")
 
 		duration := time.Since(start)
 

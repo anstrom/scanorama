@@ -847,119 +847,28 @@ func TestParseTargetAddress_InvalidCIDRMask_Rejected(t *testing.T) {
 // storeScanResults — ScanID linkage
 // ──────────────────────────────────────────────────────────────────────────────
 
-// ──────────────────────────────────────────────────────────────────────────────
-// storeScanResults — branch routing (no DB required)
-//
-// storeScanResults has two paths:
-//   - nil scanID  → CREATE path: builds a fresh scan_target + scan_job row.
-//   - non-nil     → UPDATE path: the row already exists (created by the API);
-//                   only scan_stats is updated, no INSERT attempted.
-//
-// We test the routing logic through two observable properties:
-//   1. The job UUID selected (nil→fresh, non-nil→preserved).
-//   2. That nil always generates a unique UUID (no accidental reuse).
-// ──────────────────────────────────────────────────────────────────────────────
+// TestScanConfig_ScanID verifies the ScanID pointer field semantics that the
+// storeScanResults create/update path depends on.
+func TestScanConfig_ScanID(t *testing.T) {
+	t.Run("nil by default", func(t *testing.T) {
+		cfg := &ScanConfig{Targets: []string{"10.0.0.1"}, Ports: "80", ScanType: "connect"}
+		assert.Nil(t, cfg.ScanID, "ScanID should default to nil (triggers CREATE path)")
+	})
 
-// TestStoreScanResults_NilScanID_TakesCreatePath verifies that when no scanID
-// is supplied a brand-new UUID is minted for the scan_job row (CREATE path).
-func TestStoreScanResults_NilScanID_TakesCreatePath(t *testing.T) {
-	// Two nil calls must produce different UUIDs — they are independent jobs.
-	id1 := resolveJobID(nil)
-	id2 := resolveJobID(nil)
-	assert.NotEqual(t, id1, id2,
-		"nil scanID must yield a fresh UUID each time (CREATE path)")
-	assert.NotEqual(t, uuid.Nil, id1, "generated UUID must not be the zero value")
-}
-
-// TestStoreScanResults_NonNilScanID_TakesUpdatePath verifies that when a
-// scanID is supplied the same UUID is returned (UPDATE path — row exists).
-func TestStoreScanResults_NonNilScanID_TakesUpdatePath(t *testing.T) {
-	want := uuid.New()
-	got := resolveJobID(&want)
-	assert.Equal(t, want, got,
-		"non-nil scanID must be reused as-is (UPDATE path — must not generate a new UUID)")
-}
-
-// TestStoreScanResults_ScanIDNil_GeneratesNewUUID keeps the original name so
-// existing test references in docs/CI annotations still match.
-func TestStoreScanResults_ScanIDNil_GeneratesNewUUID(t *testing.T) {
-	id1 := resolveJobID(nil)
-	id2 := resolveJobID(nil)
-	if id1 == id2 {
-		t.Error("two nil-ScanID calls produced the same UUID — they must be unique")
-	}
-}
-
-func TestStoreScanResults_ScanIDNonNil_Preserved(t *testing.T) {
-	want := uuid.New()
-	got := resolveJobID(&want)
-	if got != want {
-		t.Errorf("resolveJobID(&id): want %s, got %s", want, got)
-	}
-}
-
-// resolveJobID mirrors the ID-selection logic at the top of storeScanResults:
-// return the caller-supplied ID when present (UPDATE path), otherwise mint a
-// new one (CREATE path).  Keeping this in sync with the production code is
-// intentional — if the logic changes, these tests catch the drift.
-func resolveJobID(scanID *uuid.UUID) uuid.UUID {
-	if scanID != nil {
-		return *scanID
-	}
-	return uuid.New()
-}
-
-// TestStoreScanResults_UpdatePath_ScanIDNeverReplacedWithFresh asserts that
-// once a non-nil scanID enters storeScanResults it is never swapped out for a
-// freshly generated UUID.  This is the core invariant broken by the original
-// bug (always calling uuid.New() regardless of the supplied ID).
-func TestStoreScanResults_UpdatePath_ScanIDNeverReplacedWithFresh(t *testing.T) {
-	for range 20 {
+	t.Run("non-nil pointer preserved", func(t *testing.T) {
 		id := uuid.New()
-		got := resolveJobID(&id)
-		require.Equal(t, id, got,
-			"resolveJobID must always return the supplied scanID unchanged")
-	}
-}
+		cfg := &ScanConfig{Targets: []string{"10.0.0.1"}, Ports: "80", ScanType: "connect", ScanID: &id}
+		require.NotNil(t, cfg.ScanID)
+		assert.Equal(t, id, *cfg.ScanID, "ScanID value must not be altered by struct construction")
+	})
 
-// TestStoreScanResults_CreatePath_NilYieldsUniqueIDs stress-tests that the
-// CREATE path never accidentally hands out the same UUID twice.
-func TestStoreScanResults_CreatePath_NilYieldsUniqueIDs(t *testing.T) {
-	const n = 50
-	seen := make(map[uuid.UUID]struct{}, n)
-	for range n {
-		id := resolveJobID(nil)
-		_, dup := seen[id]
-		require.False(t, dup, "resolveJobID(nil) returned a duplicate UUID: %s", id)
-		seen[id] = struct{}{}
-	}
-}
-
-func TestScanConfig_ScanIDField_DefaultNil(t *testing.T) {
-	cfg := &ScanConfig{
-		Targets:  []string{"10.0.0.1"},
-		Ports:    "80",
-		ScanType: "connect",
-	}
-	if cfg.ScanID != nil {
-		t.Errorf("expected ScanID to default to nil, got %v", cfg.ScanID)
-	}
-}
-
-func TestScanConfig_ScanIDField_CanBeSet(t *testing.T) {
-	id := uuid.New()
-	cfg := &ScanConfig{
-		Targets:  []string{"10.0.0.1"},
-		Ports:    "80",
-		ScanType: "connect",
-		ScanID:   &id,
-	}
-	if cfg.ScanID == nil {
-		t.Fatal("expected ScanID to be non-nil after assignment")
-	}
-	if *cfg.ScanID != id {
-		t.Errorf("ScanID: want %s, got %s", id, *cfg.ScanID)
-	}
+	t.Run("nil and non-nil are distinct states", func(t *testing.T) {
+		id := uuid.New()
+		withID := &ScanConfig{ScanID: &id}
+		withoutID := &ScanConfig{}
+		assert.NotEqual(t, withID.ScanID == nil, withoutID.ScanID == nil,
+			"nil and non-nil ScanID must be distinguishable (create vs update path)")
+	})
 }
 
 func TestSendResult_FullBufferedChannel_DoesNotBlock(t *testing.T) {
