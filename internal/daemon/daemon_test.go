@@ -14,6 +14,8 @@ import (
 
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // =============================================================================
@@ -154,7 +156,7 @@ func TestSignalHandling(t *testing.T) {
 
 func TestDaemonize(t *testing.T) {
 	if os.Getenv("GO_TEST_DAEMONIZE") == "1" {
-		// Child process
+		// Child process: attempt to start the daemon and exit.
 		cfg := &config.Config{
 			Daemon: config.DaemonConfig{
 				PIDFile: filepath.Join(os.TempDir(), "test.pid"),
@@ -167,18 +169,44 @@ func TestDaemonize(t *testing.T) {
 		os.Exit(0)
 	}
 
-	// Parent process
+	// Parent process: run the child and wait for it to finish.
 	cmd := os.Args[0]
-	env := []string{"GO_TEST_DAEMONIZE=1"}
-	_, err := os.StartProcess(cmd, []string{cmd, "-test.run=TestDaemonize"}, &os.ProcAttr{
-		Env: append(os.Environ(), env...),
-	})
-	if err != nil {
-		t.Fatalf("Failed to start daemon process: %v", err)
+	env := append(os.Environ(), "GO_TEST_DAEMONIZE=1")
+	proc, err := os.StartProcess(cmd,
+		[]string{cmd, "-test.run=TestDaemonize", "-test.v=false"},
+		&os.ProcAttr{Env: env},
+	)
+	require.NoError(t, err, "failed to start daemon subprocess")
+
+	// Wait for the subprocess to exit (with a timeout via a goroutine).
+	done := make(chan *os.ProcessState, 1)
+	go func() {
+		state, _ := proc.Wait()
+		done <- state
+	}()
+
+	select {
+	case state := <-done:
+		// We expect exit code 0 (Start may fail due to missing config,
+		// which the child handles by calling os.Exit(1), so we just
+		// assert the process exited cleanly and did not hang).
+		_ = state // exit code 1 is acceptable here (no real config)
+	case <-time.After(5 * time.Second):
+		proc.Kill()
+		t.Fatal("daemon subprocess did not exit within 5 seconds")
 	}
 }
 
 func TestWorkingDirectoryChange(t *testing.T) {
+	// Save original working directory and restore it when done.
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Logf("Warning: failed to restore working directory: %v", err)
+		}
+	}()
+
 	tempDir := t.TempDir()
 	cfg := &config.Config{
 		Daemon: config.DaemonConfig{
@@ -188,20 +216,14 @@ func TestWorkingDirectoryChange(t *testing.T) {
 
 	d := New(cfg)
 
-	if err := os.Chdir(d.config.Daemon.WorkDir); err != nil {
-		t.Fatalf("Failed to change working directory: %v", err)
-	}
+	require.NoError(t, os.Chdir(d.config.Daemon.WorkDir))
 
 	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get current working directory: %v", err)
-	}
+	require.NoError(t, err)
 
 	resolvedCwd, _ := filepath.EvalSymlinks(cwd)
 	resolvedTempDir, _ := filepath.EvalSymlinks(tempDir)
-	if resolvedCwd != resolvedTempDir {
-		t.Errorf("Working directory = %s, want %s", resolvedCwd, resolvedTempDir)
-	}
+	assert.Equal(t, resolvedTempDir, resolvedCwd)
 }
 
 func TestSignalHandlerMethods(t *testing.T) {
@@ -300,26 +322,14 @@ func TestHasAPIConfigChanged(t *testing.T) {
 }
 
 func TestReloadConfiguration(t *testing.T) {
-	t.Run("validates new configuration", func(t *testing.T) {
+	t.Run("returns error when no config file is set", func(t *testing.T) {
 		d := New(&config.Config{
-			API: config.APIConfig{
-				Enabled: false,
-			},
+			API: config.APIConfig{Enabled: false},
 		})
-
-		// Since config.Load("") would try to load from file,
-		// we test the validation logic indirectly by ensuring
-		// the method handles configuration properly
-
-		// This test validates that the method exists and has
-		// proper error handling structure
+		// reloadConfiguration calls config.Load("") which should fail
+		// because there is no config file to load.
 		err := d.reloadConfiguration()
-		// We expect an error since no valid config file exists
-		if err == nil {
-			t.Log("Configuration reload succeeded (likely using default config)")
-		} else {
-			t.Logf("Configuration reload failed as expected: %v", err)
-		}
+		assert.Error(t, err, "reloadConfiguration should return an error when no config file exists")
 	})
 }
 

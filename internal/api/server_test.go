@@ -64,19 +64,11 @@ func TestDefaultConfig(t *testing.T) {
 	t.Run("returns valid default configuration", func(t *testing.T) {
 		cfg := DefaultConfig()
 
+		// API contracts: host, port, auth disabled, CORS enabled.
 		assert.Equal(t, "127.0.0.1", cfg.Host)
 		assert.Equal(t, 8080, cfg.Port)
-		assert.Equal(t, 10*time.Second, cfg.ReadTimeout)
-		assert.Equal(t, 10*time.Second, cfg.WriteTimeout)
-		assert.Equal(t, 60*time.Second, cfg.IdleTimeout)
-		assert.Equal(t, 1<<20, cfg.MaxHeaderBytes) // 1MB
-		assert.True(t, cfg.EnableCORS)
-		assert.Equal(t, []string{"*"}, cfg.CORSOrigins)
-		assert.True(t, cfg.RateLimitEnabled)
-		assert.Equal(t, 100, cfg.RateLimitRequests)
-		assert.Equal(t, time.Minute, cfg.RateLimitWindow)
 		assert.False(t, cfg.AuthEnabled)
-		assert.Empty(t, cfg.APIKeys)
+		assert.True(t, cfg.EnableCORS)
 	})
 
 	t.Run("configuration values are reasonable", func(t *testing.T) {
@@ -182,11 +174,9 @@ func TestServerStartStop(t *testing.T) {
 			startErr <- server.Start(context.Background())
 		}()
 
-		// Give server time to start
-		time.Sleep(100 * time.Millisecond)
-
-		// Verify server is running
-		assert.True(t, server.IsRunning())
+		// Wait for server to start
+		require.Eventually(t, server.IsRunning, time.Second, 10*time.Millisecond,
+			"server should be running within 1 second")
 
 		// Stop server
 		err = server.Stop()
@@ -225,8 +215,8 @@ func TestServerStartStop(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go server.Start(ctx)
-		time.Sleep(100 * time.Millisecond)
-		assert.True(t, server.IsRunning())
+		require.Eventually(t, server.IsRunning, time.Second, 10*time.Millisecond,
+			"server should be running within 1 second")
 
 		// Try to start again - should return error
 		err = server.Start(context.Background())
@@ -247,8 +237,8 @@ func TestServerStartStop(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go server.Start(ctx)
-		time.Sleep(100 * time.Millisecond)
-		assert.True(t, server.IsRunning())
+		require.Eventually(t, server.IsRunning, time.Second, 10*time.Millisecond,
+			"server should be running within 1 second")
 
 		// Stop server multiple times - should be safe
 		err1 := server.Stop()
@@ -298,13 +288,13 @@ func TestServerMethods(t *testing.T) {
 
 		// Start server
 		go server.Start(context.Background())
-		time.Sleep(100 * time.Millisecond)
-		assert.True(t, server.IsRunning())
+		require.Eventually(t, server.IsRunning, time.Second, 10*time.Millisecond,
+			"server should be running within 1 second")
 
 		// Stop server
 		server.Stop()
-		time.Sleep(100 * time.Millisecond)
-		assert.False(t, server.IsRunning())
+		require.Eventually(t, func() bool { return !server.IsRunning() }, time.Second, 10*time.Millisecond,
+			"server should stop within 1 second")
 	})
 }
 

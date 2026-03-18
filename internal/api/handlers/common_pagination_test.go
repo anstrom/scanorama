@@ -190,30 +190,6 @@ func TestWritePaginatedResponse(t *testing.T) {
 	}
 }
 
-func TestPaginationCalculations(t *testing.T) {
-	tests := []struct {
-		name           string
-		page           int
-		pageSize       int
-		expectedOffset int
-	}{
-		{"first page", 1, 10, 0},
-		{"second page", 2, 10, 10},
-		{"third page", 3, 25, 50},
-		{"large page", 100, 5, 495},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			params := PaginationParams{
-				Offset: (tt.page - 1) * tt.pageSize,
-			}
-
-			assert.Equal(t, tt.expectedOffset, params.Offset)
-		})
-	}
-}
-
 // Benchmark tests for pagination performance.
 func BenchmarkGetPaginationParams(b *testing.B) {
 	req := httptest.NewRequest("GET", "/test?page=5&page_size=25", http.NoBody)

@@ -5,7 +5,6 @@ import (
 	"net"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -341,212 +340,76 @@ func TestJSONBEdgeCases(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot scan")
 }
 
-// TestScanTargetValidation tests ScanTarget model validation
-func TestScanTargetValidation(t *testing.T) {
-	tests := []struct {
-		name    string
-		target  ScanTarget
-		wantErr bool
-	}{
-		{
-			name: "valid target",
-			target: ScanTarget{
-				ID:                  uuid.New(),
-				Name:                "Test Network",
-				Network:             NetworkAddr{},
-				ScanIntervalSeconds: 3600,
-				ScanPorts:           "22,80,443",
-				ScanType:            ScanTypeConnect,
-				Enabled:             true,
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid with description",
-			target: ScanTarget{
-				ID:                  uuid.New(),
-				Name:                "Test Network",
-				Network:             NetworkAddr{},
-				Description:         stringPtr("Test description"),
-				ScanIntervalSeconds: 3600,
-				ScanPorts:           "22,80,443",
-				ScanType:            ScanTypeSYN,
-				Enabled:             true,
-			},
-			wantErr: false,
-		},
-	}
+// TestConstantValues checks the actual string values of every constant.
+// This acts as a change-detector: if a constant value is accidentally renamed
+// or changed, this test will catch it.
+func TestConstantValues(t *testing.T) {
+	assert.Equal(t, "up", HostStatusUp)
+	assert.Equal(t, "down", HostStatusDown)
+	assert.Equal(t, "unknown", HostStatusUnknown)
+	assert.Equal(t, "open", PortStateOpen)
+	assert.Equal(t, "closed", PortStateClosed)
+	assert.Equal(t, "filtered", PortStateFiltered)
+	assert.Equal(t, "unknown", PortStateUnknown)
+	assert.Equal(t, "connect", ScanTypeConnect)
+	assert.Equal(t, "syn", ScanTypeSYN)
+	assert.Equal(t, "version", ScanTypeVersion)
+	assert.Equal(t, "tcp", ProtocolTCP)
+	assert.Equal(t, "udp", ProtocolUDP)
+	assert.Equal(t, "pending", ScanJobStatusPending)
+	assert.Equal(t, "running", ScanJobStatusRunning)
+	assert.Equal(t, "completed", ScanJobStatusCompleted)
+	assert.Equal(t, "failed", ScanJobStatusFailed)
+	assert.Equal(t, "discovered", HostEventDiscovered)
+	assert.Equal(t, "status_change", HostEventStatusChange)
+	assert.Equal(t, "ports_changed", HostEventPortsChanged)
+	assert.Equal(t, "service_found", HostEventServiceFound)
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Basic validation - in a real implementation you might have
-			// a Validate() method on the model
-			assert.NotEmpty(t, tt.target.Name)
-			assert.NotEmpty(t, tt.target.ScanPorts)
-			assert.Contains(t, []string{ScanTypeConnect, ScanTypeSYN, ScanTypeVersion}, tt.target.ScanType)
-			assert.Positive(t, tt.target.ScanIntervalSeconds)
+// TestConstantUniqueness verifies that constants within each group are distinct.
+func TestConstantUniqueness(t *testing.T) {
+	t.Run("host statuses are unique", func(t *testing.T) {
+		assertUnique(t, []string{HostStatusUp, HostStatusDown, HostStatusUnknown})
+	})
+	t.Run("port states are unique", func(t *testing.T) {
+		assertUnique(t, []string{PortStateOpen, PortStateClosed, PortStateFiltered, PortStateUnknown})
+	})
+	t.Run("scan types are unique", func(t *testing.T) {
+		assertUnique(t, []string{ScanTypeConnect, ScanTypeSYN, ScanTypeVersion})
+	})
+	t.Run("protocols are unique", func(t *testing.T) {
+		assertUnique(t, []string{ProtocolTCP, ProtocolUDP})
+	})
+	t.Run("scan job statuses are unique", func(t *testing.T) {
+		assertUnique(t, []string{
+			ScanJobStatusPending, ScanJobStatusRunning,
+			ScanJobStatusCompleted, ScanJobStatusFailed,
 		})
+	})
+	t.Run("host history events are unique", func(t *testing.T) {
+		assertUnique(t, []string{
+			HostEventDiscovered, HostEventStatusChange,
+			HostEventPortsChanged, HostEventServiceFound,
+		})
+	})
+}
+
+func assertUnique(t *testing.T, values []string) {
+	t.Helper()
+	seen := make(map[string]bool)
+	for _, v := range values {
+		assert.False(t, seen[v], "duplicate value: %q", v)
+		seen[v] = true
 	}
 }
 
-// TestHostStatusConstants tests host status constants
-func TestHostStatusConstants(t *testing.T) {
-	validStatuses := []string{HostStatusUp, HostStatusDown, HostStatusUnknown}
-
-	for _, status := range validStatuses {
-		assert.NotEmpty(t, status)
-		assert.IsType(t, "", status)
-	}
-
-	// Test uniqueness
-	statusSet := make(map[string]bool)
-	for _, status := range validStatuses {
-		assert.False(t, statusSet[status], "Status %s should be unique", status)
-		statusSet[status] = true
-	}
-}
-
-// TestPortStateConstants tests port state constants
-func TestPortStateConstants(t *testing.T) {
-	validStates := []string{PortStateOpen, PortStateClosed, PortStateFiltered, PortStateUnknown}
-
-	for _, state := range validStates {
-		assert.NotEmpty(t, state)
-		assert.IsType(t, "", state)
-	}
-
-	// Test uniqueness
-	stateSet := make(map[string]bool)
-	for _, state := range validStates {
-		assert.False(t, stateSet[state], "State %s should be unique", state)
-		stateSet[state] = true
-	}
-}
-
-// TestScanTypeConstants tests scan type constants
-func TestScanTypeConstants(t *testing.T) {
-	validTypes := []string{ScanTypeConnect, ScanTypeSYN, ScanTypeVersion}
-
-	for _, scanType := range validTypes {
-		assert.NotEmpty(t, scanType)
-		assert.IsType(t, "", scanType)
-	}
-
-	// Test uniqueness
-	typeSet := make(map[string]bool)
-	for _, scanType := range validTypes {
-		assert.False(t, typeSet[scanType], "Type %s should be unique", scanType)
-		typeSet[scanType] = true
-	}
-}
-
-// TestProtocolConstants tests protocol constants
-func TestProtocolConstants(t *testing.T) {
-	validProtocols := []string{ProtocolTCP, ProtocolUDP}
-
-	for _, protocol := range validProtocols {
-		assert.NotEmpty(t, protocol)
-		assert.IsType(t, "", protocol)
-	}
-
-	// Test uniqueness
-	protocolSet := make(map[string]bool)
-	for _, protocol := range validProtocols {
-		assert.False(t, protocolSet[protocol], "Protocol %s should be unique", protocol)
-		protocolSet[protocol] = true
-	}
-}
-
-// TestScanJobStatusConstants tests scan job status constants
-func TestScanJobStatusConstants(t *testing.T) {
-	validStatuses := []string{
-		ScanJobStatusPending,
-		ScanJobStatusRunning,
-		ScanJobStatusCompleted,
-		ScanJobStatusFailed,
-	}
-
-	for _, status := range validStatuses {
-		assert.NotEmpty(t, status)
-		assert.IsType(t, "", status)
-	}
-
-	// Test uniqueness
-	statusSet := make(map[string]bool)
-	for _, status := range validStatuses {
-		assert.False(t, statusSet[status], "Status %s should be unique", status)
-		statusSet[status] = true
-	}
-}
-
-// TestHostHistoryEventConstants tests host history event constants
-func TestHostHistoryEventConstants(t *testing.T) {
-	validEvents := []string{
-		HostEventDiscovered,
-		HostEventStatusChange,
-		HostEventPortsChanged,
-		HostEventServiceFound,
-	}
-
-	for _, event := range validEvents {
-		assert.NotEmpty(t, event)
-		assert.IsType(t, "", event)
-	}
-
-	// Test uniqueness
-	eventSet := make(map[string]bool)
-	for _, event := range validEvents {
-		assert.False(t, eventSet[event], "Event %s should be unique", event)
-		eventSet[event] = true
-	}
-}
-
-// TestModelStructures tests basic model structure
-func TestModelStructures(t *testing.T) {
-	// Test that models have required fields and proper types
-
-	// ScanTarget
-	target := ScanTarget{}
-	assert.IsType(t, uuid.UUID{}, target.ID)
-	assert.IsType(t, "", target.Name)
-	assert.IsType(t, NetworkAddr{}, target.Network)
-	assert.IsType(t, 0, target.ScanIntervalSeconds)
-	assert.IsType(t, true, target.Enabled)
-
-	// Host
-	host := Host{}
-	assert.IsType(t, uuid.UUID{}, host.ID)
-	assert.IsType(t, IPAddr{}, host.IPAddress)
-	assert.IsType(t, "", host.Status)
-
-	// PortScan
-	portScan := PortScan{}
-	assert.IsType(t, uuid.UUID{}, portScan.ID)
-	assert.IsType(t, uuid.UUID{}, portScan.JobID)
-	assert.IsType(t, uuid.UUID{}, portScan.HostID)
-	assert.IsType(t, 0, portScan.Port)
-	assert.IsType(t, "", portScan.Protocol)
-	assert.IsType(t, "", portScan.State)
-
-	// ScanJob
-	job := ScanJob{}
-	assert.IsType(t, uuid.UUID{}, job.ID)
-	assert.IsType(t, uuid.UUID{}, job.TargetID)
-	assert.IsType(t, "", job.Status)
-}
-
-// TestDriverValuerInterface tests that our types implement driver.Valuer
-func TestDriverValuerInterface(t *testing.T) {
-	var _ driver.Valuer = NetworkAddr{}
-	var _ driver.Valuer = IPAddr{}
-	var _ driver.Valuer = MACAddr{}
-	var _ driver.Valuer = JSONB{}
-}
-
-// Helper function for tests
-func stringPtr(s string) *string {
-	return &s
-}
+// Compile-time interface satisfaction checks.
+var (
+	_ driver.Valuer = (*NetworkAddr)(nil)
+	_ driver.Valuer = (*IPAddr)(nil)
+	_ driver.Valuer = (*MACAddr)(nil)
+	_ driver.Valuer = (*JSONB)(nil)
+)
 
 // Benchmark tests for performance-critical operations
 func BenchmarkNetworkAddrScan(b *testing.B) {

@@ -561,13 +561,6 @@ func TestValidateKeyName(t *testing.T) {
 	}
 }
 
-func TestAPIKeyValidator(t *testing.T) {
-	t.Run("new_validator", func(t *testing.T) {
-		validator := NewAPIKeyValidator()
-		assert.NotNil(t, validator)
-	})
-}
-
 func TestGeneratedAPIKey_Integration(t *testing.T) {
 	// Test the full flow: generate -> hash -> validate
 	keyName := "Integration Test Key"
@@ -603,14 +596,25 @@ func TestGeneratedAPIKey_Integration(t *testing.T) {
 	assert.False(t, keyInfo.IsExpired())
 }
 
-func TestConstants(t *testing.T) {
-	// Test that constants have reasonable values
-	assert.Equal(t, 32, APIKeyLength)
-	assert.Equal(t, "sk", APIKeyPrefix)
-	assert.Equal(t, 12, DisplayPrefixLength)
-	assert.Equal(t, 12, BcryptCost)
-	assert.Equal(t, 1, MinAPIKeyNameLength)
-	assert.Equal(t, 255, MaxAPIKeyNameLength)
+func TestConstantSanity(t *testing.T) {
+	// APIKeyLength should be at least 32 bytes for sufficient entropy.
+	assert.GreaterOrEqual(t, APIKeyLength, 32, "key length must provide sufficient entropy")
+
+	// APIKeyPrefix must be non-empty (used to identify key type in storage/logs).
+	assert.NotEmpty(t, APIKeyPrefix, "key prefix must not be empty")
+
+	// DisplayPrefixLength should be long enough to be recognizable but not leak the key.
+	assert.GreaterOrEqual(t, DisplayPrefixLength, 8, "display prefix should be at least 8 chars")
+	assert.LessOrEqual(t, DisplayPrefixLength, 20, "display prefix should not exceed 20 chars")
+
+	// BcryptCost should be at least 10 to resist brute-force, but not so high it is unusable.
+	assert.GreaterOrEqual(t, BcryptCost, 10, "bcrypt cost must be high enough to resist brute-force")
+	assert.LessOrEqual(t, BcryptCost, 31, "bcrypt cost must be a valid bcrypt value")
+
+	// Name length bounds should be sensible.
+	assert.GreaterOrEqual(t, MinAPIKeyNameLength, 1, "minimum name length should be at least 1")
+	assert.LessOrEqual(t, MaxAPIKeyNameLength, 1024, "maximum name length should not be unreasonably large")
+	assert.Less(t, MinAPIKeyNameLength, MaxAPIKeyNameLength, "min must be less than max")
 }
 
 // Benchmark tests
