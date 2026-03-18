@@ -40,5 +40,6 @@ func TestVersionForwarding(t *testing.T) {
 	got := cli.GetVersion()
 	assert.True(t, strings.Contains(got, "1.2.3"), "GetVersion() should contain the version; got %q", got)
 	assert.True(t, strings.Contains(got, "abc123"), "GetVersion() should contain the commit; got %q", got)
-	assert.True(t, strings.Contains(got, "2024-01-01T00:00:00Z"), "GetVersion() should contain the build time; got %q", got)
+	assert.True(t, strings.Contains(got, "2024-01-01T00:00:00Z"),
+		"GetVersion() should contain the build time; got %q", got)
 }

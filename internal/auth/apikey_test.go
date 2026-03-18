@@ -603,7 +603,7 @@ func TestConstantSanity(t *testing.T) {
 	// APIKeyPrefix must be non-empty (used to identify key type in storage/logs).
 	assert.NotEmpty(t, APIKeyPrefix, "key prefix must not be empty")
 
-	// DisplayPrefixLength should be long enough to be recognisable but not leak the key.
+	// DisplayPrefixLength should be long enough to be recognizable but not leak the key.
 	assert.GreaterOrEqual(t, DisplayPrefixLength, 8, "display prefix should be at least 8 chars")
 	assert.LessOrEqual(t, DisplayPrefixLength, 20, "display prefix should not exceed 20 chars")
 

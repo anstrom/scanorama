@@ -381,10 +381,16 @@ func TestConstantUniqueness(t *testing.T) {
 		assertUnique(t, []string{ProtocolTCP, ProtocolUDP})
 	})
 	t.Run("scan job statuses are unique", func(t *testing.T) {
-		assertUnique(t, []string{ScanJobStatusPending, ScanJobStatusRunning, ScanJobStatusCompleted, ScanJobStatusFailed})
+		assertUnique(t, []string{
+			ScanJobStatusPending, ScanJobStatusRunning,
+			ScanJobStatusCompleted, ScanJobStatusFailed,
+		})
 	})
 	t.Run("host history events are unique", func(t *testing.T) {
-		assertUnique(t, []string{HostEventDiscovered, HostEventStatusChange, HostEventPortsChanged, HostEventServiceFound})
+		assertUnique(t, []string{
+			HostEventDiscovered, HostEventStatusChange,
+			HostEventPortsChanged, HostEventServiceFound,
+		})
 	})
 }
 
@@ -395,11 +401,6 @@ func assertUnique(t *testing.T, values []string) {
 		assert.False(t, seen[v], "duplicate value: %q", v)
 		seen[v] = true
 	}
-}
-
-// Helper function for tests
-func stringPtr(s string) *string {
-	return &s
 }
 
 // Compile-time interface satisfaction checks.
