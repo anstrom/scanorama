@@ -1,466 +1,501 @@
+// Package cli provides white-box unit tests for the cli package.
 package cli
 
 import (
+	"bytes"
+	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
-	"github.com/anstrom/scanorama/internal/api"
-	"github.com/anstrom/scanorama/internal/config"
-	"github.com/anstrom/scanorama/internal/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestConfigVariables tests config variable handling without loading actual files
-func TestConfigVariables(t *testing.T) {
-	// Save original state
-	originalCfgFile := cfgFile
-	originalAPIHost := apiHost
-	originalAPIPort := apiPort
-
-	defer func() {
-		cfgFile = originalCfgFile
-		apiHost = originalAPIHost
-		apiPort = originalAPIPort
-	}()
-
-	t.Run("config_file_variable_setting", func(t *testing.T) {
-		testPath := "/etc/scanorama/test-config.yaml"
-		cfgFile = testPath
-		assert.Equal(t, testPath, cfgFile)
-	})
-
-	t.Run("api_host_variable_setting", func(t *testing.T) {
-		testHost := "0.0.0.0"
-		apiHost = testHost
-		assert.Equal(t, testHost, apiHost)
-	})
-
-	t.Run("api_port_variable_setting", func(t *testing.T) {
-		testPort := 9090
-		apiPort = testPort
-		assert.Equal(t, testPort, apiPort)
-	})
-
-	t.Run("config_variable_reset", func(t *testing.T) {
-		// Test that variables can be reset
-		cfgFile = "test1.yaml"
-		apiHost = "host1"
-		apiPort = 8080
-
-		cfgFile = "test2.yaml"
-		apiHost = "host2"
-		apiPort = 9090
-
-		assert.Equal(t, "test2.yaml", cfgFile)
-		assert.Equal(t, "host2", apiHost)
-		assert.Equal(t, 9090, apiPort)
-	})
-}
-
-// TestDatabaseConfigStructure tests database config structure without actual connections
-func TestDatabaseConfigStructure(t *testing.T) {
-	t.Run("database_config_creation", func(t *testing.T) {
-		// Test creating database config structure
-		dbCfg := db.Config{
-			Host:     "localhost",
-			Port:     5432,
-			Database: "scanorama_test",
-			Username: "test_user",
-			Password: "test_pass",
-			SSLMode:  "disable",
-		}
-
-		assert.Equal(t, "localhost", dbCfg.Host)
-		assert.Equal(t, 5432, dbCfg.Port)
-		assert.Equal(t, "scanorama_test", dbCfg.Database)
-		assert.Equal(t, "test_user", dbCfg.Username)
-		assert.Equal(t, "test_pass", dbCfg.Password)
-		assert.Equal(t, "disable", dbCfg.SSLMode)
-	})
-
-	t.Run("config_with_database", func(t *testing.T) {
-		// Test creating full config with database section
-		cfg := &config.Config{
-			Database: db.Config{
-				Host:     "test-host",
-				Port:     5433,
-				Database: "test_db",
-			},
-		}
-
-		assert.Equal(t, "test-host", cfg.Database.Host)
-		assert.Equal(t, 5433, cfg.Database.Port)
-		assert.Equal(t, "test_db", cfg.Database.Database)
-	})
-}
-
-// TestPrintStartupInfo tests the startup info printing function
-func TestPrintStartupInfo(t *testing.T) {
-	// Save original stdout and verbose state
-	originalStdout := os.Stdout
-	originalVerbose := verbose
-
-	defer func() {
-		os.Stdout = originalStdout
-		verbose = originalVerbose
-	}()
-
-	t.Run("print_startup_info", func(t *testing.T) {
-		// Enable verbose mode
-		verbose = true
-
-		// Capture stdout
-		r, w, _ := os.Pipe()
-		os.Stdout = w
-
-		// Create test config
-		cfg := &config.Config{
-			API: config.APIConfig{
-				Host: "localhost",
-				Port: 8080,
-			},
-		}
-
-		// Call printStartupInfo
-		printStartupInfo(cfg)
-
-		w.Close()
-		output, _ := io.ReadAll(r)
-		os.Stdout = originalStdout
-
-		// Verify output contains expected information
-		outputStr := string(output)
-		assert.Contains(t, outputStr, "API server configuration:")
-		assert.Contains(t, outputStr, "Address:")
-	})
-}
-
-// TestPrintAPIEndpoints tests the API endpoints printing function
-func TestPrintAPIEndpoints(t *testing.T) {
-	// Save original stdout and verbose state
-	originalStdout := os.Stdout
-	originalVerbose := verbose
-
-	defer func() {
-		os.Stdout = originalStdout
-		verbose = originalVerbose
-	}()
-
-	t.Run("print_api_endpoints", func(t *testing.T) {
-		// Enable verbose mode
-		verbose = true
-
-		// Capture stdout
-		r, w, _ := os.Pipe()
-		os.Stdout = w
-
-		// Call printAPIEndpoints
-		printAPIEndpoints()
-
-		w.Close()
-		output, _ := io.ReadAll(r)
-		os.Stdout = originalStdout
-
-		// Verify output contains API endpoints
-		outputStr := string(output)
-		assert.Contains(t, outputStr, "Available endpoints:")
-		assert.Contains(t, outputStr, "/api/v1/health")
-	})
-}
-
-// TestGracefulShutdown tests the graceful shutdown function
-func TestGracefulShutdown(t *testing.T) {
-	t.Run("graceful_shutdown_with_server", func(t *testing.T) {
-		// Create mock API server
-		mockServer := &api.Server{}
-
-		// Test graceful shutdown (this will likely fail without proper server setup)
-		err := gracefulShutdown(mockServer)
-		// We expect this to fail since we don't have a real server setup
-		// But we're testing that the function can be called with correct signature
-		_ = err              // Ignore error for this test
-		assert.True(t, true) // Placeholder assertion
-	})
-}
-
-// TestAPIServerCommand tests the API server command structure
-func TestAPIServerCommand(t *testing.T) {
-	t.Run("api_command_exists", func(t *testing.T) {
-		// Test that the API command is properly defined
-		assert.NotNil(t, apiCmd)
-		assert.Equal(t, "api", apiCmd.Use)
-		assert.Contains(t, apiCmd.Short, "API server")
-	})
-
-	t.Run("api_command_flags", func(t *testing.T) {
-		// Test that API command has expected structure
-		assert.NotNil(t, apiCmd.RunE)
-
-		// Test that variables exist for flag handling
-		originalHost := apiHost
-		originalPort := apiPort
-
-		apiHost = "test-host"
-		apiPort = 8888
-
-		assert.Equal(t, "test-host", apiHost)
-		assert.Equal(t, 8888, apiPort)
-
-		// Restore
-		apiHost = originalHost
-		apiPort = originalPort
-	})
-}
-
-// TestDaemonCommands tests the daemon command functions
-func TestDaemonCommands(t *testing.T) {
-	// Save original state
-	originalPidFile := daemonPidFile
-
-	defer func() {
-		daemonPidFile = originalPidFile
-	}()
-
-	t.Run("daemon_status_checks", func(t *testing.T) {
-		// Create temporary directory for PID file testing
-		tempDir, err := os.MkdirTemp("", "scanorama-daemon-status-test")
-		require.NoError(t, err)
-		defer os.RemoveAll(tempDir)
-
-		// Test with no PID file
-		daemonPidFile = filepath.Join(tempDir, "no-file.pid")
-		isRunning := isDaemonRunning()
-		assert.False(t, isRunning)
-
-		// Test with invalid PID file
-		invalidPidFile := filepath.Join(tempDir, "invalid.pid")
-		err = os.WriteFile(invalidPidFile, []byte("not-a-number"), 0644)
-		require.NoError(t, err)
-
-		daemonPidFile = invalidPidFile
-		isRunning = isDaemonRunning()
-		assert.False(t, isRunning)
-
-		// Test with non-existent PID
-		stalePidFile := filepath.Join(tempDir, "stale.pid")
-		err = os.WriteFile(stalePidFile, []byte("99999"), 0644)
-		require.NoError(t, err)
-
-		daemonPidFile = stalePidFile
-		isRunning = isDaemonRunning()
-		assert.False(t, isRunning)
-	})
-
-	t.Run("daemon_commands_exist", func(t *testing.T) {
-		// Test that daemon commands are properly defined
-		assert.NotNil(t, daemonCmd)
-		assert.Equal(t, "daemon", daemonCmd.Use)
-
-		// Check that subcommands exist by looking for them in the command tree
-		hasStart := false
-		hasStop := false
-		hasStatus := false
-
-		for _, cmd := range daemonCmd.Commands() {
-			switch cmd.Use {
-			case "start":
-				hasStart = true
-			case "stop":
-				hasStop = true
-			case "status":
-				hasStatus = true
-			}
-		}
-
-		assert.True(t, hasStart, "daemon start command should exist")
-		assert.True(t, hasStop, "daemon stop command should exist")
-		assert.True(t, hasStatus, "daemon status command should exist")
-	})
-}
-
-// TestDatabaseHelpers tests the database helper function signatures
-func TestDatabaseHelpers(t *testing.T) {
-	t.Run("database_helper_functions_exist", func(t *testing.T) {
-		// Test that the helper functions have the expected signature
-		// We can't test actual database connections in unit tests,
-		// but we can verify the functions exist and have correct types
-
-		// Test function type expectations
-		dbFunc := func(database *db.DB) error {
-			return nil
-		}
-
-		assert.NotNil(t, dbFunc)
-
-		// Test that we can create the function signature that withDatabase expects
-		testFunc := func(database *db.DB) error {
-			// Verify we can access database methods (even if we don't call them)
-			_ = database
-			return nil
-		}
-
-		assert.NotNil(t, testFunc)
-	})
-
-	t.Run("config_path_usage_in_helpers", func(t *testing.T) {
-		// Test that config file path can be set for helper functions
-		originalCfgFile := cfgFile
-		defer func() { cfgFile = originalCfgFile }()
-
-		testPath := "/etc/scanorama/helper-test.yaml"
-		cfgFile = testPath
-
-		assert.Equal(t, testPath, cfgFile)
-	})
-}
-
-// TestGetLogFileDesc tests the log file descriptor function
-func TestGetLogFileDesc(t *testing.T) {
-	t.Run("get_log_file_desc_default", func(t *testing.T) {
-		// Test with default log file (none set)
-		desc := getLogFileDesc()
-		assert.Equal(t, "stdout", desc) // Default when no log file set
-	})
-
-	t.Run("get_log_file_desc_valid_path", func(t *testing.T) {
-		// Create temporary directory
-		tempDir, err := os.MkdirTemp("", "scanorama-log-test")
-		require.NoError(t, err)
-		defer os.RemoveAll(tempDir)
-
-		validPath := filepath.Join(tempDir, "test.log")
-
-		// Set the daemon log file to test the function
-		originalDaemonLogFile := daemonLogFile
-		daemonLogFile = validPath
-		defer func() { daemonLogFile = originalDaemonLogFile }()
-
-		desc := getLogFileDesc()
-		assert.Equal(t, validPath, desc)
-	})
-}
-
-// TestCommandValidation tests command validation functions
-func TestCommandValidation(t *testing.T) {
-	t.Run("validate_ports_comprehensive", func(t *testing.T) {
-		// Test comprehensive port validation
-		testCases := []struct {
-			ports   string
-			wantErr bool
-		}{
-			{"80", false},
-			{"80,443", false},
-			{"80-443", false},
-			{"T:100", false},
-			{"1-65535", false},
-			{"", true},
-			{"0", true},
-			{"65536", true},
-			{"80-79", true},
-			{"abc", true},
-		}
-
-		for _, tc := range testCases {
-			err := validatePorts(tc.ports)
-			if tc.wantErr {
-				assert.Error(t, err, "ports: %s", tc.ports)
-			} else {
-				assert.NoError(t, err, "ports: %s", tc.ports)
-			}
-		}
-	})
-}
-
-// TestStartAPIServer tests the API server startup function
-func TestStartAPIServer(t *testing.T) {
-	t.Run("start_api_server_function_exists", func(t *testing.T) {
-		// Test that startAPIServer function can be called
-		// We can't easily test the full server startup, but we can test error conditions
-
-		// Create minimal config
-		cfg := &config.Config{
-			API: config.APIConfig{
-				Host: "localhost",
-				Port: 8080,
-			},
-		}
-
-		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-		// Test that startAPIServer would attempt to start
-		// In real usage, this would start a server, but we're testing the code path exists
-		_ = cfg
-		_ = logger
-
-		// The function exists and can be called (though it would fail without proper setup)
-		assert.True(t, true) // Placeholder assertion to ensure test runs
-	})
-}
-
-// TestConfigPathResolution tests config file path resolution
-func TestConfigPathResolution(t *testing.T) {
-	// Save original state
-	originalCfgFile := cfgFile
-
-	defer func() {
-		cfgFile = originalCfgFile
-	}()
-
-	t.Run("config_file_variable_usage", func(t *testing.T) {
-		// Test that cfgFile variable can be set and retrieved
-		testPath := "/etc/scanorama/test.yaml"
-		cfgFile = testPath
-
-		// Verify the variable was set correctly
-		assert.Equal(t, testPath, cfgFile)
-	})
-
-	t.Run("empty_config_file_path", func(t *testing.T) {
-		// Test with empty cfgFile
-		originalCfgFile := cfgFile
-		defer func() { cfgFile = originalCfgFile }()
-
-		cfgFile = ""
-		assert.Equal(t, "", cfgFile)
-	})
-}
-
-// TestFlagHandling tests command line flag handling
-func TestFlagHandling(t *testing.T) {
-	// Save original state
-	originalAPIHost := apiHost
-	originalAPIPort := apiPort
-
-	defer func() {
-		apiHost = originalAPIHost
-		apiPort = originalAPIPort
-	}()
-
-	t.Run("api_host_flag_override", func(t *testing.T) {
-		// Test flag variable behavior without loading actual config
-		originalHost := apiHost
-		originalPort := apiPort
+// ----------------------------------------------------------------------------
+// TestGetVersion
+// ----------------------------------------------------------------------------
+
+func TestGetVersion(t *testing.T) {
+	t.Run("default build vars", func(t *testing.T) {
+		// Save and restore build-info globals altered by other tests.
+		origVersion, origCommit, origBuildTime := version, commit, buildTime
 		defer func() {
-			apiHost = originalHost
-			apiPort = originalPort
+			version = origVersion
+			commit = origCommit
+			buildTime = origBuildTime
+			rootCmd.Version = getVersion()
 		}()
 
-		// Test setting flag values
-		apiHost = "0.0.0.0"
-		apiPort = 9090
+		version = "dev"
+		commit = "none"
+		buildTime = "unknown"
 
-		assert.Equal(t, "0.0.0.0", apiHost)
-		assert.Equal(t, 9090, apiPort)
+		result := getVersion()
 
-		// Test that flags can be reset
-		apiHost = "localhost"
-		apiPort = 8080
+		assert.Contains(t, result, "dev", "default version should contain 'dev'")
+		assert.Contains(t, result, "none", "default commit should contain 'none'")
+		assert.Contains(t, result, "unknown", "default buildTime should contain 'unknown'")
+	})
 
-		assert.Equal(t, "localhost", apiHost)
-		assert.Equal(t, 8080, apiPort)
+	t.Run("SetVersion propagates all three fields", func(t *testing.T) {
+		origVersion, origCommit, origBuildTime := version, commit, buildTime
+		defer func() {
+			version = origVersion
+			commit = origCommit
+			buildTime = origBuildTime
+			rootCmd.Version = getVersion()
+		}()
+
+		SetVersion("1.2.3", "abc123", "2024-01-01")
+
+		result := getVersion()
+
+		assert.Contains(t, result, "1.2.3", "version string should contain the supplied version")
+		assert.Contains(t, result, "abc123", "version string should contain the supplied commit")
+		assert.Contains(t, result, "2024-01-01", "version string should contain the supplied build time")
+	})
+
+	t.Run("SetVersion updates rootCmd.Version", func(t *testing.T) {
+		origVersion, origCommit, origBuildTime := version, commit, buildTime
+		defer func() {
+			version = origVersion
+			commit = origCommit
+			buildTime = origBuildTime
+			rootCmd.Version = getVersion()
+		}()
+
+		SetVersion("9.8.7", "deadbeef", "2099-12-31")
+
+		assert.Equal(t, getVersion(), rootCmd.Version,
+			"rootCmd.Version must mirror getVersion() after SetVersion call")
+	})
+}
+
+// ----------------------------------------------------------------------------
+// TestValidateCronExpression
+// ----------------------------------------------------------------------------
+
+func TestValidateCronExpression(t *testing.T) {
+	tests := []struct {
+		name    string
+		expr    string
+		wantErr bool
+	}{
+		// Valid 5-field expressions
+		{name: "every minute", expr: "* * * * *", wantErr: false},
+		{name: "weekly at 2am Sunday", expr: "0 2 * * 0", wantErr: false},
+		{name: "every 5 minutes", expr: "*/5 * * * *", wantErr: false},
+		{name: "weekday mornings", expr: "30 6 * * 1-5", wantErr: false},
+		{name: "monthly", expr: "0 0 1 * *", wantErr: false},
+
+		// Too few fields
+		{name: "three fields", expr: "* * *", wantErr: true},
+		{name: "four fields", expr: "0 2 * *", wantErr: true},
+		{name: "one field", expr: "*", wantErr: true},
+
+		// Too many fields
+		{name: "six fields", expr: "0 0 0 * * *", wantErr: true},
+		{name: "seven fields", expr: "0 0 * * * * *", wantErr: true},
+
+		// Empty string
+		{name: "empty string", expr: "", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateCronExpression(tc.expr)
+			if tc.wantErr {
+				assert.Error(t, err, "expr %q: expected an error but got none", tc.expr)
+			} else {
+				assert.NoError(t, err, "expr %q: expected no error but got: %v", tc.expr, err)
+			}
+		})
+	}
+}
+
+// ----------------------------------------------------------------------------
+// TestTruncateString
+// ----------------------------------------------------------------------------
+
+func TestTruncateString(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		maxLen int
+		want   string
+	}{
+		{
+			name:   "shorter than maxLen returned as-is",
+			input:  "hello",
+			maxLen: 10,
+			want:   "hello",
+		},
+		{
+			name:   "exactly at maxLen returned as-is",
+			input:  "hello",
+			maxLen: 5,
+			want:   "hello",
+		},
+		{
+			name:   "longer than maxLen gets ellipsis",
+			input:  "hello world",
+			maxLen: 8,
+			want:   "hello...",
+		},
+		{
+			name:   "total length equals maxLen after truncation",
+			input:  "abcdefghij",
+			maxLen: 7,
+			want:   "abcd...",
+		},
+		{
+			name:   "edge: maxLen=3 with longer string returns only ellipsis",
+			input:  "toolong",
+			maxLen: 3,
+			want:   "...",
+		},
+		{
+			name:   "empty string returned as-is",
+			input:  "",
+			maxLen: 5,
+			want:   "",
+		},
+		{
+			name:   "exactly maxLen=3 string returned as-is",
+			input:  "abc",
+			maxLen: 3,
+			want:   "abc",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := truncateString(tc.input, tc.maxLen)
+			assert.Equal(t, tc.want, got)
+
+			// Verify the invariant: result is never longer than maxLen.
+			assert.LessOrEqual(t, len(got), tc.maxLen,
+				"truncateString must never return a string longer than maxLen")
+		})
+	}
+}
+
+// ----------------------------------------------------------------------------
+// TestIsDaemonRunning
+// ----------------------------------------------------------------------------
+
+func TestIsDaemonRunning(t *testing.T) {
+	origPidFile := daemonPidFile
+	defer func() { daemonPidFile = origPidFile }()
+
+	tempDir, err := os.MkdirTemp("", "scanorama-pid-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	t.Run("no PID file present returns false", func(t *testing.T) {
+		daemonPidFile = filepath.Join(tempDir, "nonexistent.pid")
+		assert.False(t, isDaemonRunning())
+	})
+
+	t.Run("PID file with non-numeric content returns false", func(t *testing.T) {
+		pidFile := filepath.Join(tempDir, "invalid.pid")
+		require.NoError(t, os.WriteFile(pidFile, []byte("not-a-number"), 0o644))
+		daemonPidFile = pidFile
+		assert.False(t, isDaemonRunning())
+	})
+
+	t.Run("PID file with non-existent PID returns false", func(t *testing.T) {
+		pidFile := filepath.Join(tempDir, "stale.pid")
+		// PID 99999 is extremely unlikely to be a live process on any OS.
+		require.NoError(t, os.WriteFile(pidFile, []byte("99999"), 0o644))
+		daemonPidFile = pidFile
+		assert.False(t, isDaemonRunning())
+	})
+
+	t.Run("PID file with current process PID returns true", func(t *testing.T) {
+		pidFile := filepath.Join(tempDir, "self.pid")
+		require.NoError(t, os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0o644))
+		daemonPidFile = pidFile
+		assert.True(t, isDaemonRunning())
+	})
+}
+
+// ----------------------------------------------------------------------------
+// TestReadPIDFile
+// ----------------------------------------------------------------------------
+
+func TestReadPIDFile(t *testing.T) {
+	origPidFile := daemonPidFile
+	defer func() { daemonPidFile = origPidFile }()
+
+	tempDir, err := os.MkdirTemp("", "scanorama-readpid-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	t.Run("valid PID in file is returned", func(t *testing.T) {
+		f := filepath.Join(tempDir, "valid.pid")
+		require.NoError(t, os.WriteFile(f, []byte("12345"), 0o644))
+		daemonPidFile = f
+
+		pid, err := readPIDFile()
+		require.NoError(t, err)
+		assert.Equal(t, 12345, pid)
+	})
+
+	t.Run("PID with surrounding whitespace and newline", func(t *testing.T) {
+		f := filepath.Join(tempDir, "whitespace.pid")
+		require.NoError(t, os.WriteFile(f, []byte("  42\n"), 0o644))
+		daemonPidFile = f
+
+		pid, err := readPIDFile()
+		require.NoError(t, err)
+		assert.Equal(t, 42, pid)
+	})
+
+	t.Run("non-numeric content returns error", func(t *testing.T) {
+		f := filepath.Join(tempDir, "bad.pid")
+		require.NoError(t, os.WriteFile(f, []byte("not-a-pid"), 0o644))
+		daemonPidFile = f
+
+		_, err := readPIDFile()
+		assert.Error(t, err)
+	})
+
+	t.Run("file does not exist returns error", func(t *testing.T) {
+		daemonPidFile = filepath.Join(tempDir, "missing.pid")
+
+		_, err := readPIDFile()
+		assert.Error(t, err)
+	})
+}
+
+// ----------------------------------------------------------------------------
+// TestGetLogFileDesc
+// ----------------------------------------------------------------------------
+
+func TestGetLogFileDesc(t *testing.T) {
+	origLogFile := daemonLogFile
+	defer func() { daemonLogFile = origLogFile }()
+
+	t.Run("empty daemonLogFile returns 'stdout'", func(t *testing.T) {
+		daemonLogFile = ""
+		assert.Equal(t, "stdout", getLogFileDesc())
+	})
+
+	t.Run("set path is returned verbatim", func(t *testing.T) {
+		daemonLogFile = "/var/log/scanorama.log"
+		assert.Equal(t, "/var/log/scanorama.log", getLogFileDesc())
+	})
+
+	t.Run("relative path is returned verbatim", func(t *testing.T) {
+		daemonLogFile = "logs/scanorama.log"
+		assert.Equal(t, "logs/scanorama.log", getLogFileDesc())
+	})
+}
+
+// ----------------------------------------------------------------------------
+// Helpers for stdout capture
+// ----------------------------------------------------------------------------
+
+// captureStdout redirects os.Stdout to a pipe, calls fn, then returns the
+// captured output as a string.  os.Stdout is restored before returning.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err, "os.Pipe() must not fail")
+
+	os.Stdout = w
+
+	// Ensure we always restore, even if fn panics.
+	defer func() { os.Stdout = origStdout }()
+
+	fn()
+
+	// Close the write end so ReadAll sees EOF.
+	require.NoError(t, w.Close())
+
+	var buf bytes.Buffer
+	_, err = io.Copy(&buf, r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+
+	return buf.String()
+}
+
+// ----------------------------------------------------------------------------
+// TestDisplayScheduledJobs
+// ----------------------------------------------------------------------------
+
+func TestDisplayScheduledJobs(t *testing.T) {
+	t.Run("nil slice prints no-jobs message", func(t *testing.T) {
+		out := captureStdout(t, func() {
+			displayScheduledJobs(nil)
+		})
+		assert.Contains(t, out, "No scheduled jobs found")
+	})
+
+	t.Run("empty slice prints no-jobs message", func(t *testing.T) {
+		out := captureStdout(t, func() {
+			displayScheduledJobs([]ScheduledJob{})
+		})
+		assert.Contains(t, out, "No scheduled jobs found")
+	})
+
+	t.Run("one active and one inactive job", func(t *testing.T) {
+		now := time.Now()
+		jobs := []ScheduledJob{
+			{
+				ID:        "id-active",
+				Name:      "active-scan",
+				JobType:   "scan",
+				CronExpr:  "*/5 * * * *",
+				IsActive:  true,
+				CreatedAt: now,
+				NextRun:   now.Add(5 * time.Minute),
+				RunCount:  3,
+			},
+			{
+				ID:        "id-inactive",
+				Name:      "inactive-discovery",
+				JobType:   "discovery",
+				CronExpr:  "0 2 * * 0",
+				IsActive:  false,
+				CreatedAt: now,
+				NextRun:   now.Add(24 * time.Hour),
+				RunCount:  0,
+			},
+		}
+
+		out := captureStdout(t, func() {
+			displayScheduledJobs(jobs)
+		})
+
+		// Job names must appear.
+		assert.Contains(t, out, "active-scan", "active job name should be in output")
+		assert.Contains(t, out, "inactive-discovery", "inactive job name should be in output")
+
+		// Cron expressions must appear.
+		assert.Contains(t, out, "*/5 * * * *", "active job cron expr should be in output")
+		assert.Contains(t, out, "0 2 * * 0", "inactive job cron expr should be in output")
+
+		// Active column must distinguish Yes / No.
+		assert.Contains(t, out, "Yes", "active job should show 'Yes'")
+		assert.Contains(t, out, "No", "inactive job should show 'No'")
+
+		// Job type strings must appear.
+		assert.Contains(t, out, "scan", "job type 'scan' should appear")
+		assert.Contains(t, out, "discovery", "job type 'discovery' should appear")
+	})
+
+	t.Run("long job name is truncated in list output", func(t *testing.T) {
+		longName := strings.Repeat("x", maxJobNameLength+10)
+		jobs := []ScheduledJob{
+			{
+				Name:     longName,
+				JobType:  "scan",
+				CronExpr: "* * * * *",
+				IsActive: true,
+				NextRun:  time.Now().Add(time.Minute),
+			},
+		}
+
+		out := captureStdout(t, func() {
+			displayScheduledJobs(jobs)
+		})
+
+		// The full name should not appear; the truncated version should.
+		assert.NotContains(t, out, longName,
+			"full long name must not appear — it should be truncated")
+		assert.Contains(t, out, "...",
+			"ellipsis must appear for a truncated name")
+	})
+}
+
+// ----------------------------------------------------------------------------
+// TestDisplayScheduledJobDetails
+// ----------------------------------------------------------------------------
+
+func TestDisplayScheduledJobDetails(t *testing.T) {
+	t.Run("all fields printed, LastRun nil shows Never", func(t *testing.T) {
+		createdAt := time.Date(2024, 3, 15, 10, 30, 0, 0, time.UTC)
+		job := &ScheduledJob{
+			ID:        "job-uuid-001",
+			Name:      "nightly-scan",
+			JobType:   "scan",
+			CronExpr:  "0 22 * * *",
+			IsActive:  true,
+			CreatedAt: createdAt,
+			LastRun:   nil, // never run yet
+			NextRun:   createdAt.Add(14 * time.Hour),
+			RunCount:  0,
+		}
+
+		out := captureStdout(t, func() {
+			displayScheduledJobDetails(job)
+		})
+
+		assert.Contains(t, out, "job-uuid-001", "output must contain the job ID")
+		assert.Contains(t, out, "scan", "output must contain the JobType")
+		assert.Contains(t, out, "0 22 * * *", "output must contain the cron expression")
+		assert.Contains(t, out, "Never", "output must say 'Never' when LastRun is nil")
+		assert.Contains(t, out, createdAt.Format("2006-01-02 15:04:05"),
+			"output must contain the formatted CreatedAt timestamp")
+	})
+
+	t.Run("LastRun non-nil shows formatted timestamp", func(t *testing.T) {
+		lastRun := time.Date(2024, 6, 1, 8, 0, 0, 0, time.UTC)
+		createdAt := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		job := &ScheduledJob{
+			ID:        "job-uuid-002",
+			Name:      "hourly-discovery",
+			JobType:   "discovery",
+			CronExpr:  "0 * * * *",
+			IsActive:  true,
+			CreatedAt: createdAt,
+			LastRun:   &lastRun,
+			NextRun:   lastRun.Add(time.Hour),
+			RunCount:  42,
+		}
+
+		out := captureStdout(t, func() {
+			displayScheduledJobDetails(job)
+		})
+
+		assert.Contains(t, out, "job-uuid-002", "output must contain the job ID")
+		assert.Contains(t, out, "discovery", "output must contain the JobType")
+		assert.Contains(t, out, "0 * * * *", "output must contain the cron expression")
+		assert.NotContains(t, out, "Never",
+			"'Never' must not appear when LastRun is set")
+		assert.Contains(t, out, lastRun.Format("2006-01-02 15:04:05"),
+			"output must contain the formatted LastRun timestamp")
+		assert.Contains(t, out, createdAt.Format("2006-01-02 15:04:05"),
+			"output must contain the formatted CreatedAt timestamp")
+	})
+
+	t.Run("output contains job name in header", func(t *testing.T) {
+		createdAt := time.Now()
+		job := &ScheduledJob{
+			ID:        "job-uuid-003",
+			Name:      "my-special-job",
+			JobType:   "scan",
+			CronExpr:  "*/15 * * * *",
+			IsActive:  false,
+			CreatedAt: createdAt,
+			LastRun:   nil,
+			NextRun:   createdAt.Add(15 * time.Minute),
+		}
+
+		out := captureStdout(t, func() {
+			displayScheduledJobDetails(job)
+		})
+
+		assert.Contains(t, out, "my-special-job",
+			"the job name must appear somewhere in the detail output")
 	})
 }
