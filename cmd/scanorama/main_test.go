@@ -15,7 +15,7 @@ func TestMain(m *testing.M) {
 
 func TestBuildVariables(t *testing.T) {
 	t.Run("build variables have default values", func(t *testing.T) {
-		assert.Equal(t, "dev", version)
+		assert.Equal(t, "v0.15-dev", version)
 		assert.Equal(t, "none", commit)
 		assert.Equal(t, "unknown", buildTime)
 	})
