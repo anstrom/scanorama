@@ -10,7 +10,7 @@ PID_FILE         := .backend.pid
 FRONTEND_PID_FILE := .frontend.pid
 
 # Version from git
-GIT_VERSION := $(shell git describe --tags --always 2>/dev/null)
+GIT_VERSION := $(shell git tag --sort=-v:refname 2>/dev/null | head -1)
 VERSION     ?= $(if $(GIT_VERSION),$(GIT_VERSION),dev)
 COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME  := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -135,9 +135,10 @@ dev: build dev-db-up dev-config frontend-deps ## Ensure DB is up; rebuild + rest
 	fi
 	@cd frontend && npx vite --clearScreen false \
 		> /tmp/scanorama-frontend.log 2>&1 & \
-	echo $$! > ../$(FRONTEND_PID_FILE)
-	@echo "✓ Frontend (pid $$(cat $(FRONTEND_PID_FILE))) — http://localhost:5173"
-	@echo "  logs: tail -f /tmp/scanorama-frontend.log"
+	FPID=$$!; \
+	echo $$FPID > ../$(FRONTEND_PID_FILE); \
+	echo "✓ Frontend (pid $$FPID) — http://localhost:5173"; \
+	echo "  logs: tail -f /tmp/scanorama-frontend.log"
 
 
 
