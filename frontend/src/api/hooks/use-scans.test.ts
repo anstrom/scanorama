@@ -21,15 +21,19 @@ import { api } from "../client";
 const mockGet = vi.mocked(api.GET);
 const mockPost = vi.mocked(api.POST);
 
-const ok = (data: unknown) =>
-  Promise.resolve({ data, error: undefined, response: new Response() });
+const ok = (data: unknown): ReturnType<typeof mockGet> =>
+  Promise.resolve({
+    data,
+    error: undefined,
+    response: new Response(),
+  }) as ReturnType<typeof mockGet>;
 
-const fail = (message = "something went wrong") =>
+const fail = (message = "something went wrong"): ReturnType<typeof mockGet> =>
   Promise.resolve({
     data: undefined,
     error: { message },
     response: new Response(),
-  });
+  }) as ReturnType<typeof mockGet>;
 
 const mockPagination = {
   page: 1,
