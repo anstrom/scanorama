@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
@@ -1136,4 +1137,306 @@ func TestHostHandler_ListHosts_WithFilters_Integration(t *testing.T) {
 		}
 	}
 	assert.True(t, foundLinux, "Linux host not found in filtered results")
+}
+
+func TestHostHandler_HostToResponse_NewFields(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+
+	now := time.Now()
+
+	t.Run("ports populated from host.Ports", func(t *testing.T) {
+		ports := []db.PortInfo{
+			{Port: 80, Protocol: "tcp", State: "open", Service: "http", LastSeen: now},
+			{Port: 443, Protocol: "tcp", State: "open", Service: "https", LastSeen: now},
+		}
+		host := &db.Host{
+			ID:        uuid.New(),
+			IPAddress: db.IPAddr{IP: net.ParseIP("10.0.0.1")},
+			Status:    "up",
+			FirstSeen: now,
+			LastSeen:  now,
+			Ports:     ports,
+		}
+
+		resp := handler.hostToResponse(host)
+
+		assert.Equal(t, 2, len(resp.Ports))
+		assert.Equal(t, 80, resp.Ports[0].Port)
+		assert.Equal(t, "tcp", resp.Ports[0].Protocol)
+		assert.Equal(t, "http", resp.Ports[0].Service)
+		assert.Equal(t, 443, resp.Ports[1].Port)
+	})
+
+	t.Run("ports is empty slice (not nil) when host.Ports is nil", func(t *testing.T) {
+		host := &db.Host{
+			ID:        uuid.New(),
+			IPAddress: db.IPAddr{IP: net.ParseIP("10.0.0.2")},
+			Status:    "up",
+			FirstSeen: now,
+			LastSeen:  now,
+			Ports:     nil,
+		}
+
+		resp := handler.hostToResponse(host)
+
+		assert.NotNil(t, resp.Ports)
+		assert.Equal(t, 0, len(resp.Ports))
+	})
+
+	t.Run("ScanCount mapped from host.ScanCount", func(t *testing.T) {
+		host := &db.Host{
+			ID:        uuid.New(),
+			IPAddress: db.IPAddr{IP: net.ParseIP("10.0.0.3")},
+			Status:    "up",
+			FirstSeen: now,
+			LastSeen:  now,
+			ScanCount: 42,
+		}
+
+		resp := handler.hostToResponse(host)
+
+		assert.Equal(t, 42, resp.ScanCount)
+	})
+
+	t.Run("TotalPorts mapped from host.TotalPorts", func(t *testing.T) {
+		host := &db.Host{
+			ID:         uuid.New(),
+			IPAddress:  db.IPAddr{IP: net.ParseIP("10.0.0.4")},
+			Status:     "up",
+			FirstSeen:  now,
+			LastSeen:   now,
+			TotalPorts: 7,
+		}
+
+		resp := handler.hostToResponse(host)
+
+		assert.Equal(t, 7, resp.TotalPorts)
+	})
+
+	t.Run("OSName populated when host.OSName is non-nil", func(t *testing.T) {
+		osName := "Linux 5.15"
+		host := &db.Host{
+			ID:        uuid.New(),
+			IPAddress: db.IPAddr{IP: net.ParseIP("10.0.0.5")},
+			Status:    "up",
+			FirstSeen: now,
+			LastSeen:  now,
+			OSName:    &osName,
+		}
+
+		resp := handler.hostToResponse(host)
+
+		assert.Equal(t, "Linux 5.15", resp.OSName)
+	})
+
+	t.Run("OSConfidence populated when host.OSConfidence is non-nil", func(t *testing.T) {
+		confidence := 95
+		host := &db.Host{
+			ID:           uuid.New(),
+			IPAddress:    db.IPAddr{IP: net.ParseIP("10.0.0.6")},
+			Status:       "up",
+			FirstSeen:    now,
+			LastSeen:     now,
+			OSConfidence: &confidence,
+		}
+
+		resp := handler.hostToResponse(host)
+
+		assert.NotNil(t, resp.OSConfidence)
+		assert.Equal(t, 95, *resp.OSConfidence)
+	})
+
+	t.Run("OSFamily populates both response.OSFamily and legacy response.OS", func(t *testing.T) {
+		osFamily := "Linux"
+		host := &db.Host{
+			ID:        uuid.New(),
+			IPAddress: db.IPAddr{IP: net.ParseIP("10.0.0.7")},
+			Status:    "up",
+			FirstSeen: now,
+			LastSeen:  now,
+			OSFamily:  &osFamily,
+		}
+
+		resp := handler.hostToResponse(host)
+
+		assert.Equal(t, "Linux", resp.OSFamily)
+		assert.Equal(t, "Linux", resp.OS)
+	})
+
+	t.Run("OSVersionLegacy is OSName+OSVersion when both are set", func(t *testing.T) {
+		osName := "Linux 5.15"
+		osVersion := "Kernel 5.15.0"
+		host := &db.Host{
+			ID:        uuid.New(),
+			IPAddress: db.IPAddr{IP: net.ParseIP("10.0.0.8")},
+			Status:    "up",
+			FirstSeen: now,
+			LastSeen:  now,
+			OSName:    &osName,
+			OSVersion: &osVersion,
+		}
+
+		resp := handler.hostToResponse(host)
+
+		assert.Equal(t, "Linux 5.15 Kernel 5.15.0", resp.OSVersionLegacy)
+	})
+
+	t.Run("OSVersionLegacy is just OSName when only OSName is set", func(t *testing.T) {
+		osName := "Linux 5.15"
+		host := &db.Host{
+			ID:        uuid.New(),
+			IPAddress: db.IPAddr{IP: net.ParseIP("10.0.0.9")},
+			Status:    "up",
+			FirstSeen: now,
+			LastSeen:  now,
+			OSName:    &osName,
+			OSVersion: nil,
+		}
+
+		resp := handler.hostToResponse(host)
+
+		assert.Equal(t, "Linux 5.15", resp.OSVersionLegacy)
+	})
+
+	t.Run("OSVersionLegacy is just OSVersion when only OSVersion is set", func(t *testing.T) {
+		osVersion := "Kernel 5.15.0"
+		host := &db.Host{
+			ID:        uuid.New(),
+			IPAddress: db.IPAddr{IP: net.ParseIP("10.0.0.10")},
+			Status:    "up",
+			FirstSeen: now,
+			LastSeen:  now,
+			OSName:    nil,
+			OSVersion: &osVersion,
+		}
+
+		resp := handler.hostToResponse(host)
+
+		assert.Equal(t, "Kernel 5.15.0", resp.OSVersionLegacy)
+	})
+}
+
+func TestHostHandler_ValidateHostRequest_NewBranches(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+
+	tests := []struct {
+		name        string
+		request     *HostRequest
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "OS field too long",
+			request: &HostRequest{
+				IP: "192.168.1.1",
+				OS: strings.Repeat("a", maxOSInfoLength+1),
+			},
+			expectError: true,
+			errorMsg:    "OS info too long",
+		},
+		{
+			name: "OS field at max length is valid",
+			request: &HostRequest{
+				IP: "192.168.1.1",
+				OS: strings.Repeat("a", maxOSInfoLength),
+			},
+			expectError: false,
+		},
+		{
+			name: "OSVersion field too long",
+			request: &HostRequest{
+				IP:        "192.168.1.1",
+				OSVersion: strings.Repeat("b", maxOSVersionLength+1),
+			},
+			expectError: true,
+			errorMsg:    "OS version field too long",
+		},
+		{
+			name: "OSVersion field at max length is valid",
+			request: &HostRequest{
+				IP:        "192.168.1.1",
+				OSVersion: strings.Repeat("b", maxOSVersionLength),
+			},
+			expectError: false,
+		},
+		{
+			name: "empty tag in Tags slice",
+			request: &HostRequest{
+				IP:   "192.168.1.1",
+				Tags: []string{"valid-tag", ""},
+			},
+			expectError: true,
+			errorMsg:    "tag 2 is empty",
+		},
+		{
+			name: "tag too long",
+			request: &HostRequest{
+				IP:   "192.168.1.1",
+				Tags: []string{strings.Repeat("t", maxHostTagLength+1)},
+			},
+			expectError: true,
+			errorMsg:    "tag 1 too long",
+		},
+		{
+			name: "tag at max length is valid",
+			request: &HostRequest{
+				IP:   "192.168.1.1",
+				Tags: []string{strings.Repeat("t", maxHostTagLength)},
+			},
+			expectError: false,
+		},
+		{
+			name: "multiple valid tags pass",
+			request: &HostRequest{
+				IP:   "192.168.1.1",
+				Tags: []string{"production", "web", "linux"},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := handler.validateHostRequest(tt.request)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestHostHandler_CreateHost_Conflict(t *testing.T) {
+	t.Run("returns 409 when host IP already exists", func(t *testing.T) {
+		h, store, ctrl := newHostHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		store.EXPECT().
+			CreateHost(gomock.Any(), gomock.Any()).
+			Return(nil, conflictErr("host", "already exists"))
+
+		body, err := json.Marshal(HostRequest{
+			IP:       "192.168.1.50",
+			Hostname: "duplicate-host",
+		})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/hosts", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		h.CreateHost(w, req)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
+
+		var errResp map[string]interface{}
+		err = json.Unmarshal(w.Body.Bytes(), &errResp)
+		require.NoError(t, err)
+		assert.Contains(t, errResp["message"], "192.168.1.50")
+	})
 }
