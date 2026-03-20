@@ -1,7 +1,6 @@
 #!/bin/bash
 
-# Pre-commit hook — fast checks only.
-# Full lint runs in the pre-push hook.
+# Pre-commit hook — runs full lint before every commit.
 
 set -e
 
@@ -21,6 +20,13 @@ fi
 echo "  vet..."
 if ! go vet ./...; then
     echo "❌ go vet failed. Fix the issues above before committing."
+    exit 1
+fi
+
+echo "  lint..."
+if ! make lint; then
+    echo "❌ Lint failed. Fix the issues above before committing."
+    echo "💡 Run 'make lint' to see the full output."
     exit 1
 fi
 
