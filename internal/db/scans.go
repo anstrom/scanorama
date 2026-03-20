@@ -357,7 +357,7 @@ type Scan struct {
 	Targets     []string               `json:"targets" db:"targets"`
 	ScanType    string                 `json:"scan_type" db:"scan_type"`
 	Ports       string                 `json:"ports" db:"ports"`
-	ProfileID   *int64                 `json:"profile_id" db:"profile_id"`
+	ProfileID   *string                `json:"profile_id" db:"profile_id"`
 	Options     map[string]interface{} `json:"options" db:"options"`
 	ScheduleID  *int64                 `json:"schedule_id" db:"schedule_id"`
 	Tags        []string               `json:"tags" db:"tags"`
@@ -372,21 +372,25 @@ type Scan struct {
 type ScanFilters struct {
 	Status    string
 	ScanType  string
-	ProfileID *int64
+	ProfileID *string
 	Tags      []string
 }
 
 // ScanResult represents a scan result entry.
 type ScanResult struct {
-	ID        uuid.UUID `json:"id" db:"id"`
-	ScanID    uuid.UUID `json:"scan_id" db:"scan_id"`
-	HostID    uuid.UUID `json:"host_id" db:"host_id"`
-	HostIP    string    `json:"host_ip" db:"host_ip"`
-	Port      int       `json:"port" db:"port"`
-	Protocol  string    `json:"protocol" db:"protocol"`
-	State     string    `json:"state" db:"state"`
-	Service   string    `json:"service" db:"service"`
-	ScannedAt time.Time `json:"scanned_at" db:"scanned_at"`
+	ID           uuid.UUID `json:"id" db:"id"`
+	ScanID       uuid.UUID `json:"scan_id" db:"scan_id"`
+	HostID       uuid.UUID `json:"host_id" db:"host_id"`
+	HostIP       string    `json:"host_ip" db:"host_ip"`
+	Port         int       `json:"port" db:"port"`
+	Protocol     string    `json:"protocol" db:"protocol"`
+	State        string    `json:"state" db:"state"`
+	Service      string    `json:"service" db:"service"`
+	ScannedAt    time.Time `json:"scanned_at" db:"scanned_at"`
+	OSName       string    `json:"os_name,omitempty" db:"os_name"`
+	OSFamily     string    `json:"os_family,omitempty" db:"os_family"`
+	OSVersion    string    `json:"os_version,omitempty" db:"os_version"`
+	OSConfidence *int      `json:"os_confidence,omitempty" db:"os_confidence"`
 }
 
 // ScanSummary represents aggregated scan statistics.
@@ -466,9 +470,7 @@ func processScanRow(rows *sql.Rows) (*Scan, error) {
 
 	// Set ProfileID if not null.
 	if profileID != nil {
-		if id, err := strconv.ParseInt(*profileID, 10, 64); err == nil {
-			scan.ProfileID = &id
-		}
+		scan.ProfileID = profileID
 	}
 
 	// Set UpdatedAt (use CompletedAt if available, otherwise CreatedAt).
@@ -553,6 +555,7 @@ type scanData struct {
 	ports       string
 	targets     []string
 	profileID   *string
+	osDetection bool
 }
 
 // extractScanData extracts and validates scan data from interface.
@@ -595,9 +598,12 @@ func extractScanData(input interface{}) (*scanData, error) {
 		}
 	}
 
-	if pid, ok := data["profile_id"].(*int64); ok && pid != nil {
-		pidStr := strconv.FormatInt(*pid, 10)
-		result.profileID = &pidStr
+	if pid, ok := data["profile_id"].(*string); ok && pid != nil {
+		result.profileID = pid
+	}
+
+	if osDetection, ok := data["os_detection"].(bool); ok {
+		result.osDetection = osDetection
 	}
 
 	return result, nil
@@ -624,11 +630,12 @@ func (db *DB) createScanTarget(ctx context.Context, tx *sql.Tx, targetID uuid.UU
 
 // createScanJob creates a scan job in the database.
 func (db *DB) createScanJob(ctx context.Context, tx *sql.Tx, jobID, targetID uuid.UUID,
-	profileID *string, now time.Time) error {
+	profileID *string, now time.Time, osDetection bool) error {
+	execDetails := fmt.Sprintf(`{"os_detection": %t}`, osDetection)
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO scan_jobs (id, target_id, profile_id, status, created_at)
-		VALUES ($1, $2, $3, 'pending', $4)
-	`, jobID, targetID, profileID, now)
+		INSERT INTO scan_jobs (id, target_id, profile_id, status, created_at, execution_details)
+		VALUES ($1, $2, $3, 'pending', $4, $5)
+	`, jobID, targetID, profileID, now, execDetails)
 	if err != nil {
 		return fmt.Errorf("failed to create scan job: %w", err)
 	}
@@ -651,9 +658,7 @@ func buildScanResponse(jobID uuid.UUID, name, description string, targets []stri
 	}
 
 	if profileID != nil {
-		if id, err := strconv.ParseInt(*profileID, 10, 64); err == nil {
-			scan.ProfileID = &id
-		}
+		scan.ProfileID = profileID
 	}
 
 	return scan
@@ -697,7 +702,7 @@ func (db *DB) CreateScan(ctx context.Context, input interface{}) (*Scan, error) 
 		}
 
 		// Create scan job.
-		if err := db.createScanJob(ctx, tx, jobID, targetID, data.profileID, now); err != nil {
+		if err := db.createScanJob(ctx, tx, jobID, targetID, data.profileID, now, data.osDetection); err != nil {
 			return nil, err
 		}
 	}
@@ -726,7 +731,8 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 			sj.status,
 			sj.created_at,
 			sj.started_at,
-			sj.completed_at
+			sj.completed_at,
+			COALESCE((sj.execution_details->>'os_detection')::boolean, false) as os_detection
 		FROM scan_jobs sj
 		JOIN scan_targets st ON sj.target_id = st.id
 		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id
@@ -736,6 +742,7 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 	scan := &Scan{}
 	var targetsStr string
 	var profileID *string
+	var osDetection bool
 
 	err := db.DB.QueryRowContext(ctx, query, id).Scan(
 		&scan.ID,
@@ -749,6 +756,7 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 		&scan.CreatedAt,
 		&scan.StartedAt,
 		&scan.CompletedAt,
+		&osDetection,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -760,11 +768,14 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 	// Parse targets from CIDR string.
 	scan.Targets = []string{targetsStr}
 
+	// Populate Options from execution_details.
+	scan.Options = map[string]interface{}{
+		"os_detection": osDetection,
+	}
+
 	// Set ProfileID if not null.
 	if profileID != nil {
-		if pid, err := strconv.ParseInt(*profileID, 10, 64); err == nil {
-			scan.ProfileID = &pid
-		}
+		scan.ProfileID = profileID
 	}
 
 	// Set UpdatedAt (use CompletedAt if available, otherwise StartedAt, otherwise CreatedAt).
@@ -822,10 +833,9 @@ func updateScanJob(ctx context.Context, tx interface {
 	}
 	jobSetParts, jobArgs := buildUpdateQuery(data, jobFieldMappings)
 
-	if profileID, ok := data["profile_id"].(*int64); ok && profileID != nil {
-		profileIDStr := strconv.FormatInt(*profileID, 10)
+	if profileID, ok := data["profile_id"].(*string); ok && profileID != nil {
 		jobSetParts = append(jobSetParts, fmt.Sprintf("profile_id = $%d", len(jobArgs)+1))
-		jobArgs = append(jobArgs, profileIDStr)
+		jobArgs = append(jobArgs, *profileID)
 	}
 
 	if len(jobSetParts) == 0 {
@@ -970,7 +980,11 @@ func (db *DB) GetScanResults(ctx context.Context, scanID uuid.UUID, offset, limi
 			ps.protocol,
 			ps.state,
 			ps.service_name,
-			ps.scanned_at
+			ps.scanned_at,
+			COALESCE(h.os_name, '')    AS os_name,
+			COALESCE(h.os_family, '')  AS os_family,
+			COALESCE(h.os_version, '') AS os_version,
+			h.os_confidence
 		FROM port_scans ps
 		LEFT JOIN hosts h ON h.id = ps.host_id
 		WHERE ps.job_id = $1
@@ -1003,6 +1017,10 @@ func (db *DB) GetScanResults(ctx context.Context, scanID uuid.UUID, offset, limi
 			&result.State,
 			&serviceName,
 			&result.ScannedAt,
+			&result.OSName,
+			&result.OSFamily,
+			&result.OSVersion,
+			&result.OSConfidence,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to scan result row: %w", err)

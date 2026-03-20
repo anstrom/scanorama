@@ -602,18 +602,18 @@ func TestBuildScanFilters(t *testing.T) {
 	})
 
 	t.Run("profile_id_filter_only", func(t *testing.T) {
-		profileID := int64(123)
+		profileID := "linux-server"
 		filters := ScanFilters{ProfileID: &profileID}
 		whereClause, args := buildScanFilters(filters)
 
 		assert.Contains(t, whereClause, "WHERE")
 		assert.Contains(t, whereClause, "profile_id")
 		assert.Len(t, args, 1)
-		assert.Equal(t, int64(123), args[0])
+		assert.Equal(t, "linux-server", args[0])
 	})
 
 	t.Run("all_filters", func(t *testing.T) {
-		profileID := int64(456)
+		profileID := "windows-server"
 		filters := ScanFilters{
 			Status:    "completed",
 			ScanType:  "version",
@@ -632,7 +632,7 @@ func TestBuildScanFilters(t *testing.T) {
 		assert.Len(t, args, 3)
 		assert.Contains(t, args, "completed")
 		assert.Contains(t, args, "version")
-		assert.Contains(t, args, int64(456))
+		assert.Contains(t, args, "windows-server")
 	})
 }
 
@@ -718,7 +718,7 @@ func TestExtractScanData(t *testing.T) {
 	})
 
 	t.Run("valid_complete_data", func(t *testing.T) {
-		profileID := int64(123)
+		profileID := "linux-server"
 		input := map[string]interface{}{
 			"name":        "Complete Scan",
 			"description": "A complete scan test",
@@ -736,7 +736,7 @@ func TestExtractScanData(t *testing.T) {
 		assert.Equal(t, []string{"10.0.0.0/8", "172.16.0.0/12"}, result.targets)
 		assert.Equal(t, "22,80,443", result.ports)
 		require.NotNil(t, result.profileID)
-		assert.Equal(t, "123", *result.profileID)
+		assert.Equal(t, "linux-server", *result.profileID)
 	})
 
 	t.Run("invalid_input_type", func(t *testing.T) {
