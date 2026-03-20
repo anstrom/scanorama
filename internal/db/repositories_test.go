@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/anstrom/scanorama/internal/errors"
 )
 
 // ── Scan repository ───────────────────────────────────────────────────────────
@@ -43,6 +45,13 @@ func TestScanRepository_CreateAndGet(t *testing.T) {
 	assert.Equal(t, scan.ID, got.ID)
 	assert.Equal(t, scan.Name, got.Name)
 	assert.Equal(t, "pending", got.Status)
+	// PortsScanned should be populated from the ports field.
+	require.NotNil(t, got.PortsScanned)
+	assert.Equal(t, "22,80", *got.PortsScanned)
+	// ErrorMessage should be nil for a freshly created scan.
+	assert.Nil(t, got.ErrorMessage)
+	// DurationStr should be nil until both timestamps are set.
+	assert.Nil(t, got.DurationStr)
 }
 
 func TestScanRepository_GetScan_NotFound(t *testing.T) {
@@ -72,6 +81,19 @@ func TestScanRepository_ListScans(t *testing.T) {
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, total, int64(1))
 	assert.GreaterOrEqual(t, len(scans), 1)
+
+	// Find our scan in the list and check the new derived fields.
+	var found *Scan
+	for _, s := range scans {
+		if s.ID == scan.ID {
+			found = s
+			break
+		}
+	}
+	require.NotNil(t, found, "created scan should appear in ListScans")
+	require.NotNil(t, found.PortsScanned)
+	assert.Equal(t, "443", *found.PortsScanned)
+	assert.Nil(t, found.ErrorMessage)
 }
 
 func TestScanRepository_UpdateScan(t *testing.T) {
@@ -134,6 +156,30 @@ func TestScanRepository_DeleteScan_NotFound(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestScanRepository_DeleteScan_Running(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	scan, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "test-scan-delete-running",
+		"targets":   []string{"127.0.0.1"},
+		"scan_type": "connect",
+		"ports":     "80",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+
+	require.NoError(t, db.StartScan(ctx, scan.ID))
+	t.Cleanup(func() { _ = db.StopScan(ctx, scan.ID) })
+
+	// Deleting a running scan should return a conflict error.
+	err = db.DeleteScan(ctx, scan.ID)
+	require.Error(t, err)
+	assert.True(t, errors.IsConflict(err), "expected conflict error, got: %v", err)
+}
+
 func TestScanRepository_StartCompleteScan(t *testing.T) {
 	db := connectTestDB(t)
 	defer db.Close()
@@ -162,6 +208,8 @@ func TestScanRepository_StartCompleteScan(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "completed", completed.Status)
 	assert.NotNil(t, completed.CompletedAt)
+	// DurationStr should now be populated since both timestamps are set.
+	assert.NotNil(t, completed.DurationStr)
 }
 
 func TestScanRepository_StopScan(t *testing.T) {
@@ -481,6 +529,30 @@ func TestProfileRepository_CRUD(t *testing.T) {
 	require.NoError(t, db.DeleteProfile(ctx, profile.ID))
 	_, err = db.GetProfile(ctx, profile.ID)
 	require.Error(t, err)
+}
+
+func TestProfileRepository_CreateProfile_DuplicateName(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	profile, err := db.CreateProfile(ctx, map[string]interface{}{
+		"name":      "test-duplicate-profile",
+		"scan_type": "connect",
+		"ports":     "80,443",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.DeleteProfile(ctx, profile.ID) })
+
+	// Creating a second profile with the same name should return a conflict error.
+	_, err = db.CreateProfile(ctx, map[string]interface{}{
+		"name":      "test-duplicate-profile",
+		"scan_type": "connect",
+		"ports":     "22",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.IsConflict(err), "expected conflict error, got: %v", err)
 }
 
 func TestProfileRepository_GetProfile_NotFound(t *testing.T) {

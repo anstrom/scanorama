@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql/driver"
+	"encoding/json"
 	"net"
 	"testing"
 
@@ -409,7 +410,81 @@ var (
 	_ driver.Valuer = (*IPAddr)(nil)
 	_ driver.Valuer = (*MACAddr)(nil)
 	_ driver.Valuer = (*JSONB)(nil)
+
+	// NetworkAddr must satisfy both JSON interfaces.
+	_ json.Marshaler   = NetworkAddr{}
+	_ json.Unmarshaler = (*NetworkAddr)(nil)
 )
+
+// TestNetworkAddrJSON tests MarshalJSON and UnmarshalJSON for NetworkAddr.
+func TestNetworkAddrJSON(t *testing.T) {
+	t.Run("marshal_valid_cidr", func(t *testing.T) {
+		// Build a NetworkAddr from a known CIDR.
+		var addr NetworkAddr
+		require.NoError(t, addr.Scan("192.168.1.0/24"))
+
+		data, err := addr.MarshalJSON()
+		require.NoError(t, err)
+		// The result must be a JSON-quoted CIDR string.
+		assert.Equal(t, `"192.168.1.0/24"`, string(data))
+	})
+
+	t.Run("marshal_zero_value_returns_nil", func(t *testing.T) {
+		var addr NetworkAddr // zero value — IP is nil/empty
+
+		data, err := addr.MarshalJSON()
+		assert.NoError(t, err)
+		assert.Nil(t, data, "MarshalJSON of zero NetworkAddr should return nil, nil")
+	})
+
+	t.Run("unmarshal_valid_cidr", func(t *testing.T) {
+		var addr NetworkAddr
+		err := addr.UnmarshalJSON([]byte(`"10.0.0.0/8"`))
+		require.NoError(t, err)
+		assert.Equal(t, "10.0.0.0/8", addr.String())
+	})
+
+	t.Run("unmarshal_invalid_json_not_a_string", func(t *testing.T) {
+		var addr NetworkAddr
+		err := addr.UnmarshalJSON([]byte(`123`))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "expected a string")
+	})
+
+	t.Run("unmarshal_non_cidr_string", func(t *testing.T) {
+		var addr NetworkAddr
+		err := addr.UnmarshalJSON([]byte(`"not-a-cidr"`))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse CIDR")
+	})
+
+	t.Run("json_round_trip_in_struct", func(t *testing.T) {
+		type wrapper struct {
+			Network NetworkAddr `json:"network"`
+		}
+
+		// Build a source struct with a known CIDR.
+		var src wrapper
+		require.NoError(t, src.Network.Scan("172.16.0.0/12"))
+
+		// Marshal to JSON.
+		raw, err := json.Marshal(src)
+		require.NoError(t, err)
+
+		// Unmarshal back into a fresh struct.
+		var dst wrapper
+		require.NoError(t, json.Unmarshal(raw, &dst))
+
+		assert.Equal(t, src.Network.String(), dst.Network.String())
+	})
+
+	t.Run("unmarshal_ipv6_cidr", func(t *testing.T) {
+		var addr NetworkAddr
+		err := addr.UnmarshalJSON([]byte(`"2001:db8::/32"`))
+		require.NoError(t, err)
+		assert.Equal(t, "2001:db8::/32", addr.String())
+	})
+}
 
 // Benchmark tests for performance-critical operations
 func BenchmarkNetworkAddrScan(b *testing.B) {
