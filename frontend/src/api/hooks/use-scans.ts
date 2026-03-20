@@ -123,11 +123,11 @@ export function useCreateScan() {
 
 export function useScanResults(
   scanId: string,
-  params: { page?: number; page_size?: number } = {},
+  _params?: { page?: number; page_size?: number },
   scanStatus?: string,
 ) {
   return useQuery({
-    queryKey: ["scans", scanId, "results", params],
+    queryKey: ["scans", scanId, "results"],
     queryFn: async () => {
       const { data, error } = await api.GET("/scans/{scanId}/results", {
         params: { path: { scanId } },

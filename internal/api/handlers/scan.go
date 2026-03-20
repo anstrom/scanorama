@@ -95,24 +95,26 @@ type ScanRequest struct {
 
 // ScanResponse represents a scan response.
 type ScanResponse struct {
-	ID          uuid.UUID         `json:"id"`
-	Name        string            `json:"name"`
-	Description string            `json:"description,omitempty"`
-	Targets     []string          `json:"targets"`
-	ScanType    string            `json:"scan_type"`
-	Ports       string            `json:"ports,omitempty"`
-	ProfileID   *string           `json:"profile_id,omitempty"`
-	Options     map[string]string `json:"options,omitempty"`
-	ScheduleID  *int64            `json:"schedule_id,omitempty"`
-	Tags        []string          `json:"tags,omitempty"`
-	Status      string            `json:"status"`
-	Progress    float64           `json:"progress"`
-	StartTime   *time.Time        `json:"started_at,omitempty"`
-	EndTime     *time.Time        `json:"completed_at,omitempty"`
-	Duration    *string           `json:"duration,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
-	CreatedBy   string            `json:"created_by,omitempty"`
+	ID           uuid.UUID         `json:"id"`
+	Name         string            `json:"name"`
+	Description  string            `json:"description,omitempty"`
+	Targets      []string          `json:"targets"`
+	ScanType     string            `json:"scan_type"`
+	Ports        string            `json:"ports,omitempty"`
+	ProfileID    *string           `json:"profile_id,omitempty"`
+	Options      map[string]string `json:"options,omitempty"`
+	ScheduleID   *int64            `json:"schedule_id,omitempty"`
+	Tags         []string          `json:"tags,omitempty"`
+	Status       string            `json:"status"`
+	Progress     float64           `json:"progress"`
+	StartTime    *time.Time        `json:"started_at,omitempty"`
+	EndTime      *time.Time        `json:"completed_at,omitempty"`
+	Duration     *string           `json:"duration,omitempty"`
+	CreatedAt    time.Time         `json:"created_at"`
+	UpdatedAt    time.Time         `json:"updated_at"`
+	CreatedBy    string            `json:"created_by,omitempty"`
+	ErrorMessage *string           `json:"error_message,omitempty"`
+	PortsScanned *string           `json:"ports_scanned,omitempty"`
 }
 
 // ScanResultsResponse represents scan results.
@@ -716,6 +718,9 @@ func (h *ScanHandler) scanToResponse(scan *db.Scan) ScanResponse {
 		d := scan.CompletedAt.Sub(*scan.StartedAt).String()
 		resp.Duration = &d
 	}
+
+	resp.ErrorMessage = scan.ErrorMessage
+	resp.PortsScanned = scan.PortsScanned
 
 	return resp
 }

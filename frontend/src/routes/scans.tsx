@@ -17,7 +17,6 @@ import type { components } from "../api/types";
 type ScanResponse = components["schemas"]["docs.ScanResponse"];
 
 const PAGE_SIZE = 25;
-const RESULTS_PAGE_SIZE = 20;
 
 type ScanStatus =
   | "all"
@@ -101,13 +100,12 @@ function ResultsSkeletonRows({ count }: { count: number }) {
 }
 
 export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
-  const [resultsPage, setResultsPage] = useState(1);
   const { data: profileData, isLoading: profileLoading } = useProfile(
     scan.profile_id,
   );
   const { data: resultsData, isLoading: resultsLoading } = useScanResults(
     scan.id ?? "",
-    { page: resultsPage, page_size: RESULTS_PAGE_SIZE },
+    {},
     scan.status,
   );
 
@@ -140,15 +138,6 @@ export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
 
   // Only show open ports in the results table.
   const openResults = allResults.filter((r) => r.state === "open");
-
-  const totalResultPages = Math.max(
-    1,
-    Math.ceil(openResults.length / RESULTS_PAGE_SIZE),
-  );
-  const pageResults = openResults.slice(
-    (resultsPage - 1) * RESULTS_PAGE_SIZE,
-    resultsPage * RESULTS_PAGE_SIZE,
-  );
 
   return (
     <>
@@ -309,7 +298,7 @@ export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
                   </tbody>
                 </table>
               </div>
-            ) : pageResults.length === 0 ? (
+            ) : openResults.length === 0 ? (
               <p className="text-xs text-text-muted">
                 {allResults.length > 0
                   ? "No open ports found."
@@ -337,7 +326,7 @@ export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
                       </tr>
                     </thead>
                     <tbody>
-                      {pageResults.map((r, idx) => (
+                      {openResults.map((r, idx) => (
                         <tr
                           key={r.id ?? idx}
                           className="border-b border-border/50 last:border-0"
@@ -362,18 +351,6 @@ export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
                     </tbody>
                   </table>
                 </div>
-
-                {totalResultPages > 1 && (
-                  <PaginationBar
-                    page={resultsPage}
-                    totalPages={totalResultPages}
-                    onPrev={() => setResultsPage((p) => Math.max(1, p - 1))}
-                    onNext={() =>
-                      setResultsPage((p) => Math.min(totalResultPages, p + 1))
-                    }
-                    className="mt-2"
-                  />
-                )}
               </>
             )}
           </section>
