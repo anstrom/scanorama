@@ -35,6 +35,7 @@ func (s *Server) setupRoutes() {
 	s.setupNetworkRoutes(api, networkHandler)
 
 	api.HandleFunc("/ws", handlerManager.GeneralWebSocket).Methods("GET")
+	api.HandleFunc("/ws/scans", handlerManager.ScanWebSocket).Methods("GET")
 	api.HandleFunc("/admin/status", s.adminStatusHandler).Methods("GET")
 
 	s.setupDocRoutes()

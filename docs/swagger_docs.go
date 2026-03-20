@@ -325,7 +325,7 @@ type UpdateScanRequest struct {
 	Targets     []string          `json:"targets" example:"192.168.1.0/24"`
 	ScanType    string            `json:"scan_type" example:"connect" enums:"connect,syn,ack,udp,aggressive,comprehensive"`
 	Ports       string            `json:"ports,omitempty" example:"22,80,443"`
-	ProfileID   *int64            `json:"profile_id,omitempty"`
+	ProfileID   *string           `json:"profile_id,omitempty"`
 	Options     map[string]string `json:"options,omitempty"`
 	ScheduleID  *int64            `json:"schedule_id,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`

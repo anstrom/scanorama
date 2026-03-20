@@ -223,7 +223,7 @@ func TestScanHandler_GetScanFilters(t *testing.T) {
 			name:        "profile ID filter",
 			queryParams: "?profile_id=123",
 			expectedFilter: db.ScanFilters{
-				ProfileID: func() *int64 { id := int64(123); return &id }(),
+				ProfileID: func() *string { id := "123"; return &id }(),
 			},
 		},
 		{
@@ -236,9 +236,11 @@ func TestScanHandler_GetScanFilters(t *testing.T) {
 			},
 		},
 		{
-			name:           "invalid profile ID",
-			queryParams:    "?profile_id=invalid",
-			expectedFilter: db.ScanFilters{},
+			name:        "invalid profile ID (string IDs are now valid)",
+			queryParams: "?profile_id=invalid",
+			expectedFilter: db.ScanFilters{
+				ProfileID: func() *string { id := "invalid"; return &id }(),
+			},
 		},
 	}
 
@@ -271,7 +273,7 @@ func TestScanHandler_RequestToDBScan(t *testing.T) {
 		Targets:     []string{"192.168.1.0/24"},
 		ScanType:    "connect",
 		Ports:       "1-1000",
-		ProfileID:   func() *int64 { id := int64(123); return &id }(),
+		ProfileID:   func() *string { id := "123"; return &id }(),
 		Options:     map[string]string{"timeout": "30"},
 		ScheduleID:  func() *int64 { id := int64(456); return &id }(),
 		Tags:        []string{"test", "api"},
@@ -610,11 +612,20 @@ func TestScanHandler_EdgeCases(t *testing.T) {
 	t.Run("multiple targets validation", func(t *testing.T) {
 		req := &ScanRequest{
 			Name:     "Test",
-			Targets:  []string{"192.168.1.1", "192.168.1.2", "example.com"},
+			Targets:  []string{"192.168.1.1", "192.168.1.2", "10.0.0.0/24"},
 			ScanType: "connect",
 		}
 		err := handler.validateScanRequest(req)
 		assert.NoError(t, err)
+
+		// Hostname targets are not valid — must be IP or CIDR.
+		reqHostname := &ScanRequest{
+			Name:     "Test",
+			Targets:  []string{"192.168.1.1", "example.com"},
+			ScanType: "connect",
+		}
+		err = handler.validateScanRequest(reqHostname)
+		assert.Error(t, err, "hostname targets should be rejected")
 	})
 }
 
@@ -659,15 +670,15 @@ func TestScanHandler_RequestValidation_Comprehensive(t *testing.T) {
 			Targets:     make([]string, 10), // multiple targets
 			ScanType:    "comprehensive",
 			Ports:       "1-65535",
-			ProfileID:   func() *int64 { id := int64(1); return &id }(),
+			ProfileID:   func() *string { id := "linux-server"; return &id }(),
 			Options:     map[string]string{"key": "value"},
 			ScheduleID:  func() *int64 { id := int64(1); return &id }(),
 			Tags:        []string{"tag1", "tag2"},
 		}
 
-		// Fill targets with valid values
+		// Fill targets with valid IPs (10.0.0.1 – 10.0.0.10).
 		for i := range req.Targets {
-			req.Targets[i] = "192.168.1." + string(rune('1'+i))
+			req.Targets[i] = fmt.Sprintf("10.0.0.%d", i+1)
 		}
 
 		err := handler.validateScanRequest(req)
@@ -675,17 +686,23 @@ func TestScanHandler_RequestValidation_Comprehensive(t *testing.T) {
 	})
 
 	t.Run("boundary conditions", func(t *testing.T) {
-		// Test exactly at the boundary
+		// Name exactly at max length with a valid target — should pass.
 		req := &ScanRequest{
-			Name:     strings.Repeat("a", 255),           // exactly max length
-			Targets:  []string{strings.Repeat("b", 255)}, // exactly max target length
+			Name:     strings.Repeat("a", 255),
+			Targets:  []string{"10.0.0.1"},
 			ScanType: "connect",
 		}
 		err := handler.validateScanRequest(req)
 		assert.NoError(t, err)
 
-		// Test just over the boundary
-		req.Name = strings.Repeat("a", 256) // one over max length
+		// Name one over max length — should fail on name, not target.
+		req.Name = strings.Repeat("a", 256)
+		err = handler.validateScanRequest(req)
+		assert.Error(t, err)
+
+		// Target that exceeds maxTargetLength should fail.
+		req.Name = "valid"
+		req.Targets = []string{strings.Repeat("b", 256)}
 		err = handler.validateScanRequest(req)
 		assert.Error(t, err)
 	})

@@ -575,7 +575,7 @@ func TestScanHandler_ListScans_ResponseFields(t *testing.T) {
 
 	// Create a scan with all optional fields
 	scanName := generateUniqueScanName()
-	profileID := int64(1)
+	profileID := "linux-server"
 	scheduleID := int64(1)
 
 	scanData := map[string]interface{}{
@@ -584,7 +584,7 @@ func TestScanHandler_ListScans_ResponseFields(t *testing.T) {
 		"targets":     []string{"192.168.1.0/24", "10.0.0.0/24"},
 		"scan_type":   "comprehensive",
 		"ports":       "1-65535",
-		"profile_id":  profileID,
+		"profile_id":  &profileID,
 		"schedule_id": scheduleID,
 		"options":     map[string]string{"option1": "value1"},
 		"tags":        []string{"test", "comprehensive"},
@@ -821,7 +821,7 @@ func TestScanHandler_RequestToDBScan_Unit(t *testing.T) {
 	logger := createTestLogger()
 	handler := NewScanHandler(nil, logger, nil)
 
-	profileID := int64(123)
+	profileID := "linux-server"
 	scheduleID := int64(456)
 
 	req := &ScanRequest{
@@ -858,7 +858,7 @@ func TestScanHandler_ScanToResponse_Unit(t *testing.T) {
 
 	now := time.Now().UTC()
 	scanID := uuid.New()
-	profileID := int64(123)
+	profileID := "linux-server"
 
 	scan := &db.Scan{
 		ID:          scanID,
@@ -1001,7 +1001,7 @@ func TestScanHandler_GetScan_WithAllFields(t *testing.T) {
 
 	scanName := generateUniqueScanName()
 	now := time.Now().UTC()
-	profileID := int64(1)
+	profileID := "linux-server"
 
 	scanData := map[string]interface{}{
 		"name":        scanName,
@@ -1009,7 +1009,7 @@ func TestScanHandler_GetScan_WithAllFields(t *testing.T) {
 		"targets":     []string{"192.168.1.0/24"},
 		"scan_type":   "comprehensive",
 		"ports":       "1-65535",
-		"profile_id":  profileID,
+		"profile_id":  &profileID,
 		"created_at":  now,
 	}
 	scan, err := database.CreateScan(ctx, scanData)
