@@ -525,22 +525,30 @@ func (s *NetworkService) GetNetworkStats(ctx context.Context) (map[string]interf
 		SELECT
 			COUNT(*) as total_networks,
 			COUNT(*) FILTER (WHERE is_active = true) as active_networks,
-			COUNT(*) FILTER (WHERE scan_enabled = true) as scan_enabled_networks,
-			COALESCE(SUM(host_count), 0) as total_hosts,
-			COALESCE(SUM(active_host_count), 0) as total_active_hosts
+			COUNT(*) FILTER (WHERE scan_enabled = true) as scan_enabled_networks
 		FROM networks`
 
 	var stats struct {
 		TotalNetworks       int `db:"total_networks"`
 		ActiveNetworks      int `db:"active_networks"`
 		ScanEnabledNetworks int `db:"scan_enabled_networks"`
-		TotalHosts          int `db:"total_hosts"`
-		TotalActiveHosts    int `db:"total_active_hosts"`
 	}
 
 	err := s.database.GetContext(ctx, &stats, statsQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get network stats: %w", err)
+	}
+
+	var totalHosts int
+	err = s.database.QueryRowContext(ctx, `SELECT COUNT(*) FROM hosts`).Scan(&totalHosts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get total host count: %w", err)
+	}
+
+	var activeHosts int
+	err = s.database.QueryRowContext(ctx, `SELECT COUNT(*) FROM hosts WHERE status = 'up'`).Scan(&activeHosts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active host count: %w", err)
 	}
 
 	// Get exclusion stats
@@ -570,8 +578,8 @@ func (s *NetworkService) GetNetworkStats(ctx context.Context) (map[string]interf
 			"scan_enabled": stats.ScanEnabledNetworks,
 		},
 		"hosts": map[string]interface{}{
-			"total":  stats.TotalHosts,
-			"active": stats.TotalActiveHosts,
+			"total":  totalHosts,
+			"active": activeHosts,
 		},
 		"exclusions": map[string]interface{}{
 			"total":   exclusionStats.TotalExclusions,

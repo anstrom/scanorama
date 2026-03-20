@@ -55,6 +55,28 @@ func (n NetworkAddr) String() string {
 	return n.IPNet.String()
 }
 
+// MarshalJSON implements json.Marshaler for NetworkAddr, encoding as a CIDR string.
+func (n NetworkAddr) MarshalJSON() ([]byte, error) {
+	if len(n.IP) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(n.IPNet.String())
+}
+
+// UnmarshalJSON implements json.Unmarshaler for NetworkAddr, decoding from a CIDR string.
+func (n *NetworkAddr) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("NetworkAddr.UnmarshalJSON: expected a string, got: %w", err)
+	}
+	_, ipnet, err := net.ParseCIDR(s)
+	if err != nil {
+		return fmt.Errorf("NetworkAddr.UnmarshalJSON: failed to parse CIDR %q: %w", s, err)
+	}
+	n.IPNet = *ipnet
+	return nil
+}
+
 // IPAddr wraps net.IP to implement PostgreSQL INET type.
 type IPAddr struct {
 	net.IP

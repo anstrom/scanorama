@@ -351,21 +351,24 @@ func (r *PortScanRepository) GetByHost(ctx context.Context, hostID uuid.UUID) ([
 
 // Scan represents a scan configuration and execution state.
 type Scan struct {
-	ID          uuid.UUID              `json:"id" db:"id"`
-	Name        string                 `json:"name" db:"name"`
-	Description string                 `json:"description" db:"description"`
-	Targets     []string               `json:"targets" db:"targets"`
-	ScanType    string                 `json:"scan_type" db:"scan_type"`
-	Ports       string                 `json:"ports" db:"ports"`
-	ProfileID   *string                `json:"profile_id" db:"profile_id"`
-	Options     map[string]interface{} `json:"options" db:"options"`
-	ScheduleID  *int64                 `json:"schedule_id" db:"schedule_id"`
-	Tags        []string               `json:"tags" db:"tags"`
-	Status      string                 `json:"status" db:"status"`
-	CreatedAt   time.Time              `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at" db:"updated_at"`
-	StartedAt   *time.Time             `json:"started_at" db:"started_at"`
-	CompletedAt *time.Time             `json:"completed_at" db:"completed_at"`
+	ID           uuid.UUID              `json:"id" db:"id"`
+	Name         string                 `json:"name" db:"name"`
+	Description  string                 `json:"description" db:"description"`
+	Targets      []string               `json:"targets" db:"targets"`
+	ScanType     string                 `json:"scan_type" db:"scan_type"`
+	Ports        string                 `json:"ports" db:"ports"`
+	ProfileID    *string                `json:"profile_id" db:"profile_id"`
+	Options      map[string]interface{} `json:"options" db:"options"`
+	ScheduleID   *int64                 `json:"schedule_id" db:"schedule_id"`
+	Tags         []string               `json:"tags" db:"tags"`
+	Status       string                 `json:"status" db:"status"`
+	CreatedAt    time.Time              `json:"created_at" db:"created_at"`
+	UpdatedAt    time.Time              `json:"updated_at" db:"updated_at"`
+	StartedAt    *time.Time             `json:"started_at" db:"started_at"`
+	CompletedAt  *time.Time             `json:"completed_at" db:"completed_at"`
+	ErrorMessage *string                `json:"error_message,omitempty" db:"error_message"`
+	DurationStr  *string                `json:"duration,omitempty" db:"-"`
+	PortsScanned *string                `json:"ports_scanned,omitempty" db:"-"`
 }
 
 // ScanFilters represents filters for listing scans.
@@ -453,6 +456,7 @@ func processScanRow(rows *sql.Rows) (*Scan, error) {
 		&scan.CreatedAt,
 		&scan.StartedAt,
 		&scan.CompletedAt,
+		&scan.ErrorMessage,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan row: %w", err)
@@ -482,6 +486,18 @@ func processScanRow(rows *sql.Rows) (*Scan, error) {
 		scan.UpdatedAt = scan.CreatedAt
 	}
 
+	// Compute DurationStr if both timestamps are available.
+	if scan.StartedAt != nil && scan.CompletedAt != nil {
+		d := scan.CompletedAt.Sub(*scan.StartedAt).String()
+		scan.DurationStr = &d
+	}
+
+	// Compute PortsScanned from Ports if non-empty.
+	if scan.Ports != "" {
+		p := scan.Ports
+		scan.PortsScanned = &p
+	}
+
 	return scan, nil
 }
 
@@ -500,7 +516,8 @@ func (db *DB) ListScans(ctx context.Context, filters ScanFilters, offset, limit 
 			sj.status,
 			sj.created_at,
 			sj.started_at,
-			sj.completed_at
+			sj.completed_at,
+			sj.error_message
 		FROM scan_jobs sj
 		JOIN scan_targets st ON sj.target_id = st.id
 		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id
@@ -732,6 +749,7 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 			sj.created_at,
 			sj.started_at,
 			sj.completed_at,
+			sj.error_message,
 			COALESCE((sj.execution_details->>'os_detection')::boolean, false) as os_detection
 		FROM scan_jobs sj
 		JOIN scan_targets st ON sj.target_id = st.id
@@ -756,6 +774,7 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 		&scan.CreatedAt,
 		&scan.StartedAt,
 		&scan.CompletedAt,
+		&scan.ErrorMessage,
 		&osDetection,
 	)
 	if err != nil {
@@ -785,6 +804,18 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 		scan.UpdatedAt = *scan.StartedAt
 	} else {
 		scan.UpdatedAt = scan.CreatedAt
+	}
+
+	// Compute DurationStr if both timestamps are available.
+	if scan.StartedAt != nil && scan.CompletedAt != nil {
+		d := scan.CompletedAt.Sub(*scan.StartedAt).String()
+		scan.DurationStr = &d
+	}
+
+	// Compute PortsScanned from Ports if non-empty.
+	if scan.Ports != "" {
+		p := scan.Ports
+		scan.PortsScanned = &p
 	}
 
 	return scan, nil
@@ -917,6 +948,16 @@ func (db *DB) DeleteScan(ctx context.Context, id uuid.UUID) error {
 	}
 	if !exists {
 		return errors.ErrNotFoundWithID("scan", id.String())
+	}
+
+	// Prevent deleting a scan that is currently running.
+	var status string
+	err = tx.QueryRowContext(ctx, "SELECT status FROM scan_jobs WHERE id = $1", id).Scan(&status)
+	if err != nil {
+		return fmt.Errorf("failed to get scan status: %w", err)
+	}
+	if status == "running" {
+		return errors.ErrConflictWithReason("scan", "cannot delete a running scan; stop it first")
 	}
 
 	// Get the target_id before deleting the scan job.

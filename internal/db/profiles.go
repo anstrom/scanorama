@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	stdErrors "errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -203,6 +204,11 @@ func (db *DB) CreateProfile(ctx context.Context, profileData interface{}) (*Scan
 	_, err := db.ExecContext(ctx, query, profileID, name, description,
 		ports, scanType, optionsJSON, timingStr, now, now)
 	if err != nil {
+		var pqErr *pq.Error
+		if stdErrors.As(err, &pqErr) && pqErr.Code == "23505" {
+			return nil, errors.ErrConflictWithReason("profile",
+				fmt.Sprintf("a profile named %q already exists", name))
+		}
 		return nil, fmt.Errorf("failed to create profile: %w", err)
 	}
 
