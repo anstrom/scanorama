@@ -705,7 +705,6 @@ func TestNetworkService_UpdateNetworkDiscoveryTime_DBError(t *testing.T) {
 
 var networkStatsColumns = []string{
 	"total_networks", "active_networks", "scan_enabled_networks",
-	"total_hosts", "total_active_hosts",
 }
 
 var exclusionStatsColumns = []string{
@@ -717,7 +716,13 @@ func TestNetworkService_GetNetworkStats_Success(t *testing.T) {
 	defer cleanup()
 
 	mock.ExpectQuery(`SELECT`).
-		WillReturnRows(sqlmock.NewRows(networkStatsColumns).AddRow(5, 3, 2, 1024, 512))
+		WillReturnRows(sqlmock.NewRows(networkStatsColumns).AddRow(5, 3, 2))
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM hosts`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1024))
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM hosts WHERE`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(512))
 
 	mock.ExpectQuery(`SELECT`).
 		WillReturnRows(sqlmock.NewRows(exclusionStatsColumns).AddRow(10, 4, 6))
@@ -756,12 +761,53 @@ func TestNetworkService_GetNetworkStats_NetworkQueryError(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestNetworkService_GetNetworkStats_TotalHostQueryError(t *testing.T) {
+	svc, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	mock.ExpectQuery(`SELECT`).
+		WillReturnRows(sqlmock.NewRows(networkStatsColumns).AddRow(1, 1, 1))
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM hosts`).
+		WillReturnError(sql.ErrConnDone)
+
+	_, err := svc.GetNetworkStats(context.Background())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get total host count")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNetworkService_GetNetworkStats_ActiveHostQueryError(t *testing.T) {
+	svc, mock, cleanup := newMockService(t)
+	defer cleanup()
+
+	mock.ExpectQuery(`SELECT`).
+		WillReturnRows(sqlmock.NewRows(networkStatsColumns).AddRow(1, 1, 1))
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM hosts`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(10))
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM hosts WHERE`).
+		WillReturnError(sql.ErrConnDone)
+
+	_, err := svc.GetNetworkStats(context.Background())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get active host count")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestNetworkService_GetNetworkStats_ExclusionQueryError(t *testing.T) {
 	svc, mock, cleanup := newMockService(t)
 	defer cleanup()
 
 	mock.ExpectQuery(`SELECT`).
-		WillReturnRows(sqlmock.NewRows(networkStatsColumns).AddRow(1, 1, 1, 10, 5))
+		WillReturnRows(sqlmock.NewRows(networkStatsColumns).AddRow(1, 1, 1))
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM hosts`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(10))
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM hosts WHERE`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
 
 	mock.ExpectQuery(`SELECT`).
 		WillReturnError(sql.ErrConnDone)
@@ -777,7 +823,13 @@ func TestNetworkService_GetNetworkStats_ZeroValues(t *testing.T) {
 	defer cleanup()
 
 	mock.ExpectQuery(`SELECT`).
-		WillReturnRows(sqlmock.NewRows(networkStatsColumns).AddRow(0, 0, 0, 0, 0))
+		WillReturnRows(sqlmock.NewRows(networkStatsColumns).AddRow(0, 0, 0))
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM hosts`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM hosts WHERE`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 
 	mock.ExpectQuery(`SELECT`).
 		WillReturnRows(sqlmock.NewRows(exclusionStatsColumns).AddRow(0, 0, 0))
