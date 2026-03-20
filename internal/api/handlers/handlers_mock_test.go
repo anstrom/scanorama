@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -2269,8 +2270,9 @@ func TestScanHandler_SubmitToQueue_QueueFull_Returns429(t *testing.T) {
 	// Block the single worker indefinitely so the queue fills up.
 	started := make(chan struct{})
 	block := make(chan struct{})
+	var startOnce sync.Once
 	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
-		close(started)
+		startOnce.Do(func() { close(started) })
 		<-block
 		return &scanning.ScanQueueResult{ID: req.ID, Result: &scanning.ScanResult{}}
 	})
