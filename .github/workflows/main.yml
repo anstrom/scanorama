@@ -147,13 +147,60 @@ jobs:
       - name: Run tests
         run: npm test --prefix frontend
 
-  # Stage 3: Integration Tests (requires database and services)
-  # Always runs on pushes to main (to keep coverage data fresh) and on PRs
-  # that touch backend code.  The path filter is bypassed on main so that
-  # non-Go commits (docs, renovate, frontend) don't leave the Codecov badge
-  # showing "unknown" due to a missing upload.
-  integration-tests:
-    name: Integration Tests
+  # Stage 3a: Integration Tests — no external services required
+  # Packages: auth, daemon, scheduler, workers, scanning, discovery,
+  #           api/handlers, and everything else that only needs nmap.
+  # Runs in parallel with integration-tests-services, using -p 4 since
+  # there is no shared database to contend over.
+  integration-tests-nodb:
+    name: Integration Tests (no services)
+    runs-on: ubuntu-latest
+    needs: [changes, unit-tests]
+    if: |
+      always() &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (needs.changes.outputs.backend == 'true' && needs.unit-tests.result == 'success')
+      )
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nmap
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run integration tests (no services)
+        run: |
+          # Exclude the e2e test package which requires postgres/redis/nmap services.
+          # All other packages are self-contained and safe to run in parallel.
+          go test -v -p 4 -tags=integration -coverprofile=coverage_nodb.out -covermode=atomic \
+            $(go list ./... | grep -v 'github.com/anstrom/scanorama/test$')
+          go tool cover -func=coverage_nodb.out | tail -1
+
+      - name: Upload no-services coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-nodb
+          path: coverage_nodb.out
+          retention-days: 1
+
+  # Stage 3b: Integration Tests — requires database and network services
+  # Packages: test (e2e scans against real postgres + nginx + ssh containers)
+  # Runs in parallel with integration-tests-nodb.
+  integration-tests-services:
+    name: Integration Tests (services)
     runs-on: ubuntu-latest
     needs: [changes, unit-tests]
     if: |
@@ -188,7 +235,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-      # Test services for scan tests
       nginx:
         image: nginx:alpine
         ports:
@@ -222,17 +268,12 @@ jobs:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       REDIS_URL: redis://localhost:6379
-      # Test database configuration
       TEST_DB_HOST: localhost
       TEST_DB_PORT: 5432
       TEST_DB_NAME: scanorama_test
       TEST_DB_USER: scanorama_test_user
       TEST_DB_PASSWORD: test_password_123
       CI: true
-      # Opt into Node.js 24 for all JavaScript actions in this job.
-      # codecov-action@v5 vendors github-script@v7.0.1 (Node.js 20), which is
-      # deprecated and will break after June 2 2026. This env var silences the
-      # warning and future-proofs the job until codecov ships an updated bundle.
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
@@ -261,26 +302,76 @@ jobs:
 
       - name: Create test database and user
         run: |
-          # Create test user
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER scanorama_test_user WITH PASSWORD 'test_password_123';" || echo "User may already exist"
-
-          # Create test database
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE scanorama_test OWNER scanorama_test_user;" || echo "Database may already exist"
-
-          # Grant permissions
           PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE scanorama_test TO scanorama_test_user;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d scanorama_test -c "GRANT ALL ON SCHEMA public TO scanorama_test_user;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d scanorama_test -c "GRANT CREATE ON SCHEMA public TO scanorama_test_user;"
-
-          # Verify test database is ready
           PGPASSWORD=test_password_123 psql -h localhost -U scanorama_test_user -d scanorama_test -c "SELECT 1;" > /dev/null && echo "✅ Test database is ready"
 
-      - name: Run integration tests
+      - name: Run integration tests (services)
         run: |
-          # Run all tests with -tags=integration so build-tagged files (migration,
-          # schema validation, etc.) are included in the coverage profile.
-          go test -v -p 1 -tags=integration -coverprofile=integration_coverage.out -covermode=atomic ./...
-          go tool cover -func=integration_coverage.out | tail -1
+          # The test package uses TestMain (single migration) + t.Parallel() +
+          # nmapMu so tests are safe to run concurrently within the package.
+          go test -v -tags=integration -coverprofile=coverage_services.out -covermode=atomic \
+            github.com/anstrom/scanorama/test
+          go tool cover -func=coverage_services.out | tail -1
+
+      - name: Upload services coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-services
+          path: coverage_services.out
+          retention-days: 1
+
+  # Stage 4: Merge coverage and upload to Codecov
+  # Waits for both integration jobs, then merges their profiles and uploads.
+  coverage-merge:
+    name: Coverage Upload
+    runs-on: ubuntu-latest
+    needs: [integration-tests-nodb, integration-tests-services]
+    if: |
+      always() &&
+      (
+        needs.integration-tests-nodb.result == 'success' ||
+        needs.integration-tests-services.result == 'success'
+      )
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Download no-services coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-nodb
+          path: artifacts/nodb
+        continue-on-error: true
+
+      - name: Download services coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-services
+          path: artifacts/services
+        continue-on-error: true
+
+      - name: Merge coverage profiles
+        run: |
+          NODB="artifacts/nodb/coverage_nodb.out"
+          SERVICES="artifacts/services/coverage_services.out"
+
+          if [ -f "$NODB" ]; then
+            cp "$NODB" integration_coverage.out
+          elif [ -f "$SERVICES" ]; then
+            cp "$SERVICES" integration_coverage.out
+          else
+            echo "No coverage files found"
+            exit 1
+          fi
+
+          # Append non-header lines from the services profile if it has any.
+          if [ -f "$SERVICES" ]; then
+            grep -v '^mode:' "$SERVICES" >> integration_coverage.out || true
+          fi
 
       - name: Upload complete coverage to Codecov
         uses: codecov/codecov-action@v5
