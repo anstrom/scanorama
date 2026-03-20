@@ -12,6 +12,10 @@ export interface ScanResultEntry {
   version?: string;
   banner?: string;
   scan_time?: string;
+  os_name?: string;
+  os_family?: string;
+  os_version?: string;
+  os_confidence?: number;
 }
 
 export interface ScanResultsSummary {

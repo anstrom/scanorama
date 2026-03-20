@@ -125,6 +125,19 @@ export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
     allResults.map((r) => r.host_ip).filter(Boolean),
   ).size;
 
+  // OS info — take from the first result that has it (same host across all rows).
+  const osInfo = allResults.find((r) => r.os_name || r.os_family);
+  const osLabel = osInfo
+    ? [
+        osInfo.os_name,
+        osInfo.os_confidence != null
+          ? `(${osInfo.os_confidence}% confidence)`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : undefined;
+
   // Only show open ports in the results table.
   const openResults = allResults.filter((r) => r.state === "open");
 
@@ -201,6 +214,17 @@ export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
               )}
               <MetaRow label="Scan type" value={scan.scan_type} />
               <MetaRow label="Ports" value={scan.ports} />
+              {!resultsLoading && osInfo && (
+                <>
+                  <MetaRow label="OS" value={osLabel} />
+                  {osInfo.os_family && (
+                    <MetaRow label="OS family" value={osInfo.os_family} />
+                  )}
+                  {osInfo.os_version && (
+                    <MetaRow label="OS version" value={osInfo.os_version} />
+                  )}
+                </>
+              )}
               <MetaRow
                 label="Hosts"
                 value={
