@@ -14,6 +14,14 @@ import type { components } from "../api/types";
 
 type HostResponse = components["schemas"]["docs.HostResponse"];
 
+interface PortInfo {
+  port: number;
+  protocol: string;
+  state: string;
+  service?: string;
+  last_seen: string;
+}
+
 const PAGE_SIZE = 25;
 
 // ──────────────────────────────────────────────
@@ -198,33 +206,79 @@ function HostDetailPanel({
             )}
           </section>
 
-          {/* Open ports */}
+          {/* Ports */}
           <section>
-            <h3 className="text-xs font-medium text-text-primary mb-3">
-              {isLoading
-                ? "Open Ports"
-                : `Open Ports (${h.open_ports?.length ?? 0})`}
-            </h3>
-            {isLoading ? (
-              <div className="flex flex-wrap gap-1.5">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-5 w-10 rounded" />
-                ))}
-              </div>
-            ) : !h.open_ports || h.open_ports.length === 0 ? (
-              <p className="text-xs text-text-muted">No open ports recorded.</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {h.open_ports.map((port) => (
-                  <span
-                    key={port}
-                    className="inline-block px-2 py-0.5 rounded bg-surface-raised text-xs font-mono text-text-secondary border border-border"
-                  >
-                    {port}
-                  </span>
-                ))}
-              </div>
-            )}
+            {(() => {
+              const allPorts =
+                (h as unknown as { ports?: PortInfo[] }).ports ?? [];
+              const openPorts = allPorts.filter((p) => p.state === "open");
+              const otherPorts = allPorts.filter((p) => p.state !== "open");
+              return (
+                <>
+                  <h3 className="text-xs font-medium text-text-primary mb-3">
+                    {isLoading
+                      ? "Open Ports"
+                      : `Open Ports (${openPorts.length})`}
+                  </h3>
+                  {isLoading ? (
+                    <div className="space-y-1.5">
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <Skeleton key={i} className="h-5 w-full rounded" />
+                      ))}
+                    </div>
+                  ) : openPorts.length === 0 ? (
+                    <p className="text-xs text-text-muted">
+                      No open ports recorded.
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      {openPorts.map((p) => (
+                        <div
+                          key={`${p.port}-${p.protocol}`}
+                          className="flex items-center justify-between gap-2 py-0.5"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-mono text-xs text-text-primary shrink-0">
+                              {p.port}
+                            </span>
+                            <span className="text-xs text-text-muted uppercase shrink-0">
+                              {p.protocol}
+                            </span>
+                            {p.service && (
+                              <span className="text-xs text-text-secondary truncate">
+                                {p.service}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-text-muted whitespace-nowrap shrink-0">
+                            {formatRelativeTime(p.last_seen)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!isLoading && otherPorts.length > 0 && (
+                    <>
+                      <h3 className="text-xs font-medium text-text-primary mt-5 mb-3">
+                        {`Closed / Filtered (${otherPorts.length})`}
+                      </h3>
+                      <div className="flex flex-wrap gap-1.5">
+                        {otherPorts.map((p) => (
+                          <span
+                            key={`${p.port}-${p.protocol}`}
+                            title={`${p.protocol} · ${p.state} · last seen ${formatRelativeTime(p.last_seen)}`}
+                            className="inline-block px-2 py-0.5 rounded bg-surface-raised text-xs font-mono text-text-muted border border-border"
+                          >
+                            {p.port}
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </section>
         </div>
 
@@ -248,22 +302,23 @@ function HostDetailPanel({
 
 type HostStatus = "all" | "up" | "down" | "unknown";
 
-function PortTags({ ports }: { ports?: number[] }) {
-  if (!ports || ports.length === 0)
-    return <span className="text-text-muted">—</span>;
+function PortTags({ ports }: { ports?: PortInfo[] }) {
+  const open = ports?.filter((p) => p.state === "open") ?? [];
+  if (open.length === 0) return <span className="text-text-muted">—</span>;
 
   const MAX_SHOWN = 5;
-  const shown = ports.slice(0, MAX_SHOWN);
-  const overflow = ports.length - MAX_SHOWN;
+  const shown = open.slice(0, MAX_SHOWN);
+  const overflow = open.length - MAX_SHOWN;
 
   return (
     <div className="flex flex-wrap gap-1">
-      {shown.map((port) => (
+      {shown.map((p) => (
         <span
-          key={port}
+          key={`${p.port}-${p.protocol}`}
+          title={`${p.protocol}${p.service ? ` · ${p.service}` : ""}`}
           className="inline-block px-1.5 py-0.5 rounded bg-surface-raised text-xs font-mono text-text-secondary border border-border"
         >
-          {port}
+          {p.port}
         </span>
       ))}
       {overflow > 0 && (
@@ -453,7 +508,11 @@ export function HostsPage() {
                         {host.mac_address ?? "—"}
                       </td>
                       <td className="py-3 pr-4">
-                        <PortTags ports={host.open_ports} />
+                        <PortTags
+                          ports={
+                            (host as unknown as { ports?: PortInfo[] }).ports
+                          }
+                        />
                       </td>
                       <td className="py-3 pr-4 text-text-muted whitespace-nowrap">
                         {host.last_seen
