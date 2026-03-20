@@ -22,15 +22,19 @@ import (
 
 // Constants for scan configuration validation.
 const (
-	minTimeoutSeconds         = 60
-	minTimeoutSecondsScripted = 300 // aggressive/comprehensive run NSE scripts
-	mediumTimeoutSeconds      = 300
-	maxConcurrency            = 20
-	ipv6CIDRBits              = 128
-	defaultTargetCapacity     = 10
-	nullMethodValue           = "NULL"
-	scanTypeConnect           = "connect"
-	scanTypeAggressive        = "aggressive"
+	minTimeoutSeconds           = 60
+	minTimeoutSecondsScripted   = 300 // aggressive/comprehensive run NSE scripts
+	mediumTimeoutSeconds        = 300
+	maxConcurrency              = 20
+	ipv6CIDRBits                = 128
+	defaultTargetCapacity       = 10
+	nullMethodValue             = "NULL"
+	scanTypeConnect             = "connect"
+	scanTypeAggressive          = "aggressive"
+	scanTypeComprehensive       = "comprehensive"
+	udpTimeoutMultiplier        = 4
+	scriptedOverheadNumerator   = 3
+	scriptedOverheadDenominator = 2
 )
 
 const (
@@ -62,15 +66,15 @@ func CalculateTimeout(ports string, targetCount int, scanType string) int {
 	// UDP is significantly slower — retransmit delays add up.
 	hasUDP := strings.Contains(ports, "U:")
 	if scanType == "udp" || hasUDP {
-		seconds = seconds * 4
+		seconds *= udpTimeoutMultiplier
 	}
 
 	// Aggressive/comprehensive scan types do service detection and scripting —
 	// add 50% overhead on the base count, and use a higher floor because NSE
 	// scripts routinely take longer than 60s even on a small number of ports.
-	isScripted := scanType == scanTypeAggressive || scanType == "comprehensive"
+	isScripted := scanType == scanTypeAggressive || scanType == scanTypeComprehensive
 	if isScripted {
-		seconds = seconds * 3 / 2
+		seconds = seconds * scriptedOverheadNumerator / scriptedOverheadDenominator
 	}
 
 	floor := minTimeoutSeconds
@@ -291,7 +295,7 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 			nmap.WithVersionAll(),
 			nmap.WithAggressiveScan(),
 		)
-	case "comprehensive":
+	case scanTypeComprehensive:
 		options = append(options,
 			nmap.WithSYNScan(),
 			nmap.WithServiceInfo(),
@@ -306,23 +310,12 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 
 	// Add nmap timing template. The Timing field (set from the scan profile) takes
 	// precedence. If not set, fall back to a concurrency-based heuristic.
-	switch config.Timing {
-	case "paranoid":
-		options = append(options, nmap.WithTimingTemplate(nmap.TimingSlowest))
-	case "polite":
-		options = append(options, nmap.WithTimingTemplate(nmap.TimingSneaky))
-	case "normal":
-		options = append(options, nmap.WithTimingTemplate(nmap.TimingNormal))
-	case scanTypeAggressive:
-		options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
-	case "insane":
-		options = append(options, nmap.WithTimingTemplate(nmap.TimingFastest))
-	default:
+	if opt := buildTimingOption(config.Timing); opt != nil {
+		options = append(options, opt)
+	} else if config.Concurrency > maxConcurrency {
 		// No explicit timing — apply T4 when high concurrency is requested,
 		// otherwise leave nmap to use its own default (T3).
-		if config.Concurrency > maxConcurrency {
-			options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
-		}
+		options = append(options, nmap.WithTimingTemplate(nmap.TimingAggressive))
 	}
 
 	// Pass --host-timeout to nmap so it enforces its own deadline even if the
@@ -339,6 +332,26 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 	)
 
 	return options
+}
+
+// buildTimingOption maps a timing string from the scan profile to the
+// corresponding nmap timing-template option. It returns nil when the timing
+// value is empty or unrecognized so the caller can apply its own fallback.
+func buildTimingOption(timing string) nmap.Option {
+	switch timing {
+	case "paranoid":
+		return nmap.WithTimingTemplate(nmap.TimingSlowest)
+	case "polite":
+		return nmap.WithTimingTemplate(nmap.TimingSneaky)
+	case "normal":
+		return nmap.WithTimingTemplate(nmap.TimingNormal)
+	case scanTypeAggressive:
+		return nmap.WithTimingTemplate(nmap.TimingAggressive)
+	case "insane":
+		return nmap.WithTimingTemplate(nmap.TimingFastest)
+	default:
+		return nil
+	}
 }
 
 // convertNmapResults converts nmap results to our internal format.
@@ -404,7 +417,7 @@ func convertNmapHost(h *nmap.Host) *Host {
 // nmap can return "open|filtered" for UDP/firewall scenarios where it cannot
 // distinguish between the two — we treat that as "open" (conservative: assume
 // the port may be reachable). "closed|filtered" is treated as "filtered".
-// Any other unrecognised value falls back to "unknown".
+// Any other unrecognized value falls back to "unknown".
 func normalizePortState(state string) string {
 	switch state {
 	case "open", "closed", "filtered", "unknown":

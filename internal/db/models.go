@@ -290,7 +290,6 @@ type OSFingerprint struct {
 	Details    map[string]interface{} `json:"details"`    // Additional OS-specific data
 }
 
-// Host represents a discovered host.
 // PortInfo holds the latest known state for a single (port, protocol) pair on a host.
 // It is computed from port_scans using DISTINCT ON so it always reflects the most
 // recent scan observation, not a historical snapshot.
@@ -302,6 +301,7 @@ type PortInfo struct {
 	LastSeen time.Time `json:"last_seen"`
 }
 
+// Host represents a discovered host.
 type Host struct {
 	ID              uuid.UUID  `db:"id" json:"id"`
 	IPAddress       IPAddr     `db:"ip_address" json:"ip_address"`

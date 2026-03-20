@@ -274,6 +274,64 @@ func (db *DB) CreateHost(ctx context.Context, hostData interface{}) (*Host, erro
 	return db.GetHost(ctx, hostID)
 }
 
+// fetchHostPorts runs the DISTINCT ON query to retrieve the latest known state
+// for each (port, protocol) pair on the given host, and populates host.Ports
+// and host.TotalPorts.
+func fetchHostPorts(ctx context.Context, db *DB, hostID uuid.UUID, host *Host) error {
+	portsQuery := `
+		SELECT DISTINCT ON (port, protocol)
+			port,
+			protocol,
+			state,
+			COALESCE(service_name, '') AS service_name,
+			scanned_at
+		FROM port_scans
+		WHERE host_id = $1
+		ORDER BY port, protocol, scanned_at DESC
+	`
+
+	portRows, err := db.QueryContext(ctx, portsQuery, hostID)
+	if err != nil {
+		return fmt.Errorf("failed to query host ports: %w", err)
+	}
+	defer func() {
+		if closeErr := portRows.Close(); closeErr != nil {
+			log.Printf("failed to close port rows: %v", closeErr)
+		}
+	}()
+
+	for portRows.Next() {
+		var pi PortInfo
+		if err := portRows.Scan(&pi.Port, &pi.Protocol, &pi.State, &pi.Service, &pi.LastSeen); err != nil {
+			return fmt.Errorf("failed to scan port row: %w", err)
+		}
+		host.TotalPorts++
+		host.Ports = append(host.Ports, pi)
+	}
+	if err := portRows.Err(); err != nil {
+		return fmt.Errorf("failed to iterate port rows: %w", err)
+	}
+
+	return nil
+}
+
+// fetchHostScanCount queries the number of completed scan jobs that produced
+// results for the given host and stores the count in host.ScanCount.
+// Failures are non-fatal and are logged rather than returned.
+func fetchHostScanCount(ctx context.Context, db *DB, hostID uuid.UUID, host *Host) {
+	scanCountQuery := `
+    SELECT COUNT(DISTINCT sj.id)
+    FROM scan_jobs sj
+    JOIN port_scans ps ON ps.job_id = sj.id
+    WHERE ps.host_id = $1
+      AND sj.status = 'completed'
+`
+	if err := db.QueryRowContext(ctx, scanCountQuery, hostID).Scan(&host.ScanCount); err != nil {
+		// non-fatal — log and continue
+		log.Printf("failed to query scan count for host %s: %v", hostID, err)
+	}
+}
+
 // GetHost retrieves a host by ID.
 func (db *DB) GetHost(ctx context.Context, id uuid.UUID) (*Host, error) {
 	query := `
@@ -343,55 +401,11 @@ func (db *DB) GetHost(ctx context.Context, id uuid.UUID) (*Host, error) {
 	assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
 	assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
 
-	// Fetch the latest known state per (port, protocol) for this host.
-	// DISTINCT ON picks the most recent scan result for each port/protocol pair,
-	// so a port that was open in a previous scan stays open until a newer scan
-	// explicitly observes it as closed or filtered.
-	portsQuery := `
-		SELECT DISTINCT ON (port, protocol)
-			port,
-			protocol,
-			state,
-			COALESCE(service_name, '') AS service_name,
-			scanned_at
-		FROM port_scans
-		WHERE host_id = $1
-		ORDER BY port, protocol, scanned_at DESC
-	`
-
-	portRows, err := db.QueryContext(ctx, portsQuery, id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query host ports: %w", err)
-	}
-	defer func() {
-		if closeErr := portRows.Close(); closeErr != nil {
-			log.Printf("failed to close port rows: %v", closeErr)
-		}
-	}()
-
-	for portRows.Next() {
-		var pi PortInfo
-		if err := portRows.Scan(&pi.Port, &pi.Protocol, &pi.State, &pi.Service, &pi.LastSeen); err != nil {
-			return nil, fmt.Errorf("failed to scan port row: %w", err)
-		}
-		host.TotalPorts++
-		host.Ports = append(host.Ports, pi)
-	}
-	if err := portRows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate port rows: %w", err)
+	if err := fetchHostPorts(ctx, db, id, host); err != nil {
+		return nil, err
 	}
 
-	scanCountQuery := `
-    SELECT COUNT(DISTINCT sj.id)
-    FROM scan_jobs sj
-    JOIN port_scans ps ON ps.job_id = sj.id
-    WHERE ps.host_id = $1
-      AND sj.status = 'completed'
-`
-	if err := db.QueryRowContext(ctx, scanCountQuery, id).Scan(&host.ScanCount); err != nil {
-		// non-fatal — log and continue
-		log.Printf("failed to query scan count for host %s: %v", id, err)
-	}
+	fetchHostScanCount(ctx, db, id, host)
 
 	return host, nil
 }
