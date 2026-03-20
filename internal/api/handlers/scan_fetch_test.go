@@ -1001,15 +1001,12 @@ func TestScanHandler_GetScan_WithAllFields(t *testing.T) {
 
 	scanName := generateUniqueScanName()
 	now := time.Now().UTC()
-	profileID := "linux-server"
-
 	scanData := map[string]interface{}{
 		"name":        scanName,
 		"description": "Comprehensive test",
 		"targets":     []string{"192.168.1.0/24"},
 		"scan_type":   "comprehensive",
 		"ports":       "1-65535",
-		"profile_id":  &profileID,
 		"created_at":  now,
 	}
 	scan, err := database.CreateScan(ctx, scanData)

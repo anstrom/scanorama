@@ -418,6 +418,16 @@ func TestMultipleScanTypes(t *testing.T) {
 
 	for _, scanType := range scanTypes {
 		t.Run(fmt.Sprintf("ScanType_%s", scanType), func(t *testing.T) {
+			// SYN scan requires raw socket privileges (root / CAP_NET_RAW).
+			// Skip gracefully when running unprivileged (e.g. CI runners).
+			if scanType == "syn" {
+				if out, err := exec.Command("id", "-u").Output(); err == nil {
+					if strings.TrimSpace(string(out)) != "0" {
+						t.Skip("Skipping SYN scan test: requires root privileges")
+					}
+				}
+			}
+
 			// Use localhost since it's the only IP with CI services running
 			testIP := testLocalhostIP
 			scanConfig := &scanning.ScanConfig{
