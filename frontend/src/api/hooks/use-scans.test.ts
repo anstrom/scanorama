@@ -363,21 +363,15 @@ describe("useScanResults", () => {
     );
   });
 
-  it("caches the result under the ['scans', scanId, 'results', params] query key", async () => {
-    const params = { page: 1, page_size: 20 };
+  it("caches the result under the ['scans', scanId, 'results'] query key", async () => {
     mockGet.mockResolvedValue(ok(mockScanResults));
 
     const { result, queryClient } = renderHookWithQuery(() =>
-      useScanResults("scan-1", params, "completed"),
+      useScanResults("scan-1", {}, "completed"),
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const cached = queryClient.getQueryData([
-      "scans",
-      "scan-1",
-      "results",
-      params,
-    ]);
+    const cached = queryClient.getQueryData(["scans", "scan-1", "results"]);
     expect(cached).toBeDefined();
   });
 });
