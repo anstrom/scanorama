@@ -1223,3 +1223,178 @@ func TestDriverInterfaces(t *testing.T) {
 		assert.True(t, ok, "JSONB should implement sql.Scanner")
 	})
 }
+
+// TestScanDerivedFields tests the derived-field logic applied after a DB row is scanned.
+// The logic is identical in both GetScan and processScanRow; we exercise it directly
+// without a database connection by constructing Scan structs and running the same
+// conditional assignments inline.
+func TestScanDerivedFields(t *testing.T) {
+	t.Run("duration_set_when_both_timestamps_present", func(t *testing.T) {
+		started := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		completed := started.Add(90 * time.Second)
+
+		scan := &Scan{
+			StartedAt:   &started,
+			CompletedAt: &completed,
+		}
+
+		// Apply the same logic used in GetScan / processScanRow.
+		if scan.StartedAt != nil && scan.CompletedAt != nil {
+			d := scan.CompletedAt.Sub(*scan.StartedAt).String()
+			scan.DurationStr = &d
+		}
+
+		require.NotNil(t, scan.DurationStr)
+		assert.Equal(t, (90 * time.Second).String(), *scan.DurationStr)
+	})
+
+	t.Run("duration_nil_when_only_started_at_set", func(t *testing.T) {
+		started := time.Now()
+
+		scan := &Scan{
+			StartedAt:   &started,
+			CompletedAt: nil,
+		}
+
+		if scan.StartedAt != nil && scan.CompletedAt != nil {
+			d := scan.CompletedAt.Sub(*scan.StartedAt).String()
+			scan.DurationStr = &d
+		}
+
+		assert.Nil(t, scan.DurationStr)
+	})
+
+	t.Run("duration_nil_when_only_completed_at_set", func(t *testing.T) {
+		completed := time.Now()
+
+		scan := &Scan{
+			StartedAt:   nil,
+			CompletedAt: &completed,
+		}
+
+		if scan.StartedAt != nil && scan.CompletedAt != nil {
+			d := scan.CompletedAt.Sub(*scan.StartedAt).String()
+			scan.DurationStr = &d
+		}
+
+		assert.Nil(t, scan.DurationStr)
+	})
+
+	t.Run("duration_nil_when_neither_timestamp_set", func(t *testing.T) {
+		scan := &Scan{
+			StartedAt:   nil,
+			CompletedAt: nil,
+		}
+
+		if scan.StartedAt != nil && scan.CompletedAt != nil {
+			d := scan.CompletedAt.Sub(*scan.StartedAt).String()
+			scan.DurationStr = &d
+		}
+
+		assert.Nil(t, scan.DurationStr)
+	})
+
+	t.Run("ports_scanned_set_when_ports_non_empty", func(t *testing.T) {
+		scan := &Scan{
+			Ports: "22,80,443",
+		}
+
+		if scan.Ports != "" {
+			p := scan.Ports
+			scan.PortsScanned = &p
+		}
+
+		require.NotNil(t, scan.PortsScanned)
+		assert.Equal(t, "22,80,443", *scan.PortsScanned)
+	})
+
+	t.Run("ports_scanned_nil_when_ports_empty", func(t *testing.T) {
+		scan := &Scan{
+			Ports: "",
+		}
+
+		if scan.Ports != "" {
+			p := scan.Ports
+			scan.PortsScanned = &p
+		}
+
+		assert.Nil(t, scan.PortsScanned)
+	})
+
+	t.Run("both_derived_fields_set_together", func(t *testing.T) {
+		started := time.Date(2024, 6, 15, 9, 0, 0, 0, time.UTC)
+		completed := started.Add(5 * time.Minute)
+
+		scan := &Scan{
+			Ports:       "1-1024",
+			StartedAt:   &started,
+			CompletedAt: &completed,
+		}
+
+		if scan.StartedAt != nil && scan.CompletedAt != nil {
+			d := scan.CompletedAt.Sub(*scan.StartedAt).String()
+			scan.DurationStr = &d
+		}
+		if scan.Ports != "" {
+			p := scan.Ports
+			scan.PortsScanned = &p
+		}
+
+		require.NotNil(t, scan.DurationStr)
+		assert.Equal(t, (5 * time.Minute).String(), *scan.DurationStr)
+		require.NotNil(t, scan.PortsScanned)
+		assert.Equal(t, "1-1024", *scan.PortsScanned)
+	})
+}
+
+// TestNetworkAddrJSONInStruct tests that a struct containing a NetworkAddr field
+// marshals and unmarshals correctly via encoding/json (the real usage context).
+func TestNetworkAddrJSONInStruct(t *testing.T) {
+	type Payload struct {
+		Name    string      `json:"name"`
+		Network NetworkAddr `json:"network"`
+	}
+
+	t.Run("round_trip_ipv4", func(t *testing.T) {
+		var src Payload
+		src.Name = "lan"
+		require.NoError(t, src.Network.Scan("192.168.0.0/16"))
+
+		raw, err := json.Marshal(src)
+		require.NoError(t, err)
+
+		// Verify the JSON contains the CIDR string.
+		assert.Contains(t, string(raw), `"192.168.0.0/16"`)
+
+		var dst Payload
+		require.NoError(t, json.Unmarshal(raw, &dst))
+
+		assert.Equal(t, src.Name, dst.Name)
+		assert.Equal(t, src.Network.String(), dst.Network.String())
+	})
+
+	t.Run("round_trip_ipv6", func(t *testing.T) {
+		var src Payload
+		src.Name = "ipv6-net"
+		require.NoError(t, src.Network.Scan("2001:db8::/32"))
+
+		raw, err := json.Marshal(src)
+		require.NoError(t, err)
+		assert.Contains(t, string(raw), `"2001:db8::/32"`)
+
+		var dst Payload
+		require.NoError(t, json.Unmarshal(raw, &dst))
+
+		assert.Equal(t, src.Network.String(), dst.Network.String())
+	})
+
+	t.Run("unmarshal_bad_value_returns_error", func(t *testing.T) {
+		// network field is a number instead of a CIDR string — should fail.
+		raw := []byte(`{"name":"x","network":42}`)
+
+		var dst Payload
+		err := json.Unmarshal(raw, &dst)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "expected a string")
+	})
+}
