@@ -43,6 +43,12 @@ const (
 
 	// Output formatting constants.
 	outputSeparatorLength = 80
+
+	// Port state constants — must match the port_scans_state_check DB constraint.
+	portStateOpen     = "open"
+	portStateClosed   = "closed"
+	portStateFiltered = "filtered"
+	portStateUnknown  = "unknown"
 )
 
 // CalculateTimeout estimates a reasonable scan timeout based on the number of
@@ -420,14 +426,14 @@ func convertNmapHost(h *nmap.Host) *Host {
 // Any other unrecognized value falls back to "unknown".
 func normalizePortState(state string) string {
 	switch state {
-	case "open", "closed", "filtered", "unknown":
+	case portStateOpen, portStateClosed, portStateFiltered, portStateUnknown:
 		return state
 	case "open|filtered":
-		return "open"
+		return portStateOpen
 	case "closed|filtered":
-		return "filtered"
+		return portStateFiltered
 	default:
-		return "unknown"
+		return portStateUnknown
 	}
 }
 

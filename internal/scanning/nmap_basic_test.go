@@ -9,10 +9,6 @@ import (
 	"github.com/Ullaakut/nmap/v3"
 )
 
-const (
-	portStateOpen = "open"
-)
-
 // TestNmapScannerCreation tests that we can create an nmap scanner.
 func TestNmapScannerCreation(t *testing.T) {
 	ctx := context.Background()
