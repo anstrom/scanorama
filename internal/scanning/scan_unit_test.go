@@ -468,7 +468,7 @@ func TestNormalizePortState_ClosedFiltered(t *testing.T) {
 
 func TestNormalizePortState_Unknown(t *testing.T) {
 	assert.Equal(t, "unknown", normalizePortState(""))
-	assert.Equal(t, "unknown", normalizePortState("unrecognised"))
+	assert.Equal(t, "unknown", normalizePortState("unrecognized"))
 	assert.Equal(t, "unknown", normalizePortState("open filtered")) // space variant
 }
 
