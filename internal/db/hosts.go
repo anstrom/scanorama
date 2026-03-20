@@ -4,6 +4,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -151,9 +152,12 @@ func (db *DB) ListHosts(ctx context.Context, filters *HostFilters, offset, limit
 			h.last_seen,
 			h.status,
 			COUNT(DISTINCT ps.id) FILTER (WHERE ps.state = 'open') as open_ports,
-			COUNT(DISTINCT ps.id) as total_ports_scanned
+			COUNT(DISTINCT ps.id) as total_ports_scanned,
+			COUNT(DISTINCT sj2.id) FILTER (WHERE sj2.status = 'completed') as scan_count
 		FROM hosts h
 		LEFT JOIN port_scans ps ON h.id = ps.host_id
+		LEFT JOIN port_scans ps2 ON h.id = ps2.host_id
+		LEFT JOIN scan_jobs sj2 ON sj2.id = ps2.job_id
 	`
 
 	// Build WHERE clause and arguments.
@@ -339,6 +343,56 @@ func (db *DB) GetHost(ctx context.Context, id uuid.UUID) (*Host, error) {
 	assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
 	assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
 
+	// Fetch the latest known state per (port, protocol) for this host.
+	// DISTINCT ON picks the most recent scan result for each port/protocol pair,
+	// so a port that was open in a previous scan stays open until a newer scan
+	// explicitly observes it as closed or filtered.
+	portsQuery := `
+		SELECT DISTINCT ON (port, protocol)
+			port,
+			protocol,
+			state,
+			COALESCE(service_name, '') AS service_name,
+			scanned_at
+		FROM port_scans
+		WHERE host_id = $1
+		ORDER BY port, protocol, scanned_at DESC
+	`
+
+	portRows, err := db.QueryContext(ctx, portsQuery, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query host ports: %w", err)
+	}
+	defer func() {
+		if closeErr := portRows.Close(); closeErr != nil {
+			log.Printf("failed to close port rows: %v", closeErr)
+		}
+	}()
+
+	for portRows.Next() {
+		var pi PortInfo
+		if err := portRows.Scan(&pi.Port, &pi.Protocol, &pi.State, &pi.Service, &pi.LastSeen); err != nil {
+			return nil, fmt.Errorf("failed to scan port row: %w", err)
+		}
+		host.TotalPorts++
+		host.Ports = append(host.Ports, pi)
+	}
+	if err := portRows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate port rows: %w", err)
+	}
+
+	scanCountQuery := `
+    SELECT COUNT(DISTINCT sj.id)
+    FROM scan_jobs sj
+    JOIN port_scans ps ON ps.job_id = sj.id
+    WHERE ps.host_id = $1
+      AND sj.status = 'completed'
+`
+	if err := db.QueryRowContext(ctx, scanCountQuery, id).Scan(&host.ScanCount); err != nil {
+		// non-fatal — log and continue
+		log.Printf("failed to query scan count for host %s: %v", id, err)
+	}
+
 	return host, nil
 }
 
@@ -483,17 +537,23 @@ func (db *DB) getHostScansCount(ctx context.Context, hostID uuid.UUID) (int64, e
 func processHostScanRow(rows *sql.Rows) (*Scan, error) {
 	scan := &Scan{}
 	var scheduleID sql.NullInt64
-	var profileID sql.NullInt64
+	var profileID sql.NullString
 	var description sql.NullString
 	var startedAt sql.NullTime
 	var completedAt sql.NullTime
 	var options string
+	// network::text returns a single CIDR string — scan into a plain string
+	// and wrap it in a slice afterward.
+	var targetsStr string
+	// '[]'::jsonb comes back from the driver as raw []byte — scan into that
+	// and unmarshal afterward; scanning directly into *[]string is unsupported.
+	var tagsJSON []byte
 
 	err := rows.Scan(
 		&scan.ID,
 		&scan.Name,
 		&description,
-		&scan.Targets,
+		&targetsStr,
 		&scan.ScanType,
 		&scan.Ports,
 		&profileID,
@@ -502,7 +562,7 @@ func processHostScanRow(rows *sql.Rows) (*Scan, error) {
 		&completedAt,
 		&scan.CreatedAt,
 		&scheduleID,
-		&scan.Tags,
+		&tagsJSON,
 		&options,
 	)
 	if err != nil {
@@ -510,11 +570,22 @@ func processHostScanRow(rows *sql.Rows) (*Scan, error) {
 	}
 
 	// Handle nullable fields.
+	scan.Targets = []string{targetsStr}
+
+	// Unmarshal tags JSON; default to empty slice on null/invalid.
+	if len(tagsJSON) > 0 {
+		if err := json.Unmarshal(tagsJSON, &scan.Tags); err != nil {
+			scan.Tags = []string{}
+		}
+	} else {
+		scan.Tags = []string{}
+	}
+
 	if description.Valid {
 		scan.Description = description.String
 	}
 	if profileID.Valid {
-		scan.ProfileID = &profileID.Int64
+		scan.ProfileID = &profileID.String
 	}
 	if startedAt.Valid {
 		scan.StartedAt = &startedAt.Time
@@ -635,11 +706,18 @@ func buildHostFilters(filters *HostFilters) (whereClause string, args []interfac
 	if filters.OSFamily != "" {
 		conditions = append(conditions, filterCondition{"h.os_family", filters.OSFamily})
 	}
-	if filters.Network != "" {
-		conditions = append(conditions, filterCondition{"h.ip_address <<", filters.Network})
-	}
-
 	whereClause, args = buildWhereClause(conditions)
+
+	if filters.Network != "" {
+		paramIdx := len(args) + 1
+		networkFragment := fmt.Sprintf("h.ip_address <<= $%d", paramIdx)
+		if whereClause == "" {
+			whereClause = fmt.Sprintf("WHERE %s", networkFragment)
+		} else {
+			whereClause += fmt.Sprintf(" AND %s", networkFragment)
+		}
+		args = append(args, filters.Network)
+	}
 
 	// Search is an ILIKE across ip_address (cast to text) and hostname.
 	// It cannot be represented as a simple equality filterCondition, so we
@@ -693,6 +771,7 @@ func (db *DB) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 		var discoveryMethod *string
 		var ignoreScanning *bool
 		var openPorts, totalPortsScanned int64
+		var scanCount int64
 
 		err := rows.Scan(
 			&host.ID,
@@ -712,6 +791,7 @@ func (db *DB) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 			&host.Status,
 			&openPorts,
 			&totalPortsScanned,
+			&scanCount,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan host row: %w", err)
@@ -731,6 +811,12 @@ func (db *DB) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 		assignStringPtr(&host.DiscoveryMethod, discoveryMethod)
 		assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
 		assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
+
+		// Wire the aggregated port counts from the list query.
+		// These are counts across all scan jobs — not latest-state — so they
+		// are only used for the list view summary numbers, not the detail panel.
+		host.TotalPorts = int(totalPortsScanned)
+		host.ScanCount = int(scanCount)
 
 		hosts = append(hosts, host)
 	}

@@ -291,6 +291,17 @@ type OSFingerprint struct {
 }
 
 // Host represents a discovered host.
+// PortInfo holds the latest known state for a single (port, protocol) pair on a host.
+// It is computed from port_scans using DISTINCT ON so it always reflects the most
+// recent scan observation, not a historical snapshot.
+type PortInfo struct {
+	Port     int       `json:"port"`
+	Protocol string    `json:"protocol"`
+	State    string    `json:"state"`
+	Service  string    `json:"service,omitempty"`
+	LastSeen time.Time `json:"last_seen"`
+}
+
 type Host struct {
 	ID              uuid.UUID  `db:"id" json:"id"`
 	IPAddress       IPAddr     `db:"ip_address" json:"ip_address"`
@@ -311,6 +322,12 @@ type Host struct {
 	FirstSeen       time.Time  `db:"first_seen" json:"first_seen"`
 	LastSeen        time.Time  `db:"last_seen" json:"last_seen"`
 	Status          string     `db:"status" json:"status"`
+	// Computed from port_scans — latest known state per (port, protocol).
+	// Ports holds the full PortInfo for every distinct (port, protocol) seen.
+	// TotalPorts is the count of distinct (port, protocol) pairs ever seen.
+	Ports      []PortInfo `db:"-" json:"-"`
+	TotalPorts int        `db:"-" json:"-"`
+	ScanCount  int        `db:"-" json:"-"`
 }
 
 // GetOSFingerprint returns the OS fingerprint information.
