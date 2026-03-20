@@ -2340,3 +2340,77 @@ func TestScanHandler_ExecuteScanAsync_ScanIDSetOnConfig(t *testing.T) {
 		"ScanConfig.ScanID must be non-nil so results are stored under the correct UUID")
 	assert.Equal(t, scanID, *capturedConfig.ScanID)
 }
+
+func TestScanHandler_StartScan_DBFailure(t *testing.T) {
+	t.Run("returns 500 when GetScan fails before status check", func(t *testing.T) {
+		h, store, ctrl := newScanHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		dbErr := fmt.Errorf("connection reset by peer")
+
+		store.EXPECT().GetScan(gomock.Any(), id).Return(nil, dbErr)
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/scans/{id}/start", h.StartScan)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/scans/%s/start", id), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("returns 500 when StartScan DB call fails", func(t *testing.T) {
+		h, store, ctrl := newScanHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		scan := makeScan(id, "Pending Scan", "pending", "connect")
+		dbErr := fmt.Errorf("deadlock detected")
+
+		store.EXPECT().GetScan(gomock.Any(), id).Return(scan, nil)
+		store.EXPECT().StartScan(gomock.Any(), id).Return(dbErr)
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/scans/{id}/start", h.StartScan)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/scans/%s/start", id), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("returns 500 when second GetScan fails after StartScan succeeds", func(t *testing.T) {
+		h, store, ctrl := newScanHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		scan := makeScan(id, "Pending Scan", "pending", "connect")
+		dbErr := fmt.Errorf("timeout reading updated row")
+
+		store.EXPECT().GetScan(gomock.Any(), id).Return(scan, nil)
+		store.EXPECT().StartScan(gomock.Any(), id).Return(nil)
+		store.EXPECT().GetScan(gomock.Any(), id).Return(nil, dbErr)
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/scans/{id}/start", h.StartScan)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/scans/%s/start", id), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("returns 404 when GetScan returns not-found error", func(t *testing.T) {
+		h, store, ctrl := newScanHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+
+		store.EXPECT().GetScan(gomock.Any(), id).Return(nil, notFoundErr("scan", id.String()))
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/scans/{id}/start", h.StartScan)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/scans/%s/start", id), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+}

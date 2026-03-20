@@ -6,7 +6,8 @@ package scanning
 
 import (
 	"context"
-
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -1055,6 +1056,233 @@ func TestPersistOSData_AllBranchesTrue(t *testing.T) {
 // TestPersistOSData_ZeroAccuracy_ConfidenceNotSet verifies the false branch of
 // `if host.OSAccuracy > 0`: when nmap reports accuracy == 0 the OSConfidence
 // pointer must remain nil (the field-setting branch must NOT fire).
+// ──────────────────────────────────────────────────────────────────────────────
+// ScanError — Error() and Unwrap()
+// ──────────────────────────────────────────────────────────────────────────────
+
+// TestScanError_Error covers all three format branches of ScanError.Error().
+func TestScanError_Error(t *testing.T) {
+	inner := fmt.Errorf("connection refused")
+
+	t.Run("op_host_port", func(t *testing.T) {
+		e := &ScanError{Op: "connect", Host: "10.0.0.1", Port: 443, Err: inner}
+		want := "connect failed for 10.0.0.1:443: connection refused"
+		assert.Equal(t, want, e.Error())
+	})
+
+	t.Run("op_host_no_port", func(t *testing.T) {
+		e := &ScanError{Op: "ping", Host: "192.168.1.5", Err: inner}
+		want := "ping failed for 192.168.1.5: connection refused"
+		assert.Equal(t, want, e.Error())
+	})
+
+	t.Run("op_only", func(t *testing.T) {
+		e := &ScanError{Op: "validate config", Err: inner}
+		want := "validate config failed: connection refused"
+		assert.Equal(t, want, e.Error())
+	})
+}
+
+// TestScanError_Unwrap verifies that Unwrap returns the wrapped error and that
+// errors.Is / errors.As work correctly through the chain.
+func TestScanError_Unwrap(t *testing.T) {
+	sentinel := fmt.Errorf("sentinel error")
+
+	t.Run("unwrap_returns_inner", func(t *testing.T) {
+		e := &ScanError{Op: "op", Err: sentinel}
+		assert.Equal(t, sentinel, e.Unwrap(), "Unwrap must return the exact wrapped error")
+	})
+
+	t.Run("errors_is_through_wrapping", func(t *testing.T) {
+		e := &ScanError{Op: "op", Err: sentinel}
+		assert.True(t, errors.Is(e, sentinel),
+			"errors.Is must find the sentinel through ScanError wrapping")
+	})
+
+	t.Run("errors_as_through_wrapping", func(t *testing.T) {
+		// Wrap a *ScanError inside a plain fmt.Errorf("%w") so that errors.As
+		// must call Unwrap() at least once to reach the *ScanError target.
+		inner := &ScanError{Op: "inner op", Err: fmt.Errorf("root cause")}
+		wrapped := fmt.Errorf("outer context: %w", inner)
+		var target *ScanError
+		assert.True(t, errors.As(wrapped, &target),
+			"errors.As must unwrap through fmt.Errorf to find the nested *ScanError")
+		assert.Equal(t, "inner op", target.Op)
+	})
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// validatePortPart — uncovered branches
+// ──────────────────────────────────────────────────────────────────────────────
+
+// TestValidatePortPart covers the prefix-only token, lowercase prefixes, and
+// the range-delegation branch that were not exercised by existing tests.
+func TestValidatePortPart(t *testing.T) {
+	cfg := &ScanConfig{Targets: []string{"192.168.1.1"}, ScanType: "connect", Ports: "80"}
+
+	t.Run("uppercase_prefix_only_T_colon", func(t *testing.T) {
+		// Bare "T:" after stripping is empty — must return nil.
+		err := cfg.validatePortPart("T:")
+		assert.NoError(t, err)
+	})
+
+	t.Run("uppercase_prefix_only_U_colon", func(t *testing.T) {
+		err := cfg.validatePortPart("U:")
+		assert.NoError(t, err)
+	})
+
+	t.Run("lowercase_t_prefix_valid_port", func(t *testing.T) {
+		// "t:80" → strip "t:" → validate "80" → nil.
+		err := cfg.validatePortPart("t:80")
+		assert.NoError(t, err)
+	})
+
+	t.Run("lowercase_u_prefix_valid_port", func(t *testing.T) {
+		err := cfg.validatePortPart("u:53")
+		assert.NoError(t, err)
+	})
+
+	t.Run("lowercase_t_prefix_only", func(t *testing.T) {
+		// "t:" after stripping is empty — must return nil.
+		err := cfg.validatePortPart("t:")
+		assert.NoError(t, err)
+	})
+
+	t.Run("lowercase_u_prefix_only", func(t *testing.T) {
+		err := cfg.validatePortPart("u:")
+		assert.NoError(t, err)
+	})
+
+	t.Run("range_delegated_to_validatePortRange_valid", func(t *testing.T) {
+		// Contains "-" → delegates to validatePortRange; valid range returns nil.
+		err := cfg.validatePortPart("80-443")
+		assert.NoError(t, err)
+	})
+
+	t.Run("range_with_prefix_delegated_valid", func(t *testing.T) {
+		// "T:80-443" → strip "T:" → "80-443" → validatePortRange → nil.
+		err := cfg.validatePortPart("T:80-443")
+		assert.NoError(t, err)
+	})
+
+	t.Run("range_delegated_to_validatePortRange_invalid", func(t *testing.T) {
+		// Contains "-" and is invalid → validatePortRange returns error.
+		err := cfg.validatePortPart("443-80")
+		assert.Error(t, err)
+	})
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// validatePortRange — all branches
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestValidatePortRange(t *testing.T) {
+	cfg := &ScanConfig{Targets: []string{"192.168.1.1"}, ScanType: "connect", Ports: "80"}
+
+	t.Run("valid_range", func(t *testing.T) {
+		err := cfg.validatePortRange("80-443")
+		assert.NoError(t, err)
+	})
+
+	t.Run("valid_range_full_span", func(t *testing.T) {
+		err := cfg.validatePortRange("0-65535")
+		assert.NoError(t, err)
+	})
+
+	t.Run("too_many_hyphens_three_parts", func(t *testing.T) {
+		// "1-2-3" splits into 3 parts → len != 2 → error.
+		err := cfg.validatePortRange("1-2-3")
+		require.Error(t, err)
+		var scanErr *ScanError
+		require.True(t, errors.As(err, &scanErr))
+		assert.Contains(t, scanErr.Err.Error(), "invalid port range format")
+	})
+
+	t.Run("invalid_start_port_non_numeric", func(t *testing.T) {
+		err := cfg.validatePortRange("abc-443")
+		require.Error(t, err)
+		var scanErr *ScanError
+		require.True(t, errors.As(err, &scanErr))
+		assert.Contains(t, scanErr.Err.Error(), "invalid start port")
+	})
+
+	t.Run("invalid_end_port_non_numeric", func(t *testing.T) {
+		err := cfg.validatePortRange("80-xyz")
+		require.Error(t, err)
+		var scanErr *ScanError
+		require.True(t, errors.As(err, &scanErr))
+		assert.Contains(t, scanErr.Err.Error(), "invalid end port")
+	})
+
+	t.Run("start_port_out_of_range", func(t *testing.T) {
+		err := cfg.validatePortRange("65536-65537")
+		require.Error(t, err)
+		var scanErr *ScanError
+		require.True(t, errors.As(err, &scanErr))
+		assert.Contains(t, scanErr.Err.Error(), "invalid port range")
+	})
+
+	t.Run("end_port_out_of_range", func(t *testing.T) {
+		err := cfg.validatePortRange("80-99999")
+		require.Error(t, err)
+		var scanErr *ScanError
+		require.True(t, errors.As(err, &scanErr))
+		assert.Contains(t, scanErr.Err.Error(), "invalid port range")
+	})
+
+	t.Run("start_greater_than_end", func(t *testing.T) {
+		err := cfg.validatePortRange("443-80")
+		require.Error(t, err)
+		var scanErr *ScanError
+		require.True(t, errors.As(err, &scanErr))
+		assert.Contains(t, scanErr.Err.Error(), "start port must be less than end port")
+	})
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Validate — validatePorts error branch
+// ──────────────────────────────────────────────────────────────────────────────
+
+// TestValidate_PortError exercises the branch in Validate where validatePorts
+// returns an error (previously uncovered at 87.5%).
+func TestValidate_PortError(t *testing.T) {
+	t.Run("invalid_single_port_non_numeric", func(t *testing.T) {
+		cfg := &ScanConfig{
+			Targets:  []string{"192.168.1.1"},
+			ScanType: "connect",
+			Ports:    "abc",
+		}
+		err := cfg.Validate()
+		require.Error(t, err)
+		var scanErr *ScanError
+		require.True(t, errors.As(err, &scanErr),
+			"Validate must propagate a *ScanError from validatePorts")
+		assert.Contains(t, scanErr.Err.Error(), "invalid port")
+	})
+
+	t.Run("invalid_port_out_of_range", func(t *testing.T) {
+		cfg := &ScanConfig{
+			Targets:  []string{"192.168.1.1"},
+			ScanType: "connect",
+			Ports:    "99999",
+		}
+		err := cfg.Validate()
+		require.Error(t, err)
+		var scanErr *ScanError
+		require.True(t, errors.As(err, &scanErr))
+		assert.Contains(t, scanErr.Err.Error(), "invalid port")
+	})
+
+	t.Run("valid_ports_no_error", func(t *testing.T) {
+		cfg := &ScanConfig{
+			Targets:  []string{"192.168.1.1"},
+			ScanType: "connect",
+			Ports:    "80,443,8080-8090",
+		}
+		assert.NoError(t, cfg.Validate())
+	})
+}
+
 func TestPersistOSData_ZeroAccuracy_ConfidenceNotSet(t *testing.T) {
 	match := nmap.OSMatch{
 		Name:     "Unknown",

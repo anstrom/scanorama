@@ -708,6 +708,269 @@ func TestScanHandler_RequestValidation_Comprehensive(t *testing.T) {
 	})
 }
 
+// ---------------------------------------------------------------------------
+// Tests for newly-added helper functions (parsePortSpec, getOptionBool,
+// WithScanMode, firstNonEmpty) and the CIDR branch of validateScanRequest.
+// ---------------------------------------------------------------------------
+
+func TestParsePortSpec(t *testing.T) {
+	tests := []struct {
+		name        string
+		ports       string
+		expectError bool
+		errorMsg    string
+	}{
+		// Valid cases
+		{
+			name:        "single plain port",
+			ports:       "80",
+			expectError: false,
+		},
+		{
+			name:        "plain port range",
+			ports:       "1024-9999",
+			expectError: false,
+		},
+		{
+			name:        "T: prefix single port",
+			ports:       "T:80",
+			expectError: false,
+		},
+		{
+			name:        "U: prefix single port",
+			ports:       "U:53",
+			expectError: false,
+		},
+		{
+			name:        "mixed prefixes and range",
+			ports:       "T:80,U:53,1024-9999",
+			expectError: false,
+		},
+		{
+			name:        "empty token between commas is ok",
+			ports:       "80,,443",
+			expectError: false,
+		},
+		{
+			name:        "boundary low port 1",
+			ports:       "1",
+			expectError: false,
+		},
+		{
+			name:        "boundary high port 65535",
+			ports:       "65535",
+			expectError: false,
+		},
+		{
+			name:        "T: prefix with range",
+			ports:       "T:1024-65535",
+			expectError: false,
+		},
+		{
+			name:        "U: prefix with range",
+			ports:       "U:1-1023",
+			expectError: false,
+		},
+		// Error cases
+		{
+			name:        "port 0 is invalid",
+			ports:       "0",
+			expectError: true,
+			errorMsg:    "must be between 1 and 65535",
+		},
+		{
+			name:        "port 65536 is invalid",
+			ports:       "65536",
+			expectError: true,
+			errorMsg:    "must be between 1 and 65535",
+		},
+		{
+			name:        "non-numeric port",
+			ports:       "abc",
+			expectError: true,
+			errorMsg:    "must be a number",
+		},
+		{
+			name:        "non-numeric in range",
+			ports:       "80-abc",
+			expectError: true,
+			errorMsg:    "must be a number",
+		},
+		{
+			name:        "port 0 with T: prefix",
+			ports:       "T:0",
+			expectError: true,
+			errorMsg:    "must be between 1 and 65535",
+		},
+		{
+			name:        "port 65536 with U: prefix",
+			ports:       "U:65536",
+			expectError: true,
+			errorMsg:    "must be between 1 and 65535",
+		},
+		{
+			name:        "range start out of bounds",
+			ports:       "0-100",
+			expectError: true,
+			errorMsg:    "must be between 1 and 65535",
+		},
+		{
+			name:        "range end out of bounds",
+			ports:       "100-65536",
+			expectError: true,
+			errorMsg:    "must be between 1 and 65535",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := parsePortSpec(tt.ports)
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestGetOptionBool(t *testing.T) {
+	t.Run("nil options returns false", func(t *testing.T) {
+		assert.False(t, getOptionBool(nil, "key"))
+	})
+
+	t.Run("key present with bool true", func(t *testing.T) {
+		opts := map[string]interface{}{"enabled": true}
+		assert.True(t, getOptionBool(opts, "enabled"))
+	})
+
+	t.Run("key present with bool false", func(t *testing.T) {
+		opts := map[string]interface{}{"enabled": false}
+		assert.False(t, getOptionBool(opts, "enabled"))
+	})
+
+	t.Run("key absent returns false", func(t *testing.T) {
+		opts := map[string]interface{}{"other": true}
+		assert.False(t, getOptionBool(opts, "missing"))
+	})
+
+	t.Run("value is non-bool string returns false", func(t *testing.T) {
+		opts := map[string]interface{}{"enabled": "true"}
+		assert.False(t, getOptionBool(opts, "enabled"))
+	})
+
+	t.Run("value is non-bool int returns false", func(t *testing.T) {
+		opts := map[string]interface{}{"enabled": 1}
+		assert.False(t, getOptionBool(opts, "enabled"))
+	})
+}
+
+func TestWithScanMode(t *testing.T) {
+	logger := createTestLogger()
+	h := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+
+	t.Run("sets scan mode and returns same handler", func(t *testing.T) {
+		result := h.WithScanMode("syn")
+		assert.Equal(t, "syn", h.scanMode)
+		// Must return the same pointer so callers can chain.
+		assert.Same(t, h, result)
+	})
+
+	t.Run("overwrites previous scan mode", func(t *testing.T) {
+		h.WithScanMode("connect")
+		assert.Equal(t, "connect", h.scanMode)
+		h.WithScanMode("aggressive")
+		assert.Equal(t, "aggressive", h.scanMode)
+	})
+
+	t.Run("empty string is accepted", func(t *testing.T) {
+		h.WithScanMode("")
+		assert.Equal(t, "", h.scanMode)
+	})
+}
+
+func TestFirstNonEmpty(t *testing.T) {
+	t.Run("returns first non-empty value", func(t *testing.T) {
+		assert.Equal(t, "a", firstNonEmpty("a", "b", "c"))
+	})
+
+	t.Run("skips leading empty strings", func(t *testing.T) {
+		assert.Equal(t, "second", firstNonEmpty("", "second", "third"))
+	})
+
+	t.Run("all empty returns empty string", func(t *testing.T) {
+		assert.Equal(t, "", firstNonEmpty("", "", ""))
+	})
+
+	t.Run("no arguments returns empty string", func(t *testing.T) {
+		assert.Equal(t, "", firstNonEmpty())
+	})
+
+	t.Run("single non-empty value", func(t *testing.T) {
+		assert.Equal(t, "only", firstNonEmpty("only"))
+	})
+
+	t.Run("single empty value returns empty string", func(t *testing.T) {
+		assert.Equal(t, "", firstNonEmpty(""))
+	})
+}
+
+func TestValidateScanRequest_CIDRTarget(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+
+	tests := []struct {
+		name        string
+		targets     []string
+		expectError bool
+	}{
+		{
+			name:        "single CIDR /24",
+			targets:     []string{"192.168.1.0/24"},
+			expectError: false,
+		},
+		{
+			name:        "single CIDR /8",
+			targets:     []string{"10.0.0.0/8"},
+			expectError: false,
+		},
+		{
+			name:        "IPv6 CIDR",
+			targets:     []string{"2001:db8::/32"},
+			expectError: false,
+		},
+		{
+			name:        "mix of IP and CIDR",
+			targets:     []string{"10.0.0.1", "192.168.0.0/16"},
+			expectError: false,
+		},
+		{
+			name:        "invalid CIDR and not plain IP",
+			targets:     []string{"not-a-cidr"},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &ScanRequest{
+				Name:     "CIDR Test",
+				Targets:  tt.targets,
+				ScanType: "connect",
+			}
+			err := handler.validateScanRequest(req)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 // Integration tests with database
 func setupScanHandlerTest(t *testing.T) (*ScanHandler, *db.DB, func()) {
 	t.Helper()
