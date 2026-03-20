@@ -45,7 +45,7 @@ func NewHostHandler(database HostStore, logger *slog.Logger, metricsManager *met
 
 // HostRequest represents a host creation/update request.
 type HostRequest struct {
-	IP          string            `json:"ip" validate:"required,ip"`
+	IP          string            `json:"ip_address" validate:"required,ip"`
 	Hostname    string            `json:"hostname,omitempty"`
 	Description string            `json:"description,omitempty"`
 	OS          string            `json:"os,omitempty"`
@@ -77,7 +77,7 @@ type HostResponse struct {
 	Metadata     map[string]string `json:"metadata,omitempty"`
 	Status       string            `json:"status"`
 	MACAddress   string            `json:"mac_address,omitempty"`
-	OpenPortNums []int             `json:"open_ports,omitempty"`
+	Ports        []db.PortInfo     `json:"ports,omitempty"`
 	FirstSeen    time.Time         `json:"first_seen"`
 	LastSeen     *time.Time        `json:"last_seen,omitempty"`
 	LastScanID   *int64            `json:"last_scan_id,omitempty"`
@@ -90,9 +90,11 @@ type HostResponse struct {
 
 // HostScanResponse represents a scan associated with a host.
 type HostScanResponse struct {
-	ID        int64      `json:"id"`
+	ID        string     `json:"id"`
 	Name      string     `json:"name"`
 	ScanType  string     `json:"scan_type"`
+	Ports     string     `json:"ports,omitempty"`
+	Targets   []string   `json:"targets,omitempty"`
 	Status    string     `json:"status"`
 	Progress  float64    `json:"progress"`
 	StartTime *time.Time `json:"start_time,omitempty"`
@@ -459,11 +461,13 @@ func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 		response.MACAddress = host.MACAddress.String()
 	}
 
-	// Note: ScanCount, TotalPorts would need additional queries
-	// or could be computed in the ListHosts query as we do in the CLI
-	response.ScanCount = 0
-	response.TotalPorts = 0
-	response.OpenPortNums = []int{}
+	response.TotalPorts = host.TotalPorts
+	response.ScanCount = host.ScanCount
+	if host.Ports != nil {
+		response.Ports = host.Ports
+	} else {
+		response.Ports = []db.PortInfo{}
+	}
 	response.Tags = []string{}
 	response.Metadata = map[string]string{}
 
@@ -473,11 +477,13 @@ func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 // scanToHostScanResponse converts a scan to host scan response format.
 func (h *HostHandler) scanToHostScanResponse(scan *db.Scan) HostScanResponse {
 	response := HostScanResponse{
-		ID:        int64(scan.ID.ID()), // Convert UUID to int64
+		ID:        scan.ID.String(),
 		Name:      scan.Name,
 		ScanType:  scan.ScanType,
+		Ports:     scan.Ports,
+		Targets:   scan.Targets,
 		Status:    scan.Status,
-		Progress:  0.0, // Would need to calculate from actual scan progress
+		Progress:  0.0, // would need live progress tracking to populate
 		CreatedAt: scan.CreatedAt,
 	}
 

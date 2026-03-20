@@ -8,8 +8,10 @@ import (
 	stderrors "errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -85,7 +87,7 @@ type ScanRequest struct {
 	ScanType    string            `json:"scan_type" validate:"required,oneof=connect syn ack udp aggressive comprehensive"` //nolint:lll
 	OSDetection bool              `json:"os_detection,omitempty"`
 	Ports       string            `json:"ports,omitempty"`
-	ProfileID   *int64            `json:"profile_id,omitempty"`
+	ProfileID   *string           `json:"profile_id,omitempty"`
 	Options     map[string]string `json:"options,omitempty"`
 	ScheduleID  *int64            `json:"schedule_id,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
@@ -99,7 +101,7 @@ type ScanResponse struct {
 	Targets     []string          `json:"targets"`
 	ScanType    string            `json:"scan_type"`
 	Ports       string            `json:"ports,omitempty"`
-	ProfileID   *int64            `json:"profile_id,omitempty"`
+	ProfileID   *string           `json:"profile_id,omitempty"`
 	Options     map[string]string `json:"options,omitempty"`
 	ScheduleID  *int64            `json:"schedule_id,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
@@ -127,16 +129,20 @@ type ScanResultsResponse struct {
 
 // ScanResult represents an individual scan result.
 type ScanResult struct {
-	ID       uuid.UUID `json:"id"`
-	HostIP   string    `json:"host_ip"`
-	Hostname string    `json:"hostname,omitempty"`
-	Port     int       `json:"port"`
-	Protocol string    `json:"protocol"`
-	State    string    `json:"state"`
-	Service  string    `json:"service,omitempty"`
-	Version  string    `json:"version,omitempty"`
-	Banner   string    `json:"banner,omitempty"`
-	ScanTime time.Time `json:"scan_time"`
+	ID           uuid.UUID `json:"id"`
+	HostIP       string    `json:"host_ip"`
+	Hostname     string    `json:"hostname,omitempty"`
+	Port         int       `json:"port"`
+	Protocol     string    `json:"protocol"`
+	State        string    `json:"state"`
+	Service      string    `json:"service,omitempty"`
+	Version      string    `json:"version,omitempty"`
+	Banner       string    `json:"banner,omitempty"`
+	ScanTime     time.Time `json:"scan_time"`
+	OSName       string    `json:"os_name,omitempty"`
+	OSFamily     string    `json:"os_family,omitempty"`
+	OSVersion    string    `json:"os_version,omitempty"`
+	OSConfidence *int      `json:"os_confidence,omitempty"`
 }
 
 // ListScans handles GET /api/v1/scans - list all scans with pagination.
@@ -477,11 +483,12 @@ func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error
 func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 	h.logger.Info("Starting async scan execution", "scan_id", scanID, "scan_name", scan.Name)
 
+	scanType := firstNonEmpty(scan.ScanType, h.scanMode, "connect")
 	scanConfig := &scanning.ScanConfig{
 		Targets:     scan.Targets,
 		Ports:       scan.Ports,
-		ScanType:    firstNonEmpty(scan.ScanType, h.scanMode, "connect"),
-		TimeoutSec:  300, // Default 5 minute timeout
+		ScanType:    scanType,
+		TimeoutSec:  scanning.CalculateTimeout(scan.Ports, len(scan.Targets), scanType),
 		OSDetection: getOptionBool(scan.Options, "os_detection"),
 		ScanID:      &scanID,
 	}
@@ -567,8 +574,53 @@ func (h *ScanHandler) validateScanRequest(req *ScanRequest) error {
 		if len(target) > maxTargetLength {
 			return fmt.Errorf("target %d too long (max %d characters)", i+1, maxTargetLength)
 		}
+		if _, _, err := net.ParseCIDR(target); err != nil {
+			if net.ParseIP(target) == nil {
+				return fmt.Errorf("target %d: %q is not a valid IP address or CIDR range", i+1, target)
+			}
+		}
 	}
 
+	if req.Ports != "" {
+		if err := parsePortSpec(req.Ports); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// parsePortSpec validates a port specification string.
+// The spec is comma-separated with optional T:/U: protocol prefixes and
+// optional hyphenated ranges (e.g. "T:80,U:53,1024-9999").
+// Every individual port value must be in the range 1–65535.
+func parsePortSpec(ports string) error {
+	tokens := strings.Split(ports, ",")
+	for _, token := range tokens {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		// Strip optional protocol prefix (T: or U:)
+		if len(token) >= 2 && (token[0] == 'T' || token[0] == 'U') && token[1] == ':' {
+			token = token[2:]
+		}
+		// Split on '-' to handle ranges; a plain port is a single-element slice.
+		parts := strings.SplitN(token, "-", 2)
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			portNum, err := strconv.Atoi(part)
+			if err != nil {
+				return fmt.Errorf("invalid port %q: must be a number", part)
+			}
+			if portNum < 1 || portNum > 65535 {
+				return fmt.Errorf("invalid port %d: must be between 1 and 65535", portNum)
+			}
+		}
+	}
 	return nil
 }
 
@@ -589,9 +641,7 @@ func (h *ScanHandler) getScanFilters(r *http.Request) db.ScanFilters {
 	}
 
 	if profileID := r.URL.Query().Get("profile_id"); profileID != "" {
-		if id, err := strconv.ParseInt(profileID, 10, 64); err == nil {
-			filters.ProfileID = &id
-		}
+		filters.ProfileID = &profileID
 	}
 
 	return filters
@@ -685,13 +735,17 @@ func getOptionBool(options map[string]interface{}, key string) bool {
 
 func (h *ScanHandler) resultToResponse(result *db.ScanResult) ScanResult {
 	return ScanResult{
-		ID:       result.ID,
-		HostIP:   result.HostIP,
-		Port:     result.Port,
-		Protocol: result.Protocol,
-		State:    result.State,
-		Service:  result.Service,
-		ScanTime: result.ScannedAt,
+		ID:           result.ID,
+		HostIP:       result.HostIP,
+		Port:         result.Port,
+		Protocol:     result.Protocol,
+		State:        result.State,
+		Service:      result.Service,
+		ScanTime:     result.ScannedAt,
+		OSName:       result.OSName,
+		OSFamily:     result.OSFamily,
+		OSVersion:    result.OSVersion,
+		OSConfidence: result.OSConfidence,
 	}
 }
 
