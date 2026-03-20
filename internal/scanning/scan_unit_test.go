@@ -6,7 +6,8 @@ package scanning
 
 import (
 	"context"
-	"os"
+
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -44,9 +45,6 @@ func hasArg(args []string, substr string) bool {
 	}
 	return false
 }
-
-// isRoot returns true when the current process runs as uid 0.
-func isRoot() bool { return os.Getuid() == 0 }
 
 // ─── buildScanOptions — scan-type branch ──────────────────────────────────────
 
@@ -315,16 +313,35 @@ func TestBuildScanOptions_MultipleTargets_NoError(t *testing.T) {
 // ─── buildScanOptions — mixed-protocol UDP port spec ─────────────────────────
 
 func TestBuildScanOptions_UDPPortSpec_InjectsUDPScan(t *testing.T) {
-	// A port spec containing "U:" should trigger an extra -sU even when
-	// ScanType is "connect" (not "udp").
+	// A port spec with U: and a privileged scan type should inject -sU.
+	cfg := &ScanConfig{
+		Targets:  []string{"127.0.0.1"},
+		Ports:    "T:80,443,U:53,161",
+		ScanType: "syn",
+	}
+	args := scanArgs(t, buildScanOptions(cfg))
+	assert.True(t, hasArg(args, "-sU"),
+		"port spec with U: prefix should add -sU for syn scan; args=%v", args)
+}
+
+func TestBuildScanOptions_UDPPortSpec_ConnectScan_StripsPrefix(t *testing.T) {
+	// Connect scan is TCP-only: T:/U: prefixes must be stripped and -sU must NOT be added.
 	cfg := &ScanConfig{
 		Targets:  []string{"127.0.0.1"},
 		Ports:    "T:80,443,U:53,161",
 		ScanType: scanTypeConnect,
 	}
 	args := scanArgs(t, buildScanOptions(cfg))
-	assert.True(t, hasArg(args, "-sU"),
-		"port spec with U: prefix should add -sU; args=%v", args)
+	assert.False(t, hasArg(args, "-sU"),
+		"connect scan with U: prefix must not add -sU; args=%v", args)
+	assert.True(t, hasArg(args, "-sT"),
+		"connect scan must still add -sT; args=%v", args)
+	// Ports should be stripped of T:/U: prefixes.
+	assert.True(t, hasArg(args, "-p"),
+		"ports flag must be present; args=%v", args)
+	portIdx := slices.Index(args, "-p")
+	assert.Equal(t, "80,443,53,161", args[portIdx+1],
+		"port spec should have T:/U: prefixes stripped; args=%v", args)
 }
 
 func TestBuildScanOptions_TCPOnlyPortSpec_NoUDPFlag(t *testing.T) {
@@ -338,73 +355,121 @@ func TestBuildScanOptions_TCPOnlyPortSpec_NoUDPFlag(t *testing.T) {
 		"TCP-only port spec must not inject -sU; args=%v", args)
 }
 
-// ─── resolveScanType ──────────────────────────────────────────────────────────
+// ─── CalculateTimeout ────────────────────────────────────────────────────────
 
-func TestResolveScanType_ConnectPassthrough(t *testing.T) {
-	assert.Equal(t, "connect", resolveScanType("connect"))
+func TestCalculateTimeout_SmallPortList(t *testing.T) {
+	// 3 ports, 1 target, connect → floor applies
+	got := CalculateTimeout("22,80,443", 1, "connect")
+	assert.Equal(t, minTimeoutSeconds, got,
+		"small port list should hit the floor")
 }
 
-func TestResolveScanType_ACKPassthrough(t *testing.T) {
-	// "ack" is not in the rootRequired map — always passes through.
-	assert.Equal(t, "ack", resolveScanType("ack"))
+func TestCalculateTimeout_TypicalProfile(t *testing.T) {
+	// 19 ports (Linux server profile), 1 target, syn → 19s < floor(60s)
+	ports := "T:21,22,25,53,80,111,143,443,465,587,2049,3306,5432,6379,8080,8443,9200,9300,27017"
+	got := CalculateTimeout(ports, 1, "syn")
+	assert.Equal(t, minTimeoutSeconds, got,
+		"19 ports × 1 target = 19s which is below the floor; expect floor")
 }
 
-func TestResolveScanType_UDPPassthrough(t *testing.T) {
-	assert.Equal(t, "udp", resolveScanType("udp"))
+func TestCalculateTimeout_FullPortRange_SingleTarget(t *testing.T) {
+	// 1-65535 = 65535 ports, connect scan, 1 target → capped at 3600s
+	got := CalculateTimeout("1-65535", 1, "connect")
+	assert.Equal(t, 3600, got, "full range single target should hit 1h cap")
 }
 
-func TestResolveScanType_EmptyPassthrough(t *testing.T) {
-	assert.Equal(t, "", resolveScanType(""))
+func TestCalculateTimeout_FullPortRange_MultiTarget(t *testing.T) {
+	got := CalculateTimeout("1-65535", 10, "connect")
+	assert.Equal(t, 3600, got, "full range multi-target should still be capped at 1h")
 }
 
-func TestResolveScanType_UnknownPassthrough(t *testing.T) {
-	assert.Equal(t, "stealth", resolveScanType("stealth"))
+func TestCalculateTimeout_UDPMultiplier(t *testing.T) {
+	// 1-1000 = 1000 ports × 1 target → 1000s TCP, 4000s UDP (capped to 3600s).
+	tcp := CalculateTimeout("1-1000", 1, "connect")
+	udp := CalculateTimeout("1-1000", 1, "udp")
+	assert.Equal(t, 1000, tcp, "1000 ports × 1 target TCP = 1000s")
+	assert.Equal(t, 3600, udp, "1000 ports × 1 target UDP = 4000s, capped to 3600s")
+
+	// Use a smaller range to verify the 4× factor without hitting the cap.
+	tcpSmall := CalculateTimeout("1-100", 1, "connect")
+	udpSmall := CalculateTimeout("1-100", 1, "udp")
+	assert.Equal(t, tcpSmall*4, udpSmall, "UDP should be 4× TCP for ranges that don't hit the cap")
 }
 
-func TestResolveScanType_SYN_AsRoot(t *testing.T) {
-	if !isRoot() {
-		t.Skip("requires root uid")
+func TestCalculateTimeout_MixedUDP(t *testing.T) {
+	// Both 6-port specs hit the floor at 60s — use a larger range to see the 4× effect.
+	pure := CalculateTimeout("1-100", 1, "syn")
+	// Simulate a mixed spec by using enough ports that the multiplier pushes above the cap.
+	mixed := CalculateTimeout("T:1-100,U:1-100", 1, "syn")
+	assert.Greater(t, mixed, pure, "mixed T:/U: spec should produce a longer timeout than TCP-only")
+}
+
+func TestCalculateTimeout_AggressiveOverhead(t *testing.T) {
+	connect := CalculateTimeout("1-100", 1, "connect")
+	aggressive := CalculateTimeout("1-100", 1, "aggressive")
+	// Aggressive adds 50% — but both may be at the floor.
+	assert.GreaterOrEqual(t, aggressive, connect,
+		"aggressive scan should never be faster than connect")
+}
+
+func TestCalculateTimeout_Floor(t *testing.T) {
+	got := CalculateTimeout("80", 1, "connect")
+	assert.Equal(t, minTimeoutSeconds, got, "single port must hit the floor")
+}
+
+func TestCalculateTimeout_ScriptedFloor(t *testing.T) {
+	// Aggressive and comprehensive have a higher floor (300s) because NSE
+	// scripts routinely run longer than the standard 60s floor.
+	for _, scanType := range []string{"aggressive", "comprehensive"} {
+		got := CalculateTimeout("22,80,443", 1, scanType)
+		assert.Equal(t, minTimeoutSecondsScripted, got,
+			"%s scan on 3 ports should hit the scripted floor (%ds), got %d",
+			scanType, minTimeoutSecondsScripted, got)
 	}
-	assert.Equal(t, "syn", resolveScanType("syn"),
-		"root: 'syn' should be kept as-is")
+	// Standard scan types must NOT use the scripted floor.
+	for _, scanType := range []string{"connect", "syn", "udp"} {
+		got := CalculateTimeout("22,80,443", 1, scanType)
+		assert.Equal(t, minTimeoutSeconds, got,
+			"%s scan on 3 ports should hit the standard floor (%ds), got %d",
+			scanType, minTimeoutSeconds, got)
+	}
 }
 
-func TestResolveScanType_SYN_NotRoot_FallsBackToConnect(t *testing.T) {
-	if isRoot() {
-		t.Skip("requires non-root uid")
-	}
-	assert.Equal(t, scanTypeConnect, resolveScanType("syn"),
-		"non-root: 'syn' should fall back to 'connect'")
+func TestCalculateTimeout_EmptyPorts(t *testing.T) {
+	// Empty port string → falls back to 1000-port default
+	got := CalculateTimeout("", 1, "connect")
+	assert.Equal(t, 1000, got)
 }
 
-func TestResolveScanType_Aggressive_AsRoot(t *testing.T) {
-	if !isRoot() {
-		t.Skip("requires root uid")
-	}
-	assert.Equal(t, "aggressive", resolveScanType("aggressive"))
+func TestCalculateTimeout_ZeroTargets(t *testing.T) {
+	// Zero targets treated as 1
+	got := CalculateTimeout("22,80", 0, "connect")
+	assert.Equal(t, minTimeoutSeconds, got)
 }
 
-func TestResolveScanType_Aggressive_NotRoot_FallsBackToConnect(t *testing.T) {
-	if isRoot() {
-		t.Skip("requires non-root uid")
+// ─── normalizePortState ───────────────────────────────────────────────────────
+
+func TestNormalizePortState_KnownStates(t *testing.T) {
+	for _, state := range []string{"open", "closed", "filtered", "unknown"} {
+		assert.Equal(t, state, normalizePortState(state),
+			"known state %q should pass through unchanged", state)
 	}
-	assert.Equal(t, scanTypeConnect, resolveScanType("aggressive"),
-		"non-root: 'aggressive' should fall back to 'connect'")
 }
 
-func TestResolveScanType_Comprehensive_AsRoot(t *testing.T) {
-	if !isRoot() {
-		t.Skip("requires root uid")
-	}
-	assert.Equal(t, "comprehensive", resolveScanType("comprehensive"))
+func TestNormalizePortState_OpenFiltered(t *testing.T) {
+	// UDP ports with no response are reported as "open|filtered" by nmap.
+	// We treat them conservatively as "open".
+	assert.Equal(t, "open", normalizePortState("open|filtered"))
 }
 
-func TestResolveScanType_Comprehensive_NotRoot_FallsBackToConnect(t *testing.T) {
-	if isRoot() {
-		t.Skip("requires non-root uid")
-	}
-	assert.Equal(t, scanTypeConnect, resolveScanType("comprehensive"),
-		"non-root: 'comprehensive' should fall back to 'connect'")
+func TestNormalizePortState_ClosedFiltered(t *testing.T) {
+	assert.Equal(t, "filtered", normalizePortState("closed|filtered"))
+}
+
+func TestNormalizePortState_Unknown(t *testing.T) {
+	assert.Equal(t, "unknown", normalizePortState(""))
+	assert.Equal(t, "unknown", normalizePortState("unrecognised"))
+	assert.Equal(t, "unknown", normalizePortState("open filtered")) // space variant
 }
 
 // ─── FixedResourceManager.Close ───────────────────────────────────────────────
