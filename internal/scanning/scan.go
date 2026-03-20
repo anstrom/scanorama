@@ -8,7 +8,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"net"
-	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,14 +22,15 @@ import (
 
 // Constants for scan configuration validation.
 const (
-	minTimeoutSeconds     = 5
-	mediumTimeoutSeconds  = 15
-	maxConcurrency        = 20
-	ipv6CIDRBits          = 128
-	defaultTargetCapacity = 10
-	nullMethodValue       = "NULL"
-	scanTypeConnect       = "connect"
-	scanTypeAggressive    = "aggressive"
+	minTimeoutSeconds         = 60
+	minTimeoutSecondsScripted = 300 // aggressive/comprehensive run NSE scripts
+	mediumTimeoutSeconds      = 300
+	maxConcurrency            = 20
+	ipv6CIDRBits              = 128
+	defaultTargetCapacity     = 10
+	nullMethodValue           = "NULL"
+	scanTypeConnect           = "connect"
+	scanTypeAggressive        = "aggressive"
 )
 
 const (
@@ -40,7 +41,106 @@ const (
 	outputSeparatorLength = 80
 )
 
+// CalculateTimeout estimates a reasonable scan timeout based on the number of
+// ports, targets, and scan type.
+//
+// Baseline: 1 second per port per target for TCP connect.
+// UDP is ~4× slower due to retransmits and lack of RST responses.
+// A floor of minTimeoutSeconds and a ceiling of 1 hour are applied.
+func CalculateTimeout(ports string, targetCount int, scanType string) int {
+	portCount := countPorts(ports)
+	if portCount <= 0 {
+		portCount = 1000 // nmap default
+	}
+	if targetCount <= 0 {
+		targetCount = 1
+	}
+
+	// Base: ~1s per port per target for TCP connect at T3 timing.
+	seconds := portCount * targetCount
+
+	// UDP is significantly slower — retransmit delays add up.
+	hasUDP := strings.Contains(ports, "U:")
+	if scanType == "udp" || hasUDP {
+		seconds = seconds * 4
+	}
+
+	// Aggressive/comprehensive scan types do service detection and scripting —
+	// add 50% overhead on the base count, and use a higher floor because NSE
+	// scripts routinely take longer than 60s even on a small number of ports.
+	isScripted := scanType == scanTypeAggressive || scanType == "comprehensive"
+	if isScripted {
+		seconds = seconds * 3 / 2
+	}
+
+	floor := minTimeoutSeconds
+	if isScripted {
+		floor = minTimeoutSecondsScripted
+	}
+	if seconds < floor {
+		seconds = floor
+	}
+	const maxTimeoutSeconds = 3600
+	if seconds > maxTimeoutSeconds {
+		seconds = maxTimeoutSeconds
+	}
+	return seconds
+}
+
+// countPorts counts the total number of ports in a port specification,
+// handling comma-separated values, ranges (e.g. "1-1024"), and T:/U: prefixes.
+func countPorts(ports string) int {
+	total := 0
+	for _, part := range strings.Split(ports, ",") {
+		part = strings.TrimSpace(part)
+		// Strip protocol prefix.
+		for _, prefix := range []string{"T:", "U:", "t:", "u:"} {
+			if strings.HasPrefix(part, prefix) {
+				part = part[len(prefix):]
+				break
+			}
+		}
+		if part == "" {
+			continue
+		}
+		if strings.Contains(part, "-") {
+			bounds := strings.SplitN(part, "-", 2)
+			lo, err1 := strconv.Atoi(strings.TrimSpace(bounds[0]))
+			hi, err2 := strconv.Atoi(strings.TrimSpace(bounds[1]))
+			if err1 == nil && err2 == nil && hi >= lo {
+				total += hi - lo + 1
+			} else {
+				total++ // malformed range — count as 1
+			}
+		} else {
+			total++
+		}
+	}
+	return total
+}
+
 // RunScan is a convenience wrapper around RunScanWithContext that uses a background context.
+
+// stripProtocolPrefixes removes nmap mixed-protocol prefixes (T: and U:) from a
+// port specification, returning a plain comma-separated port list suitable for a
+// TCP-only connect scan.  Example: "T:22,80,U:53,161" → "22,80,53,161".
+func stripProtocolPrefixes(ports string) string {
+	var out []string
+	for _, part := range strings.Split(ports, ",") {
+		part = strings.TrimSpace(part)
+		for _, prefix := range []string{"T:", "U:", "t:", "u:"} {
+			if strings.HasPrefix(part, prefix) {
+				part = part[len(prefix):]
+				break
+			}
+		}
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return strings.Join(out, ",")
+}
+
 func RunScan(config *ScanConfig) (*ScanResult, error) {
 	return RunScanWithContext(context.Background(), config, nil)
 }
@@ -64,10 +164,8 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 	logging.Info("Starting scan operation",
 		"scan_type", config.ScanType,
 		"target_count", len(config.Targets),
-		"ports", config.Ports)
-
-	// Resolve scan type, downgrading to connect scan when root is required but not available.
-	config.ScanType = resolveScanType(config.ScanType)
+		"ports", config.Ports,
+		"timeout_sec", config.TimeoutSec)
 
 	// Validate the configuration
 	if err := validateScanConfig(config); err != nil {
@@ -154,14 +252,25 @@ func createAndRunScanner(ctx context.Context, config *ScanConfig) (*nmap.Run, er
 
 // buildScanOptions creates nmap options based on scan configuration.
 func buildScanOptions(config *ScanConfig) []nmap.Option {
+	// Mixed-protocol support: if the port spec contains UDP ports (e.g. "T:22,80,U:53,161"),
+	// add an explicit UDP scan so nmap handles both TCP and UDP in a single run.
+	// Skip when using connect scan (-sT): UDP scanning always requires root (-sU),
+	// and combining -sU with -sT produces no results when running unprivileged.
+	// Strip the T:/U: protocol prefixes from the port spec in that case so nmap
+	// doesn't complain about the mixed-protocol syntax without a UDP scan mode.
+	hasUDP := strings.Contains(config.Ports, "U:")
+	if hasUDP && config.ScanType == scanTypeConnect {
+		// Resolve before building the options slice to avoid index mutation.
+		config.Ports = stripProtocolPrefixes(config.Ports)
+		hasUDP = false
+	}
+
 	options := []nmap.Option{
 		nmap.WithTargets(config.Targets...),
 		nmap.WithPorts(config.Ports),
 	}
 
-	// Mixed-protocol support: if the port spec contains UDP ports (e.g. "T:22,80,U:53,161"),
-	// add an explicit UDP scan so nmap handles both TCP and UDP in a single run.
-	if strings.Contains(config.Ports, "U:") {
+	if hasUDP {
 		options = append(options, nmap.WithUDPScan())
 	}
 
@@ -216,6 +325,13 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 		}
 	}
 
+	// Pass --host-timeout to nmap so it enforces its own deadline even if the
+	// Go context is cancelled or the parent process dies. Use the same value
+	// as the scan's TimeoutSec so the two are in sync.
+	if config.TimeoutSec > 0 {
+		options = append(options, nmap.WithHostTimeout(time.Duration(config.TimeoutSec)*time.Second))
+	}
+
 	// Add host discovery options for better reliability and useful scanning options
 	options = append(options,
 		nmap.WithSkipHostDiscovery(), // Skip ping and go straight to port scan
@@ -223,23 +339,6 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 	)
 
 	return options
-}
-
-// resolveScanType returns the scan type to use, falling back to "connect" when the
-// requested type requires raw-socket / root privileges and the process is not root.
-func resolveScanType(requested string) string {
-	rootRequired := map[string]bool{
-		"syn":              true,
-		scanTypeAggressive: true,
-		"comprehensive":    true,
-	}
-	if rootRequired[requested] && os.Getuid() != 0 {
-		logging.Warn("scan type requires root privileges, falling back to connect scan",
-			"requested", requested,
-			"effective", scanTypeConnect)
-		return scanTypeConnect
-	}
-	return requested
 }
 
 // convertNmapResults converts nmap results to our internal format.
@@ -277,7 +376,7 @@ func convertNmapHost(h *nmap.Host) *Host {
 		port := Port{
 			Number:      p.ID,
 			Protocol:    p.Protocol,
-			State:       p.State.State,
+			State:       normalizePortState(p.State.State),
 			Service:     p.Service.Name,
 			Version:     p.Service.Version,
 			ServiceInfo: p.Service.Product,
@@ -297,6 +396,26 @@ func convertNmapHost(h *nmap.Host) *Host {
 	}
 
 	return host
+}
+
+// normalizePortState maps nmap compound states to the four values allowed by
+// the port_scans_state_check DB constraint: open, closed, filtered, unknown.
+//
+// nmap can return "open|filtered" for UDP/firewall scenarios where it cannot
+// distinguish between the two — we treat that as "open" (conservative: assume
+// the port may be reachable). "closed|filtered" is treated as "filtered".
+// Any other unrecognised value falls back to "unknown".
+func normalizePortState(state string) string {
+	switch state {
+	case "open", "closed", "filtered", "unknown":
+		return state
+	case "open|filtered":
+		return "open"
+	case "closed|filtered":
+		return "filtered"
+	default:
+		return "unknown"
+	}
 }
 
 // validateScanConfig verifies that all scan parameters are valid.
