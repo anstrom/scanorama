@@ -6,7 +6,7 @@ package discovery
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"strings"
 	"time"
@@ -161,26 +161,25 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 	targets, err := e.generateTargetsFromCIDR(job.Network.IPNet, maxHosts)
 	if err != nil {
 		job.Status = db.DiscoveryJobStatusFailed
-		log.Printf("Failed to generate targets: %v", err)
+		slog.Error("failed to generate targets", "error", err)
 		return
 	}
 
 	if len(targets) == 0 {
 		job.Status = db.DiscoveryJobStatusCompleted
-		log.Printf("No targets to discover.")
+		slog.Info("no targets to discover")
 		return
 	}
 
 	// Calculate dynamic timeout based on target count
 	dynamicTimeout := e.calculateDynamicTimeout(len(targets), config.Timeout)
-	log.Printf("Starting nmap discovery with %d targets, method=%s, timeout=%v",
-		len(targets), config.Method, dynamicTimeout)
+	slog.Info("starting nmap discovery", "targets", len(targets), "method", config.Method, "timeout", dynamicTimeout)
 
 	// Use nmap for host discovery with generated targets
 	discoveredHosts, err := e.nmapDiscoveryWithTargets(ctx, targets, config, dynamicTimeout)
 	if err != nil {
 		job.Status = db.DiscoveryJobStatusFailed
-		log.Printf("Discovery failed: %v", err)
+		slog.Error("discovery failed", "error", err)
 		return
 	}
 
@@ -188,16 +187,16 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 	if len(discoveredHosts) > 0 {
 		err = e.saveDiscoveredHosts(ctx, discoveredHosts)
 		if err != nil {
-			log.Printf("Warning: Failed to save some discovered hosts: %v", err)
+			slog.Warn("failed to save some discovered hosts", "error", err)
 		} else {
-			log.Printf("Saved %d discovered hosts to database", len(discoveredHosts))
+			slog.Info("saved discovered hosts to database", "count", len(discoveredHosts))
 		}
 	}
 
 	// Update job with results
 	job.HostsResponsive = len(discoveredHosts)
 	job.HostsDiscovered = len(discoveredHosts)
-	log.Printf("Discovery completed. Found %d hosts.", job.HostsDiscovered)
+	slog.Info("discovery completed", "hosts_discovered", job.HostsDiscovered)
 }
 
 // calculateDynamicTimeout calculates timeout based on network size and base timeout.
@@ -319,7 +318,7 @@ func (e *Engine) nmapDiscoveryWithTargets(ctx context.Context, targets []string,
 	}
 
 	if warnings != nil && len(*warnings) > 0 {
-		log.Printf("Discovery scan completed with warnings: %v", *warnings)
+		slog.Warn("discovery scan completed with warnings", "warnings", *warnings)
 	}
 
 	// Convert nmap results to discovery results
@@ -420,7 +419,7 @@ func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob)
 	// Check if context is canceled before finalizing
 	select {
 	case <-ctx.Done():
-		log.Printf("Discovery finalization canceled for job %s", job.ID)
+		slog.Warn("discovery finalization canceled", "job_id", job.ID)
 		return
 	default:
 	}
@@ -432,9 +431,9 @@ func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob)
 	}
 
 	if err := e.saveDiscoveryJob(ctx, job); err != nil {
-		log.Printf("Error saving discovery job completion: %v", err)
+		slog.Error("error saving discovery job completion", "error", err)
 	} else {
-		log.Printf("Discovery job %s finalized successfully", job.ID)
+		slog.Info("discovery job finalized", "job_id", job.ID)
 	}
 }
 
@@ -513,7 +512,7 @@ func (e *Engine) saveDiscoveredHosts(ctx context.Context, results []Result) erro
 
 		if err != nil && err.Error() != sqlNoRowsError {
 			// Some other error occurred
-			log.Printf("Error checking existing host %s: %v", result.IPAddress, err)
+			slog.Error("error checking existing host", "ip", result.IPAddress, "error", err)
 			errors = append(errors, fmt.Sprintf("failed to check host %s: %v", result.IPAddress, err))
 			continue
 		}
@@ -534,7 +533,7 @@ func (e *Engine) saveDiscoveredHosts(ctx context.Context, results []Result) erro
 				result.Method)
 
 			if err != nil {
-				log.Printf("Failed to update host %s: %v", result.IPAddress, err)
+				slog.Warn("failed to update host", "ip", result.IPAddress, "error", err)
 				errors = append(errors, fmt.Sprintf("failed to update host %s: %v", result.IPAddress, err))
 			}
 		} else {
@@ -549,7 +548,7 @@ func (e *Engine) saveDiscoveredHosts(ctx context.Context, results []Result) erro
 				result.Method)
 
 			if err != nil {
-				log.Printf("Failed to insert host %s: %v", result.IPAddress, err)
+				slog.Warn("failed to insert host", "ip", result.IPAddress, "error", err)
 				errors = append(errors, fmt.Sprintf("failed to insert host %s: %v", result.IPAddress, err))
 			}
 		}
