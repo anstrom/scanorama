@@ -248,8 +248,8 @@ $$ LANGUAGE plpgsql;
 DELETE FROM networks
 WHERE (name, cidr::text) IN (
     ('Local Network', '192.168.1.0/24'),
-    ('DMZ Network',   '10.0.0.0/8'),
-    ('Test Network',  '172.16.0.0/12')
+    ('DMZ Network',   '10.0.1.0/24'),
+    ('Test Network',  '172.16.0.0/24')
 );
 
 -- ============================================================

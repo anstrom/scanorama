@@ -425,7 +425,7 @@ func TestScanHandler_GetScan_ValidID(t *testing.T) {
 	scanData := map[string]interface{}{
 		"name":        scanName,
 		"description": "Test scan description",
-		"targets":     []string{"192.168.1.0/24"},
+		"targets":     []string{generateUniqueCIDR(40)},
 		"scan_type":   "connect",
 		"ports":       "22,80,443",
 		"status":      "pending",
@@ -999,7 +999,7 @@ func TestScanHandler_GetScan_WithAllFields(t *testing.T) {
 	scanData := map[string]interface{}{
 		"name":        scanName,
 		"description": "Comprehensive test",
-		"targets":     []string{"192.168.1.0/24"},
+		"targets":     []string{generateUniqueCIDR(41)},
 		"scan_type":   "comprehensive",
 		"ports":       "1-65535",
 		"created_at":  now,

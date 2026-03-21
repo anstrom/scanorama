@@ -380,6 +380,12 @@ func TestNetworkService_CreateGetUpdateDelete_Integration(t *testing.T) {
 	service := NewNetworkService(database)
 	ctx := context.Background()
 
+	// Remove any stale data from a previous run that may have left these
+	// names/CIDRs behind (e.g. if the test failed before its own Delete step).
+	_, _ = database.Exec(
+		`DELETE FROM networks WHERE name IN ('Test Network', 'Updated Network')` +
+			` OR cidr IN ('10.0.0.0/24', '10.0.1.0/24')`)
+
 	// Test Create
 	network, err := service.CreateNetwork(
 		ctx,
@@ -547,6 +553,11 @@ func TestNetworkService_SeedNetworksFromConfig_Integration(t *testing.T) {
 
 	service := NewNetworkService(database)
 	ctx := context.Background()
+
+	// Remove any stale rows from previous runs so the upsert path starts clean.
+	_, _ = database.Exec(
+		`DELETE FROM networks WHERE name IN ('Seed Network 1', 'Seed Network 2')` +
+			` OR cidr IN ('172.16.0.0/24', '172.16.1.0/24')`)
 
 	tests := []struct {
 		name        string

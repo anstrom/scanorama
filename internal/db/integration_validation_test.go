@@ -172,7 +172,7 @@ func TestTableSchemaAssumptions(t *testing.T) {
 		reason string
 	}{
 		{"hosts", "ignore_scanning", "Used in hosts filtering queries"},
-		{"scan_jobs", "target_id", "Used to join with hosts table"},
+		{"scan_jobs", "network_id", "Replaced target_id after migration 011 (unify networks)"},
 		{"hosts", "ip_address", "Primary identifier for hosts"},
 		{"hosts", "status", "Used for filtering active hosts"},
 		{"port_scans", "host_id", "Used to join with hosts table"},
