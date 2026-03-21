@@ -1057,56 +1057,56 @@ func TestPersistOSData_AllBranchesTrue(t *testing.T) {
 // `if host.OSAccuracy > 0`: when nmap reports accuracy == 0 the OSConfidence
 // pointer must remain nil (the field-setting branch must NOT fire).
 // ──────────────────────────────────────────────────────────────────────────────
-// ScanError — Error() and Unwrap()
+// ExecError — Error() and Unwrap()
 // ──────────────────────────────────────────────────────────────────────────────
 
-// TestScanError_Error covers all three format branches of ScanError.Error().
-func TestScanError_Error(t *testing.T) {
+// TestExecError_Error covers all three format branches of ExecError.Error().
+func TestExecError_Error(t *testing.T) {
 	inner := fmt.Errorf("connection refused")
 
 	t.Run("op_host_port", func(t *testing.T) {
-		e := &ScanError{Op: "connect", Host: "10.0.0.1", Port: 443, Err: inner}
+		e := &ExecError{Op: "connect", Host: "10.0.0.1", Port: 443, Err: inner}
 		want := "connect failed for 10.0.0.1:443: connection refused"
 		assert.Equal(t, want, e.Error())
 	})
 
 	t.Run("op_host_no_port", func(t *testing.T) {
-		e := &ScanError{Op: "ping", Host: "192.168.1.5", Err: inner}
+		e := &ExecError{Op: "ping", Host: "192.168.1.5", Err: inner}
 		want := "ping failed for 192.168.1.5: connection refused"
 		assert.Equal(t, want, e.Error())
 	})
 
 	t.Run("op_only", func(t *testing.T) {
-		e := &ScanError{Op: "validate config", Err: inner}
+		e := &ExecError{Op: "validate config", Err: inner}
 		want := "validate config failed: connection refused"
 		assert.Equal(t, want, e.Error())
 	})
 }
 
-// TestScanError_Unwrap verifies that Unwrap returns the wrapped error and that
+// TestExecError_Unwrap verifies that Unwrap returns the wrapped error and that
 // errors.Is / errors.As work correctly through the chain.
-func TestScanError_Unwrap(t *testing.T) {
+func TestExecError_Unwrap(t *testing.T) {
 	sentinel := fmt.Errorf("sentinel error")
 
 	t.Run("unwrap_returns_inner", func(t *testing.T) {
-		e := &ScanError{Op: "op", Err: sentinel}
+		e := &ExecError{Op: "op", Err: sentinel}
 		assert.Equal(t, sentinel, e.Unwrap(), "Unwrap must return the exact wrapped error")
 	})
 
 	t.Run("errors_is_through_wrapping", func(t *testing.T) {
-		e := &ScanError{Op: "op", Err: sentinel}
+		e := &ExecError{Op: "op", Err: sentinel}
 		assert.True(t, errors.Is(e, sentinel),
-			"errors.Is must find the sentinel through ScanError wrapping")
+			"errors.Is must find the sentinel through ExecError wrapping")
 	})
 
 	t.Run("errors_as_through_wrapping", func(t *testing.T) {
-		// Wrap a *ScanError inside a plain fmt.Errorf("%w") so that errors.As
-		// must call Unwrap() at least once to reach the *ScanError target.
-		inner := &ScanError{Op: "inner op", Err: fmt.Errorf("root cause")}
+		// Wrap a *ExecError inside a plain fmt.Errorf("%w") so that errors.As
+		// must call Unwrap() at least once to reach the *ExecError target.
+		inner := &ExecError{Op: "inner op", Err: fmt.Errorf("root cause")}
 		wrapped := fmt.Errorf("outer context: %w", inner)
-		var target *ScanError
+		var target *ExecError
 		assert.True(t, errors.As(wrapped, &target),
-			"errors.As must unwrap through fmt.Errorf to find the nested *ScanError")
+			"errors.As must unwrap through fmt.Errorf to find the nested *ExecError")
 		assert.Equal(t, "inner op", target.Op)
 	})
 }
@@ -1193,7 +1193,7 @@ func TestValidatePortRange(t *testing.T) {
 		// "1-2-3" splits into 3 parts → len != 2 → error.
 		err := cfg.validatePortRange("1-2-3")
 		require.Error(t, err)
-		var scanErr *ScanError
+		var scanErr *ExecError
 		require.True(t, errors.As(err, &scanErr))
 		assert.Contains(t, scanErr.Err.Error(), "invalid port range format")
 	})
@@ -1201,7 +1201,7 @@ func TestValidatePortRange(t *testing.T) {
 	t.Run("invalid_start_port_non_numeric", func(t *testing.T) {
 		err := cfg.validatePortRange("abc-443")
 		require.Error(t, err)
-		var scanErr *ScanError
+		var scanErr *ExecError
 		require.True(t, errors.As(err, &scanErr))
 		assert.Contains(t, scanErr.Err.Error(), "invalid start port")
 	})
@@ -1209,7 +1209,7 @@ func TestValidatePortRange(t *testing.T) {
 	t.Run("invalid_end_port_non_numeric", func(t *testing.T) {
 		err := cfg.validatePortRange("80-xyz")
 		require.Error(t, err)
-		var scanErr *ScanError
+		var scanErr *ExecError
 		require.True(t, errors.As(err, &scanErr))
 		assert.Contains(t, scanErr.Err.Error(), "invalid end port")
 	})
@@ -1217,7 +1217,7 @@ func TestValidatePortRange(t *testing.T) {
 	t.Run("start_port_out_of_range", func(t *testing.T) {
 		err := cfg.validatePortRange("65536-65537")
 		require.Error(t, err)
-		var scanErr *ScanError
+		var scanErr *ExecError
 		require.True(t, errors.As(err, &scanErr))
 		assert.Contains(t, scanErr.Err.Error(), "invalid port range")
 	})
@@ -1225,7 +1225,7 @@ func TestValidatePortRange(t *testing.T) {
 	t.Run("end_port_out_of_range", func(t *testing.T) {
 		err := cfg.validatePortRange("80-99999")
 		require.Error(t, err)
-		var scanErr *ScanError
+		var scanErr *ExecError
 		require.True(t, errors.As(err, &scanErr))
 		assert.Contains(t, scanErr.Err.Error(), "invalid port range")
 	})
@@ -1233,7 +1233,7 @@ func TestValidatePortRange(t *testing.T) {
 	t.Run("start_greater_than_end", func(t *testing.T) {
 		err := cfg.validatePortRange("443-80")
 		require.Error(t, err)
-		var scanErr *ScanError
+		var scanErr *ExecError
 		require.True(t, errors.As(err, &scanErr))
 		assert.Contains(t, scanErr.Err.Error(), "start port must be less than end port")
 	})
@@ -1254,9 +1254,9 @@ func TestValidate_PortError(t *testing.T) {
 		}
 		err := cfg.Validate()
 		require.Error(t, err)
-		var scanErr *ScanError
+		var scanErr *ExecError
 		require.True(t, errors.As(err, &scanErr),
-			"Validate must propagate a *ScanError from validatePorts")
+			"Validate must propagate a *ExecError from validatePorts")
 		assert.Contains(t, scanErr.Err.Error(), "invalid port")
 	})
 
@@ -1268,7 +1268,7 @@ func TestValidate_PortError(t *testing.T) {
 		}
 		err := cfg.Validate()
 		require.Error(t, err)
-		var scanErr *ScanError
+		var scanErr *ExecError
 		require.True(t, errors.As(err, &scanErr))
 		assert.Contains(t, scanErr.Err.Error(), "invalid port")
 	})

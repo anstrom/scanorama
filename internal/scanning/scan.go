@@ -245,13 +245,13 @@ func createAndRunScanner(ctx context.Context, config *ScanConfig) (*nmap.Run, er
 
 	scanner, err := nmap.NewScanner(ctx, options...)
 	if err != nil {
-		return nil, &ScanError{Op: "create scanner", Err: err}
+		return nil, &ExecError{Op: "create scanner", Err: err}
 	}
 
 	// Run the scan
 	result, warnings, err := scanner.Run()
 	if err != nil {
-		return nil, &ScanError{Op: "run scan", Err: err}
+		return nil, &ExecError{Op: "run scan", Err: err}
 	}
 
 	if warnings != nil && len(*warnings) > 0 {

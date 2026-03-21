@@ -14,15 +14,15 @@ const (
 	expectedPortRangeParts = 2
 )
 
-// ScanError represents error types for scan operations.
-type ScanError struct {
+// ExecError represents error types for scan operations.
+type ExecError struct {
 	Op   string // Operation that failed
 	Err  error  // Original error
 	Host string // Host where the error occurred, if applicable
 	Port uint16 // Port where the error occurred, if applicable
 }
 
-func (e *ScanError) Error() string {
+func (e *ExecError) Error() string {
 	if e.Host != "" && e.Port > 0 {
 		return fmt.Sprintf("%s failed for %s:%d: %v", e.Op, e.Host, e.Port, e.Err)
 	}
@@ -32,7 +32,7 @@ func (e *ScanError) Error() string {
 	return fmt.Sprintf("%s failed: %v", e.Op, e.Err)
 }
 
-func (e *ScanError) Unwrap() error {
+func (e *ExecError) Unwrap() error {
 	return e.Err
 }
 
@@ -67,10 +67,10 @@ type ScanConfig struct {
 // Validate checks if the scan configuration is valid.
 func (c *ScanConfig) Validate() error {
 	if len(c.Targets) == 0 {
-		return &ScanError{Op: "validate config", Err: fmt.Errorf("no targets specified")}
+		return &ExecError{Op: "validate config", Err: fmt.Errorf("no targets specified")}
 	}
 	if c.Ports == "" {
-		return &ScanError{Op: "validate config", Err: fmt.Errorf("no ports specified")}
+		return &ExecError{Op: "validate config", Err: fmt.Errorf("no ports specified")}
 	}
 	validScanTypes := map[string]bool{
 		"connect":       true,
@@ -81,7 +81,7 @@ func (c *ScanConfig) Validate() error {
 		"comprehensive": true,
 	}
 	if !validScanTypes[c.ScanType] {
-		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid scan type: %s", c.ScanType)}
+		return &ExecError{Op: "validate config", Err: fmt.Errorf("invalid scan type: %s", c.ScanType)}
 	}
 
 	return c.validatePorts()
@@ -123,26 +123,26 @@ func (c *ScanConfig) validatePortPart(part string) error {
 func (c *ScanConfig) validatePortRange(part string) error {
 	rangeParts := strings.Split(part, "-")
 	if len(rangeParts) != expectedPortRangeParts {
-		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port range format: %s", part)}
+		return &ExecError{Op: "validate config", Err: fmt.Errorf("invalid port range format: %s", part)}
 	}
 
 	start, err := strconv.Atoi(strings.TrimSpace(rangeParts[0]))
 	if err != nil {
-		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid start port: %s", rangeParts[0])}
+		return &ExecError{Op: "validate config", Err: fmt.Errorf("invalid start port: %s", rangeParts[0])}
 	}
 	end, err := strconv.Atoi(strings.TrimSpace(rangeParts[1]))
 	if err != nil {
-		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid end port: %s", rangeParts[1])}
+		return &ExecError{Op: "validate config", Err: fmt.Errorf("invalid end port: %s", rangeParts[1])}
 	}
 
 	if start < 0 || start > 65535 || end < 0 || end > 65535 {
-		return &ScanError{
+		return &ExecError{
 			Op:  "validate config",
 			Err: fmt.Errorf("invalid port range: %s (must be 0-65535)", part),
 		}
 	}
 	if start > end {
-		return &ScanError{
+		return &ExecError{
 			Op:  "validate config",
 			Err: fmt.Errorf("invalid port range: start port must be less than end port"),
 		}
@@ -154,10 +154,10 @@ func (c *ScanConfig) validatePortRange(part string) error {
 func (c *ScanConfig) validateSinglePort(part string) error {
 	port, err := strconv.Atoi(strings.TrimSpace(part))
 	if err != nil {
-		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port: %s", part)}
+		return &ExecError{Op: "validate config", Err: fmt.Errorf("invalid port: %s", part)}
 	}
 	if port < 0 || port > 65535 {
-		return &ScanError{Op: "validate config", Err: fmt.Errorf("invalid port: %d (must be 0-65535)", port)}
+		return &ExecError{Op: "validate config", Err: fmt.Errorf("invalid port: %d (must be 0-65535)", port)}
 	}
 	return nil
 }

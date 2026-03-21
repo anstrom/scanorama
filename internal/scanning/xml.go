@@ -71,12 +71,12 @@ func SaveResults(result *ScanResult, filePath string) error {
 
 	// Validate and create file
 	if err := validateFilePath(filePath); err != nil {
-		return &ScanError{Op: "validate path", Err: err}
+		return &ExecError{Op: "validate path", Err: err}
 	}
 
 	file, err := os.Create(filePath) //nolint:gosec // path is validated by validateFilePath
 	if err != nil {
-		return &ScanError{Op: "create file", Err: err}
+		return &ExecError{Op: "create file", Err: err}
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
@@ -90,12 +90,12 @@ func SaveResults(result *ScanResult, filePath string) error {
 
 	// Write XML header
 	if _, err := file.WriteString(xml.Header); err != nil {
-		return &ScanError{Op: "write XML header", Err: err}
+		return &ExecError{Op: "write XML header", Err: err}
 	}
 
 	// Encode and write the data
 	if err := encoder.Encode(xmlData); err != nil {
-		return &ScanError{Op: "encode XML", Err: err}
+		return &ExecError{Op: "encode XML", Err: err}
 	}
 
 	return nil
@@ -107,12 +107,12 @@ func LoadResults(filePath string) (*ScanResult, error) {
 	// Open and read file
 	// Validate and open file
 	if err := validateFilePath(filePath); err != nil {
-		return nil, &ScanError{Op: "validate path", Err: err}
+		return nil, &ExecError{Op: "validate path", Err: err}
 	}
 
 	file, err := os.Open(filePath) //nolint:gosec // path is validated by validateFilePath
 	if err != nil {
-		return nil, &ScanError{Op: "open file", Err: err}
+		return nil, &ExecError{Op: "open file", Err: err}
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
@@ -126,7 +126,7 @@ func LoadResults(filePath string) (*ScanResult, error) {
 	// Decode XML
 	var xmlData ScanXML
 	if err := decoder.Decode(&xmlData); err != nil {
-		return nil, &ScanError{Op: "decode XML", Err: err}
+		return nil, &ExecError{Op: "decode XML", Err: err}
 	}
 
 	// Convert to scan result
