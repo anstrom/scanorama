@@ -398,6 +398,11 @@ export function HostsPage() {
   const pagination = data?.pagination;
   const totalPages = pagination?.total_pages ?? 1;
 
+  // Clamp page back when a filter/search change reduces total_pages below current page.
+  if (!isLoading && totalPages > 0 && page > totalPages) {
+    setPage(totalPages);
+  }
+
   return (
     <>
       <div className="space-y-4">

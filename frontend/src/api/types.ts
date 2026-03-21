@@ -774,7 +774,7 @@ export interface components {
        * @example ping
        * @enum {string}
        */
-      discovery_method?: "ping" | "tcp" | "arp";
+      discovery_method?: "ping" | "tcp" | "arp" | "icmp";
       /** @example true */
       is_active?: boolean;
       /** @example Office Network */
@@ -853,6 +853,8 @@ export interface components {
     "docs.ErrorResponse": {
       /** @example Invalid request */
       error?: string;
+      /** @example profile "no-such-profile" not found */
+      message?: string;
       /** @example req-123 */
       request_id?: string;
       timestamp?: string;
@@ -951,7 +953,7 @@ export interface components {
        * @example ping
        * @enum {string}
        */
-      discovery_method?: "ping" | "tcp" | "arp";
+      discovery_method?: "ping" | "tcp" | "arp" | "icmp";
       /** @example 25 */
       host_count?: number;
       /** @example 550e8400-e29b-41d4-a716-446655440010 */
@@ -1047,7 +1049,7 @@ export interface components {
       /** @example 22,80,443 */
       ports?: string;
       /** @example 2500 */
-      ports_scanned?: number;
+      ports_scanned?: string;
       /** @example 550e8400-e29b-41d4-a716-446655440001 */
       profile_id?: string;
       /** @example 65.5 */
@@ -1059,16 +1061,22 @@ export interface components {
       scan_type?:
         | "connect"
         | "syn"
-        | "version"
+        | "ack"
+        | "udp"
         | "aggressive"
-        | "stealth"
         | "comprehensive";
       started_at?: string;
       /**
        * @example running
        * @enum {string}
        */
-      status?: "pending" | "running" | "completed" | "failed" | "cancelled";
+      status?:
+        | "pending"
+        | "running"
+        | "completed"
+        | "failed"
+        | "cancelled"
+        | "stopped";
       /**
        * @example [
        *       "192.168.1.0/24"
@@ -1116,7 +1124,7 @@ export interface components {
        * @example ping
        * @enum {string}
        */
-      discovery_method?: "ping" | "tcp" | "arp";
+      discovery_method?: "ping" | "tcp" | "arp" | "icmp";
       /** @example true */
       is_active?: boolean;
       /** @example Office Network */

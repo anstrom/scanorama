@@ -116,9 +116,10 @@ describe("RunScanModal", () => {
     const user = userEvent.setup();
     render(<RunScanModal onClose={vi.fn()} />);
     await user.click(screen.getByRole("radio", { name: "Custom ports" }));
-    expect(
-      screen.getByRole("radio", { name: "Custom ports" }),
-    ).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "Custom ports" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
   });
 
   it("shows ports and scan type inputs in custom mode", async () => {
@@ -141,8 +142,12 @@ describe("RunScanModal", () => {
   it("lists all profiles in the select", () => {
     render(<RunScanModal onClose={vi.fn()} />);
     const select = screen.getByLabelText("Select profile");
-    expect(within(select).getByRole("option", { name: "Quick scan" })).toBeInTheDocument();
-    expect(within(select).getByRole("option", { name: "Full scan" })).toBeInTheDocument();
+    expect(
+      within(select).getByRole("option", { name: "Quick scan" }),
+    ).toBeInTheDocument();
+    expect(
+      within(select).getByRole("option", { name: "Full scan" }),
+    ).toBeInTheDocument();
   });
 
   it("shows a loading indicator while profiles are loading", () => {
@@ -156,7 +161,10 @@ describe("RunScanModal", () => {
 
   it("shows a message when no profiles exist", () => {
     mockUseProfiles.mockReturnValue({
-      data: { data: [], pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 } },
+      data: {
+        data: [],
+        pagination: { page: 1, page_size: 100, total_items: 0, total_pages: 0 },
+      },
       isLoading: false,
     } as unknown as ReturnType<typeof useProfiles>);
     render(<RunScanModal onClose={vi.fn()} />);
@@ -220,9 +228,9 @@ describe("RunScanModal", () => {
     const user = userEvent.setup();
     render(<RunScanModal onClose={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: "Run scan" }));
-    expect(
-      screen.getByRole("alert"),
-    ).toHaveTextContent("Please enter at least one target.");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Please enter at least one target.",
+    );
   });
 
   it("shows an error in profile mode when no profile is selected", async () => {
@@ -283,9 +291,7 @@ describe("RunScanModal", () => {
     const onSubmitted = vi.fn();
     const onClose = vi.fn();
 
-    render(
-      <RunScanModal onClose={onClose} onSubmitted={onSubmitted} />,
-    );
+    render(<RunScanModal onClose={onClose} onSubmitted={onSubmitted} />);
     await user.type(screen.getByLabelText("Target"), "10.0.0.1");
     await user.selectOptions(screen.getByLabelText("Select profile"), "p1");
     await user.click(screen.getByRole("button", { name: "Run scan" }));
@@ -344,6 +350,7 @@ describe("RunScanModal", () => {
     render(<RunScanModal onClose={vi.fn()} />);
     await user.click(screen.getByRole("radio", { name: "Custom ports" }));
     await user.type(screen.getByLabelText("Target"), "172.16.0.1");
+    await user.type(screen.getByLabelText(/Ports/), "80");
     await user.selectOptions(screen.getByLabelText("Select scan type"), "syn");
     await user.click(screen.getByRole("button", { name: "Run scan" }));
 
@@ -385,6 +392,7 @@ describe("RunScanModal", () => {
       screen.getByLabelText("Target"),
       "10.0.0.1, 10.0.0.2, 10.0.0.3",
     );
+    await user.type(screen.getByLabelText(/Ports/), "80");
     await user.click(screen.getByRole("button", { name: "Run scan" }));
 
     expect(createScan).toHaveBeenCalledWith(
@@ -406,6 +414,7 @@ describe("RunScanModal", () => {
     render(<RunScanModal onClose={vi.fn()} />);
     await user.click(screen.getByRole("radio", { name: "Custom ports" }));
     await user.type(screen.getByLabelText("Target"), "10.0.0.1");
+    await user.type(screen.getByLabelText(/Ports/), "80");
     await user.click(screen.getByRole("button", { name: "Run scan" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Network error");
@@ -421,6 +430,7 @@ describe("RunScanModal", () => {
     render(<RunScanModal onClose={vi.fn()} />);
     await user.click(screen.getByRole("radio", { name: "Custom ports" }));
     await user.type(screen.getByLabelText("Target"), "10.0.0.1");
+    await user.type(screen.getByLabelText(/Ports/), "80");
     await user.click(screen.getByRole("button", { name: "Run scan" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(

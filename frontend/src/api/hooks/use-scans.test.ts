@@ -311,7 +311,7 @@ describe("useScanResults", () => {
   it("starts in a loading state when a scanId is provided", () => {
     mockGet.mockReturnValue(new Promise(() => {}));
     const { result } = renderHookWithQuery(() =>
-      useScanResults("scan-1", {}, "completed"),
+      useScanResults("scan-1", "completed"),
     );
     expect(result.current.isLoading).toBe(true);
   });
@@ -320,7 +320,7 @@ describe("useScanResults", () => {
     mockGet.mockResolvedValue(ok(mockScanResults));
 
     const { result } = renderHookWithQuery(() =>
-      useScanResults("scan-1", {}, "completed"),
+      useScanResults("scan-1", "completed"),
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -334,7 +334,7 @@ describe("useScanResults", () => {
     mockGet.mockResolvedValue(fail("not found"));
 
     const { result } = renderHookWithQuery(() =>
-      useScanResults("scan-unknown", {}, "completed"),
+      useScanResults("scan-unknown", "completed"),
     );
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.data).toBeUndefined();
@@ -342,7 +342,7 @@ describe("useScanResults", () => {
 
   it("is disabled and does not fetch when scanId is empty string", () => {
     const { result } = renderHookWithQuery(() =>
-      useScanResults("", {}, "completed"),
+      useScanResults("", "completed"),
     );
     expect(result.current.isPending).toBe(true);
     expect(result.current.fetchStatus).toBe("idle");
@@ -353,7 +353,7 @@ describe("useScanResults", () => {
     mockGet.mockResolvedValue(ok(mockScanResults));
 
     const { result } = renderHookWithQuery(() =>
-      useScanResults("scan-1", {}, "completed"),
+      useScanResults("scan-1", "completed"),
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -367,7 +367,7 @@ describe("useScanResults", () => {
     mockGet.mockResolvedValue(ok(mockScanResults));
 
     const { result, queryClient } = renderHookWithQuery(() =>
-      useScanResults("scan-1", {}, "completed"),
+      useScanResults("scan-1", "completed"),
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
