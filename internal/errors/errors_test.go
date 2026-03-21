@@ -3,6 +3,7 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -781,6 +782,57 @@ func TestErrorFormatting(t *testing.T) {
 			t.Errorf("Expected '%s', got '%s'", expected, errorStr)
 		}
 	})
+}
+
+func TestIsForbidden_ErrorsPackage(t *testing.T) {
+	t.Run("true for ErrForbidden", func(t *testing.T) {
+		err := ErrForbidden("cannot delete built-in profile")
+		if !IsForbidden(err) {
+			t.Error("expected IsForbidden to return true for ErrForbidden error")
+		}
+	})
+
+	t.Run("false for nil", func(t *testing.T) {
+		if IsForbidden(nil) {
+			t.Error("expected IsForbidden to return false for nil")
+		}
+	})
+
+	t.Run("false for plain error", func(t *testing.T) {
+		if IsForbidden(fmt.Errorf("something went wrong")) {
+			t.Error("expected IsForbidden to return false for plain error")
+		}
+	})
+
+	t.Run("false for not-found error", func(t *testing.T) {
+		err := ErrNotFoundWithID("profile", "abc")
+		if IsForbidden(err) {
+			t.Error("expected IsForbidden to return false for not-found error")
+		}
+	})
+
+	t.Run("false for conflict error", func(t *testing.T) {
+		err := ErrConflict("profile")
+		if IsForbidden(err) {
+			t.Error("expected IsForbidden to return false for conflict error")
+		}
+	})
+}
+
+func TestErrForbidden_ErrorsPackage(t *testing.T) {
+	err := ErrForbidden("cannot update built-in profile")
+	if err == nil {
+		t.Fatal("expected non-nil error from ErrForbidden")
+	}
+	if !IsForbidden(err) {
+		t.Error("expected IsForbidden to return true for ErrForbidden result")
+	}
+	if GetCode(err) != CodeForbidden {
+		t.Errorf("expected code %q, got %q", CodeForbidden, GetCode(err))
+	}
+	if !strings.Contains(err.Error(), "cannot update built-in profile") {
+		t.Errorf("expected error message to contain reason, got: %s", err.Error())
+	}
 }
 
 func TestBenchmarkErrorCreation(t *testing.T) {
