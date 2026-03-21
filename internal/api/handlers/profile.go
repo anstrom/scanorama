@@ -243,6 +243,10 @@ func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, http.StatusNotFound, fmt.Errorf("profile not found"))
 			return
 		}
+		if errors.IsForbidden(err) {
+			writeError(w, r, http.StatusForbidden, err)
+			return
+		}
 		h.logger.Error("Failed to update profile", "request_id", requestID, "error", err)
 		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to update profile: %w", err))
 		return
@@ -273,6 +277,10 @@ func (h *ProfileHandler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.IsNotFound(err) {
 			writeError(w, r, http.StatusNotFound, fmt.Errorf("profile not found"))
+			return
+		}
+		if errors.IsForbidden(err) {
+			writeError(w, r, http.StatusForbidden, err)
 			return
 		}
 		h.logger.Error("Failed to delete profile", "request_id", requestID, "error", err)

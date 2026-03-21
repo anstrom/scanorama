@@ -151,7 +151,12 @@ func (h *NetworkHandler) parseReasonFromRequest(req *CreateExclusionRequest) str
 
 const maxNetworkNameLen = 100
 
-var validDiscoveryMethods = map[string]bool{"ping": true, "tcp": true, "arp": true}
+var validDiscoveryMethods = map[string]bool{
+	"ping": true,
+	"tcp":  true,
+	"arp":  true,
+	"icmp": true,
+}
 
 func (h *NetworkHandler) validateCreateNetworkRequest(req *CreateNetworkRequest) error {
 	if strings.TrimSpace(req.Name) == "" {
@@ -167,7 +172,7 @@ func (h *NetworkHandler) validateCreateNetworkRequest(req *CreateNetworkRequest)
 		return fmt.Errorf("invalid cidr %q: %w", req.CIDR, err)
 	}
 	if !validDiscoveryMethods[req.DiscoveryMethod] {
-		return fmt.Errorf("invalid discovery_method %q: must be one of ping, tcp, arp", req.DiscoveryMethod)
+		return fmt.Errorf("invalid discovery_method %q: must be one of ping, tcp, arp, icmp", req.DiscoveryMethod)
 	}
 	return nil
 }
@@ -187,7 +192,7 @@ func (h *NetworkHandler) validateUpdateNetworkRequest(req *UpdateNetworkRequest)
 		}
 	}
 	if req.DiscoveryMethod != nil && !validDiscoveryMethods[*req.DiscoveryMethod] {
-		return fmt.Errorf("invalid discovery_method %q: must be one of ping, tcp, arp", *req.DiscoveryMethod)
+		return fmt.Errorf("invalid discovery_method %q: must be one of ping, tcp, arp, icmp", *req.DiscoveryMethod)
 	}
 	return nil
 }

@@ -134,7 +134,7 @@ func makeDiscoveryJob(id uuid.UUID, method, status string) *db.DiscoveryJob {
 	}
 }
 
-func makeHost(id uuid.UUID, ip, status string) *db.Host {
+func makeHost(id uuid.UUID, ip string) *db.Host {
 	addr := db.IPAddr{}
 	_ = addr.Scan(ip)
 	now := time.Now()
@@ -143,7 +143,7 @@ func makeHost(id uuid.UUID, ip, status string) *db.Host {
 		ID:        id,
 		IPAddress: addr,
 		Hostname:  &hostname,
-		Status:    status,
+		Status:    "up",
 		FirstSeen: now,
 		LastSeen:  now,
 	}
@@ -388,7 +388,7 @@ func TestScanHandler_CreateScan_Mock(t *testing.T) {
 			CreateScan(gomock.Any(), gomock.Any()).
 			Return(nil, fmt.Errorf("db error"))
 
-		body := `{"name":"New Scan","targets":["192.168.1.0/24"],"scan_type":"connect"}`
+		body := `{"name":"New Scan","targets":["192.168.1.0/24"],"scan_type":"connect","ports":"80"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/scans", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -671,6 +671,9 @@ func TestScanHandler_GetScanResults_Mock(t *testing.T) {
 		}
 
 		store.EXPECT().
+			GetScan(gomock.Any(), scanID).
+			Return(makeScan(scanID, "Test Scan", "completed", "connect"), nil)
+		store.EXPECT().
 			GetScanResults(gomock.Any(), scanID, 0, 50).
 			Return([]*db.ScanResult{result}, int64(1), nil)
 		// GetScanResults also calls GetScanSummary to populate the response envelope.
@@ -698,6 +701,9 @@ func TestScanHandler_GetScanResults_Mock(t *testing.T) {
 		defer ctrl.Finish()
 
 		scanID := uuid.New()
+		store.EXPECT().
+			GetScan(gomock.Any(), scanID).
+			Return(makeScan(scanID, "Test Scan", "completed", "connect"), nil)
 		store.EXPECT().
 			GetScanResults(gomock.Any(), scanID, 0, 50).
 			Return(nil, int64(0), fmt.Errorf("db error"))
@@ -1215,7 +1221,7 @@ func TestHostHandler_ListHosts_Mock(t *testing.T) {
 		defer ctrl.Finish()
 
 		id := uuid.New()
-		host := makeHost(id, "192.168.1.100", "up")
+		host := makeHost(id, "192.168.1.100")
 
 		store.EXPECT().
 			ListHosts(gomock.Any(), gomock.Any(), 0, 50).
@@ -1255,7 +1261,7 @@ func TestHostHandler_GetHost_Mock(t *testing.T) {
 		defer ctrl.Finish()
 
 		id := uuid.New()
-		host := makeHost(id, "10.0.0.1", "up")
+		host := makeHost(id, "10.0.0.1")
 		store.EXPECT().GetHost(gomock.Any(), id).Return(host, nil)
 
 		router, _ := routerWithID(http.MethodGet, "/api/v1/hosts/{id}", h.GetHost)
@@ -1343,6 +1349,9 @@ func TestHostHandler_GetHostScans_Mock(t *testing.T) {
 		scan := makeScan(scanID, "Host Scan", "completed", "connect")
 
 		store.EXPECT().
+			GetHost(gomock.Any(), hostID).
+			Return(makeHost(hostID, "192.168.1.1"), nil)
+		store.EXPECT().
 			GetHostScans(gomock.Any(), hostID, 0, 50).
 			Return([]*db.Scan{scan}, int64(1), nil)
 
@@ -1359,11 +1368,31 @@ func TestHostHandler_GetHostScans_Mock(t *testing.T) {
 		assert.Len(t, data, 1)
 	})
 
+	t.Run("returns 404 when host not found", func(t *testing.T) {
+		h, store, ctrl := newHostHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		hostID := uuid.New()
+		store.EXPECT().
+			GetHost(gomock.Any(), hostID).
+			Return(nil, errors.ErrNotFoundWithID("host", hostID.String()))
+
+		router, _ := routerWithID(http.MethodGet, "/api/v1/hosts/{id}/scans", h.GetHostScans)
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/hosts/%s/scans", hostID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
 	t.Run("returns 500 on store error", func(t *testing.T) {
 		h, store, ctrl := newHostHandlerWithMock(t)
 		defer ctrl.Finish()
 
 		hostID := uuid.New()
+		store.EXPECT().
+			GetHost(gomock.Any(), hostID).
+			Return(makeHost(hostID, "10.0.0.1"), nil)
 		store.EXPECT().
 			GetHostScans(gomock.Any(), hostID, 0, 50).
 			Return(nil, int64(0), fmt.Errorf("db error"))

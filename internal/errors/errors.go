@@ -44,8 +44,9 @@ const (
 	CodeRateLimited        ErrorCode = "RATE_LIMITED"
 
 	// Generic resource errors.
-	CodeNotFound ErrorCode = "NOT_FOUND"
-	CodeConflict ErrorCode = "CONFLICT"
+	CodeNotFound  ErrorCode = "NOT_FOUND"
+	CodeConflict  ErrorCode = "CONFLICT"
+	CodeForbidden ErrorCode = "FORBIDDEN"
 )
 
 // ScanError represents an error that occurred during scanning operations.
@@ -301,6 +302,11 @@ func IsConflict(err error) bool {
 	return IsCode(err, CodeConflict)
 }
 
+// IsForbidden checks if an error indicates a forbidden operation.
+func IsForbidden(err error) bool {
+	return IsCode(err, CodeForbidden)
+}
+
 // IsRetryable determines if an error indicates a retryable condition.
 func IsRetryable(err error) bool {
 	code := GetCode(err)
@@ -383,4 +389,9 @@ func ErrConflict(resource string) *ScanError {
 // ErrConflictWithReason creates a conflict error with specific reason.
 func ErrConflictWithReason(resource, reason string) *ScanError {
 	return NewScanError(CodeConflict, fmt.Sprintf("%s conflict: %s", resource, reason))
+}
+
+// ErrForbidden creates a forbidden error.
+func ErrForbidden(reason string) *ScanError {
+	return NewScanError(CodeForbidden, reason)
 }
