@@ -1,16 +1,24 @@
 package db
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
 	"time"
 
+	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
+	"github.com/lib/pq/pqerror"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/anstrom/scanorama/internal/errors"
 )
 
 // TestDefaultConfig tests the default database configuration.
@@ -1397,4 +1405,141 @@ func TestNetworkAddrJSONInStruct(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "expected a string")
 	})
+}
+
+// TestCreateProfile_UniqueNameConflict verifies that CreateProfile translates a
+// PostgreSQL unique-violation on the profile name constraint into a typed
+// conflict error via pq.As, not a generic wrapped error.
+func TestCreateProfile_UniqueNameConflict(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	pqErr := &pq.Error{
+		Code:       pqerror.UniqueViolation,
+		Constraint: "scan_profiles_name_key",
+		Message:    `duplicate key value violates unique constraint "scan_profiles_name_key"`,
+	}
+	mock.ExpectExec("INSERT INTO scan_profiles").WillReturnError(pqErr)
+
+	profileData := map[string]interface{}{
+		"name":      "My Profile",
+		"scan_type": "connect",
+		"ports":     "22,80,443",
+		"timing":    "normal",
+	}
+
+	_, err := db.CreateProfile(context.Background(), profileData)
+
+	require.Error(t, err)
+	assert.True(t, errors.IsCode(err, errors.CodeConflict),
+		"expected CodeConflict, got: %v", err)
+	assert.Contains(t, err.Error(), "My Profile",
+		"conflict message should include the duplicate profile name")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestCreateProfile_NonPQError verifies that a non-PostgreSQL error (e.g. a
+// connection reset) is returned as a generic wrapped error, not a conflict.
+func TestCreateProfile_NonPQError(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	mock.ExpectExec("INSERT INTO scan_profiles").WillReturnError(
+		fmt.Errorf("connection reset by peer"),
+	)
+
+	profileData := map[string]interface{}{
+		"name":      "My Profile",
+		"scan_type": "connect",
+		"ports":     "22,80,443",
+		"timing":    "normal",
+	}
+
+	_, err := db.CreateProfile(context.Background(), profileData)
+
+	require.Error(t, err)
+	assert.False(t, errors.IsCode(err, errors.CodeConflict))
+	assert.Contains(t, err.Error(), "failed to create profile")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// newMockDB creates a *DB backed by a sqlmock database for unit tests that
+// need to exercise SQL-level error handling without a real PostgreSQL instance.
+func newMockDB(t *testing.T) (*DB, sqlmock.Sqlmock) {
+	t.Helper()
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	return &DB{DB: sqlx.NewDb(sqlDB, "sqlmock")}, mock
+}
+
+// TestCreateHost_UniqueIPConflict verifies that CreateHost translates a
+// PostgreSQL unique-violation on the unique_ip_address constraint into a
+// typed conflict error via pq.As.
+func TestCreateHost_UniqueIPConflict(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	pqErr := &pq.Error{
+		Code:       pqerror.UniqueViolation,
+		Constraint: "unique_ip_address",
+		Message:    "duplicate key value violates unique constraint \"unique_ip_address\"",
+	}
+	mock.ExpectExec("INSERT INTO hosts").WillReturnError(pqErr)
+
+	hostData := map[string]interface{}{
+		"ip_address": "10.0.0.1",
+	}
+
+	_, err := db.CreateHost(context.Background(), hostData)
+
+	require.Error(t, err)
+	assert.True(t, errors.IsCode(err, errors.CodeConflict),
+		"expected CodeConflict, got: %v", err)
+	assert.Contains(t, err.Error(), "10.0.0.1")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestCreateHost_UniqueViolationOtherConstraint verifies that a unique
+// violation on a *different* constraint is not swallowed as a conflict —
+// it should fall through to the generic error path.
+func TestCreateHost_UniqueViolationOtherConstraint(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	pqErr := &pq.Error{
+		Code:       pqerror.UniqueViolation,
+		Constraint: "some_other_unique_constraint",
+		Message:    "duplicate key value violates unique constraint \"some_other_unique_constraint\"",
+	}
+	mock.ExpectExec("INSERT INTO hosts").WillReturnError(pqErr)
+
+	hostData := map[string]interface{}{
+		"ip_address": "10.0.0.2",
+	}
+
+	_, err := db.CreateHost(context.Background(), hostData)
+
+	require.Error(t, err)
+	assert.False(t, errors.IsCode(err, errors.CodeConflict),
+		"should not be a conflict error for unrelated constraint, got: %v", err)
+	assert.Contains(t, err.Error(), "failed to create host")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestCreateHost_NonPQError verifies that a non-PostgreSQL error (e.g. a
+// network timeout) is returned as a generic wrapped error, not a conflict.
+func TestCreateHost_NonPQError(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	mock.ExpectExec("INSERT INTO hosts").WillReturnError(
+		fmt.Errorf("connection reset by peer"),
+	)
+
+	hostData := map[string]interface{}{
+		"ip_address": "10.0.0.3",
+	}
+
+	_, err := db.CreateHost(context.Background(), hostData)
+
+	require.Error(t, err)
+	assert.False(t, errors.IsCode(err, errors.CodeConflict))
+	assert.Contains(t, err.Error(), "failed to create host")
+	require.NoError(t, mock.ExpectationsWereMet())
 }
