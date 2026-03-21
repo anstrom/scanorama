@@ -5,8 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -107,7 +108,7 @@ func (db *DB) ListSchedules(
 
 	var total int64
 	if err := db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("failed to count schedules: %w", err)
+		return nil, 0, sanitizeDBError("count schedules", err)
 	}
 
 	listQuery := fmt.Sprintf(`
@@ -120,11 +121,11 @@ func (db *DB) ListSchedules(
 	listArgs := args
 	rows, err := db.QueryContext(ctx, listQuery, listArgs...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to list schedules: %w", err)
+		return nil, 0, sanitizeDBError("list schedules", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("failed to close schedule rows: %v", err)
+			slog.Warn("failed to close rows", "error", err)
 		}
 	}()
 
@@ -198,10 +199,10 @@ func (db *DB) GetSchedule(ctx context.Context, id uuid.UUID) (*Schedule, error) 
 	row := db.QueryRowContext(ctx, query, id)
 	s, err := scanScheduleRow(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if stderrors.Is(err, sql.ErrNoRows) {
 			return nil, errors.ErrNotFoundWithID("schedule", id.String())
 		}
-		return nil, fmt.Errorf("failed to get schedule: %w", err)
+		return nil, sanitizeDBError("get schedule", err)
 	}
 
 	return s, nil
@@ -267,7 +268,7 @@ func (db *DB) UpdateSchedule(ctx context.Context, id uuid.UUID, scheduleData int
 	if err := db.QueryRowContext(ctx,
 		"SELECT EXISTS(SELECT 1 FROM scheduled_jobs WHERE id = $1)", id,
 	).Scan(&exists); err != nil {
-		return nil, fmt.Errorf("failed to check schedule existence: %w", err)
+		return nil, sanitizeDBError("check schedule existence", err)
 	}
 	if !exists {
 		return nil, errors.ErrNotFoundWithID("schedule", id.String())
@@ -296,7 +297,7 @@ func (db *DB) UpdateSchedule(ctx context.Context, id uuid.UUID, scheduleData int
 	row := db.QueryRowContext(ctx, queryBuilder.String(), args...)
 	s, err := scanScheduleRow(row)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update schedule: %w", err)
+		return nil, sanitizeDBError("update schedule", err)
 	}
 
 	return s, nil
@@ -306,7 +307,7 @@ func (db *DB) UpdateSchedule(ctx context.Context, id uuid.UUID, scheduleData int
 func (db *DB) DeleteSchedule(ctx context.Context, id uuid.UUID) error {
 	result, err := db.ExecContext(ctx, "DELETE FROM scheduled_jobs WHERE id = $1", id)
 	if err != nil {
-		return fmt.Errorf("failed to delete schedule: %w", err)
+		return sanitizeDBError("delete schedule", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -326,7 +327,7 @@ func (db *DB) EnableSchedule(ctx context.Context, id uuid.UUID) error {
 	result, err := db.ExecContext(ctx,
 		"UPDATE scheduled_jobs SET enabled = true WHERE id = $1", id)
 	if err != nil {
-		return fmt.Errorf("failed to enable schedule: %w", err)
+		return sanitizeDBError("enable schedule", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -346,7 +347,7 @@ func (db *DB) DisableSchedule(ctx context.Context, id uuid.UUID) error {
 	result, err := db.ExecContext(ctx,
 		"UPDATE scheduled_jobs SET enabled = false WHERE id = $1", id)
 	if err != nil {
-		return fmt.Errorf("failed to disable schedule: %w", err)
+		return sanitizeDBError("disable schedule", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()

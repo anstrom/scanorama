@@ -4,8 +4,9 @@ package db
 import (
 	"context"
 	"database/sql"
+	stderrors "errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -60,7 +61,7 @@ func (db *DB) ListDiscoveryJobs(
 
 	var total int64
 	if err := db.QueryRowContext(ctx, countQuery, filters.Status, filters.Method).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("failed to count discovery jobs: %w", err)
+		return nil, 0, sanitizeDBError("count discovery jobs", err)
 	}
 
 	listQuery := `
@@ -74,11 +75,11 @@ func (db *DB) ListDiscoveryJobs(
 
 	rows, err := db.QueryContext(ctx, listQuery, filters.Status, filters.Method, limit, offset)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to list discovery jobs: %w", err)
+		return nil, 0, sanitizeDBError("list discovery jobs", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("failed to close discovery jobs rows: %v", err)
+			slog.Warn("failed to close rows", "error", err)
 		}
 	}()
 
@@ -140,7 +141,7 @@ func (db *DB) CreateDiscoveryJob(ctx context.Context, jobData interface{}) (*Dis
 
 	_, err := db.ExecContext(ctx, query, jobID, network, method, now)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create discovery job: %w", err)
+		return nil, sanitizeDBError("create discovery job", err)
 	}
 
 	job := &DiscoveryJob{
@@ -177,10 +178,10 @@ func (db *DB) GetDiscoveryJob(ctx context.Context, id uuid.UUID) (*DiscoveryJob,
 		&job.CreatedAt,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if stderrors.Is(err, sql.ErrNoRows) {
 			return nil, errors.ErrNotFoundWithID("discovery job", id.String())
 		}
-		return nil, fmt.Errorf("failed to get discovery job: %w", err)
+		return nil, sanitizeDBError("get discovery job", err)
 	}
 
 	return job, nil
@@ -198,7 +199,7 @@ func (db *DB) UpdateDiscoveryJob(ctx context.Context, id uuid.UUID, jobData inte
 	if err := db.QueryRowContext(ctx,
 		"SELECT EXISTS(SELECT 1 FROM discovery_jobs WHERE id = $1)", id,
 	).Scan(&exists); err != nil {
-		return nil, fmt.Errorf("failed to check discovery job existence: %w", err)
+		return nil, sanitizeDBError("check discovery job existence", err)
 	}
 	if !exists {
 		return nil, errors.ErrNotFoundWithID("discovery job", id.String())
@@ -272,7 +273,7 @@ func (db *DB) UpdateDiscoveryJob(ctx context.Context, id uuid.UUID, jobData inte
 		&job.CreatedAt,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update discovery job: %w", err)
+		return nil, sanitizeDBError("update discovery job", err)
 	}
 
 	return job, nil
@@ -282,7 +283,7 @@ func (db *DB) UpdateDiscoveryJob(ctx context.Context, id uuid.UUID, jobData inte
 func (db *DB) DeleteDiscoveryJob(ctx context.Context, id uuid.UUID) error {
 	result, err := db.ExecContext(ctx, "DELETE FROM discovery_jobs WHERE id = $1", id)
 	if err != nil {
-		return fmt.Errorf("failed to delete discovery job: %w", err)
+		return sanitizeDBError("delete discovery job", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -306,7 +307,7 @@ func (db *DB) StartDiscoveryJob(ctx context.Context, id uuid.UUID) error {
 
 	result, err := db.ExecContext(ctx, query, id)
 	if err != nil {
-		return fmt.Errorf("failed to start discovery job: %w", err)
+		return sanitizeDBError("start discovery job", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -330,7 +331,7 @@ func (db *DB) StopDiscoveryJob(ctx context.Context, id uuid.UUID) error {
 
 	result, err := db.ExecContext(ctx, query, id)
 	if err != nil {
-		return fmt.Errorf("failed to stop discovery job: %w", err)
+		return sanitizeDBError("stop discovery job", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()

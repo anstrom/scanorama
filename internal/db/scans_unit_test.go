@@ -113,7 +113,7 @@ func TestGetScanCount(t *testing.T) {
 
 		_, err := db.getScanCount(context.Background(), "", nil)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to get scan count")
+		assert.Contains(t, err.Error(), "get scan count")
 	})
 
 	t.Run("where clause is appended", func(t *testing.T) {
@@ -274,7 +274,7 @@ func TestListScans_Unit(t *testing.T) {
 
 		_, _, err := db.ListScans(context.Background(), ScanFilters{}, 0, 10)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to get scan count")
+		assert.Contains(t, err.Error(), "get scan count")
 	})
 
 	t.Run("list query error is propagated", func(t *testing.T) {
@@ -285,7 +285,7 @@ func TestListScans_Unit(t *testing.T) {
 
 		_, _, err := db.ListScans(context.Background(), ScanFilters{}, 0, 10)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to query scans")
+		assert.Contains(t, err.Error(), "list scans")
 	})
 
 	t.Run("empty result set", func(t *testing.T) {
@@ -356,7 +356,7 @@ func TestGetScan_Unit(t *testing.T) {
 
 		_, err := db.GetScan(context.Background(), id)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to get scan")
+		assert.Contains(t, err.Error(), "get scan")
 	})
 
 	t.Run("success with minimal fields", func(t *testing.T) {
@@ -538,7 +538,7 @@ func TestCreateScan_Unit(t *testing.T) {
 			"name": "Scan", "targets": []string{"10.0.0.0/8"}, "scan_type": "connect",
 		})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to look up network by CIDR")
+		assert.Contains(t, err.Error(), "look up network by CIDR")
 	})
 
 	t.Run("scan job insert error is propagated", func(t *testing.T) {
@@ -555,7 +555,7 @@ func TestCreateScan_Unit(t *testing.T) {
 			"name": "Scan", "targets": []string{"10.0.0.0/8"}, "scan_type": "connect",
 		})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to create scan job")
+		assert.Contains(t, err.Error(), "create scan job")
 	})
 
 	t.Run("multiple targets create one job each", func(t *testing.T) {
@@ -676,7 +676,7 @@ func TestDeleteScan_Unit(t *testing.T) {
 
 		err := db.DeleteScan(context.Background(), id)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to check scan existence")
+		assert.Contains(t, err.Error(), "check scan existence")
 	})
 }
 
@@ -710,7 +710,7 @@ func TestStartScan_Unit(t *testing.T) {
 
 		err := db.StartScan(context.Background(), id)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to start scan")
+		assert.Contains(t, err.Error(), "start scan")
 	})
 }
 
@@ -744,7 +744,7 @@ func TestCompleteScan_Unit(t *testing.T) {
 
 		err := db.CompleteScan(context.Background(), id)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to complete scan")
+		assert.Contains(t, err.Error(), "complete scan")
 	})
 }
 
@@ -795,7 +795,7 @@ func TestStopScan_Unit(t *testing.T) {
 
 		err := db.StopScan(context.Background(), id)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to stop scan")
+		assert.Contains(t, err.Error(), "stop scan")
 	})
 }
 
@@ -900,7 +900,7 @@ func TestGetHostScansCount_Unit(t *testing.T) {
 
 		_, err := db.getHostScansCount(context.Background(), hostID)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to get host scans count")
+		assert.Contains(t, err.Error(), "get host scans count")
 	})
 }
 
@@ -1035,7 +1035,7 @@ func TestGetHostScans_Unit(t *testing.T) {
 
 		_, _, err := db.GetHostScans(context.Background(), hostID, 0, 10)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to get host scans count")
+		assert.Contains(t, err.Error(), "get host scans count")
 	})
 
 	t.Run("list query error is propagated", func(t *testing.T) {
@@ -1046,7 +1046,7 @@ func TestGetHostScans_Unit(t *testing.T) {
 
 		_, _, err := db.GetHostScans(context.Background(), hostID, 0, 10)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to get host scans")
+		assert.Contains(t, err.Error(), "get host scans")
 	})
 
 	t.Run("empty result", func(t *testing.T) {

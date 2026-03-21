@@ -7,7 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -159,13 +159,13 @@ func Connect(ctx context.Context, config *Config) (*DB, error) {
 		// Close the connection before returning error.
 		if closeErr := db.Close(); closeErr != nil {
 			// Don't log raw error - it might contain connection details.
-			log.Printf("Failed to close database connection after ping failure")
+			slog.Warn("failed to close database connection after ping failure")
 		}
 		return nil, errors.WrapDatabaseError(errors.CodeDatabaseConnection, "Failed to verify database connection", err)
 	}
 
 	// Log success without credentials - only safe connection details.
-	log.Printf("Successfully connected to database at %s:%d/%s", config.Host, config.Port, config.Database)
+	slog.Info("connected to database", "host", config.Host, "port", config.Port, "database", config.Database)
 	return &DB{DB: db}, nil
 }
 
