@@ -5,7 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	stdErrors "errors"
+
 	"fmt"
 	"log"
 	"strconv"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/lib/pq/pqerror"
 
 	"github.com/anstrom/scanorama/internal/errors"
 )
@@ -220,8 +221,7 @@ func (db *DB) CreateProfile(ctx context.Context, profileData interface{}) (*Scan
 	_, err := db.ExecContext(ctx, query, profileID, name, description,
 		ports, scanType, optionsJSON, timingStr, now, now)
 	if err != nil {
-		var pqErr *pq.Error
-		if stdErrors.As(err, &pqErr) && pqErr.Code == "23505" {
+		if pq.As(err, pqerror.UniqueViolation) != nil {
 			return nil, errors.ErrConflictWithReason("profile",
 				fmt.Sprintf("a profile named %q already exists", name))
 		}

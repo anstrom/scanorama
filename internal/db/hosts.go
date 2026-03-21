@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/lib/pq/pqerror"
 
 	"github.com/anstrom/scanorama/internal/errors"
 )
@@ -262,8 +263,8 @@ func (db *DB) CreateHost(ctx context.Context, hostData interface{}) (*Host, erro
 	_, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
 		// Check for PostgreSQL constraint violations.
-		if pqErr, ok := err.(*pq.Error); ok {
-			if pqErr.Code == "23505" && pqErr.Constraint == "unique_ip_address" {
+		if pqErr := pq.As(err, pqerror.UniqueViolation); pqErr != nil {
+			if pqErr.Constraint == "unique_ip_address" {
 				return nil, errors.ErrConflictWithReason("host", fmt.Sprintf("IP address %s already exists", ipAddress))
 			}
 		}

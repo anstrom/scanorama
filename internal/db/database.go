@@ -13,6 +13,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
+	"github.com/lib/pq/pqerror"
 
 	"github.com/anstrom/scanorama/internal/errors"
 )
@@ -24,16 +25,25 @@ type pgErrMapping struct {
 }
 
 // pgErrorCodeMap maps PostgreSQL error codes to sanitized error info.
-var pgErrorCodeMap = map[pq.ErrorCode]pgErrMapping{
-	"23505": {errors.CodeConflict, "Resource already exists"},              // unique_violation
-	"23503": {errors.CodeValidation, "Referenced resource does not exist"}, // foreign_key_violation
-	"23502": {errors.CodeValidation, "Required field is missing"},          // not_null_violation
-	"23514": {errors.CodeValidation, "Data validation failed"},             // check_violation
-	"57014": {errors.CodeCanceled, "Database operation was canceled"},      // query_canceled
-	"57P01": {errors.CodeDatabaseConnection, "Database connection lost"},   // admin_shutdown
-	"08000": {errors.CodeDatabaseConnection, "Database connection error"},  // connection_exception
-	"08003": {errors.CodeDatabaseConnection, "Database connection error"},  // connection_does_not_exist
-	"08006": {errors.CodeDatabaseConnection, "Database connection error"},  // connection_failure
+var pgErrorCodeMap = map[pqerror.Code]pgErrMapping{
+	// unique_violation
+	pqerror.UniqueViolation: {errors.CodeConflict, "Resource already exists"},
+	// foreign_key_violation
+	pqerror.ForeignKeyViolation: {errors.CodeValidation, "Referenced resource does not exist"},
+	// not_null_violation
+	pqerror.NotNullViolation: {errors.CodeValidation, "Required field is missing"},
+	// check_violation
+	pqerror.CheckViolation: {errors.CodeValidation, "Data validation failed"},
+	// query_canceled
+	pqerror.QueryCanceled: {errors.CodeCanceled, "Database operation was canceled"},
+	// admin_shutdown
+	pqerror.AdminShutdown: {errors.CodeDatabaseConnection, "Database connection lost"},
+	// connection_exception
+	pqerror.ConnectionException: {errors.CodeDatabaseConnection, "Database connection error"},
+	// connection_does_not_exist
+	pqerror.ConnectionDoesNotExist: {errors.CodeDatabaseConnection, "Database connection error"},
+	// connection_failure
+	pqerror.ConnectionFailure: {errors.CodeDatabaseConnection, "Database connection error"},
 }
 
 // sanitizeDBError converts raw database errors into safe, sanitized errors
@@ -53,7 +63,7 @@ func sanitizeDBError(operation string, err error) error {
 	}
 
 	// Check for PostgreSQL-specific errors.
-	if pqErr, ok := err.(*pq.Error); ok {
+	if pqErr := pq.As(err); pqErr != nil {
 		var dbErr *errors.DatabaseError
 		if mapping, found := pgErrorCodeMap[pqErr.Code]; found {
 			dbErr = errors.NewDatabaseError(mapping.code, mapping.message)
