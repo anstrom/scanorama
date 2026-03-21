@@ -6,7 +6,7 @@ package profiles
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -45,7 +45,7 @@ func (m *Manager) GetAll(ctx context.Context) ([]*db.ScanProfile, error) {
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("Failed to close rows: %v", err)
+			slog.Warn("failed to close rows", "error", err)
 		}
 	}()
 
@@ -108,7 +108,7 @@ func (m *Manager) GetByOSFamily(ctx context.Context, osFamily string) ([]*db.Sca
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("Failed to close rows: %v", err)
+			slog.Warn("failed to close rows", "error", err)
 		}
 	}()
 
@@ -354,7 +354,7 @@ func (m *Manager) GetProfileStats(ctx context.Context) (map[string]int, error) {
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("Failed to close rows: %v", err)
+			slog.Warn("failed to close rows", "error", err)
 		}
 	}()
 
