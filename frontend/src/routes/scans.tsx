@@ -24,7 +24,8 @@ type ScanStatus =
   | "running"
   | "completed"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "stopped";
 
 function SkeletonRows({ count }: { count: number }) {
   return (
@@ -105,7 +106,6 @@ export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
   );
   const { data: resultsData, isLoading: resultsLoading } = useScanResults(
     scan.id ?? "",
-    {},
     scan.status,
   );
 
@@ -387,6 +387,11 @@ export function ScansPage() {
   const pagination = data?.pagination;
   const totalPages = pagination?.total_pages ?? 1;
 
+  // Clamp page back when a filter change reduces total_pages below current page.
+  if (!isLoading && totalPages > 0 && page > totalPages) {
+    setPage(totalPages);
+  }
+
   return (
     <>
       <div className="space-y-4">
@@ -408,6 +413,7 @@ export function ScansPage() {
             <option value="completed">Completed</option>
             <option value="failed">Failed</option>
             <option value="cancelled">Cancelled</option>
+            <option value="stopped">Stopped</option>
           </select>
 
           <Button

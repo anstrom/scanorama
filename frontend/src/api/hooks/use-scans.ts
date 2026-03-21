@@ -107,10 +107,9 @@ export function useCreateScan() {
     }) => {
       const { data, error } = await api.POST("/scans", { body });
       if (error) {
+        const apiError = error as { message?: string; error?: string };
         throw new Error(
-          typeof (error as { message?: string }).message === "string"
-            ? (error as { message: string }).message
-            : "Scan creation failed.",
+          apiError.message ?? apiError.error ?? "Scan creation failed.",
         );
       }
       return data;
@@ -121,11 +120,7 @@ export function useCreateScan() {
   });
 }
 
-export function useScanResults(
-  scanId: string,
-  _params?: { page?: number; page_size?: number },
-  scanStatus?: string,
-) {
+export function useScanResults(scanId: string, scanStatus?: string) {
   return useQuery({
     queryKey: ["scans", scanId, "results"],
     queryFn: async () => {

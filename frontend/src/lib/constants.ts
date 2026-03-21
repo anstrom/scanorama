@@ -14,6 +14,7 @@ export const STATUS_COLORS = {
   failed: "text-danger",
   error: "text-danger",
   cancelled: "text-danger",
+  stopped: "text-danger",
 
   unknown: "text-text-muted",
   filtered: "text-text-muted",
@@ -37,6 +38,7 @@ export const STATUS_BG_COLORS = {
   failed: "bg-danger/15 text-danger",
   error: "bg-danger/15 text-danger",
   cancelled: "bg-danger/15 text-danger",
+  stopped: "bg-danger/15 text-danger",
 
   unknown: "bg-text-muted/15 text-text-muted",
   filtered: "bg-text-muted/15 text-text-muted",

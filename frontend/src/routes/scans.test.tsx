@@ -25,7 +25,7 @@ const mockScans = [
     status: "completed" as const,
     targets: ["192.168.1.0/24"],
     hosts_discovered: 25,
-    ports_scanned: 2500,
+    ports_scanned: "22,80,443",
     duration: "14m30s",
     started_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
@@ -162,6 +162,7 @@ describe("ScansPage", () => {
       "completed",
       "failed",
       "cancelled",
+      "stopped",
     ]);
   });
 
@@ -245,7 +246,7 @@ describe("ScansPage", () => {
 
   it("renders ports_scanned in the table", () => {
     render(<ScansPage />);
-    expect(screen.getByText("2500")).toBeInTheDocument();
+    expect(screen.getByText("22,80,443")).toBeInTheDocument();
   });
 
   it("renders duration when present", () => {

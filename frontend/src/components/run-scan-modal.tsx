@@ -67,11 +67,23 @@ export function RunScanModal({
       return;
     }
 
+    if (mode === "custom" && !ports.trim()) {
+      setError(
+        "Ports are required. Enter a port number, range, or list (e.g. 22,80,443 or 1-1024).",
+      );
+      return;
+    }
+
     // Split comma/whitespace-separated targets into an array.
     const targets = trimmedTarget
       .split(/[\s,]+/)
       .map((t) => t.trim())
       .filter(Boolean);
+
+    if (targets.length > 100) {
+      setError(`Too many targets (${targets.length}). Maximum is 100.`);
+      return;
+    }
 
     // Auto-generate a name from the first target.
     const name = `Ad-hoc scan: ${targets[0]}${targets.length > 1 ? ` +${targets.length - 1}` : ""}`;
@@ -81,11 +93,13 @@ export function RunScanModal({
       if (mode === "profile") {
         // Expand the profile's settings into the request — the backend
         // expects scan_type at the top level, not a UUID profile_id.
+        // Fall back to "1-65535" when the profile has no ports set, because
+        // the backend now requires a non-empty ports field.
         result = await createScan({
           name,
           targets,
           scan_type: selectedProfile?.scan_type ?? "connect",
-          ...(selectedProfile?.ports ? { ports: selectedProfile.ports } : {}),
+          ports: selectedProfile?.ports || "1-65535",
           ...(osDetection ? { os_detection: true } : {}),
         });
       } else {
@@ -93,7 +107,7 @@ export function RunScanModal({
           name,
           targets,
           scan_type: scanType,
-          ...(ports.trim() ? { ports: ports.trim() } : {}),
+          ports: ports.trim(),
           ...(osDetection ? { os_detection: true } : {}),
         });
       }
@@ -276,7 +290,7 @@ export function RunScanModal({
                 >
                   Ports
                   <span className="text-text-muted font-normal ml-1">
-                    (optional — leave blank to scan all)
+                    (required — e.g. 22,80,443 or 1-1024)
                   </span>
                 </label>
                 <input
