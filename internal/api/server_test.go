@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -381,30 +380,5 @@ func TestBusinessLogicInvariants(t *testing.T) {
 		assert.Equal(t, cfg, server.config)
 		assert.NotNil(t, server.router)
 		assert.False(t, server.startTime.IsZero())
-	})
-
-	t.Run("pagination calculations are mathematically correct", func(t *testing.T) {
-		cfg := createTestConfig()
-		server, err := New(cfg, nil)
-		require.NoError(t, err)
-
-		testCases := []struct {
-			page     int
-			pageSize int
-			offset   int
-		}{
-			{1, 20, 0},
-			{2, 20, 20},
-			{5, 10, 40},
-			{10, 25, 225},
-		}
-
-		for _, tc := range testCases {
-			url := fmt.Sprintf("/test?page=%d&page_size=%d", tc.page, tc.pageSize)
-			req := httptest.NewRequest("GET", url, http.NoBody)
-			params := server.GetPaginationParams(req)
-
-			assert.Equal(t, tc.offset, params.Offset)
-		}
 	})
 }

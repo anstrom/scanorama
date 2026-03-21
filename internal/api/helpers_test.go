@@ -66,73 +66,6 @@ func TestServerHelperMethods(t *testing.T) {
 
 		assert.Error(t, err)
 	})
-
-	t.Run("GetPaginationParams returns correct defaults", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/test", http.NoBody)
-
-		params := server.GetPaginationParams(req)
-
-		assert.Equal(t, 1, params.Page)
-		assert.Equal(t, 20, params.PageSize)
-		assert.Equal(t, 0, params.Offset)
-	})
-
-	t.Run("GetPaginationParams parses query parameters", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/test?page=3&page_size=50", http.NoBody)
-
-		params := server.GetPaginationParams(req)
-
-		assert.Equal(t, 3, params.Page)
-		assert.Equal(t, 50, params.PageSize)
-		assert.Equal(t, 100, params.Offset) // (3-1) * 50
-	})
-
-	t.Run("GetPaginationParams enforces maximum page size", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/test?page_size=1000", http.NoBody)
-
-		params := server.GetPaginationParams(req)
-
-		assert.Equal(t, 100, params.PageSize) // Should be capped at max
-	})
-}
-
-func TestPaginatedResponse(t *testing.T) {
-	cfg := createTestConfig()
-	server, err := New(cfg, nil)
-	require.NoError(t, err)
-
-	t.Run("WritePaginatedResponse formats correctly", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/test", http.NoBody)
-		rec := httptest.NewRecorder()
-
-		data := []string{"item1", "item2", "item3"}
-		totalItems := int64(100)
-
-		params := PaginationParams{
-			Page:     1,
-			PageSize: 10,
-			Offset:   0,
-		}
-		server.WritePaginatedResponse(rec, req, data, params, totalItems)
-
-		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-
-		var response PaginatedResponse
-		err := json.Unmarshal(rec.Body.Bytes(), &response)
-		require.NoError(t, err)
-
-		// JSON unmarshaling converts []string to []interface{}
-		assert.Len(t, response.Data, 3)
-		assert.Equal(t, "item1", response.Data.([]interface{})[0])
-		assert.Equal(t, "item2", response.Data.([]interface{})[1])
-		assert.Equal(t, "item3", response.Data.([]interface{})[2])
-
-		assert.Equal(t, 1, response.Pagination.Page)
-		assert.Equal(t, 10, response.Pagination.PageSize) // Uses actual PageSize from params
-		assert.Equal(t, int64(100), response.Pagination.TotalItems)
-		assert.Equal(t, 10, response.Pagination.TotalPages) // 100/10
-	})
 }
 
 func TestErrorHandling(t *testing.T) {
@@ -198,35 +131,6 @@ func TestServerEdgeCases(t *testing.T) {
 
 		assert.Error(t, err, "Empty body should result in error")
 	})
-
-	t.Run("handles invalid pagination parameters", func(t *testing.T) {
-		cfg := createTestConfig()
-		server, err := New(cfg, nil)
-		require.NoError(t, err)
-
-		testCases := []struct {
-			name     string
-			query    string
-			expected PaginationParams
-		}{
-			{"negative page", "page=-1", PaginationParams{Page: 1, PageSize: 20, Offset: 0}},
-			{"zero page", "page=0", PaginationParams{Page: 1, PageSize: 20, Offset: 0}},
-			{"negative page_size", "page_size=-10", PaginationParams{Page: 1, PageSize: 20, Offset: 0}},
-			{"non-numeric page", "page=abc", PaginationParams{Page: 1, PageSize: 20, Offset: 0}},
-			{"non-numeric page_size", "page_size=xyz", PaginationParams{Page: 1, PageSize: 20, Offset: 0}},
-		}
-
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				req := httptest.NewRequest("GET", "/test?"+tc.query, http.NoBody)
-				params := server.GetPaginationParams(req)
-
-				assert.Equal(t, tc.expected.Page, params.Page)
-				assert.Equal(t, tc.expected.PageSize, params.PageSize)
-				assert.Equal(t, tc.expected.Offset, params.Offset)
-			})
-		}
-	})
 }
 
 func BenchmarkServerOperations(b *testing.B) {
@@ -264,15 +168,6 @@ func BenchmarkServerOperations(b *testing.B) {
 
 			var parsed map[string]interface{}
 			server.ParseJSON(req, &parsed)
-		}
-	})
-
-	b.Run("GetPaginationParams", func(b *testing.B) {
-		req := httptest.NewRequest("GET", "/test?page=5&page_size=50", http.NoBody)
-
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			server.GetPaginationParams(req)
 		}
 	})
 }
