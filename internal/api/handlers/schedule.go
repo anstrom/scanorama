@@ -52,7 +52,7 @@ type ScheduleRequest struct {
 	Description  string            `json:"description,omitempty"`
 	CronExpr     string            `json:"cron_expr" validate:"required"`
 	Type         string            `json:"type" validate:"required,oneof=scan discovery"`
-	TargetID     int64             `json:"target_id" validate:"required"`
+	NetworkID    uuid.UUID         `json:"network_id" validate:"required"`
 	Enabled      bool              `json:"enabled"`
 	MaxRunTime   time.Duration     `json:"max_run_time,omitempty"`
 	RetryOnError bool              `json:"retry_on_error"`
@@ -71,8 +71,8 @@ type ScheduleResponse struct {
 	Description  string            `json:"description,omitempty"`
 	CronExpr     string            `json:"cron_expr"`
 	Type         string            `json:"type"`
-	TargetID     string            `json:"target_id,omitempty"`
-	TargetName   string            `json:"target_name,omitempty"`
+	NetworkID    string            `json:"network_id,omitempty"`
+	NetworkName  string            `json:"network_name,omitempty"`
 	Enabled      bool              `json:"enabled"`
 	MaxRunTime   time.Duration     `json:"max_run_time,omitempty"`
 	RetryOnError bool              `json:"retry_on_error"`
@@ -360,8 +360,8 @@ func (h *ScheduleHandler) validateScheduleType(scheduleType string) error {
 }
 
 func (h *ScheduleHandler) validateScheduleOptions(req *ScheduleRequest) error {
-	if req.TargetID <= 0 {
-		return fmt.Errorf("target ID must be positive")
+	if req.NetworkID == uuid.Nil {
+		return fmt.Errorf("network_id is required")
 	}
 
 	// Validate timeouts
@@ -453,7 +453,7 @@ func (h *ScheduleHandler) getScheduleFilters(r *http.Request) db.ScheduleFilters
 func (h *ScheduleHandler) requestToDBSchedule(req *ScheduleRequest) interface{} {
 	// Build job_config from request fields that don't have dedicated DB columns
 	jobConfig := map[string]interface{}{
-		"target_id":      req.TargetID,
+		"network_id":     req.NetworkID.String(),
 		"max_run_time":   req.MaxRunTime.String(),
 		"retry_on_error": req.RetryOnError,
 		"max_retries":    req.MaxRetries,
@@ -515,8 +515,8 @@ func applyJobConfigToScheduleResponse(cfg map[string]interface{}, resp *Schedule
 		return
 	}
 
-	if targetID, ok := cfg["target_id"]; ok {
-		resp.TargetID = fmt.Sprintf("%v", targetID)
+	if networkID, ok := cfg["network_id"]; ok {
+		resp.NetworkID = fmt.Sprintf("%v", networkID)
 	}
 	if v, ok := cfg["retry_on_error"].(bool); ok {
 		resp.RetryOnError = v

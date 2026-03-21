@@ -5,6 +5,7 @@ package scanning
 
 import (
 	"context"
+	"database/sql"
 	stderrors "errors"
 	"fmt"
 	"net"
@@ -521,26 +522,26 @@ func storeScanResults(
 		}
 	} else {
 		// No caller-supplied ID — standalone (non-API) scan run.
-		// Create a scan target and a brand-new scan_job row from scratch.
-		scanTarget, err := createOrGetScanTarget(ctx, database, config)
+		// Find or create a network entry and create a brand-new scan_job row.
+		networkID, err := findOrCreateNetwork(ctx, database, config)
 		if err != nil {
-			logging.Error("Failed to create scan target", "error", err)
-			return fmt.Errorf("failed to create scan target: %w", err)
+			logging.Error("Failed to find or create network", "error", err)
+			return fmt.Errorf("failed to find or create network: %w", err)
 		}
-		logging.Debug("Created/retrieved scan target", "target_id", scanTarget.ID, "target_name", scanTarget.Name)
+		logging.Debug("Found/created network", "network_id", networkID)
 
 		jobID = uuid.New()
 		now := time.Now()
 		scanJob := &db.ScanJob{
-			ID:       jobID,
-			TargetID: scanTarget.ID,
-			Status:   db.ScanJobStatusCompleted,
+			ID:        jobID,
+			NetworkID: networkID,
+			Status:    db.ScanJobStatusCompleted,
 		}
 		scanJob.StartedAt = &result.StartTime
 		scanJob.CompletedAt = &now
 		scanJob.ScanStats = db.JSONB(statsJSON)
 
-		logging.Debug("Creating scan job", "job_id", scanJob.ID, "target_id", scanJob.TargetID)
+		logging.Debug("Creating scan job", "job_id", scanJob.ID, "network_id", scanJob.NetworkID)
 		if err := jobRepo.Create(ctx, scanJob); err != nil {
 			logging.Error("Failed to create scan job", "error", err)
 			return fmt.Errorf("failed to create scan job: %w", err)
@@ -558,32 +559,77 @@ func storeScanResults(
 	return nil
 }
 
-// createOrGetScanTarget creates or retrieves a scan target for the given configuration.
-func createOrGetScanTarget(ctx context.Context, database *db.DB, config *ScanConfig) (*db.ScanTarget, error) {
-	targetRepo := db.NewScanTargetRepository(database)
-
-	// Try to find existing target by checking if any target contains our first IP
+// findOrCreateNetwork finds an existing network by CIDR or creates a new one
+// for ad-hoc (non-API) scan runs.  Returns the network UUID to store as
+// scan_jobs.network_id.
+func findOrCreateNetwork(ctx context.Context, database *db.DB, config *ScanConfig) (uuid.UUID, error) {
 	if len(config.Targets) == 0 {
-		return nil, fmt.Errorf("no targets specified")
+		return uuid.Nil, fmt.Errorf("no targets specified")
 	}
 
 	firstTarget := config.Targets[0]
+
+	// Normalise to a CIDR string.
+	cidr := firstTarget
 	ip := net.ParseIP(firstTarget)
-	if ip == nil {
-		// If it's not an IP, treat it as hostname for now
-		// For simplicity, create a /32 network for the resolved IP
-		return createAdhocScanTarget(ctx, targetRepo, firstTarget, config)
+	if ip != nil {
+		if ip.To4() != nil {
+			cidr = ip.String() + "/32"
+		} else {
+			cidr = ip.String() + "/128"
+		}
 	}
 
-	// Create /32 network for single IP
-	var network string
-	if ip.To4() != nil {
-		network = ip.String() + "/32"
-	} else {
-		network = ip.String() + "/128"
+	// Reuse the network if this CIDR is already known.
+	var id uuid.UUID
+	err := database.QueryRowContext(ctx,
+		`SELECT id FROM networks WHERE cidr = $1`, cidr).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if !stderrors.Is(err, sql.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("failed to look up network by CIDR: %w", err)
 	}
 
-	return createAdhocScanTarget(ctx, targetRepo, network, config)
+	// Not found — determine scan type and create an ephemeral network entry
+	// (is_active=false, scan_enabled=false so it won't appear in scheduled scans).
+	dbScanType := config.ScanType
+	switch config.ScanType {
+	case "comprehensive", scanTypeAggressive:
+		dbScanType = scanTypeConnect
+	case "stealth":
+		dbScanType = scanTypeConnect
+	}
+
+	id = uuid.New()
+	name := fmt.Sprintf("Ad-hoc: %s", cidr)
+	_, err = database.ExecContext(ctx, `
+		INSERT INTO networks (
+			id, name, cidr,
+			scan_ports, scan_type,
+			is_active, scan_enabled, discovery_method
+		) VALUES (
+			$1, $2, $3, $4, $5, false, false, 'tcp'
+		)
+	`, id, name, cidr, config.Ports, dbScanType)
+	if err != nil {
+		// Name collision — fall back to the CIDR itself as the name.
+		_, err = database.ExecContext(ctx, `
+			INSERT INTO networks (
+				id, name, cidr,
+				scan_ports, scan_type,
+				is_active, scan_enabled, discovery_method
+			) VALUES (
+				$1, $2, $3, $4, $5, false, false, 'tcp'
+			)
+		`, id, cidr, cidr, config.Ports, dbScanType)
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("failed to create network for ad-hoc scan: %w", err)
+		}
+	}
+
+	logging.Debug("Created ad-hoc network", "network_id", id, "cidr", cidr)
+	return id, nil
 }
 
 // parseTargetAddress parses a target string as CIDR, IP address, or hostname.
@@ -622,47 +668,6 @@ func parseTargetAddress(target string) (db.NetworkAddr, error) {
 	}
 	networkAddr.IPNet = net.IPNet{IP: ip, Mask: mask}
 	return networkAddr, nil
-}
-
-// createAdhocScanTarget creates a temporary scan target for ad-hoc scans.
-func createAdhocScanTarget(ctx context.Context, targetRepo *db.ScanTargetRepository,
-	target string, config *ScanConfig) (*db.ScanTarget, error) {
-	logging.Debug("Creating ad-hoc scan target", "target", target)
-
-	// Parse target address
-	networkAddr, err := parseTargetAddress(target)
-	if err != nil {
-		logging.Error("Failed to parse target address", "target", target, "error", err)
-		return nil, err
-	}
-	logging.Debug("Parsed target address", "target", target, "network", networkAddr.String())
-
-	// Map scan types to database-compatible values
-	dbScanType := config.ScanType
-	switch config.ScanType {
-	case "comprehensive", scanTypeAggressive:
-		dbScanType = "version" // Map complex scan types to version detection
-	case "stealth":
-		dbScanType = scanTypeConnect // Map stealth to basic connect scan
-	}
-
-	scanTarget := &db.ScanTarget{
-		ID:                  uuid.New(),
-		Name:                fmt.Sprintf("Ad-hoc scan: %s", target),
-		Network:             networkAddr,
-		ScanIntervalSeconds: 0, // Ad-hoc scans don't repeat
-		ScanPorts:           config.Ports,
-		ScanType:            dbScanType,
-		Enabled:             false, // Ad-hoc targets are not scheduled
-	}
-
-	if err := targetRepo.Create(ctx, scanTarget); err != nil {
-		logging.Error("Failed to create scan target", "error", err)
-		return nil, fmt.Errorf("failed to create scan target: %w", err)
-	}
-	logging.Debug("Successfully created scan target", "target_id", scanTarget.ID, "target_name", scanTarget.Name)
-
-	return scanTarget, nil
 }
 
 // debugHostLookup performs detailed debugging of host lookup process.

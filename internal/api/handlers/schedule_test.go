@@ -245,7 +245,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "valid options",
 			request: &ScheduleRequest{
-				TargetID:     1,
+				NetworkID:    uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				MaxRunTime:   30 * time.Minute,
 				MaxRetries:   3,
 				RetryDelay:   5 * time.Minute,
@@ -254,25 +254,25 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "zero target ID",
+			name: "nil network ID",
 			request: &ScheduleRequest{
-				TargetID: 0,
+				NetworkID: uuid.Nil,
 			},
 			expectError: true,
-			errorMsg:    "target ID must be positive",
+			errorMsg:    "network_id is required",
 		},
 		{
-			name: "negative target ID",
+			name: "zero-value network ID",
 			request: &ScheduleRequest{
-				TargetID: -1,
+				NetworkID: uuid.Nil,
 			},
 			expectError: true,
-			errorMsg:    "target ID must be positive",
+			errorMsg:    "network_id is required",
 		},
 		{
 			name: "negative max run time",
 			request: &ScheduleRequest{
-				TargetID:   1,
+				NetworkID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				MaxRunTime: -1 * time.Second,
 			},
 			expectError: true,
@@ -281,7 +281,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "max run time too long",
 			request: &ScheduleRequest{
-				TargetID:   1,
+				NetworkID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				MaxRunTime: 25 * time.Hour,
 			},
 			expectError: true,
@@ -290,7 +290,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "negative max retries",
 			request: &ScheduleRequest{
-				TargetID:   1,
+				NetworkID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				MaxRetries: -1,
 			},
 			expectError: true,
@@ -299,7 +299,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "max retries too high",
 			request: &ScheduleRequest{
-				TargetID:   1,
+				NetworkID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				MaxRetries: maxScheduleRetries + 1,
 			},
 			expectError: true,
@@ -308,7 +308,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "negative retry delay",
 			request: &ScheduleRequest{
-				TargetID:   1,
+				NetworkID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				RetryDelay: -1 * time.Second,
 			},
 			expectError: true,
@@ -317,7 +317,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "retry delay too long",
 			request: &ScheduleRequest{
-				TargetID:   1,
+				NetworkID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				RetryDelay: 2 * time.Hour,
 			},
 			expectError: true,
@@ -326,7 +326,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "empty notification email",
 			request: &ScheduleRequest{
-				TargetID:     1,
+				NetworkID:    uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				NotifyEmails: []string{""},
 			},
 			expectError: true,
@@ -335,7 +335,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "notification email too long",
 			request: &ScheduleRequest{
-				TargetID:     1,
+				NetworkID:    uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				NotifyEmails: []string{string(make([]byte, maxScheduleNameLength+1)) + "@example.com"},
 			},
 			expectError: true,
@@ -344,7 +344,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "invalid email format - no @",
 			request: &ScheduleRequest{
-				TargetID:     1,
+				NetworkID:    uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				NotifyEmails: []string{"invalid.email.com"},
 			},
 			expectError: true,
@@ -353,7 +353,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "invalid email format - no dot",
 			request: &ScheduleRequest{
-				TargetID:     1,
+				NetworkID:    uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				NotifyEmails: []string{"invalid@email"},
 			},
 			expectError: true,
@@ -362,7 +362,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "multiple valid emails",
 			request: &ScheduleRequest{
-				TargetID:     1,
+				NetworkID:    uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				NotifyEmails: []string{"user1@example.com", "user2@example.org"},
 			},
 			expectError: false,
@@ -370,7 +370,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "second email invalid",
 			request: &ScheduleRequest{
-				TargetID:     1,
+				NetworkID:    uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				NotifyEmails: []string{"valid@example.com", "invalid"},
 			},
 			expectError: true,
@@ -379,7 +379,7 @@ func TestScheduleHandler_validateScheduleOptions(t *testing.T) {
 		{
 			name: "boundary values - max allowed",
 			request: &ScheduleRequest{
-				TargetID:   1,
+				NetworkID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				MaxRunTime: 24 * time.Hour,
 				MaxRetries: maxScheduleRetries,
 				RetryDelay: time.Hour,
@@ -559,7 +559,7 @@ func TestScheduleHandler_validateScheduleRequest(t *testing.T) {
 				Description:  "test description",
 				CronExpr:     "0 * * * *",
 				Type:         "scan",
-				TargetID:     1,
+				NetworkID:    uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 				Enabled:      true,
 				MaxRunTime:   30 * time.Minute,
 				RetryOnError: true,
@@ -575,20 +575,20 @@ func TestScheduleHandler_validateScheduleRequest(t *testing.T) {
 		{
 			name: "minimal valid request",
 			request: &ScheduleRequest{
-				Name:     "test",
-				CronExpr: "* * * * *",
-				Type:     "discovery",
-				TargetID: 1,
+				Name:      "test",
+				CronExpr:  "* * * * *",
+				Type:      "discovery",
+				NetworkID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 			},
 			expectError: false,
 		},
 		{
 			name: "fails on invalid name",
 			request: &ScheduleRequest{
-				Name:     "",
-				CronExpr: "* * * * *",
-				Type:     "scan",
-				TargetID: 1,
+				Name:      "",
+				CronExpr:  "* * * * *",
+				Type:      "scan",
+				NetworkID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 			},
 			expectError: true,
 			errorMsg:    "schedule name is required",
@@ -596,10 +596,10 @@ func TestScheduleHandler_validateScheduleRequest(t *testing.T) {
 		{
 			name: "fails on invalid cron",
 			request: &ScheduleRequest{
-				Name:     "test",
-				CronExpr: "invalid",
-				Type:     "scan",
-				TargetID: 1,
+				Name:      "test",
+				CronExpr:  "invalid",
+				Type:      "scan",
+				NetworkID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 			},
 			expectError: true,
 			errorMsg:    "invalid cron expression",
@@ -607,33 +607,33 @@ func TestScheduleHandler_validateScheduleRequest(t *testing.T) {
 		{
 			name: "fails on invalid type",
 			request: &ScheduleRequest{
-				Name:     "test",
-				CronExpr: "* * * * *",
-				Type:     "invalid",
-				TargetID: 1,
+				Name:      "test",
+				CronExpr:  "* * * * *",
+				Type:      "invalid",
+				NetworkID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 			},
 			expectError: true,
 			errorMsg:    "invalid schedule type",
 		},
 		{
-			name: "fails on invalid target ID",
+			name: "fails on nil network ID",
 			request: &ScheduleRequest{
-				Name:     "test",
-				CronExpr: "* * * * *",
-				Type:     "scan",
-				TargetID: 0,
+				Name:      "test",
+				CronExpr:  "* * * * *",
+				Type:      "scan",
+				NetworkID: uuid.Nil,
 			},
 			expectError: true,
-			errorMsg:    "target ID must be positive",
+			errorMsg:    "network_id is required",
 		},
 		{
 			name: "fails on invalid tags",
 			request: &ScheduleRequest{
-				Name:     "test",
-				CronExpr: "* * * * *",
-				Type:     "scan",
-				TargetID: 1,
-				Tags:     []string{""},
+				Name:      "test",
+				CronExpr:  "* * * * *",
+				Type:      "scan",
+				NetworkID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
+				Tags:      []string{""},
 			},
 			expectError: true,
 			errorMsg:    "tag 1 is empty",
@@ -726,7 +726,7 @@ func TestScheduleHandler_requestToDBSchedule(t *testing.T) {
 		Description:  "test description",
 		CronExpr:     "0 * * * *",
 		Type:         "scan",
-		TargetID:     123,
+		NetworkID:    uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 		Enabled:      true,
 		MaxRunTime:   30 * time.Minute,
 		RetryOnError: true,
@@ -754,7 +754,7 @@ func TestScheduleHandler_requestToDBSchedule(t *testing.T) {
 	jobConfig, ok := resultMap["job_config"].(map[string]interface{})
 	require.True(t, ok, "job_config should be a map")
 
-	assert.Equal(t, int64(123), jobConfig["target_id"])
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", jobConfig["network_id"])
 	assert.Equal(t, req.MaxRunTime.String(), jobConfig["max_run_time"])
 	assert.Equal(t, req.RetryOnError, jobConfig["retry_on_error"])
 	assert.Equal(t, req.MaxRetries, jobConfig["max_retries"])
@@ -780,7 +780,7 @@ func TestScheduleHandler_scheduleToResponse(t *testing.T) {
 		CronExpression: "0 * * * *",
 		JobType:        "scan",
 		JobConfig: map[string]interface{}{
-			"target_id":      float64(123),
+			"network_id":     "550e8400-e29b-41d4-a716-446655440000",
 			"retry_on_error": true,
 			"max_retries":    float64(3),
 			"notify_on_fail": true,
@@ -810,7 +810,7 @@ func TestScheduleHandler_scheduleToResponse(t *testing.T) {
 	assert.Equal(t, now, result.UpdatedAt)
 
 	// Fields extracted from JobConfig
-	assert.Equal(t, "123", result.TargetID)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", result.NetworkID)
 	assert.Equal(t, true, result.RetryOnError)
 	assert.Equal(t, 3, result.MaxRetries)
 	assert.Equal(t, true, result.NotifyOnFail)
@@ -866,7 +866,7 @@ func TestScheduleHandler_scheduleToResponse_NilJobConfig(t *testing.T) {
 	result := handler.scheduleToResponse(schedule)
 
 	assert.Equal(t, "bare-schedule", result.Name)
-	assert.Empty(t, result.TargetID)
+	assert.Empty(t, result.NetworkID)
 	assert.False(t, result.RetryOnError)
 	assert.Equal(t, 0, result.MaxRetries)
 	assert.Nil(t, result.Tags)
@@ -879,7 +879,7 @@ func TestScheduleRequest_JSONMarshaling(t *testing.T) {
 		Description:  "test description",
 		CronExpr:     "0 * * * *",
 		Type:         "scan",
-		TargetID:     1,
+		NetworkID:    uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 		Enabled:      true,
 		MaxRunTime:   30 * time.Minute,
 		RetryOnError: true,
@@ -902,7 +902,7 @@ func TestScheduleRequest_JSONMarshaling(t *testing.T) {
 	assert.Equal(t, req.Description, decoded.Description)
 	assert.Equal(t, req.CronExpr, decoded.CronExpr)
 	assert.Equal(t, req.Type, decoded.Type)
-	assert.Equal(t, req.TargetID, decoded.TargetID)
+	assert.Equal(t, req.NetworkID, decoded.NetworkID)
 	assert.Equal(t, req.Enabled, decoded.Enabled)
 	assert.Equal(t, req.MaxRunTime, decoded.MaxRunTime)
 	assert.Equal(t, req.RetryOnError, decoded.RetryOnError)

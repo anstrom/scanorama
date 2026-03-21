@@ -23,6 +23,7 @@ func TestScanRepository_CreateAndGet(t *testing.T) {
 
 	ctx := context.Background()
 
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
 	input := map[string]interface{}{
 		"name":      "test-scan-create",
 		"targets":   []string{"127.0.0.1"},
@@ -68,6 +69,7 @@ func TestScanRepository_ListScans(t *testing.T) {
 
 	ctx := context.Background()
 
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.2/32'")
 	scan, err := db.CreateScan(ctx, map[string]interface{}{
 		"name":      "test-scan-list",
 		"targets":   []string{"127.0.0.2"},
@@ -102,6 +104,7 @@ func TestScanRepository_UpdateScan(t *testing.T) {
 
 	ctx := context.Background()
 
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
 	scan, err := db.CreateScan(ctx, map[string]interface{}{
 		"name":      "test-scan-update",
 		"targets":   []string{"127.0.0.1"},
@@ -134,9 +137,10 @@ func TestScanRepository_DeleteScan(t *testing.T) {
 
 	ctx := context.Background()
 
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.3/32'")
 	scan, err := db.CreateScan(ctx, map[string]interface{}{
 		"name":      "test-scan-delete",
-		"targets":   []string{"127.0.0.1"},
+		"targets":   []string{"127.0.0.3"},
 		"scan_type": "connect",
 		"ports":     "22",
 	})
@@ -162,9 +166,10 @@ func TestScanRepository_DeleteScan_Running(t *testing.T) {
 
 	ctx := context.Background()
 
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.5/32'")
 	scan, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "test-scan-delete-running",
-		"targets":   []string{"127.0.0.1"},
+		"name":      "test-scan-running",
+		"targets":   []string{"127.0.0.5"},
 		"scan_type": "connect",
 		"ports":     "80",
 	})
@@ -186,9 +191,10 @@ func TestScanRepository_StartCompleteScan(t *testing.T) {
 
 	ctx := context.Background()
 
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.4/32'")
 	scan, err := db.CreateScan(ctx, map[string]interface{}{
 		"name":      "test-scan-lifecycle",
-		"targets":   []string{"127.0.0.1"},
+		"targets":   []string{"127.0.0.4"},
 		"scan_type": "connect",
 		"ports":     "22",
 	})
@@ -218,6 +224,7 @@ func TestScanRepository_StopScan(t *testing.T) {
 
 	ctx := context.Background()
 
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
 	scan, err := db.CreateScan(ctx, map[string]interface{}{
 		"name":      "test-scan-stop",
 		"targets":   []string{"127.0.0.1"},
@@ -241,6 +248,7 @@ func TestScanRepository_GetScanResults(t *testing.T) {
 
 	ctx := context.Background()
 
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
 	scan, err := db.CreateScan(ctx, map[string]interface{}{
 		"name":      "test-scan-results",
 		"targets":   []string{"127.0.0.1"},
@@ -263,6 +271,7 @@ func TestScanRepository_GetScanSummary(t *testing.T) {
 
 	ctx := context.Background()
 
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
 	scan, err := db.CreateScan(ctx, map[string]interface{}{
 		"name":      "test-scan-summary",
 		"targets":   []string{"127.0.0.1"},
@@ -286,27 +295,27 @@ func TestScanJobRepository_CreateAndGet(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, ipNet, err := net.ParseCIDR("10.0.0.1/32")
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE name = 'job-repo-target'")
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '10.0.0.1/32'")
+	networkID := uuid.New()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO networks (
+			id, name, cidr,
+			discovery_method, is_active, scan_enabled,
+			scan_interval_seconds, scan_ports, scan_type
+		) VALUES (
+			$1, $2, $3,
+			'tcp', true, false, 0, '22', 'connect'
+		)`,
+		networkID, "job-repo-target", "10.0.0.1/32")
 	require.NoError(t, err)
-
-	targetRepo := NewScanTargetRepository(db)
-	targetID := uuid.New()
-	require.NoError(t, targetRepo.Create(ctx, &ScanTarget{
-		ID:                  targetID,
-		Name:                "job-repo-target",
-		Network:             NetworkAddr{IPNet: *ipNet},
-		ScanIntervalSeconds: 0,
-		ScanPorts:           "22",
-		ScanType:            "connect",
-		Enabled:             false,
-	}))
 	t.Cleanup(func() {
-		_, _ = db.ExecContext(ctx, "DELETE FROM scan_targets WHERE id = $1", targetID)
+		_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE id = $1", networkID)
 	})
 
 	jobRepo := NewScanJobRepository(db)
 	jobID := uuid.New()
-	job := &ScanJob{ID: jobID, TargetID: targetID, Status: ScanJobStatusPending}
+	job := &ScanJob{ID: jobID, NetworkID: networkID, Status: ScanJobStatusPending}
 	require.NoError(t, jobRepo.Create(ctx, job))
 	t.Cleanup(func() {
 		_, _ = db.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", jobID)
@@ -324,28 +333,28 @@ func TestScanJobRepository_UpdateStatus(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, ipNet, err := net.ParseCIDR("10.0.0.2/32")
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE name = 'job-status-target'")
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '10.0.0.2/32'")
+	networkID := uuid.New()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO networks (
+			id, name, cidr,
+			discovery_method, is_active, scan_enabled,
+			scan_interval_seconds, scan_ports, scan_type
+		) VALUES (
+			$1, $2, $3,
+			'tcp', true, false, 0, '22', 'connect'
+		)`,
+		networkID, "job-status-target", "10.0.0.2/32")
 	require.NoError(t, err)
-
-	targetRepo := NewScanTargetRepository(db)
-	targetID := uuid.New()
-	require.NoError(t, targetRepo.Create(ctx, &ScanTarget{
-		ID:                  targetID,
-		Name:                "job-status-target",
-		Network:             NetworkAddr{IPNet: *ipNet},
-		ScanIntervalSeconds: 0,
-		ScanPorts:           "22",
-		ScanType:            "connect",
-		Enabled:             false,
-	}))
 	t.Cleanup(func() {
-		_, _ = db.ExecContext(ctx, "DELETE FROM scan_targets WHERE id = $1", targetID)
+		_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE id = $1", networkID)
 	})
 
 	jobRepo := NewScanJobRepository(db)
 	jobID := uuid.New()
 	require.NoError(t, jobRepo.Create(ctx, &ScanJob{
-		ID: jobID, TargetID: targetID, Status: ScanJobStatusPending,
+		ID: jobID, NetworkID: networkID, Status: ScanJobStatusPending,
 	}))
 	t.Cleanup(func() {
 		_, _ = db.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", jobID)
@@ -380,27 +389,29 @@ func TestPortScanRepository_CreateBatchAndGetByHost(t *testing.T) {
 		_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = $1::inet", "10.0.1.1")
 	})
 
-	// Insert a scan job to attach port scans to.
-	_, ipNet, _ := net.ParseCIDR("10.0.1.1/32")
-	targetRepo := NewScanTargetRepository(db)
-	targetID := uuid.New()
-	require.NoError(t, targetRepo.Create(ctx, &ScanTarget{
-		ID:                  targetID,
-		Name:                "port-scan-batch-target",
-		Network:             NetworkAddr{IPNet: *ipNet},
-		ScanIntervalSeconds: 0,
-		ScanPorts:           "22,80",
-		ScanType:            "connect",
-		Enabled:             false,
-	}))
+	// Insert a network and scan job to attach port scans to.
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE name = 'port-scan-batch-target'")
+	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '10.0.1.1/32'")
+	networkID := uuid.New()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO networks (
+			id, name, cidr,
+			discovery_method, is_active, scan_enabled,
+			scan_interval_seconds, scan_ports, scan_type
+		) VALUES (
+			$1, $2, $3,
+			'tcp', true, false, 0, '22,80', 'connect'
+		)`,
+		networkID, "port-scan-batch-target", "10.0.1.1/32")
+	require.NoError(t, err)
 	jobRepo := NewScanJobRepository(db)
 	jobID := uuid.New()
 	require.NoError(t, jobRepo.Create(ctx, &ScanJob{
-		ID: jobID, TargetID: targetID, Status: ScanJobStatusPending,
+		ID: jobID, NetworkID: networkID, Status: ScanJobStatusPending,
 	}))
 	t.Cleanup(func() {
 		_, _ = db.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", jobID)
-		_, _ = db.ExecContext(ctx, "DELETE FROM scan_targets WHERE id = $1", targetID)
+		_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE id = $1", networkID)
 	})
 
 	portRepo := NewPortScanRepository(db)
@@ -415,60 +426,51 @@ func TestPortScanRepository_CreateBatchAndGetByHost(t *testing.T) {
 	assert.Len(t, got, 2)
 }
 
-// ── ScanTarget repository ─────────────────────────────────────────────────────
+// ── Network repository (raw SQL) ──────────────────────────────────────────────
 
-func TestScanTargetRepository_CRUD(t *testing.T) {
+func TestNetworkRepository_CRUD(t *testing.T) {
 	db := connectTestDB(t)
 	defer db.Close()
 
 	ctx := context.Background()
-
-	_, ipNet, _ := net.ParseCIDR("192.168.99.0/24")
-	repo := NewScanTargetRepository(db)
 	id := uuid.New()
 
-	require.NoError(t, repo.Create(ctx, &ScanTarget{
-		ID:                  id,
-		Name:                "crud-target",
-		Network:             NetworkAddr{IPNet: *ipNet},
-		ScanIntervalSeconds: 3600,
-		ScanPorts:           "22",
-		ScanType:            "connect",
-		Enabled:             true,
-	}))
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(ctx, "DELETE FROM scan_targets WHERE id = $1", id)
-	})
-
-	got, err := repo.GetByID(ctx, id)
+	// 1. Insert
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO networks (
+			id, name, cidr,
+			discovery_method, is_active, scan_enabled,
+			scan_interval_seconds, scan_ports, scan_type
+		) VALUES (
+			$1, $2, $3,
+			'tcp', true, true, 3600, '22', 'connect'
+		)`,
+		id, "crud-network", "192.168.99.0/24")
 	require.NoError(t, err)
-	assert.Equal(t, "crud-target", got.Name)
-	assert.True(t, got.Enabled)
 
-	all, err := repo.GetAll(ctx)
+	// 2. Select back
+	var got Network
+	err = db.GetContext(ctx, &got,
+		"SELECT id, name, cidr, is_active, scan_enabled, scan_interval_seconds, scan_ports, scan_type, discovery_method, host_count, active_host_count, created_at, updated_at FROM networks WHERE id = $1",
+		id)
 	require.NoError(t, err)
-	var found bool
-	for _, st := range all {
-		if st.ID == id {
-			found = true
-			break
-		}
-	}
-	assert.True(t, found, "created target should appear in GetAll")
 
-	enabled, err := repo.GetEnabled(ctx)
+	// 3. Verify
+	assert.Equal(t, id, got.ID)
+	assert.Equal(t, "crud-network", got.Name)
+	assert.True(t, got.IsActive)
+	assert.True(t, got.ScanEnabled)
+	assert.Equal(t, 3600, got.ScanIntervalSeconds)
+	assert.Equal(t, "22", got.ScanPorts)
+	assert.Equal(t, "connect", got.ScanType)
+	assert.Equal(t, "tcp", got.DiscoveryMethod)
+
+	// 4. Delete
+	_, err = db.ExecContext(ctx, "DELETE FROM networks WHERE id = $1", id)
 	require.NoError(t, err)
-	var foundEnabled bool
-	for _, st := range enabled {
-		if st.ID == id {
-			foundEnabled = true
-			break
-		}
-	}
-	assert.True(t, foundEnabled, "enabled target should appear in GetEnabled")
 
-	require.NoError(t, repo.Delete(ctx, id))
-	_, err = repo.GetByID(ctx, id)
+	// Confirm deletion
+	err = db.GetContext(ctx, &got, "SELECT id FROM networks WHERE id = $1", id)
 	require.Error(t, err)
 }
 
@@ -537,6 +539,7 @@ func TestProfileRepository_CreateProfile_DuplicateName(t *testing.T) {
 
 	ctx := context.Background()
 
+	_, _ = db.ExecContext(ctx, "DELETE FROM scan_profiles WHERE name = 'test-duplicate-profile' AND is_builtin = false")
 	profile, err := db.CreateProfile(ctx, map[string]interface{}{
 		"name":      "test-duplicate-profile",
 		"scan_type": "connect",
@@ -909,4 +912,235 @@ func TestNetworkSummaryRepository_GetAll(t *testing.T) {
 	summaries, err := repo.GetAll(context.Background())
 	require.NoError(t, err)
 	assert.NotNil(t, summaries)
+}
+
+// ── Additional ScanRepository tests ──────────────────────────────────────────
+
+func TestScanRepository_CreateScan_ReuseNetwork(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	scan1, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "reuse-network-test-1",
+		"targets":   []string{"10.201.0.1"},
+		"scan_type": "connect",
+		"ports":     "80",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, scan1)
+	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan1.ID) })
+
+	var networkID1 uuid.UUID
+	err = db.QueryRowContext(ctx,
+		"SELECT network_id FROM scan_jobs WHERE id = $1", scan1.ID).Scan(&networkID1)
+	require.NoError(t, err)
+
+	scan2, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "reuse-network-test-2",
+		"targets":   []string{"10.201.0.1"},
+		"scan_type": "connect",
+		"ports":     "80",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, scan2)
+	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan2.ID) })
+
+	var networkID2 uuid.UUID
+	err = db.QueryRowContext(ctx,
+		"SELECT network_id FROM scan_jobs WHERE id = $1", scan2.ID).Scan(&networkID2)
+	require.NoError(t, err)
+
+	assert.Equal(t, networkID1, networkID2, "both scan jobs should reference the same network (CIDR reuse path)")
+}
+
+func TestScanRepository_CreateScan_NameCollision(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Pre-insert a network whose name will collide with the scan name below.
+	collisionNetID := uuid.New()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO networks (
+			id, name, cidr,
+			discovery_method, is_active, scan_enabled,
+			scan_interval_seconds, scan_ports, scan_type
+		) VALUES (
+			$1, $2, $3,
+			'tcp', false, false, 0, '80', 'connect'
+		)`,
+		collisionNetID, "collision-name-test", "10.250.0.0/24")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE id = $1", collisionNetID)
+	})
+
+	// CreateScan with the same name — findOrCreateNetwork should fall back to the CIDR as the name.
+	scan, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "collision-name-test",
+		"targets":   []string{"10.250.100.5"},
+		"scan_type": "connect",
+		"ports":     "80",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, scan)
+	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+
+	// GetScan reads n.name from the DB — it should be the CIDR fallback.
+	got, err := db.GetScan(ctx, scan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "10.250.100.5", got.Name)
+}
+
+func TestScanRepository_CreateScan_MultipleTargets(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	scan, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "multi-target-test",
+		"targets":   []string{"10.202.0.1", "10.202.0.2"},
+		"scan_type": "connect",
+		"ports":     "80",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, scan)
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM scan_jobs WHERE created_at >= $1", scan.CreatedAt)
+		_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr IN ('10.202.0.1/32','10.202.0.2/32')")
+	})
+
+	var count int
+	err = db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM scan_jobs WHERE created_at >= $1", scan.CreatedAt).Scan(&count)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, count, 2)
+}
+
+func TestScanRepository_ListScans_WithScanTypeFilter(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	scan, err := db.CreateScan(ctx, map[string]interface{}{
+		"name":      "filter-scan-type-test",
+		"targets":   []string{"10.203.0.1"},
+		"scan_type": "connect",
+		"ports":     "80",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, scan)
+	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+
+	scans, total, err := db.ListScans(ctx, ScanFilters{ScanType: "connect"}, 0, 100)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, total, int64(1))
+	assert.GreaterOrEqual(t, len(scans), 1)
+
+	var found bool
+	for _, s := range scans {
+		if s.ID == scan.ID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "created scan should appear in ListScans with scan_type filter")
+}
+
+// ── Additional HostRepository tests ──────────────────────────────────────────
+
+func TestHostRepository_GetHostScans(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Delete any leftover host from a previous run.
+	_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = '203.0.113.60'::inet")
+
+	// Insert host — register cleanup first so it runs last (LIFO).
+	hostRepo := NewHostRepository(db)
+	hostID := uuid.New()
+	ip := IPAddr{IP: net.ParseIP("203.0.113.60")}
+	require.NoError(t, hostRepo.CreateOrUpdate(ctx, &Host{
+		ID:        hostID,
+		IPAddress: ip,
+		Status:    HostStatusUp,
+	}))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = '203.0.113.60'::inet")
+	})
+
+	// Insert network.
+	networkID := uuid.New()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO networks (
+			id, name, cidr,
+			discovery_method, is_active, scan_enabled,
+			scan_interval_seconds, scan_ports, scan_type
+		) VALUES (
+			$1, $2, $3,
+			'tcp', false, false, 0, '80', 'connect'
+		)`,
+		networkID, "host-scans-test-net", "203.0.113.60/32")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE id = $1", networkID)
+	})
+
+	// Insert scan job — register cleanup last so it runs first (LIFO).
+	jobRepo := NewScanJobRepository(db)
+	jobID := uuid.New()
+	require.NoError(t, jobRepo.Create(ctx, &ScanJob{
+		ID:        jobID,
+		NetworkID: networkID,
+		Status:    ScanJobStatusPending,
+	}))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", jobID)
+	})
+
+	scans, total, err := db.GetHostScans(ctx, hostID, 0, 100)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, total, int64(1))
+	assert.GreaterOrEqual(t, len(scans), 1)
+	assert.Equal(t, jobID, scans[0].ID)
+}
+
+// ── Migrator tests ────────────────────────────────────────────────────────────
+
+func TestMigrator_Reset(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	m := NewMigrator(db.DB)
+
+	// Reset drops all schema objects and immediately re-applies all migrations
+	// via an internal Up() call, so the schema is fully restored on return.
+	// Register a safety-net cleanup first in case the test panics mid-way.
+	t.Cleanup(func() { _ = m.Up(ctx) })
+
+	require.NoError(t, m.Reset(ctx))
+
+	// After Reset the internal Up() has re-created every table.
+	// Verify the networks table is present and all migrations are recorded.
+	var exists bool
+	err := db.QueryRowContext(ctx,
+		"SELECT EXISTS(SELECT FROM information_schema.tables WHERE table_name='networks' AND table_schema='public')").
+		Scan(&exists)
+	require.NoError(t, err)
+	assert.True(t, exists, "networks table should exist after Reset (Up is called internally)")
+
+	// All migrations should be present in schema_migrations.
+	var count int
+	err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&count)
+	require.NoError(t, err)
+	assert.Greater(t, count, 0, "schema_migrations should be populated after Reset")
 }

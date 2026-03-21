@@ -80,10 +80,9 @@ func TestQueryColumnConsistency(t *testing.T) {
 		},
 		{
 			name: "hosts_with_scans",
-			query: `SELECT h.id, COUNT(sj.id) as scan_count
-					FROM hosts h
-					LEFT JOIN scan_jobs sj ON h.id = sj.target_id
-					GROUP BY h.id LIMIT 1`,
+			query: `SELECT h.id,
+					(SELECT COUNT(DISTINCT job_id) FROM port_scans WHERE host_id = h.id) as total_scans
+					FROM hosts h LIMIT 1`,
 			description: "Hosts with scan job counts",
 		},
 		{

@@ -97,16 +97,16 @@ func TestSchemaAfterMigrations(t *testing.T) {
 			query       string
 		}{
 			{
-				"scan_targets table with required columns",
-				"SELECT id, name, network, enabled FROM scan_targets LIMIT 0",
+				"networks table with scan columns",
+				"SELECT id, name, cidr, is_active, scan_enabled, scan_interval_seconds, scan_ports, scan_type FROM networks LIMIT 0",
 			},
 			{
 				"hosts table with ip_address and ignore_scanning columns",
 				"SELECT id, ip_address, hostname, status, ignore_scanning, discovery_method FROM hosts LIMIT 0",
 			},
 			{
-				"scan_jobs table with target_id foreign key",
-				"SELECT id, target_id, status, started_at, completed_at FROM scan_jobs LIMIT 0",
+				"scan_jobs table with network_id foreign key",
+				"SELECT id, network_id, status, started_at, completed_at FROM scan_jobs LIMIT 0",
 			},
 			{
 				"port_scans table with host_id and state columns",
@@ -839,7 +839,7 @@ func extractParameterNames(sql string) []string {
 func generateValueByParameterName(paramName string) interface{} {
 	switch paramName {
 	// UUID fields
-	case "ID", "TARGET_ID", "JOB_ID", "HOST_ID", "PROFILE_ID", "PORT_SCAN_ID":
+	case "ID", "NETWORK_ID", "JOB_ID", "HOST_ID", "PROFILE_ID", "PORT_SCAN_ID":
 		return "550e8400-e29b-41d4-a716-446655440000"
 
 	// Network/IP fields
@@ -1230,11 +1230,10 @@ func TestCriticalQueriesAfterMigration(t *testing.T) {
 		},
 		{
 			name: "hosts_with_scan_jobs",
-			query: `SELECT h.id, COUNT(sj.id) as job_count
-					FROM hosts h
-					LEFT JOIN scan_jobs sj ON h.id = sj.target_id
-					GROUP BY h.id LIMIT 1`,
-			description: "Hosts joined with scan jobs",
+			query: `SELECT h.id,
+					(SELECT COUNT(DISTINCT job_id) FROM port_scans WHERE host_id = h.id) as job_count
+					FROM hosts h LIMIT 1`,
+			description: "Hosts with scan job count via port_scans",
 		},
 		{
 			name: "hosts_with_port_scans",
@@ -1253,10 +1252,9 @@ func TestCriticalQueriesAfterMigration(t *testing.T) {
 					COALESCE(h.ignore_scanning, false) as ignore_scanning,
 					h.discovery_method,
 					COUNT(DISTINCT ps.id) as open_ports,
-					COUNT(DISTINCT sj.id) as total_scans
+					(SELECT COUNT(DISTINCT job_id) FROM port_scans WHERE host_id = h.id) as total_scans
 					FROM hosts h
 					LEFT JOIN port_scans ps ON h.id = ps.host_id AND ps.state = 'open'
-					LEFT JOIN scan_jobs sj ON h.id = sj.target_id
 					WHERE (h.ignore_scanning IS NULL OR h.ignore_scanning = false)
 					GROUP BY h.id, h.ip_address, h.status, h.os_family, h.os_name,
 						h.last_seen, h.first_seen, h.ignore_scanning, h.discovery_method

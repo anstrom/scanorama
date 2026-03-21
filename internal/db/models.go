@@ -220,22 +220,6 @@ func (j *JSONB) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ScanTarget represents a network target to scan.
-type ScanTarget struct {
-	ID                  uuid.UUID   `db:"id" json:"id"`
-	Name                string      `db:"name" json:"name"`
-	Network             NetworkAddr `db:"network" json:"network"`
-	Description         *string     `db:"description" json:"description,omitempty"`
-	ScanIntervalSeconds int         `db:"scan_interval_seconds" json:"scan_interval_seconds"`
-	ScanPorts           string      `db:"scan_ports" json:"scan_ports"`
-	ScanType            string      `db:"scan_type" json:"scan_type"`
-	Enabled             bool        `db:"enabled" json:"enabled"`
-	CreatedAt           time.Time   `db:"created_at" json:"created_at"`
-	UpdatedAt           time.Time   `db:"updated_at" json:"updated_at"`
-	CreatedBy           *string     `db:"created_by" json:"created_by,omitempty"`
-	ModifiedBy          *string     `db:"modified_by" json:"modified_by,omitempty"`
-}
-
 // DiscoveryJob represents a network discovery job.
 type DiscoveryJob struct {
 	ID              uuid.UUID   `db:"id" json:"id"`
@@ -287,7 +271,7 @@ type ScheduledJob struct {
 // ScanJob represents a scan job execution.
 type ScanJob struct {
 	ID               uuid.UUID  `db:"id" json:"id"`
-	TargetID         uuid.UUID  `db:"target_id" json:"target_id"`
+	NetworkID        uuid.UUID  `db:"network_id" json:"network_id"`
 	ProfileID        *string    `db:"profile_id" json:"profile_id,omitempty"`
 	Status           string     `db:"status" json:"status"`
 	StartedAt        *time.Time `db:"started_at" json:"started_at,omitempty"`
@@ -468,20 +452,24 @@ type ActiveHost struct {
 
 // Network represents a network configured for discovery and scanning.
 type Network struct {
-	ID              uuid.UUID   `db:"id" json:"id"`
-	Name            string      `db:"name" json:"name"`
-	CIDR            NetworkAddr `db:"cidr" json:"cidr"`
-	Description     *string     `db:"description" json:"description,omitempty"`
-	DiscoveryMethod string      `db:"discovery_method" json:"discovery_method"`
-	IsActive        bool        `db:"is_active" json:"is_active"`
-	ScanEnabled     bool        `db:"scan_enabled" json:"scan_enabled"`
-	LastDiscovery   *time.Time  `db:"last_discovery" json:"last_discovery,omitempty"`
-	LastScan        *time.Time  `db:"last_scan" json:"last_scan,omitempty"`
-	HostCount       int         `db:"host_count" json:"host_count"`
-	ActiveHostCount int         `db:"active_host_count" json:"active_host_count"`
-	CreatedAt       time.Time   `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time   `db:"updated_at" json:"updated_at"`
-	CreatedBy       *string     `db:"created_by" json:"created_by,omitempty"`
+	ID                  uuid.UUID   `db:"id" json:"id"`
+	Name                string      `db:"name" json:"name"`
+	CIDR                NetworkAddr `db:"cidr" json:"cidr"`
+	Description         *string     `db:"description" json:"description,omitempty"`
+	DiscoveryMethod     string      `db:"discovery_method" json:"discovery_method"`
+	IsActive            bool        `db:"is_active" json:"is_active"`
+	ScanEnabled         bool        `db:"scan_enabled" json:"scan_enabled"`
+	ScanIntervalSeconds int         `db:"scan_interval_seconds" json:"scan_interval_seconds"`
+	ScanPorts           string      `db:"scan_ports" json:"scan_ports"`
+	ScanType            string      `db:"scan_type" json:"scan_type"`
+	LastDiscovery       *time.Time  `db:"last_discovery" json:"last_discovery,omitempty"`
+	LastScan            *time.Time  `db:"last_scan" json:"last_scan,omitempty"`
+	HostCount           int         `db:"host_count" json:"host_count"`
+	ActiveHostCount     int         `db:"active_host_count" json:"active_host_count"`
+	CreatedAt           time.Time   `db:"created_at" json:"created_at"`
+	UpdatedAt           time.Time   `db:"updated_at" json:"updated_at"`
+	CreatedBy           *string     `db:"created_by" json:"created_by,omitempty"`
+	ModifiedBy          *string     `db:"modified_by" json:"modified_by,omitempty"`
 }
 
 // NetworkExclusion represents an IP exclusion rule for networks.

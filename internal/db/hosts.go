@@ -531,8 +531,8 @@ func (db *DB) getHostScansCount(ctx context.Context, hostID uuid.UUID) (int64, e
 	countQuery := `
 		SELECT COUNT(DISTINCT sj.id)
 		FROM scan_jobs sj
-		JOIN scan_targets st ON sj.target_id = st.id
-		WHERE st.network >>= (SELECT ip_address FROM hosts WHERE id = $1)
+		JOIN networks n ON sj.network_id = n.id
+		WHERE n.cidr >>= (SELECT ip_address FROM hosts WHERE id = $1)
 		   OR sj.id IN (
 			   SELECT DISTINCT ps.job_id
 			   FROM port_scans ps
@@ -627,11 +627,11 @@ func (db *DB) GetHostScans(ctx context.Context, hostID uuid.UUID, offset, limit 
 	query := `
 		SELECT DISTINCT
 			sj.id,
-			st.name,
-			st.description,
-			st.network::text as targets,
-			COALESCE(sp.scan_type, st.scan_type, 'connect') as scan_type,
-			st.scan_ports as ports,
+			n.name,
+			n.description,
+			n.cidr::text as targets,
+			COALESCE(sp.scan_type, n.scan_type, 'connect') as scan_type,
+			n.scan_ports as ports,
 			sj.profile_id,
 			sj.status,
 			sj.started_at,
@@ -641,10 +641,10 @@ func (db *DB) GetHostScans(ctx context.Context, hostID uuid.UUID, offset, limit 
 			'[]'::jsonb as tags,
 			'{}' as options
 		FROM scan_jobs sj
-		JOIN scan_targets st ON sj.target_id = st.id
+		JOIN networks n ON sj.network_id = n.id
 		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id
-		LEFT JOIN scheduled_jobs sch ON st.id::text = sch.config->>'target_id'
-		WHERE st.network >>= (SELECT ip_address FROM hosts WHERE id = $1)
+		LEFT JOIN scheduled_jobs sch ON n.id::text = sch.config->>'network_id'
+		WHERE n.cidr >>= (SELECT ip_address FROM hosts WHERE id = $1)
 		   OR sj.id IN (
 			   SELECT DISTINCT ps.job_id
 			   FROM port_scans ps

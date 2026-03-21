@@ -199,17 +199,17 @@ func waitForDB(ctx context.Context, config *Config) error {
 	}
 }
 
-// initializeSchema applies the initial schema migration if the scan_targets
+// initializeSchema applies the initial schema migration if the networks
 // table does not yet exist.
 func initializeSchema(db *DB) error {
 	ctx := context.Background()
 
 	var exists bool
 	err := db.QueryRowContext(ctx,
-		"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'scan_targets')").
+		"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'networks')").
 		Scan(&exists)
 	if err != nil {
-		return fmt.Errorf("failed to check for scan_targets table: %w", err)
+		return fmt.Errorf("failed to check for networks table: %w", err)
 	}
 	if exists {
 		return nil

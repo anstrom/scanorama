@@ -293,50 +293,55 @@ func TestJSONBExtended(t *testing.T) {
 	})
 }
 
-// TestScanTargetValidationExtended tests scan target model validation with extended scenarios.
-func TestScanTargetValidationExtended(t *testing.T) {
-	t.Run("valid_scan_target", func(t *testing.T) {
+// TestNetworkValidationExtended tests network model validation with extended scenarios.
+func TestNetworkValidationExtended(t *testing.T) {
+	t.Run("valid_network", func(t *testing.T) {
 		_, ipnet, err := net.ParseCIDR("192.168.1.0/24")
 		require.NoError(t, err)
 
 		description := "Test network"
-		target := &ScanTarget{
+		network := &Network{
 			ID:                  uuid.New(),
-			Name:                "Test Target",
-			Network:             NetworkAddr{IPNet: *ipnet},
+			Name:                "Test Network",
+			CIDR:                NetworkAddr{IPNet: *ipnet},
 			Description:         &description,
+			DiscoveryMethod:     "tcp",
+			IsActive:            true,
+			ScanEnabled:         true,
 			ScanIntervalSeconds: 3600,
 			ScanPorts:           "22,80,443",
 			ScanType:            "connect",
-			Enabled:             true,
 		}
 
-		assert.NotEqual(t, uuid.Nil, target.ID)
-		assert.NotEmpty(t, target.Name)
-		assert.NotNil(t, target.Description)
-		assert.True(t, target.ScanIntervalSeconds > 0)
-		assert.NotEmpty(t, target.ScanPorts)
-		assert.NotEmpty(t, target.ScanType)
+		assert.NotEqual(t, uuid.Nil, network.ID)
+		assert.NotEmpty(t, network.Name)
+		assert.NotNil(t, network.Description)
+		assert.True(t, network.ScanIntervalSeconds > 0)
+		assert.NotEmpty(t, network.ScanPorts)
+		assert.NotEmpty(t, network.ScanType)
+		assert.True(t, network.IsActive)
 	})
 
-	t.Run("scan_target_with_nil_description", func(t *testing.T) {
+	t.Run("network_with_nil_description", func(t *testing.T) {
 		_, ipnet, err := net.ParseCIDR("10.0.0.0/8")
 		require.NoError(t, err)
 
-		target := &ScanTarget{
+		network := &Network{
 			ID:                  uuid.New(),
-			Name:                "Minimal Target",
-			Network:             NetworkAddr{IPNet: *ipnet},
+			Name:                "Minimal Network",
+			CIDR:                NetworkAddr{IPNet: *ipnet},
 			Description:         nil,
+			DiscoveryMethod:     "tcp",
+			IsActive:            false,
+			ScanEnabled:         false,
 			ScanIntervalSeconds: 1800,
 			ScanPorts:           "80",
 			ScanType:            "syn",
-			Enabled:             false,
 		}
 
-		assert.NotEqual(t, uuid.Nil, target.ID)
-		assert.Nil(t, target.Description)
-		assert.False(t, target.Enabled)
+		assert.NotEqual(t, uuid.Nil, network.ID)
+		assert.Nil(t, network.Description)
+		assert.False(t, network.IsActive)
 	})
 }
 
@@ -348,7 +353,7 @@ func TestScanJobValidation(t *testing.T) {
 
 		job := &ScanJob{
 			ID:              uuid.New(),
-			TargetID:        targetID,
+			NetworkID:       targetID,
 			Status:          ScanJobStatusPending,
 			StartedAt:       &startTime,
 			CompletedAt:     nil,
@@ -358,7 +363,7 @@ func TestScanJobValidation(t *testing.T) {
 		}
 
 		assert.NotEqual(t, uuid.Nil, job.ID)
-		assert.Equal(t, targetID, job.TargetID)
+		assert.Equal(t, targetID, job.NetworkID)
 		assert.Equal(t, ScanJobStatusPending, job.Status)
 		assert.NotNil(t, job.StartedAt)
 		assert.Nil(t, job.CompletedAt)
@@ -372,7 +377,7 @@ func TestScanJobValidation(t *testing.T) {
 
 		job := &ScanJob{
 			ID:              uuid.New(),
-			TargetID:        uuid.New(),
+			NetworkID:       uuid.New(),
 			Status:          ScanJobStatusCompleted,
 			StartedAt:       &startTime,
 			CompletedAt:     &endTime,

@@ -1142,3 +1142,6 @@ query := `
 4. **Group related columns**: Keep logically related columns together
 5. **Use consistent casing**: Uppercase for SQL keywords, lowercase for identifiers
 6. **Add line breaks before major clauses**: WHERE, ORDER BY, GROUP BY, etc.
+
+## Test coverage
+Always add test if needed when adding code or refactoring
