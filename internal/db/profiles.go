@@ -5,9 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-
+	stderrors "errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -91,7 +91,7 @@ func (db *DB) ListProfiles(ctx context.Context, filters ProfileFilters,
 	var total int64
 	err := db.DB.QueryRowContext(ctx, countQuery, args...).Scan(&total)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to get profile count: %w", err)
+		return nil, 0, sanitizeDBError("get profile count", err)
 	}
 
 	// Get paginated results.
@@ -102,11 +102,11 @@ func (db *DB) ListProfiles(ctx context.Context, filters ProfileFilters,
 
 	rows, err := db.QueryContext(ctx, listQuery, args...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to query profiles: %w", err)
+		return nil, 0, sanitizeDBError("list profiles", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("Error closing rows: %v", err)
+			slog.Warn("error closing rows", "error", err)
 		}
 	}()
 
@@ -225,7 +225,7 @@ func (db *DB) CreateProfile(ctx context.Context, profileData interface{}) (*Scan
 			return nil, errors.ErrConflictWithReason("profile",
 				fmt.Sprintf("a profile named %q already exists", name))
 		}
-		return nil, fmt.Errorf("failed to create profile: %w", err)
+		return nil, sanitizeDBError("create profile", err)
 	}
 
 	profile := &ScanProfile{
@@ -276,10 +276,10 @@ func (db *DB) GetProfile(ctx context.Context, id string) (*ScanProfile, error) {
 		&profile.UpdatedAt,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if stderrors.Is(err, sql.ErrNoRows) {
 			return nil, errors.ErrNotFoundWithID("profile", id)
 		}
-		return nil, fmt.Errorf("failed to get profile: %w", err)
+		return nil, sanitizeDBError("get profile", err)
 	}
 
 	// Handle nullable fields.
@@ -325,7 +325,7 @@ func (db *DB) UpdateProfile(ctx context.Context, id string, profileData interfac
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil {
-			log.Printf("Error rolling back transaction: %v", err)
+			slog.Warn("error rolling back transaction", "error", err)
 		}
 	}()
 
@@ -340,7 +340,7 @@ func (db *DB) UpdateProfile(ctx context.Context, id string, profileData interfac
 		 FROM scan_profiles WHERE id = $1`,
 		id).Scan(&exists, &builtIn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check profile existence: %w", err)
+		return nil, sanitizeDBError("check profile existence", err)
 	}
 	if !exists {
 		return nil, errors.ErrNotFoundWithID("profile", id)
@@ -395,7 +395,7 @@ func (db *DB) UpdateProfile(ctx context.Context, id string, profileData interfac
 
 	_, err = tx.ExecContext(ctx, updateQuery, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update profile: %w", err)
+		return nil, sanitizeDBError("update profile", err)
 	}
 
 	// Commit the transaction.
@@ -416,7 +416,7 @@ func (db *DB) DeleteProfile(ctx context.Context, id string) error {
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil {
-			log.Printf("Error rolling back transaction: %v", err)
+			slog.Warn("error rolling back transaction", "error", err)
 		}
 	}()
 
@@ -431,7 +431,7 @@ func (db *DB) DeleteProfile(ctx context.Context, id string) error {
 		 FROM scan_profiles WHERE id = $1`,
 		id).Scan(&exists, &builtIn)
 	if err != nil {
-		return fmt.Errorf("failed to check profile existence: %w", err)
+		return sanitizeDBError("check profile existence", err)
 	}
 	if !exists {
 		return errors.ErrNotFoundWithID("profile", id)
@@ -446,7 +446,7 @@ func (db *DB) DeleteProfile(ctx context.Context, id string) error {
 		"SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE profile_id = $1)",
 		id).Scan(&inUse)
 	if err != nil {
-		return fmt.Errorf("failed to check profile usage: %w", err)
+		return sanitizeDBError("check profile usage", err)
 	}
 	if inUse {
 		return fmt.Errorf("cannot delete profile that is in use by scan jobs")
@@ -455,7 +455,7 @@ func (db *DB) DeleteProfile(ctx context.Context, id string) error {
 	// Delete the profile.
 	result, err := tx.ExecContext(ctx, "DELETE FROM scan_profiles WHERE id = $1", id)
 	if err != nil {
-		return fmt.Errorf("failed to delete profile: %w", err)
+		return sanitizeDBError("delete profile", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()

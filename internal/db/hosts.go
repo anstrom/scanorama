@@ -5,8 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -69,7 +70,7 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("Failed to close rows: %v", err)
+			slog.Warn("failed to close rows", "error", err)
 		}
 	}()
 
@@ -197,11 +198,11 @@ func (db *DB) ListHosts(ctx context.Context, filters *HostFilters, offset, limit
 	// Execute query.
 	rows, err := db.QueryContext(ctx, fullQuery, args...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to execute hosts query: %w", err)
+		return nil, 0, sanitizeDBError("execute hosts query", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("failed to close rows: %v", err)
+			slog.Warn("failed to close rows", "error", err)
 		}
 	}()
 
@@ -268,7 +269,7 @@ func (db *DB) CreateHost(ctx context.Context, hostData interface{}) (*Host, erro
 				return nil, errors.ErrConflictWithReason("host", fmt.Sprintf("IP address %s already exists", ipAddress))
 			}
 		}
-		return nil, fmt.Errorf("failed to create host: %w", err)
+		return nil, sanitizeDBError("create host", err)
 	}
 
 	// Return the created host.
@@ -293,11 +294,11 @@ func fetchHostPorts(ctx context.Context, db *DB, hostID uuid.UUID, host *Host) e
 
 	portRows, err := db.QueryContext(ctx, portsQuery, hostID)
 	if err != nil {
-		return fmt.Errorf("failed to query host ports: %w", err)
+		return sanitizeDBError("query host ports", err)
 	}
 	defer func() {
 		if closeErr := portRows.Close(); closeErr != nil {
-			log.Printf("failed to close port rows: %v", closeErr)
+			slog.Warn("failed to close rows", "error", closeErr)
 		}
 	}()
 
@@ -329,7 +330,7 @@ func fetchHostScanCount(ctx context.Context, db *DB, hostID uuid.UUID, host *Hos
 `
 	if err := db.QueryRowContext(ctx, scanCountQuery, hostID).Scan(&host.ScanCount); err != nil {
 		// non-fatal — log and continue
-		log.Printf("failed to query scan count for host %s: %v", hostID, err)
+		slog.Warn("failed to query scan count for host", "host_id", hostID, "error", err)
 	}
 }
 
@@ -381,10 +382,10 @@ func (db *DB) GetHost(ctx context.Context, id uuid.UUID) (*Host, error) {
 		&host.Status,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if stderrors.Is(err, sql.ErrNoRows) {
 			return nil, errors.ErrNotFoundWithID("host", id.String())
 		}
-		return nil, fmt.Errorf("failed to get host: %w", err)
+		return nil, sanitizeDBError("get host", err)
 	}
 
 	// Convert IP address.
@@ -426,7 +427,7 @@ func (db *DB) UpdateHost(ctx context.Context, id uuid.UUID, hostData interface{}
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil {
-			log.Printf("Error rolling back transaction: %v", err)
+			slog.Warn("error rolling back transaction", "error", err)
 		}
 	}()
 
@@ -435,7 +436,7 @@ func (db *DB) UpdateHost(ctx context.Context, id uuid.UUID, hostData interface{}
 	err = tx.QueryRowContext(ctx,
 		"SELECT EXISTS(SELECT 1 FROM hosts WHERE id = $1)", id).Scan(&exists)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check host existence: %w", err)
+		return nil, sanitizeDBError("check host existence", err)
 	}
 	if !exists {
 		return nil, errors.ErrNotFoundWithID("host", id.String())
@@ -476,7 +477,7 @@ func (db *DB) UpdateHost(ctx context.Context, id uuid.UUID, hostData interface{}
 
 	_, err = tx.ExecContext(ctx, updateQuery, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update host: %w", err)
+		return nil, sanitizeDBError("update host", err)
 	}
 
 	// Commit transaction.
@@ -497,7 +498,7 @@ func (db *DB) DeleteHost(ctx context.Context, id uuid.UUID) error {
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil {
-			log.Printf("Error rolling back transaction: %v", err)
+			slog.Warn("error rolling back transaction", "error", err)
 		}
 	}()
 
@@ -506,7 +507,7 @@ func (db *DB) DeleteHost(ctx context.Context, id uuid.UUID) error {
 	err = tx.QueryRowContext(ctx,
 		"SELECT EXISTS(SELECT 1 FROM hosts WHERE id = $1)", id).Scan(&exists)
 	if err != nil {
-		return fmt.Errorf("failed to check host existence: %w", err)
+		return sanitizeDBError("check host existence", err)
 	}
 	if !exists {
 		return errors.ErrNotFoundWithID("host", id.String())
@@ -515,7 +516,7 @@ func (db *DB) DeleteHost(ctx context.Context, id uuid.UUID) error {
 	// Delete the host (CASCADE will handle related port_scans, services, etc.).
 	_, err = tx.ExecContext(ctx, "DELETE FROM hosts WHERE id = $1", id)
 	if err != nil {
-		return fmt.Errorf("failed to delete host: %w", err)
+		return sanitizeDBError("delete host", err)
 	}
 
 	// Commit transaction.
@@ -543,7 +544,7 @@ func (db *DB) getHostScansCount(ctx context.Context, hostID uuid.UUID) (int64, e
 	var total int64
 	err := db.QueryRowContext(ctx, countQuery, hostID).Scan(&total)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get host scans count: %w", err)
+		return 0, sanitizeDBError("get host scans count", err)
 	}
 	return total, nil
 }
@@ -656,11 +657,11 @@ func (db *DB) GetHostScans(ctx context.Context, hostID uuid.UUID, offset, limit 
 
 	rows, err := db.QueryContext(ctx, query, hostID, offset, limit)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to get host scans: %w", err)
+		return nil, 0, sanitizeDBError("get host scans", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("Error closing rows: %v", err)
+			slog.Warn("error closing rows", "error", err)
 		}
 	}()
 
@@ -770,7 +771,7 @@ func (db *DB) getHostCount(ctx context.Context, whereClause string, args []inter
 	var total int64
 	err := db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get host count: %w", err)
+		return 0, sanitizeDBError("get host count", err)
 	}
 	return total, nil
 }

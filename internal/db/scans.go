@@ -4,8 +4,9 @@ package db
 import (
 	"context"
 	"database/sql"
+	stderrors "errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -48,7 +49,7 @@ func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("Failed to close rows: %v", err)
+			slog.Warn("failed to close rows", "error", err)
 		}
 	}()
 
@@ -141,7 +142,7 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 		verifyQuery := `SELECT EXISTS(SELECT 1 FROM hosts WHERE id = $1)`
 		err := tx.QueryRowContext(ctx, verifyQuery, hostID).Scan(&exists)
 		if err != nil {
-			return fmt.Errorf("failed to verify host existence for %s: %w", hostID, err)
+			return sanitizeDBError("verify host existence", err)
 		}
 		if !exists {
 			return fmt.Errorf("host %s does not exist, cannot create port scans", hostID)
@@ -283,7 +284,7 @@ func (db *DB) getScanCount(ctx context.Context, whereClause string, args []inter
 	var total int64
 	err := db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get scan count: %w", err)
+		return 0, sanitizeDBError("get scan count", err)
 	}
 	return total, nil
 }
@@ -391,11 +392,11 @@ func (db *DB) ListScans(ctx context.Context, filters ScanFilters, offset, limit 
 
 	rows, err := db.QueryContext(ctx, listQuery, args...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to query scans: %w", err)
+		return nil, 0, sanitizeDBError("list scans", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("Error closing rows: %v", err)
+			slog.Warn("error closing rows", "error", err)
 		}
 	}()
 
@@ -488,8 +489,8 @@ func (db *DB) findOrCreateNetwork(ctx context.Context, tx *sql.Tx,
 	if err == nil {
 		return id, nil
 	}
-	if err != sql.ErrNoRows {
-		return uuid.Nil, fmt.Errorf("failed to look up network by CIDR: %w", err)
+	if !stderrors.Is(err, sql.ErrNoRows) {
+		return uuid.Nil, sanitizeDBError("look up network by CIDR", err)
 	}
 
 	// Not found — create a new network entry.
@@ -508,7 +509,7 @@ func (db *DB) findOrCreateNetwork(ctx context.Context, tx *sql.Tx,
 		ON CONFLICT (name) DO NOTHING
 	`, id, name, cidr, description, ports, scanType)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("failed to create network: %w", err)
+		return uuid.Nil, sanitizeDBError("create network", err)
 	}
 
 	if n, _ := result.RowsAffected(); n == 0 {
@@ -524,7 +525,7 @@ func (db *DB) findOrCreateNetwork(ctx context.Context, tx *sql.Tx,
 			)
 		`, id, cidr, cidr, description, ports, scanType)
 		if err != nil {
-			return uuid.Nil, fmt.Errorf("failed to create network: %w", err)
+			return uuid.Nil, sanitizeDBError("create network", err)
 		}
 	}
 	return id, nil
@@ -539,7 +540,7 @@ func (db *DB) createScanJob(ctx context.Context, tx *sql.Tx, jobID, networkID uu
 		VALUES ($1, $2, $3, 'pending', $4, $5)
 	`, jobID, networkID, profileID, now, execDetails)
 	if err != nil {
-		return fmt.Errorf("failed to create scan job: %w", err)
+		return sanitizeDBError("create scan job", err)
 	}
 	return nil
 }
@@ -581,7 +582,7 @@ func (db *DB) CreateScan(ctx context.Context, input interface{}) (*Scan, error) 
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil {
-			log.Printf("Error rolling back transaction: %v", err)
+			slog.Warn("error rolling back transaction", "error", err)
 		}
 	}()
 
@@ -668,10 +669,10 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 		&osDetection,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if stderrors.Is(err, sql.ErrNoRows) {
 			return nil, errors.ErrNotFoundWithID("scan", id.String())
 		}
-		return nil, fmt.Errorf("failed to get scan: %w", err)
+		return nil, sanitizeDBError("get scan", err)
 	}
 
 	// Handle nullable description.
@@ -745,7 +746,7 @@ func updateScanNetwork(ctx context.Context, tx interface {
 
 	args = append(args, id)
 	if _, err := tx.ExecContext(ctx, queryBuilder.String(), args...); err != nil {
-		return fmt.Errorf("failed to update scan network: %w", err)
+		return sanitizeDBError("update scan network", err)
 	}
 	return nil
 }
@@ -777,7 +778,7 @@ func updateScanJob(ctx context.Context, tx interface {
 
 	jobArgs = append(jobArgs, id)
 	if _, err := tx.ExecContext(ctx, jobQueryBuilder.String(), jobArgs...); err != nil {
-		return fmt.Errorf("failed to update scan job: %w", err)
+		return sanitizeDBError("update scan job", err)
 	}
 	return nil
 }
@@ -794,14 +795,14 @@ func (db *DB) UpdateScan(ctx context.Context, id uuid.UUID, scanData interface{}
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil {
-			log.Printf("Error rolling back transaction: %v", err)
+			slog.Warn("error rolling back transaction", "error", err)
 		}
 	}()
 
 	var exists bool
 	err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE id = $1)", id).Scan(&exists)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check scan existence: %w", err)
+		return nil, sanitizeDBError("check scan existence", err)
 	}
 	if !exists {
 		return nil, errors.ErrNotFoundWithID("scan", id.String())
@@ -831,7 +832,7 @@ func (db *DB) DeleteScan(ctx context.Context, id uuid.UUID) error {
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil {
-			log.Printf("Error rolling back transaction: %v", err)
+			slog.Warn("error rolling back transaction", "error", err)
 		}
 	}()
 
@@ -839,7 +840,7 @@ func (db *DB) DeleteScan(ctx context.Context, id uuid.UUID) error {
 	var exists bool
 	err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE id = $1)", id).Scan(&exists)
 	if err != nil {
-		return fmt.Errorf("failed to check scan existence: %w", err)
+		return sanitizeDBError("check scan existence", err)
 	}
 	if !exists {
 		return errors.ErrNotFoundWithID("scan", id.String())
@@ -849,7 +850,7 @@ func (db *DB) DeleteScan(ctx context.Context, id uuid.UUID) error {
 	var status string
 	err = tx.QueryRowContext(ctx, "SELECT status FROM scan_jobs WHERE id = $1", id).Scan(&status)
 	if err != nil {
-		return fmt.Errorf("failed to get scan status: %w", err)
+		return sanitizeDBError("get scan status", err)
 	}
 	if status == "running" {
 		return errors.ErrConflictWithReason("scan", "cannot delete a running scan; stop it first")
@@ -859,7 +860,7 @@ func (db *DB) DeleteScan(ctx context.Context, id uuid.UUID) error {
 	// Networks are persistent managed entities and are NOT deleted with the scan.
 	_, err = tx.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", id)
 	if err != nil {
-		return fmt.Errorf("failed to delete scan job: %w", err)
+		return sanitizeDBError("delete scan job", err)
 	}
 
 	// Commit transaction.
@@ -881,7 +882,7 @@ func (db *DB) GetScanResults(ctx context.Context, scanID uuid.UUID, offset, limi
 	`
 	err := db.DB.QueryRowContext(ctx, countQuery, scanID).Scan(&total)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to get scan results count: %w", err)
+		return nil, 0, sanitizeDBError("get scan results count", err)
 	}
 
 	// Get paginated results.
@@ -909,11 +910,11 @@ func (db *DB) GetScanResults(ctx context.Context, scanID uuid.UUID, offset, limi
 
 	rows, err := db.QueryContext(ctx, query, scanID, limit, offset)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to query scan results: %w", err)
+		return nil, 0, sanitizeDBError("query scan results", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("Error closing rows: %v", err)
+			slog.Warn("error closing rows", "error", err)
 		}
 	}()
 
@@ -983,11 +984,11 @@ func (db *DB) GetScanSummary(ctx context.Context, scanID uuid.UUID) (*ScanSummar
 		&durationSeconds,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if stderrors.Is(err, sql.ErrNoRows) {
 			// No results for this scan, return zero summary.
 			return summary, nil
 		}
-		return nil, fmt.Errorf("failed to get scan summary: %w", err)
+		return nil, sanitizeDBError("get scan summary", err)
 	}
 
 	if durationSeconds != nil {
@@ -1008,7 +1009,7 @@ func (db *DB) StartScan(ctx context.Context, id uuid.UUID) error {
 
 	result, err := db.ExecContext(ctx, query, id)
 	if err != nil {
-		return fmt.Errorf("failed to start scan: %w", err)
+		return sanitizeDBError("start scan", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -1033,7 +1034,7 @@ func (db *DB) CompleteScan(ctx context.Context, id uuid.UUID) error {
 
 	result, err := db.ExecContext(ctx, query, id)
 	if err != nil {
-		return fmt.Errorf("failed to complete scan: %w", err)
+		return sanitizeDBError("complete scan", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -1063,7 +1064,7 @@ func (db *DB) StopScan(ctx context.Context, id uuid.UUID, errMsg ...string) erro
 
 	result, err := db.ExecContext(ctx, query, id, msg)
 	if err != nil {
-		return fmt.Errorf("failed to stop scan: %w", err)
+		return sanitizeDBError("stop scan", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()

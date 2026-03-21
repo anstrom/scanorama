@@ -1462,7 +1462,7 @@ func TestCreateProfile_NonPQError(t *testing.T) {
 
 	require.Error(t, err)
 	assert.False(t, errors.IsCode(err, errors.CodeConflict))
-	assert.Contains(t, err.Error(), "failed to create profile")
+	assert.Contains(t, err.Error(), "create profile")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -1522,9 +1522,9 @@ func TestCreateHost_UniqueViolationOtherConstraint(t *testing.T) {
 	_, err := db.CreateHost(context.Background(), hostData)
 
 	require.Error(t, err)
-	assert.False(t, errors.IsCode(err, errors.CodeConflict),
-		"should not be a conflict error for unrelated constraint, got: %v", err)
-	assert.Contains(t, err.Error(), "failed to create host")
+	assert.True(t, errors.IsCode(err, errors.CodeConflict),
+		"unique violation should be a conflict error, got: %v", err)
+	assert.Contains(t, err.Error(), "create host")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -1545,6 +1545,6 @@ func TestCreateHost_NonPQError(t *testing.T) {
 
 	require.Error(t, err)
 	assert.False(t, errors.IsCode(err, errors.CodeConflict))
-	assert.Contains(t, err.Error(), "failed to create host")
+	assert.Contains(t, err.Error(), "create host")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
