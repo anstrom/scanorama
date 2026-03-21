@@ -282,14 +282,8 @@ func TestScanHandler_GetScanResults_NonExistentScan(t *testing.T) {
 
 	handler.GetScanResults(w, req)
 
-	// GetScanResults returns 200 with empty results for non-existent scans
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var response ScanResultsResponse
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	require.NoError(t, err)
-
-	assert.Empty(t, response.Results)
+	// GetScanResults now returns 404 for non-existent scans (bug #12 fix)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 // TestScanHandler_GetScanResults_WithPagination tests pagination of scan results
@@ -934,6 +928,7 @@ func TestScanHandler_ValidateScanRequest_Unit(t *testing.T) {
 				Name:     "Valid Scan",
 				Targets:  []string{"192.168.1.0/24"},
 				ScanType: "connect",
+				Ports:    "80",
 			},
 			expectError: false,
 		},

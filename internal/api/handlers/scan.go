@@ -26,6 +26,7 @@ import (
 const (
 	maxScanNameLength = 255
 	maxTargetLength   = 255
+	maxTargetCount    = 100
 )
 
 // scanRunnerFunc is the signature for the function that executes a scan.
@@ -182,6 +183,22 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify the referenced profile exists before inserting (avoids FK 500).
+	if req.ProfileID != nil && *req.ProfileID != "" {
+		if _, err := h.database.GetProfile(r.Context(), *req.ProfileID); err != nil {
+			if errors.IsNotFound(err) {
+				writeError(w, r, http.StatusBadRequest,
+					fmt.Errorf("profile %q not found", *req.ProfileID))
+				return
+			}
+			h.logger.Error("Failed to look up profile", "request_id", requestID,
+				"profile_id", *req.ProfileID, "error", err)
+			writeError(w, r, http.StatusInternalServerError,
+				fmt.Errorf("failed to look up profile: %w", err))
+			return
+		}
+	}
+
 	// Create scan in database
 	scan, err := h.database.CreateScan(r.Context(), h.requestToDBScan(&req))
 	if err != nil {
@@ -283,6 +300,18 @@ func (h *ScanHandler) GetScanResults(w http.ResponseWriter, r *http.Request) {
 	params, err := getPaginationParams(r)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	// Verify the scan exists before querying results.
+	if _, err := h.database.GetScan(r.Context(), scanID); err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, fmt.Errorf("scan not found"))
+			return
+		}
+		h.logger.Error("Failed to look up scan", "request_id", requestID, "scan_id", scanID, "error", err)
+		writeError(w, r, http.StatusInternalServerError,
+			fmt.Errorf("failed to look up scan: %w", err))
 		return
 	}
 
@@ -554,6 +583,10 @@ func (h *ScanHandler) validateScanRequest(req *ScanRequest) error {
 		return fmt.Errorf("at least one target is required")
 	}
 
+	if len(req.Targets) > maxTargetCount {
+		return fmt.Errorf("too many targets (max %d)", maxTargetCount)
+	}
+
 	// Validate scan type — must match the cases handled by buildScanOptions.
 	validScanTypes := map[string]bool{
 		"connect":       true,
@@ -583,10 +616,11 @@ func (h *ScanHandler) validateScanRequest(req *ScanRequest) error {
 		}
 	}
 
-	if req.Ports != "" {
-		if err := parsePortSpec(req.Ports); err != nil {
-			return err
-		}
+	if req.Ports == "" {
+		return fmt.Errorf("ports is required")
+	}
+	if err := parsePortSpec(req.Ports); err != nil {
+		return err
 	}
 
 	return nil
@@ -597,31 +631,67 @@ func (h *ScanHandler) validateScanRequest(req *ScanRequest) error {
 // optional hyphenated ranges (e.g. "T:80,U:53,1024-9999").
 // Every individual port value must be in the range 1–65535.
 func parsePortSpec(ports string) error {
-	tokens := strings.Split(ports, ",")
-	for _, token := range tokens {
+	for _, token := range strings.Split(ports, ",") {
 		token = strings.TrimSpace(token)
 		if token == "" {
 			continue
 		}
-		// Strip optional protocol prefix (T: or U:)
-		if len(token) >= 2 && (token[0] == 'T' || token[0] == 'U') && token[1] == ':' {
-			token = token[2:]
+		if err := parsePortToken(token); err != nil {
+			return err
 		}
-		// Split on '-' to handle ranges; a plain port is a single-element slice.
-		parts := strings.SplitN(token, "-", 2)
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-			portNum, err := strconv.Atoi(part)
-			if err != nil {
-				return fmt.Errorf("invalid port %q: must be a number", part)
-			}
-			if portNum < 1 || portNum > 65535 {
-				return fmt.Errorf("invalid port %d: must be between 1 and 65535", portNum)
-			}
-		}
+	}
+	return nil
+}
+
+// parsePortToken validates a single port token (after comma-splitting).
+// It strips an optional T:/U: prefix, rejects whitespace, and validates the
+// port number or range.
+func parsePortToken(token string) error {
+	// Strip optional protocol prefix (T: or U:)
+	if len(token) >= 2 && (token[0] == 'T' || token[0] == 'U') && token[1] == ':' {
+		token = token[2:]
+	}
+	// Reject tokens containing whitespace (e.g. "80 - 443").
+	if strings.ContainsAny(token, " \t") {
+		return fmt.Errorf("invalid port spec %q: whitespace not allowed", token)
+	}
+	parts := strings.SplitN(token, "-", 2)
+	if len(parts) == 2 {
+		return parsePortRange(parts[0], parts[1])
+	}
+	return validatePortNumber(parts[0])
+}
+
+// parsePortRange validates that start and end are valid ports and start <= end.
+func parsePortRange(startStr, endStr string) error {
+	startNum, err := strconv.Atoi(startStr)
+	if err != nil {
+		return fmt.Errorf("invalid port %q: must be a number", startStr)
+	}
+	if startNum < 1 || startNum > 65535 {
+		return fmt.Errorf("invalid port %d: must be between 1 and 65535", startNum)
+	}
+	endNum, err := strconv.Atoi(endStr)
+	if err != nil {
+		return fmt.Errorf("invalid port %q: must be a number", endStr)
+	}
+	if endNum < 1 || endNum > 65535 {
+		return fmt.Errorf("invalid port %d: must be between 1 and 65535", endNum)
+	}
+	if startNum > endNum {
+		return fmt.Errorf("invalid port range %d-%d: start must be <= end", startNum, endNum)
+	}
+	return nil
+}
+
+// validatePortNumber checks that s is a valid port number string (1–65535).
+func validatePortNumber(s string) error {
+	portNum, err := strconv.Atoi(s)
+	if err != nil {
+		return fmt.Errorf("invalid port %q: must be a number", s)
+	}
+	if portNum < 1 || portNum > 65535 {
+		return fmt.Errorf("invalid port %d: must be between 1 and 65535", portNum)
 	}
 	return nil
 }

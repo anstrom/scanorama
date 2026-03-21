@@ -119,7 +119,7 @@ func getPaginationParams(r *http.Request) (PaginationParams, error) {
 	const (
 		defaultPage     = 1
 		defaultPageSize = 50
-		maxPageSize     = 1000
+		maxPageSize     = 100
 	)
 
 	page, err := getQueryParamInt(r, "page", defaultPage)

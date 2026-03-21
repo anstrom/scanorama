@@ -61,6 +61,9 @@ func (nilScanStore) GetScanResults(_ context.Context, _ uuid.UUID, _, _ int) ([]
 func (nilScanStore) GetScanSummary(_ context.Context, _ uuid.UUID) (*db.ScanSummary, error) {
 	panic("nilScanStore: GetScanSummary called unexpectedly")
 }
+func (nilScanStore) GetProfile(_ context.Context, _ string) (*db.ScanProfile, error) {
+	panic("nilScanStore: GetProfile called unexpectedly")
+}
 
 // nilScheduleStore is a ScheduleStore that panics if any method is called.
 type nilScheduleStore struct{}
@@ -735,7 +738,7 @@ func TestCommonHandlers_EdgeCases(t *testing.T) {
 		params, err := getPaginationParams(req)
 		require.NoError(t, err)
 
-		assert.Equal(t, 1000, params.PageSize) // Should be capped at max
+		assert.Equal(t, 100, params.PageSize) // Should be capped at max
 	})
 }
 

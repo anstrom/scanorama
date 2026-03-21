@@ -69,6 +69,7 @@ func TestScanHandler_ValidateScanRequest(t *testing.T) {
 				Name:     "Valid Scan",
 				Targets:  []string{"192.168.1.1"},
 				ScanType: "connect",
+				Ports:    "80",
 			},
 			expectError: false,
 		},
@@ -138,6 +139,7 @@ func TestScanHandler_ValidateScanRequest(t *testing.T) {
 				Name:     "Aggressive Scan",
 				Targets:  []string{"192.168.1.1"},
 				ScanType: "aggressive",
+				Ports:    "80",
 			},
 			expectError: false,
 		},
@@ -147,6 +149,7 @@ func TestScanHandler_ValidateScanRequest(t *testing.T) {
 				Name:     "Comprehensive Scan",
 				Targets:  []string{"192.168.1.1"},
 				ScanType: "comprehensive",
+				Ports:    "80",
 			},
 			expectError: false,
 		},
@@ -156,6 +159,7 @@ func TestScanHandler_ValidateScanRequest(t *testing.T) {
 				Name:     "SYN Scan",
 				Targets:  []string{"192.168.1.1"},
 				ScanType: "syn",
+				Ports:    "80",
 			},
 			expectError: false,
 		},
@@ -165,6 +169,7 @@ func TestScanHandler_ValidateScanRequest(t *testing.T) {
 				Name:     "ACK Scan",
 				Targets:  []string{"192.168.1.1"},
 				ScanType: "ack",
+				Ports:    "80",
 			},
 			expectError: false,
 		},
@@ -603,6 +608,7 @@ func TestScanHandler_EdgeCases(t *testing.T) {
 				Name:     "Test",
 				Targets:  []string{"192.168.1.1"},
 				ScanType: scanType,
+				Ports:    "80",
 			}
 			err := handler.validateScanRequest(req)
 			assert.NoError(t, err, "scan type %s should be valid", scanType)
@@ -614,6 +620,7 @@ func TestScanHandler_EdgeCases(t *testing.T) {
 			Name:     "Test",
 			Targets:  []string{"192.168.1.1", "192.168.1.2", "10.0.0.0/24"},
 			ScanType: "connect",
+			Ports:    "80",
 		}
 		err := handler.validateScanRequest(req)
 		assert.NoError(t, err)
@@ -691,6 +698,7 @@ func TestScanHandler_RequestValidation_Comprehensive(t *testing.T) {
 			Name:     strings.Repeat("a", 255),
 			Targets:  []string{"10.0.0.1"},
 			ScanType: "connect",
+			Ports:    "80",
 		}
 		err := handler.validateScanRequest(req)
 		assert.NoError(t, err)
@@ -960,6 +968,7 @@ func TestValidateScanRequest_CIDRTarget(t *testing.T) {
 				Name:     "CIDR Test",
 				Targets:  tt.targets,
 				ScanType: "connect",
+				Ports:    "80",
 			}
 			err := handler.validateScanRequest(req)
 			if tt.expectError {

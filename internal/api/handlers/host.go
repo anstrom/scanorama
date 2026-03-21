@@ -239,6 +239,17 @@ func (h *HostHandler) GetHostScans(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("Getting host scans", "request_id", requestID, "host_id", hostID)
 
+	// Verify the host exists before fetching its scans.
+	if _, err := h.database.GetHost(r.Context(), hostID); err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, fmt.Errorf("host not found"))
+			return
+		}
+		h.logger.Error("Failed to verify host existence", "request_id", requestID, "host_id", hostID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to retrieve host: %w", err))
+		return
+	}
+
 	// Parse pagination parameters
 	params, err := getPaginationParams(r)
 	if err != nil {

@@ -26,6 +26,7 @@ type ScanStore interface {
 	StopScan(ctx context.Context, id uuid.UUID, errMsg ...string) error
 	GetScanResults(ctx context.Context, scanID uuid.UUID, offset, limit int) ([]*db.ScanResult, int64, error)
 	GetScanSummary(ctx context.Context, scanID uuid.UUID) (*db.ScanSummary, error)
+	GetProfile(ctx context.Context, id string) (*db.ScanProfile, error)
 }
 
 // ScheduleStore is the subset of *db.DB used by ScheduleHandler.

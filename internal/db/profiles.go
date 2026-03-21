@@ -17,6 +17,22 @@ import (
 	"github.com/anstrom/scanorama/internal/errors"
 )
 
+// marshalSQLArg ensures that complex types (maps, slices) are JSON-marshaled
+// to []byte before being passed as SQL arguments, which the driver cannot handle
+// natively.
+func marshalSQLArg(val interface{}) interface{} {
+	switch val.(type) {
+	case map[string]interface{}, []interface{}:
+		b, err := json.Marshal(val)
+		if err != nil {
+			return val
+		}
+		return b
+	default:
+		return val
+	}
+}
+
 // parsePostgreSQLArray converts a PostgreSQL array interface{} to []string.
 func parsePostgreSQLArray(arrayInterface interface{}) []string {
 	if arrayInterface == nil {
@@ -314,11 +330,14 @@ func (db *DB) UpdateProfile(ctx context.Context, id string, profileData interfac
 	}()
 
 	// Check if the profile exists and is not built-in.
+	// This query always returns exactly one row, avoiding sql.ErrNoRows when
+	// the profile does not exist.
 	var exists bool
 	var builtIn bool
 	err = tx.QueryRowContext(ctx,
-		`SELECT EXISTS(SELECT 1 FROM scan_profiles WHERE id = $1),
-		 COALESCE(built_in, false) FROM scan_profiles WHERE id = $1`,
+		`SELECT COUNT(*) > 0,
+		        COALESCE(MAX(CASE WHEN built_in THEN 1 ELSE 0 END), 0) = 1
+		 FROM scan_profiles WHERE id = $1`,
 		id).Scan(&exists, &builtIn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check profile existence: %w", err)
@@ -327,7 +346,7 @@ func (db *DB) UpdateProfile(ctx context.Context, id string, profileData interfac
 		return nil, errors.ErrNotFoundWithID("profile", id)
 	}
 	if builtIn {
-		return nil, fmt.Errorf("cannot update built-in profile")
+		return nil, errors.ErrForbidden("cannot update built-in profile")
 	}
 
 	// Build dynamic update query.
@@ -349,7 +368,7 @@ func (db *DB) UpdateProfile(ctx context.Context, id string, profileData interfac
 	for dataField, dbField := range fieldMappings {
 		if value, exists := data[dataField]; exists {
 			setParts = append(setParts, fmt.Sprintf("%s = $%d", dbField, argCount))
-			args = append(args, value)
+			args = append(args, marshalSQLArg(value))
 			argCount++
 		}
 	}
@@ -402,11 +421,14 @@ func (db *DB) DeleteProfile(ctx context.Context, id string) error {
 	}()
 
 	// Check if the profile exists and is not built-in.
+	// This query always returns exactly one row, avoiding sql.ErrNoRows when
+	// the profile does not exist.
 	var exists bool
 	var builtIn bool
 	err = tx.QueryRowContext(ctx,
-		`SELECT EXISTS(SELECT 1 FROM scan_profiles WHERE id = $1),
-		 COALESCE(built_in, false) FROM scan_profiles WHERE id = $1`,
+		`SELECT COUNT(*) > 0,
+		        COALESCE(MAX(CASE WHEN built_in THEN 1 ELSE 0 END), 0) = 1
+		 FROM scan_profiles WHERE id = $1`,
 		id).Scan(&exists, &builtIn)
 	if err != nil {
 		return fmt.Errorf("failed to check profile existence: %w", err)
@@ -415,7 +437,7 @@ func (db *DB) DeleteProfile(ctx context.Context, id string) error {
 		return errors.ErrNotFoundWithID("profile", id)
 	}
 	if builtIn {
-		return fmt.Errorf("cannot delete built-in profile")
+		return errors.ErrForbidden("cannot delete built-in profile")
 	}
 
 	// Check if profile is in use by any scan jobs.

@@ -73,7 +73,7 @@ func TestGetPaginationParams(t *testing.T) {
 			queryParams: map[string]string{"page_size": "2000"},
 			expectedParams: PaginationParams{
 				Page:     1,
-				PageSize: 1000,
+				PageSize: 100,
 				Offset:   0,
 			},
 			expectedErr: false,
