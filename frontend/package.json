@@ -14,7 +14,7 @@
     "generate-types": "openapi-typescript ../docs/swagger/swagger.json -o src/api/types.ts"
   },
   "dependencies": {
-    "@tanstack/react-query": "5.90.21",
+    "@tanstack/react-query": "5.91.0",
     "@tanstack/react-router": "1.167.4",
     "clsx": "2.1.1",
     "lucide-react": "0.577.0",
