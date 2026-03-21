@@ -236,8 +236,9 @@ func TestStoreScanResults_InvalidTarget(t *testing.T) {
 	}
 }
 
-// TestCreateAdhocScanTarget_ValidIP tests creating a scan target with a valid IP.
-func TestCreateAdhocScanTarget_ValidIP(t *testing.T) {
+// TestFindOrCreateNetwork_ValidIP tests that findOrCreateNetwork creates a /32
+// network entry for a plain IP address.
+func TestFindOrCreateNetwork_ValidIP(t *testing.T) {
 	database := setupTestDB(t)
 	if database == nil {
 		return
@@ -245,28 +246,29 @@ func TestCreateAdhocScanTarget_ValidIP(t *testing.T) {
 	defer database.Close()
 
 	ctx := context.Background()
-	targetRepo := db.NewScanTargetRepository(database)
+	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '192.168.1.50/32'`)
 
 	config := &ScanConfig{
+		Targets:  []string{"192.168.1.50"},
 		ScanType: "connect",
 		Ports:    "80",
 	}
 
-	target, err := createAdhocScanTarget(ctx, targetRepo, "192.168.1.50", config)
-	require.NoError(t, err, "should create target for valid IP")
-	assert.NotNil(t, target)
-	assert.NotEqual(t, uuid.Nil, target.ID)
-	assert.Contains(t, target.Name, "192.168.1.50")
+	id, err := findOrCreateNetwork(ctx, database, config)
+	require.NoError(t, err, "should create network for valid IP")
+	assert.NotEqual(t, uuid.Nil, id)
 
-	// Verify target can be retrieved
-	retrieved, err := targetRepo.GetByID(ctx, target.ID)
-	require.NoError(t, err)
-	assert.Equal(t, target.ID, retrieved.ID)
-	assert.Equal(t, target.Name, retrieved.Name)
+	// Verify a networks row was created with the /32 CIDR.
+	var cidr string
+	require.NoError(t, database.QueryRowContext(ctx,
+		`SELECT cidr::text FROM networks WHERE id = $1`, id,
+	).Scan(&cidr))
+	assert.Equal(t, "192.168.1.50/32", cidr)
 }
 
-// TestCreateAdhocScanTarget_CIDR tests creating a scan target with CIDR notation.
-func TestCreateAdhocScanTarget_CIDR(t *testing.T) {
+// TestFindOrCreateNetwork_CIDR tests that findOrCreateNetwork uses the CIDR
+// string directly when the target already includes a prefix length.
+func TestFindOrCreateNetwork_CIDR(t *testing.T) {
 	database := setupTestDB(t)
 	if database == nil {
 		return
@@ -274,21 +276,22 @@ func TestCreateAdhocScanTarget_CIDR(t *testing.T) {
 	defer database.Close()
 
 	ctx := context.Background()
-	targetRepo := db.NewScanTargetRepository(database)
+	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.0.1.0/24'`)
 
 	config := &ScanConfig{
+		Targets:  []string{"10.0.1.0/24"},
 		ScanType: "connect",
 		Ports:    "22,80",
 	}
 
-	target, err := createAdhocScanTarget(ctx, targetRepo, "10.0.1.0/24", config)
-	require.NoError(t, err, "should create target for CIDR")
-	assert.NotNil(t, target)
-	assert.Contains(t, target.Name, "10.0.1.0/24")
+	id, err := findOrCreateNetwork(ctx, database, config)
+	require.NoError(t, err, "should create network for CIDR")
+	assert.NotEqual(t, uuid.Nil, id)
 }
 
-// TestCreateAdhocScanTarget_InvalidAddress tests error handling for invalid addresses.
-func TestCreateAdhocScanTarget_InvalidAddress(t *testing.T) {
+// TestFindOrCreateNetwork_ReuseExisting tests that findOrCreateNetwork returns
+// the existing network UUID when the CIDR is already in the database.
+func TestFindOrCreateNetwork_ReuseExisting(t *testing.T) {
 	database := setupTestDB(t)
 	if database == nil {
 		return
@@ -296,15 +299,48 @@ func TestCreateAdhocScanTarget_InvalidAddress(t *testing.T) {
 	defer database.Close()
 
 	ctx := context.Background()
-	targetRepo := db.NewScanTargetRepository(database)
+	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.99.0.0/24'`)
+
+	existing := uuid.New()
+	_, err := database.ExecContext(ctx, `
+		INSERT INTO networks
+		    (id, name, cidr, discovery_method, is_active, scan_enabled,
+		     scan_interval_seconds, scan_ports, scan_type)
+		VALUES ($1, 'existing', '10.99.0.0/24', 'tcp', true, true, 3600, '22', 'connect')`,
+		existing,
+	)
+	require.NoError(t, err)
 
 	config := &ScanConfig{
+		Targets:  []string{"10.99.0.0/24"},
+		ScanType: "connect",
+		Ports:    "22",
+	}
+
+	id, err := findOrCreateNetwork(ctx, database, config)
+	require.NoError(t, err, "should reuse existing network")
+	assert.Equal(t, existing, id, "should return the pre-existing network UUID")
+}
+
+// TestFindOrCreateNetwork_InvalidAddress tests that an invalid CIDR string
+// results in an error from the database layer.
+func TestFindOrCreateNetwork_InvalidAddress(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+
+	config := &ScanConfig{
+		Targets:  []string{"not-an-ip-address"},
 		ScanType: "connect",
 		Ports:    "80",
 	}
 
-	_, err := createAdhocScanTarget(ctx, targetRepo, "not-an-ip-address", config)
-	assert.Error(t, err, "should reject invalid address")
+	_, err := findOrCreateNetwork(ctx, database, config)
+	assert.Error(t, err, "should return error for invalid CIDR")
 }
 
 // TestStoreHostResults_EmptyHosts tests handling of empty host list.
@@ -450,20 +486,20 @@ func TestParseTargetAddress_InvalidCIDR(t *testing.T) {
 func createScanJobForTest(t *testing.T, ctx context.Context, database *db.DB, scanID uuid.UUID, network string) {
 	t.Helper()
 
-	targetRepo := db.NewScanTargetRepository(database)
-	scanTarget := &db.ScanTarget{
-		ID:       uuid.New(),
-		Name:     "test-target-" + scanID.String()[:8],
-		Network:  mustParseNetwork(t, network),
-		ScanType: "connect",
-		Enabled:  false,
-	}
-	require.NoError(t, targetRepo.Create(ctx, scanTarget), "pre-create scan_target for test")
+	networkID := uuid.New()
+	_, err := database.ExecContext(ctx, `
+		INSERT INTO networks
+		    (id, name, cidr, discovery_method, is_active, scan_enabled,
+		     scan_interval_seconds, scan_ports, scan_type)
+		VALUES ($1, $2, $3, 'tcp', false, false, 0, '', 'connect')`,
+		networkID, "test-network-"+scanID.String()[:8], network,
+	)
+	require.NoError(t, err, "pre-create networks row for test")
 
-	_, err := database.ExecContext(ctx,
-		`INSERT INTO scan_jobs (id, target_id, status, started_at, created_at)`+
-			` VALUES ($1, $2, 'running', NOW(), NOW())`,
-		scanID, scanTarget.ID,
+	_, err = database.ExecContext(ctx, `
+		INSERT INTO scan_jobs (id, network_id, status, started_at, created_at)
+		VALUES ($1, $2, 'running', NOW(), NOW())`,
+		scanID, networkID,
 	)
 	require.NoError(t, err, "pre-create scan_job row for test")
 }
@@ -474,16 +510,6 @@ func cleanupHost(t *testing.T, database *db.DB, ip string) {
 	t.Helper()
 	_, _ = database.ExecContext(context.Background(),
 		`DELETE FROM hosts WHERE ip_address = $1::inet`, ip)
-}
-
-// mustParseNetwork parses a CIDR string into a db.NetworkAddr or fails the test.
-func mustParseNetwork(t *testing.T, cidr string) db.NetworkAddr {
-	t.Helper()
-	var na db.NetworkAddr
-	_, ipNet, err := net.ParseCIDR(cidr)
-	require.NoError(t, err, "mustParseNetwork: invalid CIDR %q", cidr)
-	na.IPNet = *ipNet
-	return na
 }
 
 func TestStoreScanResults_ScanIDRoundTrip(t *testing.T) {
@@ -763,9 +789,10 @@ func TestStoreScanResults_OSFieldsPersisted(t *testing.T) {
 	assert.Equal(t, 96, *host.OSConfidence)
 }
 
-// TestCreateAdhocScanTarget_Localhost verifies that "localhost" is accepted
-// as a target hostname (regression: it was rejected because it contains no dot).
-func TestCreateAdhocScanTarget_Localhost(t *testing.T) {
+// TestFindOrCreateNetwork_LocalhostIP tests that "127.0.0.1" is accepted and
+// stored as a /32 CIDR (regression: the old hostname-based path accepted
+// "localhost" but the new CIDR-based path requires a resolvable address).
+func TestFindOrCreateNetwork_LocalhostIP(t *testing.T) {
 	database := setupTestDB(t)
 	if database == nil {
 		return
@@ -773,19 +800,205 @@ func TestCreateAdhocScanTarget_Localhost(t *testing.T) {
 	defer database.Close()
 
 	ctx := context.Background()
-	targetRepo := db.NewScanTargetRepository(database)
+	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '127.0.0.1/32'`)
 
 	config := &ScanConfig{
+		Targets:  []string{"127.0.0.1"},
 		ScanType: "connect",
 		Ports:    "80",
 	}
 
-	target, err := createAdhocScanTarget(ctx, targetRepo, "localhost", config)
-	require.NoError(t, err,
-		"createAdhocScanTarget should accept 'localhost'; "+
-			"if this fails the hostname check still requires a dot")
-	assert.NotNil(t, target)
-	assert.NotEqual(t, uuid.Nil, target.ID)
+	id, err := findOrCreateNetwork(ctx, database, config)
+	require.NoError(t, err, "findOrCreateNetwork should accept '127.0.0.1'")
+	assert.NotEqual(t, uuid.Nil, id)
+}
+
+// TestFindOrCreateNetwork_EmptyTargets verifies that an empty Targets slice
+// returns an error and uuid.Nil.
+func TestFindOrCreateNetwork_EmptyTargets(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+
+	config := &ScanConfig{
+		Targets:  []string{},
+		ScanType: "connect",
+		Ports:    "80",
+	}
+
+	id, err := findOrCreateNetwork(ctx, database, config)
+	assert.Error(t, err, "should return error when no targets specified")
+	assert.Equal(t, uuid.Nil, id)
+}
+
+// TestFindOrCreateNetwork_IPv6 tests that an IPv6 address is stored as a /128 CIDR.
+func TestFindOrCreateNetwork_IPv6(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '::1/128'`)
+
+	config := &ScanConfig{
+		Targets:  []string{"::1"},
+		ScanType: "connect",
+		Ports:    "80",
+	}
+
+	id, err := findOrCreateNetwork(ctx, database, config)
+	require.NoError(t, err, "findOrCreateNetwork should accept IPv6 address '::1'")
+	assert.NotEqual(t, uuid.Nil, id)
+
+	var cidr string
+	require.NoError(t, database.QueryRowContext(ctx,
+		`SELECT cidr::text FROM networks WHERE id = $1`, id,
+	).Scan(&cidr))
+	assert.Equal(t, "::1/128", cidr)
+}
+
+// TestFindOrCreateNetwork_ScanTypeComprehensive verifies that the "comprehensive"
+// scan type is remapped to "connect" before being persisted.
+func TestFindOrCreateNetwork_ScanTypeComprehensive(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.253.0.1/32'`)
+
+	config := &ScanConfig{
+		Targets:  []string{"10.253.0.1"},
+		ScanType: "comprehensive",
+		Ports:    "80",
+	}
+
+	id, err := findOrCreateNetwork(ctx, database, config)
+	require.NoError(t, err, "findOrCreateNetwork should accept 'comprehensive' scan type")
+	assert.NotEqual(t, uuid.Nil, id)
+
+	var scanType string
+	require.NoError(t, database.QueryRowContext(ctx,
+		`SELECT scan_type FROM networks WHERE id = $1`, id,
+	).Scan(&scanType))
+	assert.Equal(t, "connect", scanType)
+}
+
+// TestFindOrCreateNetwork_ScanTypeStealth verifies that the "stealth"
+// scan type is remapped to "connect" before being persisted.
+func TestFindOrCreateNetwork_ScanTypeStealth(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.253.0.2/32'`)
+
+	config := &ScanConfig{
+		Targets:  []string{"10.253.0.2"},
+		ScanType: "stealth",
+		Ports:    "80",
+	}
+
+	id, err := findOrCreateNetwork(ctx, database, config)
+	require.NoError(t, err, "findOrCreateNetwork should accept 'stealth' scan type")
+	assert.NotEqual(t, uuid.Nil, id)
+
+	var scanType string
+	require.NoError(t, database.QueryRowContext(ctx,
+		`SELECT scan_type FROM networks WHERE id = $1`, id,
+	).Scan(&scanType))
+	assert.Equal(t, "connect", scanType)
+}
+
+// TestFindOrCreateNetwork_ScanTypeAggressive verifies that the "aggressive"
+// scan type is remapped to "connect" before being persisted.
+func TestFindOrCreateNetwork_ScanTypeAggressive(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.253.0.3/32'`)
+
+	config := &ScanConfig{
+		Targets:  []string{"10.253.0.3"},
+		ScanType: "aggressive",
+		Ports:    "80",
+	}
+
+	id, err := findOrCreateNetwork(ctx, database, config)
+	require.NoError(t, err, "findOrCreateNetwork should accept 'aggressive' scan type")
+	assert.NotEqual(t, uuid.Nil, id)
+
+	var scanType string
+	require.NoError(t, database.QueryRowContext(ctx,
+		`SELECT scan_type FROM networks WHERE id = $1`, id,
+	).Scan(&scanType))
+	assert.Equal(t, "connect", scanType)
+}
+
+// TestFindOrCreateNetwork_NameCollision verifies that when the preferred name
+// "Ad-hoc: <cidr>" is already taken by a different row, findOrCreateNetwork
+// falls back to using the CIDR itself as the name.
+func TestFindOrCreateNetwork_NameCollision(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+
+	// Pre-insert a network that claims the name "Ad-hoc: 10.252.0.1/32" but
+	// uses a different CIDR, so the unique-name constraint will fire when
+	// findOrCreateNetwork tries its first INSERT.
+	colliderID := uuid.New()
+	_, err := database.ExecContext(ctx, `
+		INSERT INTO networks (
+			id, name, cidr,
+			discovery_method, is_active, scan_enabled,
+			scan_interval_seconds, scan_ports, scan_type
+		) VALUES (
+			$1, 'Ad-hoc: 10.252.0.1/32', '10.252.0.0/24',
+			'tcp', false, false, 0, '80', 'connect'
+		)`,
+		colliderID,
+	)
+	require.NoError(t, err, "pre-insert of collider row should succeed")
+
+	t.Cleanup(func() {
+		_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.252.0.0/24'`)
+		_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.252.0.1/32'`)
+	})
+
+	config := &ScanConfig{
+		Targets:  []string{"10.252.0.1"},
+		ScanType: "connect",
+		Ports:    "80",
+	}
+
+	id, err := findOrCreateNetwork(ctx, database, config)
+	require.NoError(t, err, "findOrCreateNetwork should succeed via fallback name")
+	assert.NotEqual(t, uuid.Nil, id)
+
+	var name string
+	require.NoError(t, database.QueryRowContext(ctx,
+		`SELECT name FROM networks WHERE id = $1`, id,
+	).Scan(&name))
+	assert.Equal(t, "10.252.0.1/32", name, "fallback name should be the CIDR itself")
 }
 
 // TestRunScanWithDB_IntegrationTest is an end-to-end test of scanning with database storage.

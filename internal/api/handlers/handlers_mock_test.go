@@ -821,7 +821,8 @@ func TestScheduleHandler_CreateSchedule_Mock(t *testing.T) {
 			CreateSchedule(gomock.Any(), gomock.Any()).
 			Return(schedule, nil)
 
-		body := `{"name":"Weekly","cron_expr":"0 0 * * 0","type":"scan","target_id":1}`
+		body := `{"name":"Weekly","cron_expr":"0 0 * * 0","type":"scan",` +
+			`"network_id":"550e8400-e29b-41d4-a716-446655440000"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/schedules", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -834,7 +835,7 @@ func TestScheduleHandler_CreateSchedule_Mock(t *testing.T) {
 		h, _, ctrl := newScheduleHandlerWithMock(t)
 		defer ctrl.Finish()
 
-		body := `{"cron_expr":"0 0 * * 0","type":"scan","target_id":1}`
+		body := `{"cron_expr":"0 0 * * 0","type":"scan","network_id":"550e8400-e29b-41d4-a716-446655440000"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/schedules", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -847,7 +848,8 @@ func TestScheduleHandler_CreateSchedule_Mock(t *testing.T) {
 		h, _, ctrl := newScheduleHandlerWithMock(t)
 		defer ctrl.Finish()
 
-		body := `{"name":"Bad Cron","cron_expr":"not a cron","type":"scan","target_id":1}`
+		body := `{"name":"Bad Cron","cron_expr":"not a cron","type":"scan",` +
+			`"network_id":"550e8400-e29b-41d4-a716-446655440000"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/schedules", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()

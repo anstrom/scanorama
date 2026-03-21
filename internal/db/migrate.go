@@ -226,41 +226,43 @@ func (m *Migrator) Reset(ctx context.Context) error {
 	fmt.Println("WARNING: This will drop all tables and data!")
 	fmt.Println("This operation cannot be undone.")
 
-	// Drop all tables
-	dropQueries := []string{
-		"DROP TABLE IF EXISTS host_history CASCADE",
-		"DROP TABLE IF EXISTS services CASCADE",
-		"DROP TABLE IF EXISTS port_scans CASCADE",
-		"DROP TABLE IF EXISTS hosts CASCADE",
-		"DROP TABLE IF EXISTS scan_jobs CASCADE",
-		"DROP TABLE IF EXISTS discovery_jobs CASCADE",
-		"DROP TABLE IF EXISTS scheduled_jobs CASCADE",
-		"DROP TABLE IF EXISTS scan_profiles CASCADE",
-		"DROP TABLE IF EXISTS scan_targets CASCADE",
-		"DROP TABLE IF EXISTS schema_migrations CASCADE",
-		"DROP MATERIALIZED VIEW IF EXISTS host_summary CASCADE",
-		"DROP MATERIALIZED VIEW IF EXISTS network_summary_mv CASCADE",
-		"DROP VIEW IF EXISTS scan_performance_stats CASCADE",
-		"DROP VIEW IF EXISTS network_summary CASCADE",
-		"DROP VIEW IF EXISTS active_hosts CASCADE",
-		"DROP FUNCTION IF EXISTS refresh_summary_views() CASCADE",
-		"DROP FUNCTION IF EXISTS cleanup_old_scan_data() CASCADE",
-		"DROP FUNCTION IF EXISTS update_modified_by() CASCADE",
-		"DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE",
-		"DROP FUNCTION IF EXISTS update_host_last_seen() CASCADE",
-	}
-
+	// Drop all user-defined objects in the public schema dynamically so this
+	// function stays correct as new migrations add tables, views, or functions.
 	tx, err := m.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	for _, query := range dropQueries {
-		_, err := tx.ExecContext(ctx, query)
-		if err != nil {
-			return fmt.Errorf("failed to execute drop query: %w", err)
-		}
+	_, err = tx.ExecContext(ctx, `
+		DO $$
+		DECLARE r TEXT;
+		BEGIN
+			FOR r IN
+				SELECT quote_ident(tablename)
+				FROM pg_tables
+				WHERE schemaname = 'public'
+			LOOP
+				EXECUTE 'DROP TABLE IF EXISTS ' || r || ' CASCADE';
+			END LOOP;
+			FOR r IN
+				SELECT quote_ident(matviewname)
+				FROM pg_matviews
+				WHERE schemaname = 'public'
+			LOOP
+				EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS ' || r || ' CASCADE';
+			END LOOP;
+			FOR r IN
+				SELECT quote_ident(viewname)
+				FROM pg_views
+				WHERE schemaname = 'public'
+			LOOP
+				EXECUTE 'DROP VIEW IF EXISTS ' || r || ' CASCADE';
+			END LOOP;
+		END $$;
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to drop schema objects: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

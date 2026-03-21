@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -130,7 +129,7 @@ func cleanupRows(t *testing.T, database *db.DB, startTime time.Time) {
 		"DELETE FROM discovery_jobs WHERE created_at >= $1",
 		// Only delete hosts that are NOT the shared localhost target.
 		"DELETE FROM hosts WHERE first_seen >= $1 AND ip_address != '127.0.0.1'::inet",
-		"DELETE FROM scan_targets WHERE created_at >= $1",
+		"DELETE FROM networks WHERE created_at >= $1 AND is_active = false AND scan_enabled = false",
 	}
 	for _, q := range queries {
 		if _, err := database.ExecContext(ctx, q, startTime); err != nil {
@@ -389,15 +388,15 @@ func TestDatabaseQueries(t *testing.T) {
 		err := database.SelectContext(ctx, &jobResults, `
 			SELECT
 				sj.id           AS job_id,
-				st.name         AS target_name,
+				n.name          AS target_name,
 				sj.status,
 				COUNT(DISTINCT ps.host_id) AS hosts_scanned,
 				sj.completed_at
 			FROM scan_jobs sj
-			JOIN scan_targets st ON sj.target_id = st.id
+			JOIN networks n ON sj.network_id = n.id
 			LEFT JOIN port_scans ps ON sj.id = ps.job_id
 			WHERE sj.created_at >= $1
-			GROUP BY sj.id, st.name, sj.status, sj.completed_at
+			GROUP BY sj.id, n.name, sj.status, sj.completed_at
 			ORDER BY sj.created_at DESC`, testStartTime)
 		require.NoError(t, err)
 		require.NotEmpty(t, jobResults, "Should find scan job results from our test")
@@ -527,27 +526,20 @@ func TestScanWithPreExistingScanJob(t *testing.T) {
 
 	knownUUID := uuid.New()
 
-	_, ipNet, err := net.ParseCIDR(testLocalhostIP + "/32")
+	networkID := uuid.New()
+	_, err := database.ExecContext(ctx,
+		`INSERT INTO networks
+		    (id, name, cidr, discovery_method, is_active, scan_enabled,
+		     scan_interval_seconds, scan_ports, scan_type)
+		VALUES ($1,$2,$3,'tcp',true,false,0,'8080,8022','connect')`,
+		networkID, "pre-existing-api-target-"+knownUUID.String()[:8], testLocalhostIP+"/32")
 	require.NoError(t, err)
-
-	targetID := uuid.New()
-	targetRepo := db.NewScanTargetRepository(database)
-	scanTarget := &db.ScanTarget{
-		ID:                  targetID,
-		Name:                "pre-existing-api-target-" + knownUUID.String()[:8],
-		Network:             db.NetworkAddr{IPNet: *ipNet},
-		ScanIntervalSeconds: 0,
-		ScanPorts:           "8080,8022",
-		ScanType:            "connect",
-		Enabled:             false,
-	}
-	require.NoError(t, targetRepo.Create(ctx, scanTarget))
 
 	jobRepo := db.NewScanJobRepository(database)
 	preInsertedJob := &db.ScanJob{
-		ID:       knownUUID,
-		TargetID: targetID,
-		Status:   db.ScanJobStatusPending,
+		ID:        knownUUID,
+		NetworkID: networkID,
+		Status:    db.ScanJobStatusPending,
 	}
 	require.NoError(t, jobRepo.Create(ctx, preInsertedJob),
 		"Should pre-insert scan job (simulating API CreateScan)")
@@ -646,13 +638,11 @@ func TestDatabaseQueriesOnly(t *testing.T) {
 	require.NoError(t, err, "GetActiveHosts must not error on an empty or populated DB")
 	t.Logf("TestDatabaseQueriesOnly: %d active hosts", len(hosts))
 
-	// Verify scan target repository instantiates and can list all targets.
-	targetRepo := db.NewScanTargetRepository(database)
-	require.NotNil(t, targetRepo)
-
-	targets, err := targetRepo.GetAll(ctx)
-	require.NoError(t, err, "GetAll scan targets must not error")
-	t.Logf("TestDatabaseQueriesOnly: %d scan targets", len(targets))
+	// Verify networks table is queryable.
+	var networkCount int
+	err = database.QueryRowContext(ctx, "SELECT COUNT(*) FROM networks").Scan(&networkCount)
+	require.NoError(t, err, "SELECT COUNT(*) FROM networks must not error")
+	t.Logf("TestDatabaseQueriesOnly: %d networks", networkCount)
 
 	// Verify port-scan repository instantiates without error.
 	portRepo := db.NewPortScanRepository(database)
@@ -664,12 +654,8 @@ func TestDatabaseQueriesOnly(t *testing.T) {
 	require.NoError(t, err, "GetByHost with absent UUID must not error")
 	assert.Empty(t, portScans, "No port scans expected for absent host")
 
-	// Verify scan job repository instantiates and can fetch enabled targets.
+	// Verify scan job repository instantiates without error.
 	scanJobRepo := db.NewScanJobRepository(database)
 	require.NotNil(t, scanJobRepo)
-
-	enabled, err := db.NewScanTargetRepository(database).GetEnabled(ctx)
-	require.NoError(t, err, "GetEnabled must not error")
-	t.Logf("TestDatabaseQueriesOnly: %d enabled scan targets", len(enabled))
 	_ = fmt.Sprintf("scan job repo: %T", scanJobRepo)
 }

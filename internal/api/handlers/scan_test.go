@@ -1001,22 +1001,28 @@ func setupScanHandlerTest(t *testing.T) (*ScanHandler, *db.DB, func()) {
 	metricsRegistry := metrics.NewRegistry()
 	handler := NewScanHandler(database, logger, metricsRegistry)
 
-	// Clean up any leftover test data
-	_, _ = database.Exec(`DELETE FROM port_scans WHERE job_id IN (
-		SELECT id FROM scan_jobs WHERE target_id IN (
-			SELECT id FROM scan_targets WHERE name LIKE 'ScanTest%'))`)
-	_, _ = database.Exec(`DELETE FROM scan_jobs WHERE target_id IN (
-		SELECT id FROM scan_targets WHERE name LIKE 'ScanTest%')`)
-	_, _ = database.Exec(`DELETE FROM scan_targets WHERE name LIKE 'ScanTest%'`)
+	// Clean up any leftover test data from previous runs.
+	// scan_jobs.network_id → networks(id) ON DELETE CASCADE (migration 011),
+	// so deleting a network cascades to its scan_jobs.
+	_, _ = database.Exec(`
+		DELETE FROM port_scans
+		WHERE job_id IN (
+			SELECT sj.id FROM scan_jobs sj
+			JOIN networks n ON sj.network_id = n.id
+			WHERE n.name LIKE 'ScanTest%'
+		)`)
+	_, _ = database.Exec(`DELETE FROM networks WHERE name LIKE 'ScanTest%'`)
 
 	cleanup := func() {
 		// Clean up test data
-		_, _ = database.Exec(`DELETE FROM port_scans WHERE job_id IN (
-			SELECT id FROM scan_jobs WHERE target_id IN (
-				SELECT id FROM scan_targets WHERE name LIKE 'ScanTest%'))`)
-		_, _ = database.Exec(`DELETE FROM scan_jobs WHERE target_id IN (
-			SELECT id FROM scan_targets WHERE name LIKE 'ScanTest%')`)
-		_, _ = database.Exec(`DELETE FROM scan_targets WHERE name LIKE 'ScanTest%'`)
+		_, _ = database.Exec(`
+			DELETE FROM port_scans
+			WHERE job_id IN (
+				SELECT sj.id FROM scan_jobs sj
+				JOIN networks n ON sj.network_id = n.id
+				WHERE n.name LIKE 'ScanTest%'
+			)`)
+		_, _ = database.Exec(`DELETE FROM networks WHERE name LIKE 'ScanTest%'`)
 		database.Close()
 	}
 
@@ -1042,7 +1048,7 @@ func TestScanHandler_ListScans_Integration(t *testing.T) {
 
 	scan1Data := map[string]interface{}{
 		"name":       scan1Name,
-		"targets":    []string{"192.168.1.0/24"},
+		"targets":    []string{generateUniqueCIDR(42)},
 		"scan_type":  "connect",
 		"status":     "pending",
 		"created_at": time.Now().UTC(),
@@ -1050,7 +1056,7 @@ func TestScanHandler_ListScans_Integration(t *testing.T) {
 
 	scan2Data := map[string]interface{}{
 		"name":       scan2Name,
-		"targets":    []string{"10.0.0.0/24"},
+		"targets":    []string{generateUniqueCIDR(43)},
 		"scan_type":  "syn",
 		"status":     "pending",
 		"created_at": time.Now().UTC(),
@@ -1145,7 +1151,7 @@ func TestScanHandler_GetScan_Integration(t *testing.T) {
 	scanName := generateUniqueScanName()
 	scanData := map[string]interface{}{
 		"name":       scanName,
-		"targets":    []string{"192.168.1.0/24"},
+		"targets":    []string{generateUniqueCIDR(44)},
 		"scan_type":  "connect",
 		"status":     "pending",
 		"created_at": time.Now().UTC(),

@@ -227,10 +227,9 @@ func queryHosts(database *db.DB, filters HostFilters) ([]Host, error) {
 			COALESCE(h.ignore_scanning, false) as ignore_scanning,
 			COALESCE(h.discovery_method, '') as discovery_method,
 			COUNT(DISTINCT ps.id) as open_ports,
-			COUNT(DISTINCT sj.id) as total_scans
+			(SELECT COUNT(DISTINCT job_id) FROM port_scans WHERE host_id = h.id) as total_scans
 		FROM hosts h
 		LEFT JOIN port_scans ps ON h.id = ps.host_id AND ps.state = 'open'
-		LEFT JOIN scan_jobs sj ON h.id = sj.target_id
 		WHERE 1=1`
 
 	args := []interface{}{}

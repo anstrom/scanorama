@@ -311,10 +311,14 @@ jobs:
 
       - name: Run integration tests (services)
         run: |
+          # Run sequentially (-p 1) so internal/db and internal/scanning tests
+          # don't race over the shared postgres instance.
           # The test package uses TestMain (single migration) + t.Parallel() +
           # nmapMu so tests are safe to run concurrently within the package.
-          go test -v -tags=integration -coverprofile=coverage_services.out -covermode=atomic \
-            github.com/anstrom/scanorama/test
+          go test -v -p 1 -tags=integration -coverprofile=coverage_services.out -covermode=atomic \
+            github.com/anstrom/scanorama/test \
+            github.com/anstrom/scanorama/internal/db \
+            github.com/anstrom/scanorama/internal/scanning
           go tool cover -func=coverage_services.out | tail -1
 
       - name: Upload services coverage artifact

@@ -111,9 +111,9 @@ func TestNetworkHandler_ListNetworks(t *testing.T) {
 		discoveryMethod string
 		isActive        bool
 	}{
-		{activeNetworkName, "10.0.1.0/24", "ping", true},
-		{inactiveNetworkName, "10.0.2.0/24", "tcp", false},
-		{anotherActiveNetworkName, "192.168.1.0/24", "arp", true},
+		{activeNetworkName, generateUniqueCIDR(50), "ping", true},
+		{inactiveNetworkName, generateUniqueCIDR(51), "tcp", false},
+		{anotherActiveNetworkName, generateUniqueCIDR(52), "arp", true},
 	}
 
 	for _, tn := range testNetworks {

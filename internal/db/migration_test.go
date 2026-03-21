@@ -282,10 +282,10 @@ func TestMigrationRollbackSafety(t *testing.T) {
 			query string
 		}{
 			{
-				"scan_jobs_target_id_fk",
+				"scan_jobs_network_id_fk",
 				`SELECT COUNT(*) FROM information_schema.table_constraints
 				 WHERE constraint_type = 'FOREIGN KEY' AND table_name = 'scan_jobs'
-				 AND constraint_name LIKE '%target_id%'`,
+				 AND constraint_name LIKE '%network_id%'`,
 			},
 			{
 				"port_scans_host_id_fk",

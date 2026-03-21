@@ -15,155 +15,6 @@ import (
 	"github.com/anstrom/scanorama/internal/errors"
 )
 
-// ScanTargetRepository handles scan target operations.
-type ScanTargetRepository struct {
-	db *DB
-}
-
-// NewScanTargetRepository creates a new scan target repository.
-func NewScanTargetRepository(db *DB) *ScanTargetRepository {
-	return &ScanTargetRepository{db: db}
-}
-
-// Create creates a new scan target.
-func (r *ScanTargetRepository) Create(ctx context.Context, target *ScanTarget) error {
-	query := `
-		INSERT INTO scan_targets (
-			id, name, network, description,
-			scan_interval_seconds, scan_ports, scan_type, enabled
-		)
-		VALUES (
-			:id, :name, :network, :description,
-			:scan_interval_seconds, :scan_ports, :scan_type, :enabled
-		)
-		RETURNING created_at, updated_at`
-
-	if target.ID == uuid.Nil {
-		target.ID = uuid.New()
-	}
-
-	rows, err := r.db.NamedQueryContext(ctx, query, target)
-	if err != nil {
-		return sanitizeDBError("create scan target", err)
-	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			log.Printf("Failed to close rows: %v", err)
-		}
-	}()
-
-	if rows.Next() {
-		if err := rows.Scan(&target.CreatedAt, &target.UpdatedAt); err != nil {
-			return sanitizeDBError("scan created scan target", err)
-		}
-	}
-
-	return nil
-}
-
-// GetByID retrieves a scan target by ID.
-func (r *ScanTargetRepository) GetByID(ctx context.Context, id uuid.UUID) (*ScanTarget, error) {
-	var target ScanTarget
-	query := `
-		SELECT *
-		FROM scan_targets
-		WHERE id = $1`
-
-	if err := r.db.GetContext(ctx, &target, query, id); err != nil {
-		return nil, sanitizeDBError("get scan target", err)
-	}
-
-	return &target, nil
-}
-
-// GetAll retrieves all scan targets.
-func (r *ScanTargetRepository) GetAll(ctx context.Context) ([]*ScanTarget, error) {
-	var targets []*ScanTarget
-	query := `
-		SELECT *
-		FROM scan_targets
-		ORDER BY name`
-
-	if err := r.db.SelectContext(ctx, &targets, query); err != nil {
-		return nil, sanitizeDBError("get scan targets", err)
-	}
-
-	return targets, nil
-}
-
-// GetEnabled retrieves all enabled scan targets.
-func (r *ScanTargetRepository) GetEnabled(ctx context.Context) ([]*ScanTarget, error) {
-	var targets []*ScanTarget
-	query := `
-		SELECT *
-		FROM scan_targets
-		WHERE enabled = true
-		ORDER BY name`
-
-	if err := r.db.SelectContext(ctx, &targets, query); err != nil {
-		return nil, sanitizeDBError("get enabled scan targets", err)
-	}
-
-	return targets, nil
-}
-
-// Update updates a scan target.
-func (r *ScanTargetRepository) Update(ctx context.Context, target *ScanTarget) error {
-	query := `
-		UPDATE scan_targets
-		SET
-			name = :name,
-			network = :network,
-			description = :description,
-			scan_interval_seconds = :scan_interval_seconds,
-			scan_ports = :scan_ports,
-			scan_type = :scan_type,
-			enabled = :enabled
-		WHERE id = :id
-		RETURNING updated_at`
-
-	rows, err := r.db.NamedQueryContext(ctx, query, target)
-	if err != nil {
-		return sanitizeDBError("update scan target", err)
-	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			log.Printf("Failed to close rows: %v", err)
-		}
-	}()
-
-	if rows.Next() {
-		if err := rows.Scan(&target.UpdatedAt); err != nil {
-			return sanitizeDBError("scan updated scan target", err)
-		}
-	}
-
-	return nil
-}
-
-// Delete deletes a scan target.
-func (r *ScanTargetRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	query := `
-		DELETE FROM scan_targets
-		WHERE id = $1`
-
-	result, err := r.db.ExecContext(ctx, query, id)
-	if err != nil {
-		return sanitizeDBError("delete scan target", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return sanitizeDBError("get rows affected", err)
-	}
-
-	if rowsAffected == 0 {
-		return errors.NewDatabaseError(errors.CodeNotFound, "Scan target not found")
-	}
-
-	return nil
-}
-
 // ScanJobRepository handles scan job operations.
 type ScanJobRepository struct {
 	db *DB
@@ -178,11 +29,11 @@ func NewScanJobRepository(db *DB) *ScanJobRepository {
 func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 	query := `
 		INSERT INTO scan_jobs (
-			id, target_id, status,
+			id, network_id, status,
 			started_at, completed_at, scan_stats
 		)
 		VALUES (
-			:id, :target_id, :status,
+			:id, :network_id, :status,
 			:started_at, :completed_at, :scan_stats
 		)
 		RETURNING created_at`
@@ -414,7 +265,7 @@ func buildScanFilters(filters ScanFilters) (whereClause string, args []interface
 		conditions = append(conditions, filterCondition{"sj.status", filters.Status})
 	}
 	if filters.ScanType != "" {
-		conditions = append(conditions, filterCondition{"COALESCE(sp.scan_type, st.scan_type)", filters.ScanType})
+		conditions = append(conditions, filterCondition{"COALESCE(sp.scan_type, n.scan_type)", filters.ScanType})
 	}
 	if filters.ProfileID != nil {
 		conditions = append(conditions, filterCondition{"sj.profile_id", *filters.ProfileID})
@@ -426,7 +277,7 @@ func buildScanFilters(filters ScanFilters) (whereClause string, args []interface
 // getScanCount gets total count of scans matching filters.
 func (db *DB) getScanCount(ctx context.Context, whereClause string, args []interface{}) (int64, error) {
 	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM scan_jobs sj
-		JOIN scan_targets st ON sj.target_id = st.id
+		JOIN networks n ON sj.network_id = n.id
 		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id %s`, whereClause)
 
 	var total int64
@@ -507,11 +358,11 @@ func (db *DB) ListScans(ctx context.Context, filters ScanFilters, offset, limit 
 	baseQuery := `
 		SELECT
 			sj.id,
-			st.name,
-			st.description,
-			st.network::text as targets,
-			COALESCE(sp.scan_type, st.scan_type) as scan_type,
-			st.scan_ports as ports,
+			n.name,
+			n.description,
+			n.cidr::text as targets,
+			COALESCE(sp.scan_type, n.scan_type) as scan_type,
+			n.scan_ports as ports,
 			sj.profile_id,
 			sj.status,
 			sj.created_at,
@@ -519,7 +370,7 @@ func (db *DB) ListScans(ctx context.Context, filters ScanFilters, offset, limit 
 			sj.completed_at,
 			sj.error_message
 		FROM scan_jobs sj
-		JOIN scan_targets st ON sj.target_id = st.id
+		JOIN networks n ON sj.network_id = n.id
 		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id
 	`
 
@@ -626,33 +477,67 @@ func extractScanData(input interface{}) (*scanData, error) {
 	return result, nil
 }
 
-// createScanTarget creates a scan target in the database.
-func (db *DB) createScanTarget(ctx context.Context, tx *sql.Tx, targetID uuid.UUID,
-	name, target, description, ports, scanType string, index, totalTargets int) error {
-	var targetName string
-	if totalTargets == 1 {
-		targetName = name
-	} else {
-		targetName = fmt.Sprintf("%s-target-%d", name, index+1)
+// findOrCreateNetwork finds an existing network by CIDR or creates a new one.
+// Returns the network UUID to store as scan_jobs.network_id.
+func (db *DB) findOrCreateNetwork(ctx context.Context, tx *sql.Tx,
+	name, cidr, description, ports, scanType string) (uuid.UUID, error) {
+	// Reuse the network if the CIDR is already known.
+	var id uuid.UUID
+	err := tx.QueryRowContext(ctx,
+		`SELECT id FROM networks WHERE cidr = $1`, cidr).Scan(&id)
+	if err == nil {
+		return id, nil
 	}
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO scan_targets (id, name, network, description, scan_ports, scan_type, enabled)
-		VALUES ($1, $2, $3, $4, $5, $6, true)
-	`, targetID, targetName, target, description, ports, scanType)
+	if err != sql.ErrNoRows {
+		return uuid.Nil, fmt.Errorf("failed to look up network by CIDR: %w", err)
+	}
+
+	// Not found — create a new network entry.
+	// ON CONFLICT (name) DO NOTHING avoids aborting the outer transaction on a
+	// name collision; we detect the no-op via RowsAffected and retry with the
+	// CIDR string as the name (always unique because we verified the CIDR is new).
+	id = uuid.New()
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO networks (
+			id, name, cidr, description,
+			scan_ports, scan_type,
+			is_active, scan_enabled, discovery_method
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, true, true, 'tcp'
+		)
+		ON CONFLICT (name) DO NOTHING
+	`, id, name, cidr, description, ports, scanType)
 	if err != nil {
-		return fmt.Errorf("failed to create scan target: %w", err)
+		return uuid.Nil, fmt.Errorf("failed to create network: %w", err)
 	}
-	return nil
+
+	if n, _ := result.RowsAffected(); n == 0 {
+		// Name collision — fall back to using the CIDR string as the name.
+		id = uuid.New()
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO networks (
+				id, name, cidr, description,
+				scan_ports, scan_type,
+				is_active, scan_enabled, discovery_method
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, true, true, 'tcp'
+			)
+		`, id, cidr, cidr, description, ports, scanType)
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("failed to create network: %w", err)
+		}
+	}
+	return id, nil
 }
 
 // createScanJob creates a scan job in the database.
-func (db *DB) createScanJob(ctx context.Context, tx *sql.Tx, jobID, targetID uuid.UUID,
+func (db *DB) createScanJob(ctx context.Context, tx *sql.Tx, jobID, networkID uuid.UUID,
 	profileID *string, now time.Time, osDetection bool) error {
 	execDetails := fmt.Sprintf(`{"os_detection": %t}`, osDetection)
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO scan_jobs (id, target_id, profile_id, status, created_at, execution_details)
+		INSERT INTO scan_jobs (id, network_id, profile_id, status, created_at, execution_details)
 		VALUES ($1, $2, $3, 'pending', $4, $5)
-	`, jobID, targetID, profileID, now, execDetails)
+	`, jobID, networkID, profileID, now, execDetails)
 	if err != nil {
 		return fmt.Errorf("failed to create scan job: %w", err)
 	}
@@ -703,23 +588,27 @@ func (db *DB) CreateScan(ctx context.Context, input interface{}) (*Scan, error) 
 	now := time.Now().UTC()
 	var firstJobID uuid.UUID
 
-	// Create scan targets and jobs.
+	// For each target CIDR, find or create a network then create the scan job.
 	for i, target := range data.targets {
-		targetID := uuid.New()
 		jobID := uuid.New()
 
 		if i == 0 {
 			firstJobID = jobID
 		}
 
-		// Create scan target.
-		if err := db.createScanTarget(ctx, tx, targetID, data.name, target,
-			data.description, data.ports, data.scanType, i, len(data.targets)); err != nil {
+		networkName := data.name
+		if len(data.targets) > 1 {
+			networkName = fmt.Sprintf("%s-target-%d", data.name, i+1)
+		}
+
+		networkID, err := db.findOrCreateNetwork(ctx, tx, networkName, target,
+			data.description, data.ports, data.scanType)
+		if err != nil {
 			return nil, err
 		}
 
 		// Create scan job.
-		if err := db.createScanJob(ctx, tx, jobID, targetID, data.profileID, now, data.osDetection); err != nil {
+		if err := db.createScanJob(ctx, tx, jobID, networkID, data.profileID, now, data.osDetection); err != nil {
 			return nil, err
 		}
 	}
@@ -739,20 +628,20 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 	query := `
 		SELECT
 			sj.id,
-			st.name,
-			st.description,
-			st.network::text as targets,
-			COALESCE(sp.scan_type, st.scan_type) as scan_type,
-			st.scan_ports as ports,
-			sj.profile_id,
-			sj.status,
-			sj.created_at,
-			sj.started_at,
-			sj.completed_at,
-			sj.error_message,
-			COALESCE((sj.execution_details->>'os_detection')::boolean, false) as os_detection
-		FROM scan_jobs sj
-		JOIN scan_targets st ON sj.target_id = st.id
+			n.name,
+			n.description,
+			n.cidr::text as targets,
+			COALESCE(sp.scan_type, n.scan_type) as scan_type,
+				n.scan_ports as ports,
+				sj.profile_id,
+				sj.status,
+				sj.created_at,
+				sj.started_at,
+				sj.completed_at,
+				sj.error_message,
+				COALESCE((sj.execution_details->>'os_detection')::boolean, false) as os_detection
+			FROM scan_jobs sj
+			JOIN networks n ON sj.network_id = n.id
 		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id
 		WHERE sj.id = $1
 	`
@@ -760,12 +649,13 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 	scan := &Scan{}
 	var targetsStr string
 	var profileID *string
+	var description sql.NullString
 	var osDetection bool
 
 	err := db.DB.QueryRowContext(ctx, query, id).Scan(
 		&scan.ID,
 		&scan.Name,
-		&scan.Description,
+		&description,
 		&targetsStr,
 		&scan.ScanType,
 		&scan.Ports,
@@ -782,6 +672,11 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 			return nil, errors.ErrNotFoundWithID("scan", id.String())
 		}
 		return nil, fmt.Errorf("failed to get scan: %w", err)
+	}
+
+	// Handle nullable description.
+	if description.Valid {
+		scan.Description = description.String
 	}
 
 	// Parse targets from CIDR string.
@@ -823,17 +718,17 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 
 // UpdateScan updates an existing scan.
 // updateScanTarget updates the scan_targets row linked to a scan job within a transaction.
-func updateScanTarget(ctx context.Context, tx interface {
+func updateScanNetwork(ctx context.Context, tx interface {
 	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
 }, id uuid.UUID, data map[string]interface{}) error {
-	targetFieldMappings := map[string]string{
+	networkFieldMappings := map[string]string{
 		"name":        "name",
 		"description": "description",
 		"scan_type":   "scan_type",
 		"ports":       "scan_ports",
 	}
 
-	setParts, args := buildUpdateQuery(data, targetFieldMappings)
+	setParts, args := buildUpdateQuery(data, networkFieldMappings)
 	if len(setParts) == 0 {
 		return nil
 	}
@@ -842,15 +737,15 @@ func updateScanTarget(ctx context.Context, tx interface {
 	paramNum := len(args) + 1
 
 	var queryBuilder strings.Builder
-	queryBuilder.WriteString("UPDATE scan_targets SET ")
+	queryBuilder.WriteString("UPDATE networks SET ")
 	queryBuilder.WriteString(strings.Join(setParts, ", "))
-	queryBuilder.WriteString(" WHERE id = (SELECT target_id FROM scan_jobs WHERE id = $")
+	queryBuilder.WriteString(" WHERE id = (SELECT network_id FROM scan_jobs WHERE id = $")
 	queryBuilder.WriteString(strconv.Itoa(paramNum))
 	queryBuilder.WriteString(")")
 
 	args = append(args, id)
 	if _, err := tx.ExecContext(ctx, queryBuilder.String(), args...); err != nil {
-		return fmt.Errorf("failed to update scan target: %w", err)
+		return fmt.Errorf("failed to update scan network: %w", err)
 	}
 	return nil
 }
@@ -912,7 +807,7 @@ func (db *DB) UpdateScan(ctx context.Context, id uuid.UUID, scanData interface{}
 		return nil, errors.ErrNotFoundWithID("scan", id.String())
 	}
 
-	if err := updateScanTarget(ctx, tx, id, data); err != nil {
+	if err := updateScanNetwork(ctx, tx, id, data); err != nil {
 		return nil, err
 	}
 
@@ -960,32 +855,11 @@ func (db *DB) DeleteScan(ctx context.Context, id uuid.UUID) error {
 		return errors.ErrConflictWithReason("scan", "cannot delete a running scan; stop it first")
 	}
 
-	// Get the target_id before deleting the scan job.
-	var targetID uuid.UUID
-	err = tx.QueryRowContext(ctx, "SELECT target_id FROM scan_jobs WHERE id = $1", id).Scan(&targetID)
-	if err != nil {
-		return fmt.Errorf("failed to get target ID: %w", err)
-	}
-
-	// Delete the scan job (this will cascade to related port_scans, services, etc.).
+	// Delete the scan job (cascades to port_scans, services, host_history, etc.).
+	// Networks are persistent managed entities and are NOT deleted with the scan.
 	_, err = tx.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", id)
 	if err != nil {
 		return fmt.Errorf("failed to delete scan job: %w", err)
-	}
-
-	// Check if the target is still referenced by other jobs.
-	var otherJobsCount int
-	err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM scan_jobs WHERE target_id = $1", targetID).Scan(&otherJobsCount)
-	if err != nil {
-		return fmt.Errorf("failed to check remaining jobs for target: %w", err)
-	}
-
-	// If no other jobs reference this target, delete it too.
-	if otherJobsCount == 0 {
-		_, err = tx.ExecContext(ctx, "DELETE FROM scan_targets WHERE id = $1", targetID)
-		if err != nil {
-			return fmt.Errorf("failed to delete scan target: %w", err)
-		}
 	}
 
 	// Commit transaction.
