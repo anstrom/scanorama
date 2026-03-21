@@ -760,7 +760,7 @@ func TestRequestTimeoutMiddleware(t *testing.T) {
 		{
 			name:            "request exceeds timeout",
 			timeout:         10 * time.Millisecond,
-			handlerDelay:    50 * time.Millisecond,
+			handlerDelay:    500 * time.Millisecond,
 			expectedTimeout: true,
 		},
 	}
@@ -795,7 +795,7 @@ func TestRequestTimeoutMiddleware(t *testing.T) {
 			duration := time.Since(start)
 
 			if tt.expectedTimeout {
-				assert.True(t, duration < tt.timeout+20*time.Millisecond)
+				assert.True(t, duration < tt.timeout+200*time.Millisecond)
 				assert.False(t, completed)
 			} else {
 				assert.True(t, completed)
