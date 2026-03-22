@@ -9,7 +9,7 @@ import { DashboardPage } from "./routes/dashboard";
 import { ScansPage } from "./routes/scans";
 import { HostsPage } from "./routes/hosts";
 import { NetworksPage } from "./routes/networks";
-
+import { ExclusionsPage } from "./routes/exclusions";
 import { ProfilesPage } from "./routes/profiles";
 import { SchedulesPage } from "./routes/schedules";
 import { AdminPage } from "./routes/admin";
@@ -42,6 +42,12 @@ const networksRoute = createRoute({
   component: NetworksPage,
 });
 
+const exclusionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/exclusions",
+  component: ExclusionsPage,
+});
+
 const profilesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profiles",
@@ -65,6 +71,7 @@ const routeTree = rootRoute.addChildren([
   scansRoute,
   hostsRoute,
   networksRoute,
+  exclusionsRoute,
   profilesRoute,
   schedulesRoute,
   adminRoute,

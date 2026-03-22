@@ -549,25 +549,34 @@ Each iteration is a **shippable increment** — it adds visible, testable functi
 
 ---
 
-### Iteration 4: Networks & Exclusions
+### Iteration 4: Networks & Exclusions ✅ DONE
 
 **Goal:** Manage networks and their exclusion ranges.
 
-- [ ] Networks list page (CIDR, host count, active hosts, last discovery, status)
-- [ ] Create network form (name, CIDR, discovery method, description)
-- [ ] Network detail page
-  - [ ] Network info card
-  - [ ] Hosts in this network (filtered host table)
-  - [ ] Exclusions sub-table
-  - [ ] Enable/disable toggle
-  - [ ] Rename action
-- [ ] Exclusion management
-  - [ ] Add exclusion form (CIDR, reason)
-  - [ ] Delete exclusion (with confirmation dialog)
-  - [ ] Global exclusions page at `/exclusions`
-- [ ] Tests for network CRUD, exclusion management
+- [x] Networks list page (CIDR, host count, active hosts, last discovery, status)
+- [x] Create network form (name, CIDR, discovery method, description)
+- [x] Network detail page
+  - [x] Network info card
+  - [ ] Hosts in this network (filtered host table) — skipped: API has no `network_id` host filter
+  - [x] Exclusions sub-table
+  - [x] Enable/disable toggle
+  - [x] Rename action (inline in panel header)
+- [x] Exclusion management
+  - [x] Add exclusion form (CIDR, reason)
+  - [x] Delete exclusion (with confirmation dialog)
+  - [x] Global exclusions page at `/exclusions`
+- [x] Tests for network CRUD, exclusion management
 
 **Deliverable:** Complete network management — add networks, define exclusions, see which hosts belong to which network.
+
+**Implementation notes:**
+- `src/api/hooks/use-networks.ts` — 13 hooks (5 queries + 8 mutations)
+- `src/components/add-network-modal.tsx` — Create network modal
+- `src/components/add-exclusion-modal.tsx` — Add exclusion modal (network-scoped or global)
+- `src/routes/networks.tsx` — Full Networks page with `NetworkDetailPanel` and `ExclusionsSection`
+- `src/routes/exclusions.tsx` — Global exclusions page at `/exclusions`
+- Exclusions nav item added to sidebar (`ShieldOff` icon)
+- 430 tests passing across 20 test files
 
 ---
 

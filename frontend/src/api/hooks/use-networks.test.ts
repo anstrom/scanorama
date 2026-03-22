@@ -1,17 +1,34 @@
 import { waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHookWithQuery } from "../../test/utils";
-import { useNetworks, useNetworkStats } from "./use-networks";
+import {
+  useNetworks,
+  useNetworkStats,
+  useNetwork,
+  useNetworkExclusions,
+  useGlobalExclusions,
+  useCreateNetwork,
+  useDeleteNetwork,
+  useEnableNetwork,
+  useDisableNetwork,
+  useRenameNetwork,
+  useDeleteExclusion,
+} from "./use-networks";
 
 vi.mock("../client", () => ({
   api: {
     GET: vi.fn(),
     POST: vi.fn(),
+    PUT: vi.fn(),
+    DELETE: vi.fn(),
   },
 }));
 
 import { api } from "../client";
 const mockGet = vi.mocked(api.GET);
+const mockPost = vi.mocked(api.POST);
+const mockPut = vi.mocked(api.PUT);
+const mockDelete = vi.mocked(api.DELETE);
 
 const ok = (data: unknown): ReturnType<typeof mockGet> =>
   Promise.resolve({
@@ -56,6 +73,88 @@ const mockStats = {
   hosts: { total: 42, active: 30 },
   exclusions: { total: 5 },
 };
+
+const mockNetwork = {
+  id: "net-1",
+  name: "Office LAN",
+  cidr: "192.168.1.0/24",
+  is_active: true,
+  host_count: 25,
+  active_host_count: 20,
+  discovery_method: "ping",
+  scan_enabled: true,
+  created_by: "admin",
+  created_at: "2024-01-01T00:00:00Z",
+};
+
+const mockExclusions = [
+  {
+    id: "excl-1",
+    network_id: "net-1",
+    excluded_cidr: "192.168.1.128/25",
+    reason: "Printers",
+    created_by: "admin",
+    created_at: "2024-01-02T00:00:00Z",
+    enabled: true,
+  },
+  {
+    id: "excl-2",
+    network_id: "net-1",
+    excluded_cidr: "192.168.1.200/30",
+    reason: "Management",
+    created_by: "admin",
+    created_at: "2024-01-03T00:00:00Z",
+    enabled: true,
+  },
+];
+
+const okPost = (data: unknown): ReturnType<typeof mockPost> =>
+  Promise.resolve({
+    data,
+    error: undefined,
+    response: new Response(),
+  }) as ReturnType<typeof mockPost>;
+
+const failPost = (
+  message = "something went wrong",
+): ReturnType<typeof mockPost> =>
+  Promise.resolve({
+    data: undefined,
+    error: { message },
+    response: new Response(),
+  }) as ReturnType<typeof mockPost>;
+
+const okPut = (data: unknown): ReturnType<typeof mockPut> =>
+  Promise.resolve({
+    data,
+    error: undefined,
+    response: new Response(),
+  }) as ReturnType<typeof mockPut>;
+
+const failPut = (
+  message = "something went wrong",
+): ReturnType<typeof mockPut> =>
+  Promise.resolve({
+    data: undefined,
+    error: { message },
+    response: new Response(),
+  }) as ReturnType<typeof mockPut>;
+
+const okDelete = (): ReturnType<typeof mockDelete> =>
+  Promise.resolve({
+    data: undefined,
+    error: undefined,
+    response: new Response(),
+  }) as ReturnType<typeof mockDelete>;
+
+const failDelete = (
+  message = "something went wrong",
+): ReturnType<typeof mockDelete> =>
+  Promise.resolve({
+    data: undefined,
+    error: { message },
+    response: new Response(),
+  }) as ReturnType<typeof mockDelete>;
 
 // ── useNetworks ───────────────────────────────────────────────────────────────
 
@@ -148,6 +247,483 @@ describe("useNetworks", () => {
 
     const cached = queryClient.getQueryData(["networks", params]);
     expect(cached).toBeDefined();
+  });
+});
+
+// ── useNetwork ────────────────────────────────────────────────────────────────
+
+describe("useNetwork", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in a loading state when id is provided", () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHookWithQuery(() => useNetwork("net-1"));
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.data).toBeUndefined();
+  });
+
+  it("is disabled (not loading) when id is empty", () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHookWithQuery(() => useNetwork(""));
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.fetchStatus).toBe("idle");
+  });
+
+  it("returns network data on success", async () => {
+    mockGet.mockResolvedValue(ok(mockNetwork));
+    const { result } = renderHookWithQuery(() => useNetwork("net-1"));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.id).toBe("net-1");
+    expect(result.current.data?.name).toBe("Office LAN");
+    expect(result.current.data?.cidr).toBe("192.168.1.0/24");
+  });
+
+  it("calls api.GET with the correct path param", async () => {
+    mockGet.mockResolvedValue(ok(mockNetwork));
+    const { result } = renderHookWithQuery(() => useNetwork("net-42"));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockGet).toHaveBeenCalledWith(
+      "/networks/{networkId}",
+      expect.objectContaining({ params: { path: { networkId: "net-42" } } }),
+    );
+  });
+
+  it("enters error state when api.GET returns an error", async () => {
+    mockGet.mockResolvedValue(fail("not found"));
+    const { result } = renderHookWithQuery(() => useNetwork("net-1"));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data).toBeUndefined();
+  });
+
+  it("caches under the ['networks', id] query key", async () => {
+    mockGet.mockResolvedValue(ok(mockNetwork));
+    const { result, queryClient } = renderHookWithQuery(() =>
+      useNetwork("net-1"),
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const cached = queryClient.getQueryData(["networks", "net-1"]);
+    expect(cached).toBeDefined();
+  });
+});
+
+// ── useNetworkExclusions ──────────────────────────────────────────────────────
+
+describe("useNetworkExclusions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in a loading state when networkId is provided", () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHookWithQuery(() => useNetworkExclusions("net-1"));
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  it("is disabled when networkId is empty", () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHookWithQuery(() => useNetworkExclusions(""));
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.fetchStatus).toBe("idle");
+  });
+
+  it("returns an array of exclusions on success", async () => {
+    mockGet.mockResolvedValue(ok(mockExclusions));
+    const { result } = renderHookWithQuery(() => useNetworkExclusions("net-1"));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toHaveLength(2);
+    expect(result.current.data?.[0].excluded_cidr).toBe("192.168.1.128/25");
+    expect(result.current.data?.[1].excluded_cidr).toBe("192.168.1.200/30");
+  });
+
+  it("returns an empty array when no exclusions exist", async () => {
+    mockGet.mockResolvedValue(ok([]));
+    const { result } = renderHookWithQuery(() => useNetworkExclusions("net-1"));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toHaveLength(0);
+  });
+
+  it("calls api.GET with the correct path param", async () => {
+    mockGet.mockResolvedValue(ok(mockExclusions));
+    const { result } = renderHookWithQuery(() =>
+      useNetworkExclusions("net-99"),
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockGet).toHaveBeenCalledWith(
+      "/networks/{networkId}/exclusions",
+      expect.objectContaining({
+        params: { path: { networkId: "net-99" } },
+      }),
+    );
+  });
+
+  it("enters error state when api.GET returns an error", async () => {
+    mockGet.mockResolvedValue(fail("forbidden"));
+    const { result } = renderHookWithQuery(() => useNetworkExclusions("net-1"));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it("caches under the ['networks', networkId, 'exclusions'] query key", async () => {
+    mockGet.mockResolvedValue(ok(mockExclusions));
+    const { result, queryClient } = renderHookWithQuery(() =>
+      useNetworkExclusions("net-1"),
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const cached = queryClient.getQueryData([
+      "networks",
+      "net-1",
+      "exclusions",
+    ]);
+    expect(cached).toBeDefined();
+  });
+});
+
+// ── useGlobalExclusions ───────────────────────────────────────────────────────
+
+describe("useGlobalExclusions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in a loading state", () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHookWithQuery(() => useGlobalExclusions());
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  it("returns global exclusions on success", async () => {
+    const globalExcl = [
+      {
+        id: "g-1",
+        excluded_cidr: "10.0.0.0/8",
+        reason: "Private range",
+        created_by: "admin",
+        created_at: "2024-01-01T00:00:00Z",
+        enabled: true,
+      },
+    ];
+    mockGet.mockResolvedValue(ok(globalExcl));
+    const { result } = renderHookWithQuery(() => useGlobalExclusions());
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toHaveLength(1);
+    expect(result.current.data?.[0].excluded_cidr).toBe("10.0.0.0/8");
+  });
+
+  it("returns an empty array when no global exclusions exist", async () => {
+    mockGet.mockResolvedValue(ok([]));
+    const { result } = renderHookWithQuery(() => useGlobalExclusions());
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toHaveLength(0);
+  });
+
+  it("calls api.GET with the /exclusions path", async () => {
+    mockGet.mockResolvedValue(ok([]));
+    const { result } = renderHookWithQuery(() => useGlobalExclusions());
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockGet).toHaveBeenCalledWith("/exclusions");
+  });
+
+  it("enters error state when api.GET returns an error", async () => {
+    mockGet.mockResolvedValue(fail("server error"));
+    const { result } = renderHookWithQuery(() => useGlobalExclusions());
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it("caches under the ['exclusions', 'global'] query key", async () => {
+    mockGet.mockResolvedValue(ok([]));
+    const { result, queryClient } = renderHookWithQuery(() =>
+      useGlobalExclusions(),
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const cached = queryClient.getQueryData(["exclusions", "global"]);
+    expect(cached).toBeDefined();
+  });
+});
+
+// ── useCreateNetwork ──────────────────────────────────────────────────────────
+
+describe("useCreateNetwork", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHookWithQuery(() => useCreateNetwork());
+    expect(result.current.isPending).toBe(false);
+    expect(result.current.isSuccess).toBe(false);
+  });
+
+  it("returns the created network on success", async () => {
+    mockPost.mockResolvedValue(okPost(mockNetwork));
+    const { result, actHook } = renderHookWithQuery(() => useCreateNetwork());
+    let created: typeof mockNetwork | undefined;
+    await actHook(async () => {
+      created = (await result.current.mutateAsync({
+        name: "Office LAN",
+        cidr: "192.168.1.0/24",
+        discovery_method: "ping",
+        scan_enabled: true,
+        is_active: true,
+      })) as typeof mockNetwork;
+    });
+    expect(created?.id).toBe("net-1");
+    expect(created?.name).toBe("Office LAN");
+  });
+
+  it("calls api.POST with /networks and the request body", async () => {
+    mockPost.mockResolvedValue(okPost(mockNetwork));
+    const body = {
+      name: "DMZ",
+      cidr: "10.0.0.0/8",
+      discovery_method: "tcp" as const,
+      scan_enabled: false,
+      is_active: true,
+    };
+    const { result, actHook } = renderHookWithQuery(() => useCreateNetwork());
+    await actHook(async () => {
+      await result.current.mutateAsync(body);
+    });
+    expect(mockPost).toHaveBeenCalledWith(
+      "/networks",
+      expect.objectContaining({ body }),
+    );
+  });
+
+  it("throws a descriptive error when api.POST returns an error", async () => {
+    mockPost.mockResolvedValue(failPost("CIDR already exists"));
+    const { result, actHook } = renderHookWithQuery(() => useCreateNetwork());
+    await actHook(async () => {
+      await expect(
+        result.current.mutateAsync({ name: "Dup", cidr: "192.168.1.0/24" }),
+      ).rejects.toThrow("CIDR already exists");
+    });
+  });
+
+  it("invalidates ['networks'] queries on success", async () => {
+    mockPost.mockResolvedValue(okPost(mockNetwork));
+    mockGet.mockResolvedValue(
+      ok({ data: [mockNetwork], pagination: mockPagination }),
+    );
+    const { result, queryClient, actHook } = renderHookWithQuery(() =>
+      useCreateNetwork(),
+    );
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    await actHook(async () => {
+      await result.current.mutateAsync({
+        name: "Office LAN",
+        cidr: "192.168.1.0/24",
+      });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["networks"] }),
+    );
+  });
+});
+
+// ── useDeleteNetwork ──────────────────────────────────────────────────────────
+
+describe("useDeleteNetwork", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHookWithQuery(() => useDeleteNetwork());
+    expect(result.current.isPending).toBe(false);
+  });
+
+  it("calls api.DELETE with the correct path param", async () => {
+    mockDelete.mockResolvedValue(okDelete());
+    const { result, actHook } = renderHookWithQuery(() => useDeleteNetwork());
+    await actHook(async () => {
+      await result.current.mutateAsync("net-1");
+    });
+    expect(mockDelete).toHaveBeenCalledWith(
+      "/networks/{networkId}",
+      expect.objectContaining({ params: { path: { networkId: "net-1" } } }),
+    );
+  });
+
+  it("throws a descriptive error when api.DELETE returns an error", async () => {
+    mockDelete.mockResolvedValue(failDelete("network not found"));
+    const { result, actHook } = renderHookWithQuery(() => useDeleteNetwork());
+    await actHook(async () => {
+      await expect(result.current.mutateAsync("net-99")).rejects.toThrow(
+        "network not found",
+      );
+    });
+  });
+
+  it("invalidates ['networks'] queries on success", async () => {
+    mockDelete.mockResolvedValue(okDelete());
+    const { result, queryClient, actHook } = renderHookWithQuery(() =>
+      useDeleteNetwork(),
+    );
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    await actHook(async () => {
+      await result.current.mutateAsync("net-1");
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["networks"] }),
+    );
+  });
+});
+
+// ── useEnableNetwork / useDisableNetwork ──────────────────────────────────────
+
+describe("useEnableNetwork", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls api.POST with /networks/{networkId}/enable", async () => {
+    mockPost.mockResolvedValue(okPost({ ...mockNetwork, is_active: true }));
+    const { result, actHook } = renderHookWithQuery(() => useEnableNetwork());
+    await actHook(async () => {
+      await result.current.mutateAsync("net-1");
+    });
+    expect(mockPost).toHaveBeenCalledWith(
+      "/networks/{networkId}/enable",
+      expect.objectContaining({ params: { path: { networkId: "net-1" } } }),
+    );
+  });
+
+  it("throws a descriptive error on failure", async () => {
+    mockPost.mockResolvedValue(failPost("already enabled"));
+    const { result, actHook } = renderHookWithQuery(() => useEnableNetwork());
+    await actHook(async () => {
+      await expect(result.current.mutateAsync("net-1")).rejects.toThrow(
+        "already enabled",
+      );
+    });
+  });
+});
+
+describe("useDisableNetwork", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls api.POST with /networks/{networkId}/disable", async () => {
+    mockPost.mockResolvedValue(okPost({ ...mockNetwork, is_active: false }));
+    const { result, actHook } = renderHookWithQuery(() => useDisableNetwork());
+    await actHook(async () => {
+      await result.current.mutateAsync("net-1");
+    });
+    expect(mockPost).toHaveBeenCalledWith(
+      "/networks/{networkId}/disable",
+      expect.objectContaining({ params: { path: { networkId: "net-1" } } }),
+    );
+  });
+
+  it("throws a descriptive error on failure", async () => {
+    mockPost.mockResolvedValue(failPost("cannot disable last network"));
+    const { result, actHook } = renderHookWithQuery(() => useDisableNetwork());
+    await actHook(async () => {
+      await expect(result.current.mutateAsync("net-1")).rejects.toThrow(
+        "cannot disable last network",
+      );
+    });
+  });
+});
+
+// ── useRenameNetwork ──────────────────────────────────────────────────────────
+
+describe("useRenameNetwork", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls api.PUT with the correct path and body", async () => {
+    mockPut.mockResolvedValue(okPut({ ...mockNetwork, name: "New Name" }));
+    const { result, actHook } = renderHookWithQuery(() => useRenameNetwork());
+    await actHook(async () => {
+      await result.current.mutateAsync({
+        networkId: "net-1",
+        newName: "New Name",
+      });
+    });
+    expect(mockPut).toHaveBeenCalledWith(
+      "/networks/{networkId}/rename",
+      expect.objectContaining({
+        params: { path: { networkId: "net-1" } },
+        body: { new_name: "New Name" },
+      }),
+    );
+  });
+
+  it("returns the updated network on success", async () => {
+    const renamed = { ...mockNetwork, name: "Renamed LAN" };
+    mockPut.mockResolvedValue(okPut(renamed));
+    const { result, actHook } = renderHookWithQuery(() => useRenameNetwork());
+    let updated: typeof renamed | undefined;
+    await actHook(async () => {
+      updated = (await result.current.mutateAsync({
+        networkId: "net-1",
+        newName: "Renamed LAN",
+      })) as typeof renamed;
+    });
+    expect(updated?.name).toBe("Renamed LAN");
+  });
+
+  it("throws a descriptive error on failure", async () => {
+    mockPut.mockResolvedValue(failPut("name already taken"));
+    const { result, actHook } = renderHookWithQuery(() => useRenameNetwork());
+    await actHook(async () => {
+      await expect(
+        result.current.mutateAsync({ networkId: "net-1", newName: "Dup" }),
+      ).rejects.toThrow("name already taken");
+    });
+  });
+});
+
+// ── useDeleteExclusion ────────────────────────────────────────────────────────
+
+describe("useDeleteExclusion", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls api.DELETE with the correct exclusion path", async () => {
+    mockDelete.mockResolvedValue(okDelete());
+    const { result, actHook } = renderHookWithQuery(() => useDeleteExclusion());
+    await actHook(async () => {
+      await result.current.mutateAsync("excl-1");
+    });
+    expect(mockDelete).toHaveBeenCalledWith(
+      "/exclusions/{exclusionId}",
+      expect.objectContaining({
+        params: { path: { exclusionId: "excl-1" } },
+      }),
+    );
+  });
+
+  it("throws a descriptive error on failure", async () => {
+    mockDelete.mockResolvedValue(failDelete("exclusion not found"));
+    const { result, actHook } = renderHookWithQuery(() => useDeleteExclusion());
+    await actHook(async () => {
+      await expect(result.current.mutateAsync("excl-99")).rejects.toThrow(
+        "exclusion not found",
+      );
+    });
+  });
+
+  it("invalidates both ['networks'] and ['exclusions'] on success", async () => {
+    mockDelete.mockResolvedValue(okDelete());
+    const { result, queryClient, actHook } = renderHookWithQuery(() =>
+      useDeleteExclusion(),
+    );
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    await actHook(async () => {
+      await result.current.mutateAsync("excl-1");
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["networks"] }),
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["exclusions"] }),
+    );
   });
 });
 

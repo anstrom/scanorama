@@ -6,3 +6,4 @@ export { NetworksPage } from "./networks";
 export { ProfilesPage } from "./profiles";
 export { SchedulesPage } from "./schedules";
 export { AdminPage } from "./admin";
+export { ExclusionsPage } from "./exclusions";
