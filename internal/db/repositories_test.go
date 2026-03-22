@@ -24,14 +24,12 @@ func TestScanRepository_CreateAndGet(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
-	input := map[string]interface{}{
-		"name":      "test-scan-create",
-		"targets":   []string{"127.0.0.1"},
-		"scan_type": "connect",
-		"ports":     "22,80",
-	}
-
-	scan, err := db.CreateScan(ctx, input)
+	scan, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "test-scan-create",
+		Targets:  []string{"127.0.0.1"},
+		ScanType: "connect",
+		Ports:    "22,80",
+	})
 	require.NoError(t, err)
 	require.NotNil(t, scan)
 	assert.NotEqual(t, uuid.Nil, scan.ID)
@@ -70,11 +68,11 @@ func TestScanRepository_ListScans(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.2/32'")
-	scan, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "test-scan-list",
-		"targets":   []string{"127.0.0.2"},
-		"scan_type": "connect",
-		"ports":     "443",
+	scan, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "test-scan-list",
+		Targets:  []string{"127.0.0.2"},
+		ScanType: "connect",
+		Ports:    "443",
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
@@ -105,18 +103,17 @@ func TestScanRepository_UpdateScan(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
-	scan, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "test-scan-update",
-		"targets":   []string{"127.0.0.1"},
-		"scan_type": "connect",
-		"ports":     "22",
+	scan, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "test-scan-update",
+		Targets:  []string{"127.0.0.1"},
+		ScanType: "connect",
+		Ports:    "22",
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
 
-	updated, err := db.UpdateScan(ctx, scan.ID, map[string]interface{}{
-		"ports": "22,443",
-	})
+	ports := "22,443"
+	updated, err := db.UpdateScan(ctx, scan.ID, UpdateScanInput{Ports: &ports})
 	require.NoError(t, err)
 	assert.Equal(t, "22,443", updated.Ports)
 }
@@ -125,9 +122,8 @@ func TestScanRepository_UpdateScan_NotFound(t *testing.T) {
 	db := connectTestDB(t)
 	defer db.Close()
 
-	_, err := db.UpdateScan(context.Background(), uuid.New(), map[string]interface{}{
-		"ports": "80",
-	})
+	ports := "80"
+	_, err := db.UpdateScan(context.Background(), uuid.New(), UpdateScanInput{Ports: &ports})
 	require.Error(t, err)
 }
 
@@ -138,11 +134,11 @@ func TestScanRepository_DeleteScan(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.3/32'")
-	scan, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "test-scan-delete",
-		"targets":   []string{"127.0.0.3"},
-		"scan_type": "connect",
-		"ports":     "22",
+	scan, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "test-scan-delete",
+		Targets:  []string{"127.0.0.3"},
+		ScanType: "connect",
+		Ports:    "22",
 	})
 	require.NoError(t, err)
 
@@ -167,11 +163,11 @@ func TestScanRepository_DeleteScan_Running(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.5/32'")
-	scan, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "test-scan-running",
-		"targets":   []string{"127.0.0.5"},
-		"scan_type": "connect",
-		"ports":     "80",
+	scan, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "test-scan-running",
+		Targets:  []string{"127.0.0.5"},
+		ScanType: "connect",
+		Ports:    "80",
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
@@ -192,11 +188,11 @@ func TestScanRepository_StartCompleteScan(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.4/32'")
-	scan, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "test-scan-lifecycle",
-		"targets":   []string{"127.0.0.4"},
-		"scan_type": "connect",
-		"ports":     "22",
+	scan, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "test-scan-lifecycle",
+		Targets:  []string{"127.0.0.4"},
+		ScanType: "connect",
+		Ports:    "22",
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
@@ -225,11 +221,11 @@ func TestScanRepository_StopScan(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
-	scan, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "test-scan-stop",
-		"targets":   []string{"127.0.0.1"},
-		"scan_type": "connect",
-		"ports":     "22",
+	scan, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "test-scan-stop",
+		Targets:  []string{"127.0.0.1"},
+		ScanType: "connect",
+		Ports:    "22",
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
@@ -249,11 +245,11 @@ func TestScanRepository_GetScanResults(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
-	scan, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "test-scan-results",
-		"targets":   []string{"127.0.0.1"},
-		"scan_type": "connect",
-		"ports":     "22",
+	scan, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "test-scan-results",
+		Targets:  []string{"127.0.0.1"},
+		ScanType: "connect",
+		Ports:    "22",
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
@@ -272,11 +268,11 @@ func TestScanRepository_GetScanSummary(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
-	scan, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "test-scan-summary",
-		"targets":   []string{"127.0.0.1"},
-		"scan_type": "connect",
-		"ports":     "22",
+	scan, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "test-scan-summary",
+		Targets:  []string{"127.0.0.1"},
+		ScanType: "connect",
+		Ports:    "22",
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
@@ -483,10 +479,10 @@ func TestProfileRepository_CRUD(t *testing.T) {
 	ctx := context.Background()
 
 	// Create.
-	profile, err := db.CreateProfile(ctx, map[string]interface{}{
-		"name":      "test-profile-crud",
-		"scan_type": "connect",
-		"ports":     "22,80,443",
+	profile, err := db.CreateProfile(ctx, CreateProfileInput{
+		Name:     "test-profile-crud",
+		ScanType: "connect",
+		Ports:    "22,80,443",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, profile)
@@ -521,9 +517,8 @@ func TestProfileRepository_CRUD(t *testing.T) {
 	}
 
 	// Update.
-	updated, err := db.UpdateProfile(ctx, profile.ID, map[string]interface{}{
-		"ports": "22,443",
-	})
+	ports := "22,443"
+	updated, err := db.UpdateProfile(ctx, profile.ID, UpdateProfileInput{Ports: &ports})
 	require.NoError(t, err)
 	assert.Equal(t, "22,443", updated.Ports)
 
@@ -540,19 +535,19 @@ func TestProfileRepository_CreateProfile_DuplicateName(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM scan_profiles WHERE name = 'test-duplicate-profile' AND is_builtin = false")
-	profile, err := db.CreateProfile(ctx, map[string]interface{}{
-		"name":      "test-duplicate-profile",
-		"scan_type": "connect",
-		"ports":     "80,443",
+	profile, err := db.CreateProfile(ctx, CreateProfileInput{
+		Name:     "test-duplicate-profile",
+		ScanType: "connect",
+		Ports:    "80,443",
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.DeleteProfile(ctx, profile.ID) })
 
 	// Creating a second profile with the same name should return a conflict error.
-	_, err = db.CreateProfile(ctx, map[string]interface{}{
-		"name":      "test-duplicate-profile",
-		"scan_type": "connect",
-		"ports":     "22",
+	_, err = db.CreateProfile(ctx, CreateProfileInput{
+		Name:     "test-duplicate-profile",
+		ScanType: "connect",
+		Ports:    "22",
 	})
 	require.Error(t, err)
 	assert.True(t, errors.IsConflict(err), "expected conflict error, got: %v", err)
@@ -580,7 +575,8 @@ func TestProfileRepository_UpdateBuiltIn_Rejected(t *testing.T) {
 		t.Skip("no built-in profiles found, skipping")
 	}
 
-	_, err = db.UpdateProfile(ctx, builtInID, map[string]interface{}{"ports": "9999"})
+	ports := "9999"
+	_, err = db.UpdateProfile(ctx, builtInID, UpdateProfileInput{Ports: &ports})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "built-in")
 }
@@ -612,14 +608,12 @@ func TestScheduleRepository_CRUD(t *testing.T) {
 	ctx := context.Background()
 
 	// Create.
-	schedule, err := db.CreateSchedule(ctx, map[string]interface{}{
-		"name":            "test-schedule-crud",
-		"job_type":        "discovery",
-		"cron_expression": "0 * * * *",
-		"enabled":         true,
-		"job_config": map[string]interface{}{
-			"network": "10.0.0.0/24",
-		},
+	schedule, err := db.CreateSchedule(ctx, CreateScheduleInput{
+		Name:           "test-schedule-crud",
+		JobType:        "discovery",
+		CronExpression: "0 * * * *",
+		Enabled:        true,
+		JobConfig:      map[string]interface{}{"network": "10.0.0.0/24"},
 	})
 	require.NoError(t, err)
 	require.NotNil(t, schedule)
@@ -655,9 +649,8 @@ func TestScheduleRepository_CRUD(t *testing.T) {
 	}
 
 	// Update.
-	updated, err := db.UpdateSchedule(ctx, schedule.ID, map[string]interface{}{
-		"cron_expression": "30 * * * *",
-	})
+	cron := "30 * * * *"
+	updated, err := db.UpdateSchedule(ctx, schedule.ID, UpdateScheduleInput{CronExpression: &cron})
 	require.NoError(t, err)
 	assert.Equal(t, "30 * * * *", updated.CronExpression)
 
@@ -690,9 +683,8 @@ func TestScheduleRepository_UpdateSchedule_NotFound(t *testing.T) {
 	db := connectTestDB(t)
 	defer db.Close()
 
-	_, err := db.UpdateSchedule(context.Background(), uuid.New(), map[string]interface{}{
-		"name": "ghost",
-	})
+	name := "ghost"
+	_, err := db.UpdateSchedule(context.Background(), uuid.New(), UpdateScheduleInput{Name: &name})
 	require.Error(t, err)
 }
 
@@ -713,9 +705,9 @@ func TestDiscoveryJobRepository_CRUD(t *testing.T) {
 	ctx := context.Background()
 
 	// Create.
-	job, err := db.CreateDiscoveryJob(ctx, map[string]interface{}{
-		"networks": []string{"10.10.0.0/24"},
-		"method":   "tcp",
+	job, err := db.CreateDiscoveryJob(ctx, CreateDiscoveryJobInput{
+		Networks: []string{"10.10.0.0/24"},
+		Method:   "tcp",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, job)
@@ -763,10 +755,12 @@ func TestDiscoveryJobRepository_CRUD(t *testing.T) {
 
 	// Update.
 	now := time.Now().UTC()
-	updated, err := db.UpdateDiscoveryJob(ctx, job.ID, map[string]interface{}{
-		"hosts_discovered": 5,
-		"hosts_responsive": 3,
-		"completed_at":     now,
+	hostsDiscovered := 5
+	hostsResponsive := 3
+	updated, err := db.UpdateDiscoveryJob(ctx, job.ID, UpdateDiscoveryJobInput{
+		HostsDiscovered: &hostsDiscovered,
+		HostsResponsive: &hostsResponsive,
+		CompletedAt:     &now,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 5, updated.HostsDiscovered)
@@ -863,9 +857,9 @@ func TestHostRepository_CreateGetUpdateDelete(t *testing.T) {
 	_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = $1::inet", "203.0.113.52")
 
 	// CreateHost.
-	host, err := db.CreateHost(ctx, map[string]interface{}{
-		"ip_address": "203.0.113.52",
-		"status":     "up",
+	host, err := db.CreateHost(ctx, CreateHostInput{
+		IPAddress: "203.0.113.52",
+		Status:    "up",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, host)
@@ -880,9 +874,8 @@ func TestHostRepository_CreateGetUpdateDelete(t *testing.T) {
 	assert.Equal(t, "up", got.Status)
 
 	// UpdateHost.
-	updated, err := db.UpdateHost(ctx, host.ID, map[string]interface{}{
-		"status": "down",
-	})
+	status := "down"
+	updated, err := db.UpdateHost(ctx, host.ID, UpdateHostInput{Status: &status})
 	require.NoError(t, err)
 	assert.Equal(t, "down", updated.Status)
 
@@ -922,11 +915,11 @@ func TestScanRepository_CreateScan_ReuseNetwork(t *testing.T) {
 
 	ctx := context.Background()
 
-	scan1, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "reuse-network-test-1",
-		"targets":   []string{"10.201.0.1"},
-		"scan_type": "connect",
-		"ports":     "80",
+	scan1, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "reuse-network-test-1",
+		Targets:  []string{"10.201.0.1"},
+		ScanType: "connect",
+		Ports:    "80",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, scan1)
@@ -937,11 +930,11 @@ func TestScanRepository_CreateScan_ReuseNetwork(t *testing.T) {
 		"SELECT network_id FROM scan_jobs WHERE id = $1", scan1.ID).Scan(&networkID1)
 	require.NoError(t, err)
 
-	scan2, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "reuse-network-test-2",
-		"targets":   []string{"10.201.0.1"},
-		"scan_type": "connect",
-		"ports":     "80",
+	scan2, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "reuse-network-test-2",
+		Targets:  []string{"10.201.0.1"},
+		ScanType: "connect",
+		Ports:    "80",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, scan2)
@@ -979,11 +972,11 @@ func TestScanRepository_CreateScan_NameCollision(t *testing.T) {
 	})
 
 	// CreateScan with the same name — findOrCreateNetwork should fall back to the CIDR as the name.
-	scan, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "collision-name-test",
-		"targets":   []string{"10.250.100.5"},
-		"scan_type": "connect",
-		"ports":     "80",
+	scan, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "collision-name-test",
+		Targets:  []string{"10.250.100.5"},
+		ScanType: "connect",
+		Ports:    "80",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, scan)
@@ -1001,11 +994,11 @@ func TestScanRepository_CreateScan_MultipleTargets(t *testing.T) {
 
 	ctx := context.Background()
 
-	scan, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "multi-target-test",
-		"targets":   []string{"10.202.0.1", "10.202.0.2"},
-		"scan_type": "connect",
-		"ports":     "80",
+	scan, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "multi-target-test",
+		Targets:  []string{"10.202.0.1", "10.202.0.2"},
+		ScanType: "connect",
+		Ports:    "80",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, scan)
@@ -1027,11 +1020,11 @@ func TestScanRepository_ListScans_WithScanTypeFilter(t *testing.T) {
 
 	ctx := context.Background()
 
-	scan, err := db.CreateScan(ctx, map[string]interface{}{
-		"name":      "filter-scan-type-test",
-		"targets":   []string{"10.203.0.1"},
-		"scan_type": "connect",
-		"ports":     "80",
+	scan, err := db.CreateScan(ctx, CreateScanInput{
+		Name:     "filter-scan-type-test",
+		Targets:  []string{"10.203.0.1"},
+		ScanType: "connect",
+		Ports:    "80",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, scan)
