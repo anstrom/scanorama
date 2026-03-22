@@ -1,0 +1,313 @@
+// Package db provides typed repository for discovery job database operations.
+package db
+
+import (
+	"context"
+	"database/sql"
+	stderrors "errors"
+	"fmt"
+	"log/slog"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/anstrom/scanorama/internal/errors"
+)
+
+// DiscoveryRepository implements DiscoveryStore against a *DB connection.
+type DiscoveryRepository struct {
+	db *DB
+}
+
+// NewDiscoveryRepository creates a new DiscoveryRepository.
+func NewDiscoveryRepository(db *DB) *DiscoveryRepository {
+	return &DiscoveryRepository{db: db}
+}
+
+// ListDiscoveryJobs retrieves discovery jobs with filtering and pagination.
+func (r *DiscoveryRepository) ListDiscoveryJobs(
+	ctx context.Context,
+	filters DiscoveryFilters,
+	offset, limit int,
+) ([]*DiscoveryJob, int64, error) {
+	countQuery := `
+		SELECT COUNT(*)
+		FROM discovery_jobs
+		WHERE ($1 = '' OR status = $1)
+		  AND ($2 = '' OR method = $2)`
+
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, filters.Status, filters.Method).Scan(&total); err != nil {
+		return nil, 0, sanitizeDBError("count discovery jobs", err)
+	}
+
+	listQuery := `
+		SELECT id, network, method, started_at, completed_at,
+		       hosts_discovered, hosts_responsive, status, created_at
+		FROM discovery_jobs
+		WHERE ($1 = '' OR status = $1)
+		  AND ($2 = '' OR method = $2)
+		ORDER BY created_at DESC
+		LIMIT $3 OFFSET $4`
+
+	rows, err := r.db.QueryContext(ctx, listQuery, filters.Status, filters.Method, limit, offset)
+	if err != nil {
+		return nil, 0, sanitizeDBError("list discovery jobs", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Warn("failed to close rows", "error", err)
+		}
+	}()
+
+	jobs := []*DiscoveryJob{}
+	for rows.Next() {
+		job := &DiscoveryJob{}
+		if err := rows.Scan(
+			&job.ID,
+			&job.Network,
+			&job.Method,
+			&job.StartedAt,
+			&job.CompletedAt,
+			&job.HostsDiscovered,
+			&job.HostsResponsive,
+			&job.Status,
+			&job.CreatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan discovery job row: %w", err)
+		}
+		jobs = append(jobs, job)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate discovery job rows: %w", err)
+	}
+
+	return jobs, total, nil
+}
+
+// CreateDiscoveryJob creates a new discovery job.
+func (r *DiscoveryRepository) CreateDiscoveryJob(
+	ctx context.Context, input CreateDiscoveryJobInput,
+) (*DiscoveryJob, error) {
+	if len(input.Networks) == 0 {
+		return nil, fmt.Errorf("networks are required and must be a string array")
+	}
+
+	method := input.Method
+	if method == "" {
+		method = DiscoveryMethodTCP
+	}
+
+	// For simplicity, create one discovery job for the first network.
+	// In a production system, you might create multiple jobs or handle multiple networks differently.
+	network := input.Networks[0]
+
+	jobID := uuid.New()
+	now := time.Now().UTC()
+
+	query := `
+		INSERT INTO discovery_jobs (id, network, method, status, created_at, hosts_discovered, hosts_responsive)
+		VALUES ($1, $2, $3, 'pending', $4, 0, 0)
+	`
+
+	_, err := r.db.ExecContext(ctx, query, jobID, network, method, now)
+	if err != nil {
+		return nil, sanitizeDBError("create discovery job", err)
+	}
+
+	job := &DiscoveryJob{
+		ID:              jobID,
+		Network:         NetworkAddr{}, // Would need proper parsing.
+		Method:          method,
+		Status:          "pending",
+		CreatedAt:       now,
+		HostsDiscovered: 0,
+		HostsResponsive: 0,
+	}
+
+	return job, nil
+}
+
+// GetDiscoveryJob retrieves a discovery job by ID.
+func (r *DiscoveryRepository) GetDiscoveryJob(ctx context.Context, id uuid.UUID) (*DiscoveryJob, error) {
+	query := `
+		SELECT id, network, method, started_at, completed_at,
+		       hosts_discovered, hosts_responsive, status, created_at
+		FROM discovery_jobs
+		WHERE id = $1`
+
+	job := &DiscoveryJob{}
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&job.ID,
+		&job.Network,
+		&job.Method,
+		&job.StartedAt,
+		&job.CompletedAt,
+		&job.HostsDiscovered,
+		&job.HostsResponsive,
+		&job.Status,
+		&job.CreatedAt,
+	)
+	if err != nil {
+		if stderrors.Is(err, sql.ErrNoRows) {
+			return nil, errors.ErrNotFoundWithID("discovery job", id.String())
+		}
+		return nil, sanitizeDBError("get discovery job", err)
+	}
+
+	return job, nil
+}
+
+// UpdateDiscoveryJob updates an existing discovery job.
+func (r *DiscoveryRepository) UpdateDiscoveryJob(
+	ctx context.Context, id uuid.UUID, input UpdateDiscoveryJobInput,
+) (*DiscoveryJob, error) {
+	// Check existence first.
+	var exists bool
+	if err := r.db.QueryRowContext(ctx,
+		"SELECT EXISTS(SELECT 1 FROM discovery_jobs WHERE id = $1)", id,
+	).Scan(&exists); err != nil {
+		return nil, sanitizeDBError("check discovery job existence", err)
+	}
+	if !exists {
+		return nil, errors.ErrNotFoundWithID("discovery job", id.String())
+	}
+
+	// Build dynamic SET clause from non-nil pointer fields.
+	var setParts []string
+	var args []interface{}
+	argIndex := 1
+
+	if input.Method != nil {
+		setParts = append(setParts, fmt.Sprintf("method = $%d", argIndex))
+		args = append(args, *input.Method)
+		argIndex++
+	}
+	if input.Status != nil {
+		setParts = append(setParts, fmt.Sprintf("status = $%d", argIndex))
+		args = append(args, *input.Status)
+		argIndex++
+	}
+	if input.HostsDiscovered != nil {
+		setParts = append(setParts, fmt.Sprintf("hosts_discovered = $%d", argIndex))
+		args = append(args, *input.HostsDiscovered)
+		argIndex++
+	}
+	if input.HostsResponsive != nil {
+		setParts = append(setParts, fmt.Sprintf("hosts_responsive = $%d", argIndex))
+		args = append(args, *input.HostsResponsive)
+		argIndex++
+	}
+	if input.StartedAt != nil {
+		setParts = append(setParts, fmt.Sprintf("started_at = $%d", argIndex))
+		args = append(args, *input.StartedAt)
+		argIndex++
+	}
+	if input.CompletedAt != nil {
+		setParts = append(setParts, fmt.Sprintf("completed_at = $%d", argIndex))
+		args = append(args, *input.CompletedAt)
+		argIndex++
+	}
+
+	if len(setParts) == 0 {
+		return nil, fmt.Errorf("no valid fields to update")
+	}
+
+	args = append(args, id)
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE discovery_jobs SET ")
+	queryBuilder.WriteString(strings.Join(setParts, ", "))
+	queryBuilder.WriteString(" WHERE id = $")
+	queryBuilder.WriteString(strconv.Itoa(argIndex))
+	queryBuilder.WriteString(` RETURNING id, network, method, started_at, completed_at,
+		hosts_discovered, hosts_responsive, status, created_at`)
+
+	job := &DiscoveryJob{}
+	err := r.db.QueryRowContext(ctx, queryBuilder.String(), args...).Scan(
+		&job.ID,
+		&job.Network,
+		&job.Method,
+		&job.StartedAt,
+		&job.CompletedAt,
+		&job.HostsDiscovered,
+		&job.HostsResponsive,
+		&job.Status,
+		&job.CreatedAt,
+	)
+	if err != nil {
+		return nil, sanitizeDBError("update discovery job", err)
+	}
+
+	return job, nil
+}
+
+// DeleteDiscoveryJob deletes a discovery job by ID.
+func (r *DiscoveryRepository) DeleteDiscoveryJob(ctx context.Context, id uuid.UUID) error {
+	result, err := r.db.ExecContext(ctx, "DELETE FROM discovery_jobs WHERE id = $1", id)
+	if err != nil {
+		return sanitizeDBError("delete discovery job", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.ErrNotFoundWithID("discovery job", id.String())
+	}
+
+	return nil
+}
+
+// StartDiscoveryJob starts discovery job execution.
+func (r *DiscoveryRepository) StartDiscoveryJob(ctx context.Context, id uuid.UUID) error {
+	query := `
+		UPDATE discovery_jobs
+		SET status = 'running', started_at = NOW()
+		WHERE id = $1 AND status = 'pending'`
+
+	result, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return sanitizeDBError("start discovery job", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.ErrNotFoundWithID("discovery job", id.String())
+	}
+
+	return nil
+}
+
+// StopDiscoveryJob stops discovery job execution.
+func (r *DiscoveryRepository) StopDiscoveryJob(ctx context.Context, id uuid.UUID) error {
+	query := `
+		UPDATE discovery_jobs
+		SET status = 'failed', completed_at = NOW()
+		WHERE id = $1 AND status = 'running'`
+
+	result, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return sanitizeDBError("stop discovery job", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.ErrNotFoundWithID("discovery job", id.String())
+	}
+
+	return nil
+}

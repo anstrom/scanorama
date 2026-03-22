@@ -31,7 +31,7 @@ func TestGetSchedule_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery("SELECT").WillReturnError(sql.ErrNoRows)
 
-		_, err := db.GetSchedule(context.Background(), id)
+		_, err := NewScheduleRepository(db).GetSchedule(context.Background(), id)
 
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound),
@@ -43,7 +43,7 @@ func TestGetSchedule_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery("SELECT").WillReturnError(fmt.Errorf("db error"))
 
-		_, err := db.GetSchedule(context.Background(), id)
+		_, err := NewScheduleRepository(db).GetSchedule(context.Background(), id)
 
 		require.Error(t, err)
 		assert.False(t, errors.IsCode(err, errors.CodeNotFound))
@@ -61,7 +61,7 @@ func TestGetSchedule_Unit(t *testing.T) {
 			),
 		)
 
-		s, err := db.GetSchedule(context.Background(), id)
+		s, err := NewScheduleRepository(db).GetSchedule(context.Background(), id)
 
 		require.NoError(t, err)
 		require.NotNil(t, s)
@@ -79,7 +79,7 @@ func TestDeleteSchedule_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec("DELETE").WillReturnResult(sqlmock.NewResult(1, 1))
 
-		err := db.DeleteSchedule(context.Background(), id)
+		err := NewScheduleRepository(db).DeleteSchedule(context.Background(), id)
 
 		require.NoError(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -89,7 +89,7 @@ func TestDeleteSchedule_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec("DELETE").WillReturnResult(sqlmock.NewResult(0, 0))
 
-		err := db.DeleteSchedule(context.Background(), id)
+		err := NewScheduleRepository(db).DeleteSchedule(context.Background(), id)
 
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound),
@@ -101,7 +101,7 @@ func TestDeleteSchedule_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec("DELETE").WillReturnError(fmt.Errorf("connection refused"))
 
-		err := db.DeleteSchedule(context.Background(), id)
+		err := NewScheduleRepository(db).DeleteSchedule(context.Background(), id)
 
 		require.Error(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -117,7 +117,7 @@ func TestEnableSchedule_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec("UPDATE scheduled_jobs").WillReturnResult(sqlmock.NewResult(0, 1))
 
-		err := db.EnableSchedule(context.Background(), id)
+		err := NewScheduleRepository(db).EnableSchedule(context.Background(), id)
 
 		require.NoError(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -127,7 +127,7 @@ func TestEnableSchedule_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec("UPDATE scheduled_jobs").WillReturnResult(sqlmock.NewResult(0, 0))
 
-		err := db.EnableSchedule(context.Background(), id)
+		err := NewScheduleRepository(db).EnableSchedule(context.Background(), id)
 
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound),
@@ -139,7 +139,7 @@ func TestEnableSchedule_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec("UPDATE scheduled_jobs").WillReturnError(fmt.Errorf("update failed"))
 
-		err := db.EnableSchedule(context.Background(), id)
+		err := NewScheduleRepository(db).EnableSchedule(context.Background(), id)
 
 		require.Error(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -155,7 +155,7 @@ func TestDisableSchedule_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec("UPDATE scheduled_jobs").WillReturnResult(sqlmock.NewResult(0, 1))
 
-		err := db.DisableSchedule(context.Background(), id)
+		err := NewScheduleRepository(db).DisableSchedule(context.Background(), id)
 
 		require.NoError(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -165,7 +165,7 @@ func TestDisableSchedule_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec("UPDATE scheduled_jobs").WillReturnResult(sqlmock.NewResult(0, 0))
 
-		err := db.DisableSchedule(context.Background(), id)
+		err := NewScheduleRepository(db).DisableSchedule(context.Background(), id)
 
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound),
@@ -177,7 +177,7 @@ func TestDisableSchedule_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec("UPDATE scheduled_jobs").WillReturnError(fmt.Errorf("update failed"))
 
-		err := db.DisableSchedule(context.Background(), id)
+		err := NewScheduleRepository(db).DisableSchedule(context.Background(), id)
 
 		require.Error(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -201,7 +201,7 @@ func TestCreateSchedule_Unit(t *testing.T) {
 		mock.ExpectQuery("INSERT INTO scheduled_jobs").
 			WillReturnError(fmt.Errorf("insert failed"))
 
-		_, err := db.CreateSchedule(context.Background(), validInput)
+		_, err := NewScheduleRepository(db).CreateSchedule(context.Background(), validInput)
 
 		require.Error(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -218,7 +218,7 @@ func TestCreateSchedule_Unit(t *testing.T) {
 			),
 		)
 
-		s, err := db.CreateSchedule(context.Background(), validInput)
+		s, err := NewScheduleRepository(db).CreateSchedule(context.Background(), validInput)
 
 		require.NoError(t, err)
 		require.NotNil(t, s)

@@ -101,7 +101,7 @@ func TestGetScanCount(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT`).
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(42))
 
-		count, err := db.getScanCount(context.Background(), "", nil)
+		count, err := NewScanRepository(db).getScanCount(context.Background(), "", nil)
 		require.NoError(t, err)
 		assert.Equal(t, int64(42), count)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -111,7 +111,7 @@ func TestGetScanCount(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery(`SELECT COUNT`).WillReturnError(fmt.Errorf("db unavailable"))
 
-		_, err := db.getScanCount(context.Background(), "", nil)
+		_, err := NewScanRepository(db).getScanCount(context.Background(), "", nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "get scan count")
 	})
@@ -122,7 +122,8 @@ func TestGetScanCount(t *testing.T) {
 			WithArgs("running").
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
 
-		count, err := db.getScanCount(context.Background(), "WHERE sj.status = $1", []interface{}{"running"})
+		count, err := NewScanRepository(db).getScanCount(
+			context.Background(), "WHERE sj.status = $1", []interface{}{"running"})
 		require.NoError(t, err)
 		assert.Equal(t, int64(3), count)
 	})
@@ -272,7 +273,7 @@ func TestListScans_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery(`SELECT COUNT`).WillReturnError(fmt.Errorf("count failed"))
 
-		_, _, err := db.ListScans(context.Background(), ScanFilters{}, 0, 10)
+		_, _, err := NewScanRepository(db).ListScans(context.Background(), ScanFilters{}, 0, 10)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "get scan count")
 	})
@@ -283,7 +284,7 @@ func TestListScans_Unit(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 		mock.ExpectQuery(`SELECT`).WillReturnError(fmt.Errorf("query failed"))
 
-		_, _, err := db.ListScans(context.Background(), ScanFilters{}, 0, 10)
+		_, _, err := NewScanRepository(db).ListScans(context.Background(), ScanFilters{}, 0, 10)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "list scans")
 	})
@@ -295,7 +296,7 @@ func TestListScans_Unit(t *testing.T) {
 		mock.ExpectQuery(`SELECT`).
 			WillReturnRows(sqlmock.NewRows(scanColumns))
 
-		scans, total, err := db.ListScans(context.Background(), ScanFilters{}, 0, 10)
+		scans, total, err := NewScanRepository(db).ListScans(context.Background(), ScanFilters{}, 0, 10)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), total)
 		assert.Empty(t, scans)
@@ -309,7 +310,7 @@ func TestListScans_Unit(t *testing.T) {
 			sqlmock.NewRows(scanColumns).AddRow(
 				scanRow(id, "My Scan", "10.0.0.0/8", "connect", "22", "pending", now)...))
 
-		scans, total, err := db.ListScans(context.Background(), ScanFilters{}, 0, 10)
+		scans, total, err := NewScanRepository(db).ListScans(context.Background(), ScanFilters{}, 0, 10)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), total)
 		require.Len(t, scans, 1)
@@ -326,7 +327,7 @@ func TestListScans_Unit(t *testing.T) {
 		mock.ExpectQuery(`SELECT.*sj\.status`).
 			WillReturnRows(sqlmock.NewRows(scanColumns))
 
-		_, _, err := db.ListScans(context.Background(), ScanFilters{
+		_, _, err := NewScanRepository(db).ListScans(context.Background(), ScanFilters{
 			Status:    "completed",
 			ProfileID: &profileID,
 		}, 0, 10)
@@ -345,7 +346,7 @@ func TestGetScan_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery(`SELECT`).WillReturnError(sql.ErrNoRows)
 
-		_, err := db.GetScan(context.Background(), id)
+		_, err := NewScanRepository(db).GetScan(context.Background(), id)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
 	})
@@ -354,7 +355,7 @@ func TestGetScan_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery(`SELECT`).WillReturnError(fmt.Errorf("connection reset"))
 
-		_, err := db.GetScan(context.Background(), id)
+		_, err := NewScanRepository(db).GetScan(context.Background(), id)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "get scan")
 	})
@@ -368,7 +369,7 @@ func TestGetScan_Unit(t *testing.T) {
 				now, nil, nil, nil, false,
 			))
 
-		scan, err := db.GetScan(context.Background(), id)
+		scan, err := NewScanRepository(db).GetScan(context.Background(), id)
 		require.NoError(t, err)
 		assert.Equal(t, id, scan.ID)
 		assert.Equal(t, "Scan", scan.Name)
@@ -391,7 +392,7 @@ func TestGetScan_Unit(t *testing.T) {
 				now, nil, nil, nil, true,
 			))
 
-		scan, err := db.GetScan(context.Background(), id)
+		scan, err := NewScanRepository(db).GetScan(context.Background(), id)
 		require.NoError(t, err)
 		assert.Equal(t, "full desc", scan.Description)
 		require.NotNil(t, scan.ProfileID)
@@ -412,7 +413,7 @@ func TestGetScan_Unit(t *testing.T) {
 				now, started, completed, nil, false,
 			))
 
-		scan, err := db.GetScan(context.Background(), id)
+		scan, err := NewScanRepository(db).GetScan(context.Background(), id)
 		require.NoError(t, err)
 		require.NotNil(t, scan.DurationStr)
 		assert.Contains(t, *scan.DurationStr, "2m0s")
@@ -429,7 +430,7 @@ func TestGetScan_Unit(t *testing.T) {
 				now, started, nil, nil, false,
 			))
 
-		scan, err := db.GetScan(context.Background(), id)
+		scan, err := NewScanRepository(db).GetScan(context.Background(), id)
 		require.NoError(t, err)
 		assert.Nil(t, scan.DurationStr)
 		assert.Equal(t, started, scan.UpdatedAt)
@@ -441,7 +442,7 @@ func TestGetScan_Unit(t *testing.T) {
 func TestCreateScan_Unit(t *testing.T) {
 	t.Run("empty name returns validation error", func(t *testing.T) {
 		db, _ := newMockDB(t)
-		_, err := db.CreateScan(context.Background(), CreateScanInput{})
+		_, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "name is required")
 	})
@@ -450,7 +451,7 @@ func TestCreateScan_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectBegin().WillReturnError(fmt.Errorf("tx unavailable"))
 
-		_, err := db.CreateScan(context.Background(), CreateScanInput{
+		_, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{
 			Name: "Scan", Targets: []string{"10.0.0.0/8"}, ScanType: "connect",
 		})
 		require.Error(t, err)
@@ -468,7 +469,7 @@ func TestCreateScan_Unit(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
-		scan, err := db.CreateScan(context.Background(), CreateScanInput{
+		scan, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{
 			Name: "Reuse Scan", Targets: []string{"10.0.0.0/8"}, ScanType: "connect",
 		})
 		require.NoError(t, err)
@@ -488,7 +489,7 @@ func TestCreateScan_Unit(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
-		scan, err := db.CreateScan(context.Background(), CreateScanInput{
+		scan, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{
 			Name:        "New Scan",
 			Description: "my desc",
 			Targets:     []string{"192.168.1.0/24"},
@@ -519,7 +520,7 @@ func TestCreateScan_Unit(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
-		scan, err := db.CreateScan(context.Background(), CreateScanInput{
+		scan, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{
 			Name: "Colliding Name", Targets: []string{"172.16.0.0/12"}, ScanType: "connect",
 		})
 		require.NoError(t, err)
@@ -534,7 +535,7 @@ func TestCreateScan_Unit(t *testing.T) {
 		mock.ExpectQuery(`SELECT id FROM networks`).WillReturnError(fmt.Errorf("network error"))
 		mock.ExpectRollback()
 
-		_, err := db.CreateScan(context.Background(), CreateScanInput{
+		_, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{
 			Name: "Scan", Targets: []string{"10.0.0.0/8"}, ScanType: "connect",
 		})
 		require.Error(t, err)
@@ -551,7 +552,7 @@ func TestCreateScan_Unit(t *testing.T) {
 		mock.ExpectExec(`INSERT INTO scan_jobs`).WillReturnError(fmt.Errorf("job insert failed"))
 		mock.ExpectRollback()
 
-		_, err := db.CreateScan(context.Background(), CreateScanInput{
+		_, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{
 			Name: "Scan", Targets: []string{"10.0.0.0/8"}, ScanType: "connect",
 		})
 		require.Error(t, err)
@@ -577,7 +578,7 @@ func TestCreateScan_Unit(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
-		scan, err := db.CreateScan(context.Background(), CreateScanInput{
+		scan, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{
 			Name:     "Multi Scan",
 			Targets:  []string{"10.0.0.0/8", "192.168.0.0/16"},
 			ScanType: "connect",
@@ -601,7 +602,7 @@ func TestCreateScan_Unit(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
-		scan, err := db.CreateScan(context.Background(), CreateScanInput{
+		scan, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{
 			Name:      "Profile Scan",
 			Targets:   []string{"10.0.0.0/8"},
 			ScanType:  "connect",
@@ -629,7 +630,7 @@ func TestDeleteScan_Unit(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
-		require.NoError(t, db.DeleteScan(context.Background(), id))
+		require.NoError(t, NewScanRepository(db).DeleteScan(context.Background(), id))
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -640,7 +641,7 @@ func TestDeleteScan_Unit(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 		mock.ExpectRollback()
 
-		err := db.DeleteScan(context.Background(), id)
+		err := NewScanRepository(db).DeleteScan(context.Background(), id)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
 	})
@@ -654,7 +655,7 @@ func TestDeleteScan_Unit(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("running"))
 		mock.ExpectRollback()
 
-		err := db.DeleteScan(context.Background(), id)
+		err := NewScanRepository(db).DeleteScan(context.Background(), id)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeConflict))
 	})
@@ -663,7 +664,7 @@ func TestDeleteScan_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectBegin().WillReturnError(fmt.Errorf("tx error"))
 
-		err := db.DeleteScan(context.Background(), id)
+		err := NewScanRepository(db).DeleteScan(context.Background(), id)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to begin transaction")
 	})
@@ -674,7 +675,7 @@ func TestDeleteScan_Unit(t *testing.T) {
 		mock.ExpectQuery(`SELECT EXISTS`).WillReturnError(fmt.Errorf("db error"))
 		mock.ExpectRollback()
 
-		err := db.DeleteScan(context.Background(), id)
+		err := NewScanRepository(db).DeleteScan(context.Background(), id)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "check scan existence")
 	})
@@ -690,7 +691,7 @@ func TestStartScan_Unit(t *testing.T) {
 		mock.ExpectExec(`UPDATE scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
-		require.NoError(t, db.StartScan(context.Background(), id))
+		require.NoError(t, NewScanRepository(db).StartScan(context.Background(), id))
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -699,7 +700,7 @@ func TestStartScan_Unit(t *testing.T) {
 		mock.ExpectExec(`UPDATE scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
-		err := db.StartScan(context.Background(), id)
+		err := NewScanRepository(db).StartScan(context.Background(), id)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
 	})
@@ -708,7 +709,7 @@ func TestStartScan_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`UPDATE scan_jobs`).WillReturnError(fmt.Errorf("db error"))
 
-		err := db.StartScan(context.Background(), id)
+		err := NewScanRepository(db).StartScan(context.Background(), id)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "start scan")
 	})
@@ -724,7 +725,7 @@ func TestCompleteScan_Unit(t *testing.T) {
 		mock.ExpectExec(`UPDATE scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
-		require.NoError(t, db.CompleteScan(context.Background(), id))
+		require.NoError(t, NewScanRepository(db).CompleteScan(context.Background(), id))
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -733,7 +734,7 @@ func TestCompleteScan_Unit(t *testing.T) {
 		mock.ExpectExec(`UPDATE scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
-		err := db.CompleteScan(context.Background(), id)
+		err := NewScanRepository(db).CompleteScan(context.Background(), id)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
 	})
@@ -742,7 +743,7 @@ func TestCompleteScan_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`UPDATE scan_jobs`).WillReturnError(fmt.Errorf("db error"))
 
-		err := db.CompleteScan(context.Background(), id)
+		err := NewScanRepository(db).CompleteScan(context.Background(), id)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "complete scan")
 	})
@@ -758,7 +759,7 @@ func TestStopScan_Unit(t *testing.T) {
 		mock.ExpectExec(`UPDATE scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
-		require.NoError(t, db.StopScan(context.Background(), id))
+		require.NoError(t, NewScanRepository(db).StopScan(context.Background(), id))
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -767,7 +768,7 @@ func TestStopScan_Unit(t *testing.T) {
 		mock.ExpectExec(`UPDATE scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
-		require.NoError(t, db.StopScan(context.Background(), id, "nmap timed out"))
+		require.NoError(t, NewScanRepository(db).StopScan(context.Background(), id, "nmap timed out"))
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -776,7 +777,7 @@ func TestStopScan_Unit(t *testing.T) {
 		mock.ExpectExec(`UPDATE scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
-		require.NoError(t, db.StopScan(context.Background(), id, ""))
+		require.NoError(t, NewScanRepository(db).StopScan(context.Background(), id, ""))
 	})
 
 	t.Run("zero rows affected returns CodeNotFound", func(t *testing.T) {
@@ -784,7 +785,7 @@ func TestStopScan_Unit(t *testing.T) {
 		mock.ExpectExec(`UPDATE scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
-		err := db.StopScan(context.Background(), id)
+		err := NewScanRepository(db).StopScan(context.Background(), id)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
 	})
@@ -793,7 +794,7 @@ func TestStopScan_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`UPDATE scan_jobs`).WillReturnError(fmt.Errorf("db error"))
 
-		err := db.StopScan(context.Background(), id)
+		err := NewScanRepository(db).StopScan(context.Background(), id)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "stop scan")
 	})
@@ -810,7 +811,7 @@ func TestUpdateScan_Unit(t *testing.T) {
 		mock.ExpectBegin().WillReturnError(fmt.Errorf("tx error"))
 
 		name := "x"
-		_, err := db.UpdateScan(context.Background(), id, UpdateScanInput{Name: &name})
+		_, err := NewScanRepository(db).UpdateScan(context.Background(), id, UpdateScanInput{Name: &name})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to begin transaction")
 	})
@@ -823,7 +824,7 @@ func TestUpdateScan_Unit(t *testing.T) {
 		mock.ExpectRollback()
 
 		name := "x"
-		_, err := db.UpdateScan(context.Background(), id, UpdateScanInput{Name: &name})
+		_, err := NewScanRepository(db).UpdateScan(context.Background(), id, UpdateScanInput{Name: &name})
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
 	})
@@ -847,7 +848,7 @@ func TestUpdateScan_Unit(t *testing.T) {
 
 		renamed := "Renamed"
 		synType := "syn"
-		scan, err := db.UpdateScan(context.Background(), id, UpdateScanInput{
+		scan, err := NewScanRepository(db).UpdateScan(context.Background(), id, UpdateScanInput{
 			Name: &renamed, ScanType: &synType,
 		})
 		require.NoError(t, err)
@@ -869,7 +870,7 @@ func TestUpdateScan_Unit(t *testing.T) {
 				"connect", "", nil, "pending", now, nil, nil, nil, false,
 			))
 
-		scan, err := db.UpdateScan(context.Background(), id, UpdateScanInput{})
+		scan, err := NewScanRepository(db).UpdateScan(context.Background(), id, UpdateScanInput{})
 		require.NoError(t, err)
 		assert.Equal(t, "Unchanged", scan.Name)
 	})
@@ -885,7 +886,7 @@ func TestGetHostScansCount_Unit(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT`).
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(7))
 
-		count, err := db.getHostScansCount(context.Background(), hostID)
+		count, err := NewHostRepository(db).getHostScansCount(context.Background(), hostID)
 		require.NoError(t, err)
 		assert.Equal(t, int64(7), count)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -895,7 +896,7 @@ func TestGetHostScansCount_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery(`SELECT COUNT`).WillReturnError(fmt.Errorf("db error"))
 
-		_, err := db.getHostScansCount(context.Background(), hostID)
+		_, err := NewHostRepository(db).getHostScansCount(context.Background(), hostID)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "get host scans count")
 	})
@@ -1030,7 +1031,7 @@ func TestGetHostScans_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery(`SELECT COUNT`).WillReturnError(fmt.Errorf("count error"))
 
-		_, _, err := db.GetHostScans(context.Background(), hostID, 0, 10)
+		_, _, err := NewHostRepository(db).GetHostScans(context.Background(), hostID, 0, 10)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "get host scans count")
 	})
@@ -1041,7 +1042,7 @@ func TestGetHostScans_Unit(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 		mock.ExpectQuery(`SELECT DISTINCT`).WillReturnError(fmt.Errorf("list error"))
 
-		_, _, err := db.GetHostScans(context.Background(), hostID, 0, 10)
+		_, _, err := NewHostRepository(db).GetHostScans(context.Background(), hostID, 0, 10)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "get host scans")
 	})
@@ -1053,7 +1054,7 @@ func TestGetHostScans_Unit(t *testing.T) {
 		mock.ExpectQuery(`SELECT DISTINCT`).
 			WillReturnRows(sqlmock.NewRows(hostScanColumns))
 
-		scans, total, err := db.GetHostScans(context.Background(), hostID, 0, 10)
+		scans, total, err := NewHostRepository(db).GetHostScans(context.Background(), hostID, 0, 10)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), total)
 		assert.Empty(t, scans)
@@ -1072,7 +1073,7 @@ func TestGetHostScans_Unit(t *testing.T) {
 				sql.NullInt64{Valid: false}, []byte("[]"), "{}",
 			))
 
-		scans, total, err := db.GetHostScans(context.Background(), hostID, 0, 10)
+		scans, total, err := NewHostRepository(db).GetHostScans(context.Background(), hostID, 0, 10)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), total)
 		require.Len(t, scans, 1)

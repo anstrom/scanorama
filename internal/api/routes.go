@@ -8,6 +8,7 @@ import (
 
 	_ "github.com/anstrom/scanorama/docs/swagger" // Import generated swagger docs
 	apihandlers "github.com/anstrom/scanorama/internal/api/handlers"
+	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/services"
 )
 
@@ -17,13 +18,13 @@ func (s *Server) setupRoutes() {
 
 	s.setupSystemRoutes(api)
 
-	scanHandler := apihandlers.NewScanHandler(s.database, s.logger, s.metrics).
+	scanHandler := apihandlers.NewScanHandler(db.NewScanRepository(s.database), s.logger, s.metrics).
 		WithScanMode(s.config.Scanning.ScanMode)
-	hostHandler := apihandlers.NewHostHandler(s.database, s.logger, s.metrics)
-	discoveryHandler := apihandlers.NewDiscoveryHandler(s.database, s.logger, s.metrics).
+	hostHandler := apihandlers.NewHostHandler(db.NewHostRepository(s.database), s.logger, s.metrics)
+	discoveryHandler := apihandlers.NewDiscoveryHandler(db.NewDiscoveryRepository(s.database), s.logger, s.metrics).
 		WithEngine(s.discoveryEngine)
-	profileHandler := apihandlers.NewProfileHandler(s.database, s.logger, s.metrics)
-	scheduleHandler := apihandlers.NewScheduleHandler(s.database, s.logger, s.metrics)
+	profileHandler := apihandlers.NewProfileHandler(db.NewProfileRepository(s.database), s.logger, s.metrics)
+	scheduleHandler := apihandlers.NewScheduleHandler(db.NewScheduleRepository(s.database), s.logger, s.metrics)
 	networkHandler := apihandlers.NewNetworkHandler(services.NewNetworkService(s.database), s.logger, s.metrics)
 	handlerManager := apihandlers.New(s.database, s.logger, s.metrics)
 

@@ -27,7 +27,7 @@ func TestGetHost_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery("SELECT").WillReturnError(sql.ErrNoRows)
 
-		_, err := db.GetHost(context.Background(), id)
+		_, err := NewHostRepository(db).GetHost(context.Background(), id)
 
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound),
@@ -39,7 +39,7 @@ func TestGetHost_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery("SELECT").WillReturnError(fmt.Errorf("db error"))
 
-		_, err := db.GetHost(context.Background(), id)
+		_, err := NewHostRepository(db).GetHost(context.Background(), id)
 
 		require.Error(t, err)
 		assert.False(t, errors.IsCode(err, errors.CodeNotFound))
@@ -55,7 +55,7 @@ func TestListHosts_Unit(t *testing.T) {
 		mock.ExpectQuery("SELECT COUNT").
 			WillReturnError(fmt.Errorf("count failed"))
 
-		_, _, err := db.ListHosts(context.Background(), &HostFilters{}, 0, 10)
+		_, _, err := NewHostRepository(db).ListHosts(context.Background(), &HostFilters{}, 0, 10)
 
 		require.Error(t, err)
 	})
@@ -67,7 +67,7 @@ func TestListHosts_Unit(t *testing.T) {
 		mock.ExpectQuery("SELECT").
 			WillReturnError(fmt.Errorf("list failed"))
 
-		_, _, err := db.ListHosts(context.Background(), &HostFilters{}, 0, 10)
+		_, _, err := NewHostRepository(db).ListHosts(context.Background(), &HostFilters{}, 0, 10)
 
 		require.Error(t, err)
 	})

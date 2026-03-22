@@ -399,7 +399,7 @@ func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if scan is already completed
-	if scan.Status == "completed" {
+	if scan.Status == db.ScanJobStatusCompleted {
 		writeError(w, r, http.StatusConflict, fmt.Errorf("scan is already completed"))
 		return
 	}
@@ -451,10 +451,13 @@ func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 // submitToQueue enqueues the scan for execution via the bounded scan queue.
 // It returns the HTTP status code and error to write back, or 0/nil on success.
 func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error) {
-	// Type-assert to *db.DB so the runner can persist hosts and ports.
+	// Type-assert to *db.ScanRepository so the runner can persist hosts and ports.
 	// If the store is a test double the cast yields nil, which RunScanWithContext
 	// handles gracefully (it skips persistence when database is nil).
-	concreteDB, _ := h.database.(*db.DB)
+	var concreteDB *db.DB
+	if repo, ok := h.database.(*db.ScanRepository); ok {
+		concreteDB = repo.DB()
+	}
 
 	scanConfig := &scanning.ScanConfig{
 		Targets:     scan.Targets,
@@ -524,10 +527,13 @@ func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 		ScanID:      &scanID,
 	}
 
-	// Type-assert to *db.DB so the runner can persist hosts and ports.
+	// Type-assert to *db.ScanRepository so the runner can persist hosts and ports.
 	// If the store is a test double the cast yields nil, which RunScanWithContext
 	// handles gracefully (it skips persistence when database is nil).
-	concreteDB, _ := h.database.(*db.DB)
+	var concreteDB *db.DB
+	if repo, ok := h.database.(*db.ScanRepository); ok {
+		concreteDB = repo.DB()
+	}
 
 	ctx := context.Background()
 	result, err := h.scanRunner(ctx, scanConfig, concreteDB)

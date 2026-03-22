@@ -24,7 +24,7 @@ func TestScanRepository_CreateAndGet(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
-	scan, err := db.CreateScan(ctx, CreateScanInput{
+	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "test-scan-create",
 		Targets:  []string{"127.0.0.1"},
 		ScanType: "connect",
@@ -37,9 +37,9 @@ func TestScanRepository_CreateAndGet(t *testing.T) {
 	assert.Equal(t, "connect", scan.ScanType)
 	assert.Equal(t, "22,80", scan.Ports)
 
-	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan.ID) })
 
-	got, err := db.GetScan(ctx, scan.ID)
+	got, err := NewScanRepository(db).GetScan(ctx, scan.ID)
 	require.NoError(t, err)
 	assert.Equal(t, scan.ID, got.ID)
 	assert.Equal(t, scan.Name, got.Name)
@@ -57,7 +57,7 @@ func TestScanRepository_GetScan_NotFound(t *testing.T) {
 	db := connectTestDB(t)
 	defer db.Close()
 
-	_, err := db.GetScan(context.Background(), uuid.New())
+	_, err := NewScanRepository(db).GetScan(context.Background(), uuid.New())
 	require.Error(t, err)
 }
 
@@ -68,16 +68,16 @@ func TestScanRepository_ListScans(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.2/32'")
-	scan, err := db.CreateScan(ctx, CreateScanInput{
+	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "test-scan-list",
 		Targets:  []string{"127.0.0.2"},
 		ScanType: "connect",
 		Ports:    "443",
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan.ID) })
 
-	scans, total, err := db.ListScans(ctx, ScanFilters{}, 0, 100)
+	scans, total, err := NewScanRepository(db).ListScans(ctx, ScanFilters{}, 0, 100)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, total, int64(1))
 	assert.GreaterOrEqual(t, len(scans), 1)
@@ -103,17 +103,17 @@ func TestScanRepository_UpdateScan(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
-	scan, err := db.CreateScan(ctx, CreateScanInput{
+	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "test-scan-update",
 		Targets:  []string{"127.0.0.1"},
 		ScanType: "connect",
 		Ports:    "22",
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan.ID) })
 
 	ports := "22,443"
-	updated, err := db.UpdateScan(ctx, scan.ID, UpdateScanInput{Ports: &ports})
+	updated, err := NewScanRepository(db).UpdateScan(ctx, scan.ID, UpdateScanInput{Ports: &ports})
 	require.NoError(t, err)
 	assert.Equal(t, "22,443", updated.Ports)
 }
@@ -123,7 +123,7 @@ func TestScanRepository_UpdateScan_NotFound(t *testing.T) {
 	defer db.Close()
 
 	ports := "80"
-	_, err := db.UpdateScan(context.Background(), uuid.New(), UpdateScanInput{Ports: &ports})
+	_, err := NewScanRepository(db).UpdateScan(context.Background(), uuid.New(), UpdateScanInput{Ports: &ports})
 	require.Error(t, err)
 }
 
@@ -134,7 +134,7 @@ func TestScanRepository_DeleteScan(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.3/32'")
-	scan, err := db.CreateScan(ctx, CreateScanInput{
+	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "test-scan-delete",
 		Targets:  []string{"127.0.0.3"},
 		ScanType: "connect",
@@ -142,9 +142,9 @@ func TestScanRepository_DeleteScan(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.NoError(t, db.DeleteScan(ctx, scan.ID))
+	require.NoError(t, NewScanRepository(db).DeleteScan(ctx, scan.ID))
 
-	_, err = db.GetScan(ctx, scan.ID)
+	_, err = NewScanRepository(db).GetScan(ctx, scan.ID)
 	require.Error(t, err)
 }
 
@@ -152,7 +152,7 @@ func TestScanRepository_DeleteScan_NotFound(t *testing.T) {
 	db := connectTestDB(t)
 	defer db.Close()
 
-	err := db.DeleteScan(context.Background(), uuid.New())
+	err := NewScanRepository(db).DeleteScan(context.Background(), uuid.New())
 	require.Error(t, err)
 }
 
@@ -163,20 +163,20 @@ func TestScanRepository_DeleteScan_Running(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.5/32'")
-	scan, err := db.CreateScan(ctx, CreateScanInput{
+	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "test-scan-running",
 		Targets:  []string{"127.0.0.5"},
 		ScanType: "connect",
 		Ports:    "80",
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan.ID) })
 
-	require.NoError(t, db.StartScan(ctx, scan.ID))
-	t.Cleanup(func() { _ = db.StopScan(ctx, scan.ID) })
+	require.NoError(t, NewScanRepository(db).StartScan(ctx, scan.ID))
+	t.Cleanup(func() { _ = NewScanRepository(db).StopScan(ctx, scan.ID) })
 
 	// Deleting a running scan should return a conflict error.
-	err = db.DeleteScan(ctx, scan.ID)
+	err = NewScanRepository(db).DeleteScan(ctx, scan.ID)
 	require.Error(t, err)
 	assert.True(t, errors.IsConflict(err), "expected conflict error, got: %v", err)
 }
@@ -188,25 +188,25 @@ func TestScanRepository_StartCompleteScan(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.4/32'")
-	scan, err := db.CreateScan(ctx, CreateScanInput{
+	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "test-scan-lifecycle",
 		Targets:  []string{"127.0.0.4"},
 		ScanType: "connect",
 		Ports:    "22",
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan.ID) })
 
-	require.NoError(t, db.StartScan(ctx, scan.ID))
+	require.NoError(t, NewScanRepository(db).StartScan(ctx, scan.ID))
 
-	started, err := db.GetScan(ctx, scan.ID)
+	started, err := NewScanRepository(db).GetScan(ctx, scan.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "running", started.Status)
 	assert.NotNil(t, started.StartedAt)
 
-	require.NoError(t, db.CompleteScan(ctx, scan.ID))
+	require.NoError(t, NewScanRepository(db).CompleteScan(ctx, scan.ID))
 
-	completed, err := db.GetScan(ctx, scan.ID)
+	completed, err := NewScanRepository(db).GetScan(ctx, scan.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "completed", completed.Status)
 	assert.NotNil(t, completed.CompletedAt)
@@ -221,19 +221,19 @@ func TestScanRepository_StopScan(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
-	scan, err := db.CreateScan(ctx, CreateScanInput{
+	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "test-scan-stop",
 		Targets:  []string{"127.0.0.1"},
 		ScanType: "connect",
 		Ports:    "22",
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan.ID) })
 
-	require.NoError(t, db.StartScan(ctx, scan.ID))
-	require.NoError(t, db.StopScan(ctx, scan.ID))
+	require.NoError(t, NewScanRepository(db).StartScan(ctx, scan.ID))
+	require.NoError(t, NewScanRepository(db).StopScan(ctx, scan.ID))
 
-	stopped, err := db.GetScan(ctx, scan.ID)
+	stopped, err := NewScanRepository(db).GetScan(ctx, scan.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "failed", stopped.Status)
 }
@@ -245,17 +245,17 @@ func TestScanRepository_GetScanResults(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
-	scan, err := db.CreateScan(ctx, CreateScanInput{
+	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "test-scan-results",
 		Targets:  []string{"127.0.0.1"},
 		ScanType: "connect",
 		Ports:    "22",
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan.ID) })
 
 	// No results yet — should return empty slice, not error.
-	results, total, err := db.GetScanResults(ctx, scan.ID, 0, 10)
+	results, total, err := NewScanRepository(db).GetScanResults(ctx, scan.ID, 0, 10)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), total)
 	assert.Empty(t, results)
@@ -268,16 +268,16 @@ func TestScanRepository_GetScanSummary(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr = '127.0.0.1/32'")
-	scan, err := db.CreateScan(ctx, CreateScanInput{
+	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "test-scan-summary",
 		Targets:  []string{"127.0.0.1"},
 		ScanType: "connect",
 		Ports:    "22",
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan.ID) })
 
-	summary, err := db.GetScanSummary(ctx, scan.ID)
+	summary, err := NewScanRepository(db).GetScanSummary(ctx, scan.ID)
 	require.NoError(t, err)
 	assert.Equal(t, scan.ID, summary.ScanID)
 	assert.Equal(t, 0, summary.TotalPorts)
@@ -477,9 +477,10 @@ func TestProfileRepository_CRUD(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
+	profileRepo := NewProfileRepository(db)
 
 	// Create.
-	profile, err := db.CreateProfile(ctx, CreateProfileInput{
+	profile, err := profileRepo.CreateProfile(ctx, CreateProfileInput{
 		Name:     "test-profile-crud",
 		ScanType: "connect",
 		Ports:    "22,80,443",
@@ -487,17 +488,17 @@ func TestProfileRepository_CRUD(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, profile)
 	assert.Equal(t, "test-profile-crud", profile.Name)
-	t.Cleanup(func() { _ = db.DeleteProfile(ctx, profile.ID) })
+	t.Cleanup(func() { _ = profileRepo.DeleteProfile(ctx, profile.ID) })
 
 	// Get.
-	got, err := db.GetProfile(ctx, profile.ID)
+	got, err := profileRepo.GetProfile(ctx, profile.ID)
 	require.NoError(t, err)
 	assert.Equal(t, profile.ID, got.ID)
 	assert.Equal(t, "connect", got.ScanType)
 	assert.Equal(t, "22,80,443", got.Ports)
 
 	// List.
-	profiles, total, err := db.ListProfiles(ctx, ProfileFilters{}, 0, 100)
+	profiles, total, err := profileRepo.ListProfiles(ctx, ProfileFilters{}, 0, 100)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, total, int64(1))
 	var found bool
@@ -510,7 +511,7 @@ func TestProfileRepository_CRUD(t *testing.T) {
 	assert.True(t, found, "created profile should appear in ListProfiles")
 
 	// List with filter.
-	filtered, _, err := db.ListProfiles(ctx, ProfileFilters{ScanType: "connect"}, 0, 100)
+	filtered, _, err := profileRepo.ListProfiles(ctx, ProfileFilters{ScanType: "connect"}, 0, 100)
 	require.NoError(t, err)
 	for _, p := range filtered {
 		assert.Equal(t, "connect", p.ScanType)
@@ -518,13 +519,13 @@ func TestProfileRepository_CRUD(t *testing.T) {
 
 	// Update.
 	ports := "22,443"
-	updated, err := db.UpdateProfile(ctx, profile.ID, UpdateProfileInput{Ports: &ports})
+	updated, err := profileRepo.UpdateProfile(ctx, profile.ID, UpdateProfileInput{Ports: &ports})
 	require.NoError(t, err)
 	assert.Equal(t, "22,443", updated.Ports)
 
 	// Delete.
-	require.NoError(t, db.DeleteProfile(ctx, profile.ID))
-	_, err = db.GetProfile(ctx, profile.ID)
+	require.NoError(t, profileRepo.DeleteProfile(ctx, profile.ID))
+	_, err = profileRepo.GetProfile(ctx, profile.ID)
 	require.Error(t, err)
 }
 
@@ -533,18 +534,19 @@ func TestProfileRepository_CreateProfile_DuplicateName(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
+	profileRepo := NewProfileRepository(db)
 
 	_, _ = db.ExecContext(ctx, "DELETE FROM scan_profiles WHERE name = 'test-duplicate-profile' AND is_builtin = false")
-	profile, err := db.CreateProfile(ctx, CreateProfileInput{
+	profile, err := profileRepo.CreateProfile(ctx, CreateProfileInput{
 		Name:     "test-duplicate-profile",
 		ScanType: "connect",
 		Ports:    "80,443",
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.DeleteProfile(ctx, profile.ID) })
+	t.Cleanup(func() { _ = profileRepo.DeleteProfile(ctx, profile.ID) })
 
 	// Creating a second profile with the same name should return a conflict error.
-	_, err = db.CreateProfile(ctx, CreateProfileInput{
+	_, err = profileRepo.CreateProfile(ctx, CreateProfileInput{
 		Name:     "test-duplicate-profile",
 		ScanType: "connect",
 		Ports:    "22",
@@ -557,7 +559,7 @@ func TestProfileRepository_GetProfile_NotFound(t *testing.T) {
 	db := connectTestDB(t)
 	defer db.Close()
 
-	_, err := db.GetProfile(context.Background(), "nonexistent-profile-id")
+	_, err := NewProfileRepository(db).GetProfile(context.Background(), "nonexistent-profile-id")
 	require.Error(t, err)
 }
 
@@ -576,7 +578,7 @@ func TestProfileRepository_UpdateBuiltIn_Rejected(t *testing.T) {
 	}
 
 	ports := "9999"
-	_, err = db.UpdateProfile(ctx, builtInID, UpdateProfileInput{Ports: &ports})
+	_, err = NewProfileRepository(db).UpdateProfile(ctx, builtInID, UpdateProfileInput{Ports: &ports})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "built-in")
 }
@@ -594,7 +596,7 @@ func TestProfileRepository_DeleteBuiltIn_Rejected(t *testing.T) {
 		t.Skip("no built-in profiles found, skipping")
 	}
 
-	err = db.DeleteProfile(ctx, builtInID)
+	err = NewProfileRepository(db).DeleteProfile(ctx, builtInID)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "built-in")
 }
@@ -606,9 +608,10 @@ func TestScheduleRepository_CRUD(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
+	scheduleRepo := NewScheduleRepository(db)
 
 	// Create.
-	schedule, err := db.CreateSchedule(ctx, CreateScheduleInput{
+	schedule, err := scheduleRepo.CreateSchedule(ctx, CreateScheduleInput{
 		Name:           "test-schedule-crud",
 		JobType:        "discovery",
 		CronExpression: "0 * * * *",
@@ -620,16 +623,16 @@ func TestScheduleRepository_CRUD(t *testing.T) {
 	assert.Equal(t, "test-schedule-crud", schedule.Name)
 	assert.Equal(t, "discovery", schedule.JobType)
 	assert.True(t, schedule.Enabled)
-	t.Cleanup(func() { _ = db.DeleteSchedule(ctx, schedule.ID) })
+	t.Cleanup(func() { _ = scheduleRepo.DeleteSchedule(ctx, schedule.ID) })
 
 	// Get.
-	got, err := db.GetSchedule(ctx, schedule.ID)
+	got, err := scheduleRepo.GetSchedule(ctx, schedule.ID)
 	require.NoError(t, err)
 	assert.Equal(t, schedule.ID, got.ID)
 	assert.Equal(t, "0 * * * *", got.CronExpression)
 
 	// List.
-	schedules, total, err := db.ListSchedules(ctx, ScheduleFilters{}, 0, 100)
+	schedules, total, err := scheduleRepo.ListSchedules(ctx, ScheduleFilters{}, 0, 100)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, total, int64(1))
 	var found bool
@@ -642,7 +645,7 @@ func TestScheduleRepository_CRUD(t *testing.T) {
 	assert.True(t, found)
 
 	// List with job_type filter.
-	filtered, _, err := db.ListSchedules(ctx, ScheduleFilters{JobType: "discovery"}, 0, 100)
+	filtered, _, err := scheduleRepo.ListSchedules(ctx, ScheduleFilters{JobType: "discovery"}, 0, 100)
 	require.NoError(t, err)
 	for _, s := range filtered {
 		assert.Equal(t, "discovery", s.JobType)
@@ -650,24 +653,24 @@ func TestScheduleRepository_CRUD(t *testing.T) {
 
 	// Update.
 	cron := "30 * * * *"
-	updated, err := db.UpdateSchedule(ctx, schedule.ID, UpdateScheduleInput{CronExpression: &cron})
+	updated, err := scheduleRepo.UpdateSchedule(ctx, schedule.ID, UpdateScheduleInput{CronExpression: &cron})
 	require.NoError(t, err)
 	assert.Equal(t, "30 * * * *", updated.CronExpression)
 
 	// Disable / Enable.
-	require.NoError(t, db.DisableSchedule(ctx, schedule.ID))
-	disabled, err := db.GetSchedule(ctx, schedule.ID)
+	require.NoError(t, scheduleRepo.DisableSchedule(ctx, schedule.ID))
+	disabled, err := scheduleRepo.GetSchedule(ctx, schedule.ID)
 	require.NoError(t, err)
 	assert.False(t, disabled.Enabled)
 
-	require.NoError(t, db.EnableSchedule(ctx, schedule.ID))
-	enabled, err := db.GetSchedule(ctx, schedule.ID)
+	require.NoError(t, scheduleRepo.EnableSchedule(ctx, schedule.ID))
+	enabled, err := scheduleRepo.GetSchedule(ctx, schedule.ID)
 	require.NoError(t, err)
 	assert.True(t, enabled.Enabled)
 
 	// Delete.
-	require.NoError(t, db.DeleteSchedule(ctx, schedule.ID))
-	_, err = db.GetSchedule(ctx, schedule.ID)
+	require.NoError(t, scheduleRepo.DeleteSchedule(ctx, schedule.ID))
+	_, err = scheduleRepo.GetSchedule(ctx, schedule.ID)
 	require.Error(t, err)
 }
 
@@ -675,7 +678,7 @@ func TestScheduleRepository_GetSchedule_NotFound(t *testing.T) {
 	db := connectTestDB(t)
 	defer db.Close()
 
-	_, err := db.GetSchedule(context.Background(), uuid.New())
+	_, err := NewScheduleRepository(db).GetSchedule(context.Background(), uuid.New())
 	require.Error(t, err)
 }
 
@@ -684,7 +687,7 @@ func TestScheduleRepository_UpdateSchedule_NotFound(t *testing.T) {
 	defer db.Close()
 
 	name := "ghost"
-	_, err := db.UpdateSchedule(context.Background(), uuid.New(), UpdateScheduleInput{Name: &name})
+	_, err := NewScheduleRepository(db).UpdateSchedule(context.Background(), uuid.New(), UpdateScheduleInput{Name: &name})
 	require.Error(t, err)
 }
 
@@ -692,7 +695,7 @@ func TestScheduleRepository_DeleteSchedule_NotFound(t *testing.T) {
 	db := connectTestDB(t)
 	defer db.Close()
 
-	err := db.DeleteSchedule(context.Background(), uuid.New())
+	err := NewScheduleRepository(db).DeleteSchedule(context.Background(), uuid.New())
 	require.Error(t, err)
 }
 
@@ -703,9 +706,10 @@ func TestDiscoveryJobRepository_CRUD(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
+	discoveryRepo := NewDiscoveryRepository(db)
 
 	// Create.
-	job, err := db.CreateDiscoveryJob(ctx, CreateDiscoveryJobInput{
+	job, err := discoveryRepo.CreateDiscoveryJob(ctx, CreateDiscoveryJobInput{
 		Networks: []string{"10.10.0.0/24"},
 		Method:   "tcp",
 	})
@@ -713,16 +717,16 @@ func TestDiscoveryJobRepository_CRUD(t *testing.T) {
 	require.NotNil(t, job)
 	assert.NotEqual(t, uuid.Nil, job.ID)
 	assert.Equal(t, "pending", job.Status)
-	t.Cleanup(func() { _ = db.DeleteDiscoveryJob(ctx, job.ID) })
+	t.Cleanup(func() { _ = discoveryRepo.DeleteDiscoveryJob(ctx, job.ID) })
 
 	// Get.
-	got, err := db.GetDiscoveryJob(ctx, job.ID)
+	got, err := discoveryRepo.GetDiscoveryJob(ctx, job.ID)
 	require.NoError(t, err)
 	assert.Equal(t, job.ID, got.ID)
 	assert.Equal(t, "tcp", got.Method)
 
 	// List.
-	jobs, total, err := db.ListDiscoveryJobs(ctx, DiscoveryFilters{}, 0, 100)
+	jobs, total, err := discoveryRepo.ListDiscoveryJobs(ctx, DiscoveryFilters{}, 0, 100)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, total, int64(1))
 	var found bool
@@ -735,21 +739,21 @@ func TestDiscoveryJobRepository_CRUD(t *testing.T) {
 	assert.True(t, found)
 
 	// List with filters.
-	filtered, _, err := db.ListDiscoveryJobs(ctx, DiscoveryFilters{Status: "pending"}, 0, 100)
+	filtered, _, err := discoveryRepo.ListDiscoveryJobs(ctx, DiscoveryFilters{Status: "pending"}, 0, 100)
 	require.NoError(t, err)
 	for _, j := range filtered {
 		assert.Equal(t, "pending", j.Status)
 	}
 
 	// Start → running.
-	require.NoError(t, db.StartDiscoveryJob(ctx, job.ID))
-	running, err := db.GetDiscoveryJob(ctx, job.ID)
+	require.NoError(t, discoveryRepo.StartDiscoveryJob(ctx, job.ID))
+	running, err := discoveryRepo.GetDiscoveryJob(ctx, job.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "running", running.Status)
 
 	// Stop → failed.
-	require.NoError(t, db.StopDiscoveryJob(ctx, job.ID))
-	stopped, err := db.GetDiscoveryJob(ctx, job.ID)
+	require.NoError(t, discoveryRepo.StopDiscoveryJob(ctx, job.ID))
+	stopped, err := discoveryRepo.GetDiscoveryJob(ctx, job.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "failed", stopped.Status)
 
@@ -757,7 +761,7 @@ func TestDiscoveryJobRepository_CRUD(t *testing.T) {
 	now := time.Now().UTC()
 	hostsDiscovered := 5
 	hostsResponsive := 3
-	updated, err := db.UpdateDiscoveryJob(ctx, job.ID, UpdateDiscoveryJobInput{
+	updated, err := discoveryRepo.UpdateDiscoveryJob(ctx, job.ID, UpdateDiscoveryJobInput{
 		HostsDiscovered: &hostsDiscovered,
 		HostsResponsive: &hostsResponsive,
 		CompletedAt:     &now,
@@ -767,8 +771,8 @@ func TestDiscoveryJobRepository_CRUD(t *testing.T) {
 	assert.Equal(t, 3, updated.HostsResponsive)
 
 	// Delete.
-	require.NoError(t, db.DeleteDiscoveryJob(ctx, job.ID))
-	_, err = db.GetDiscoveryJob(ctx, job.ID)
+	require.NoError(t, discoveryRepo.DeleteDiscoveryJob(ctx, job.ID))
+	_, err = discoveryRepo.GetDiscoveryJob(ctx, job.ID)
 	require.Error(t, err)
 }
 
@@ -776,7 +780,7 @@ func TestDiscoveryJobRepository_GetDiscoveryJob_NotFound(t *testing.T) {
 	db := connectTestDB(t)
 	defer db.Close()
 
-	_, err := db.GetDiscoveryJob(context.Background(), uuid.New())
+	_, err := NewDiscoveryRepository(db).GetDiscoveryJob(context.Background(), uuid.New())
 	require.Error(t, err)
 }
 
@@ -784,7 +788,7 @@ func TestDiscoveryJobRepository_DeleteDiscoveryJob_NotFound(t *testing.T) {
 	db := connectTestDB(t)
 	defer db.Close()
 
-	err := db.DeleteDiscoveryJob(context.Background(), uuid.New())
+	err := NewDiscoveryRepository(db).DeleteDiscoveryJob(context.Background(), uuid.New())
 	require.Error(t, err)
 }
 
@@ -842,7 +846,7 @@ func TestHostRepository_ListHosts(t *testing.T) {
 		_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = $1::inet", "203.0.113.51")
 	})
 
-	hosts, total, err := db.ListHosts(ctx, &HostFilters{}, 0, 100)
+	hosts, total, err := NewHostRepository(db).ListHosts(ctx, &HostFilters{}, 0, 100)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, total, int64(1))
 	assert.GreaterOrEqual(t, len(hosts), 1)
@@ -857,7 +861,7 @@ func TestHostRepository_CreateGetUpdateDelete(t *testing.T) {
 	_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = $1::inet", "203.0.113.52")
 
 	// CreateHost.
-	host, err := db.CreateHost(ctx, CreateHostInput{
+	host, err := NewHostRepository(db).CreateHost(ctx, CreateHostInput{
 		IPAddress: "203.0.113.52",
 		Status:    "up",
 	})
@@ -868,20 +872,20 @@ func TestHostRepository_CreateGetUpdateDelete(t *testing.T) {
 	})
 
 	// GetHost.
-	got, err := db.GetHost(ctx, host.ID)
+	got, err := NewHostRepository(db).GetHost(ctx, host.ID)
 	require.NoError(t, err)
 	assert.Equal(t, host.ID, got.ID)
 	assert.Equal(t, "up", got.Status)
 
 	// UpdateHost.
 	status := "down"
-	updated, err := db.UpdateHost(ctx, host.ID, UpdateHostInput{Status: &status})
+	updated, err := NewHostRepository(db).UpdateHost(ctx, host.ID, UpdateHostInput{Status: &status})
 	require.NoError(t, err)
 	assert.Equal(t, "down", updated.Status)
 
 	// DeleteHost.
-	require.NoError(t, db.DeleteHost(ctx, host.ID))
-	_, err = db.GetHost(ctx, host.ID)
+	require.NoError(t, NewHostRepository(db).DeleteHost(ctx, host.ID))
+	_, err = NewHostRepository(db).GetHost(ctx, host.ID)
 	require.Error(t, err)
 }
 
@@ -889,7 +893,7 @@ func TestHostRepository_GetHost_NotFound(t *testing.T) {
 	db := connectTestDB(t)
 	defer db.Close()
 
-	_, err := db.GetHost(context.Background(), uuid.New())
+	_, err := NewHostRepository(db).GetHost(context.Background(), uuid.New())
 	require.Error(t, err)
 }
 
@@ -915,7 +919,7 @@ func TestScanRepository_CreateScan_ReuseNetwork(t *testing.T) {
 
 	ctx := context.Background()
 
-	scan1, err := db.CreateScan(ctx, CreateScanInput{
+	scan1, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "reuse-network-test-1",
 		Targets:  []string{"10.201.0.1"},
 		ScanType: "connect",
@@ -923,14 +927,14 @@ func TestScanRepository_CreateScan_ReuseNetwork(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, scan1)
-	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan1.ID) })
+	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan1.ID) })
 
 	var networkID1 uuid.UUID
 	err = db.QueryRowContext(ctx,
 		"SELECT network_id FROM scan_jobs WHERE id = $1", scan1.ID).Scan(&networkID1)
 	require.NoError(t, err)
 
-	scan2, err := db.CreateScan(ctx, CreateScanInput{
+	scan2, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "reuse-network-test-2",
 		Targets:  []string{"10.201.0.1"},
 		ScanType: "connect",
@@ -938,7 +942,7 @@ func TestScanRepository_CreateScan_ReuseNetwork(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, scan2)
-	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan2.ID) })
+	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan2.ID) })
 
 	var networkID2 uuid.UUID
 	err = db.QueryRowContext(ctx,
@@ -972,7 +976,7 @@ func TestScanRepository_CreateScan_NameCollision(t *testing.T) {
 	})
 
 	// CreateScan with the same name — findOrCreateNetwork should fall back to the CIDR as the name.
-	scan, err := db.CreateScan(ctx, CreateScanInput{
+	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "collision-name-test",
 		Targets:  []string{"10.250.100.5"},
 		ScanType: "connect",
@@ -980,10 +984,10 @@ func TestScanRepository_CreateScan_NameCollision(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, scan)
-	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan.ID) })
 
 	// GetScan reads n.name from the DB — it should be the CIDR fallback.
-	got, err := db.GetScan(ctx, scan.ID)
+	got, err := NewScanRepository(db).GetScan(ctx, scan.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "10.250.100.5", got.Name)
 }
@@ -994,7 +998,7 @@ func TestScanRepository_CreateScan_MultipleTargets(t *testing.T) {
 
 	ctx := context.Background()
 
-	scan, err := db.CreateScan(ctx, CreateScanInput{
+	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "multi-target-test",
 		Targets:  []string{"10.202.0.1", "10.202.0.2"},
 		ScanType: "connect",
@@ -1020,7 +1024,7 @@ func TestScanRepository_ListScans_WithScanTypeFilter(t *testing.T) {
 
 	ctx := context.Background()
 
-	scan, err := db.CreateScan(ctx, CreateScanInput{
+	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "filter-scan-type-test",
 		Targets:  []string{"10.203.0.1"},
 		ScanType: "connect",
@@ -1028,9 +1032,9 @@ func TestScanRepository_ListScans_WithScanTypeFilter(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, scan)
-	t.Cleanup(func() { _ = db.DeleteScan(ctx, scan.ID) })
+	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan.ID) })
 
-	scans, total, err := db.ListScans(ctx, ScanFilters{ScanType: "connect"}, 0, 100)
+	scans, total, err := NewScanRepository(db).ListScans(ctx, ScanFilters{ScanType: "connect"}, 0, 100)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, total, int64(1))
 	assert.GreaterOrEqual(t, len(scans), 1)
@@ -1098,7 +1102,7 @@ func TestHostRepository_GetHostScans(t *testing.T) {
 		_, _ = db.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", jobID)
 	})
 
-	scans, total, err := db.GetHostScans(ctx, hostID, 0, 100)
+	scans, total, err := NewHostRepository(db).GetHostScans(ctx, hostID, 0, 100)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, total, int64(1))
 	assert.GreaterOrEqual(t, len(scans), 1)
