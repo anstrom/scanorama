@@ -94,7 +94,8 @@ func init() {
 func runProfilesList(_ *cobra.Command, _ []string) {
 	withDatabaseOrExit(func(database *db.DB) {
 		ctx := context.Background()
-		profiles, _, err := database.ListProfiles(ctx, db.ProfileFilters{}, 0, maxProfilesLimit)
+		profiles, _, err := db.NewProfileRepository(database).ListProfiles(
+			ctx, db.ProfileFilters{}, 0, maxProfilesLimit)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error querying profiles: %v\n", err)
 			os.Exit(1)

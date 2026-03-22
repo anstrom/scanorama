@@ -992,7 +992,7 @@ func setupScanHandlerTest(t *testing.T) (*ScanHandler, *db.DB, func()) {
 
 	logger := createTestLogger()
 	metricsRegistry := metrics.NewRegistry()
-	handler := NewScanHandler(database, logger, metricsRegistry)
+	handler := NewScanHandler(db.NewScanRepository(database), logger, metricsRegistry)
 
 	// Clean up any leftover test data from previous runs.
 	// scan_jobs.network_id → networks(id) ON DELETE CASCADE (migration 011),
@@ -1051,10 +1051,10 @@ func TestScanHandler_ListScans_Integration(t *testing.T) {
 		ScanType: "syn",
 	}
 
-	_, err := database.CreateScan(ctx, scan1Data)
+	_, err := db.NewScanRepository(database).CreateScan(ctx, scan1Data)
 	require.NoError(t, err)
 
-	_, err = database.CreateScan(ctx, scan2Data)
+	_, err = db.NewScanRepository(database).CreateScan(ctx, scan2Data)
 	require.NoError(t, err)
 
 	// Test listing scans
@@ -1144,7 +1144,7 @@ func TestScanHandler_GetScan_Integration(t *testing.T) {
 		ScanType: "connect",
 	}
 
-	createdScan, err := database.CreateScan(ctx, scanData)
+	createdScan, err := db.NewScanRepository(database).CreateScan(ctx, scanData)
 	require.NoError(t, err)
 
 	// Test getting the scan
@@ -1181,7 +1181,7 @@ func TestScanHandler_UpdateScan_Integration(t *testing.T) {
 		ScanType: "connect",
 	}
 
-	createdScan, err := database.CreateScan(ctx, scanData)
+	createdScan, err := db.NewScanRepository(database).CreateScan(ctx, scanData)
 	require.NoError(t, err)
 
 	// Update the scan
@@ -1229,7 +1229,7 @@ func TestScanHandler_DeleteScan_Integration(t *testing.T) {
 		ScanType: "connect",
 	}
 
-	createdScan, err := database.CreateScan(ctx, scanData)
+	createdScan, err := db.NewScanRepository(database).CreateScan(ctx, scanData)
 	require.NoError(t, err)
 
 	// Delete the scan
@@ -1242,7 +1242,7 @@ func TestScanHandler_DeleteScan_Integration(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, w.Code)
 
 	// Verify the scan is deleted
-	_, err = database.GetScan(ctx, createdScan.ID)
+	_, err = db.NewScanRepository(database).GetScan(ctx, createdScan.ID)
 	assert.Error(t, err)
 }
 
@@ -1263,7 +1263,7 @@ func TestScanHandler_StartScan_Integration(t *testing.T) {
 		ScanType: "connect",
 	}
 
-	createdScan, err := database.CreateScan(ctx, scanData)
+	createdScan, err := db.NewScanRepository(database).CreateScan(ctx, scanData)
 	require.NoError(t, err)
 
 	// Start the scan
@@ -1294,11 +1294,11 @@ func TestScanHandler_StopScan_Integration(t *testing.T) {
 		ScanType: "connect",
 	}
 
-	createdScan, err := database.CreateScan(ctx, scanData)
+	createdScan, err := db.NewScanRepository(database).CreateScan(ctx, scanData)
 	require.NoError(t, err)
 
 	// Start it first
-	_ = database.StartScan(ctx, createdScan.ID)
+	_ = db.NewScanRepository(database).StartScan(ctx, createdScan.ID)
 
 	// Stop the scan
 	req := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/scans/%s/stop", createdScan.ID), http.NoBody)
@@ -1327,7 +1327,7 @@ func TestScanHandler_GetScanResults_Integration(t *testing.T) {
 		ScanType: "connect",
 	}
 
-	createdScan, err := database.CreateScan(ctx, scanData)
+	createdScan, err := db.NewScanRepository(database).CreateScan(ctx, scanData)
 	require.NoError(t, err)
 
 	// Get scan results (might be empty but should not error)

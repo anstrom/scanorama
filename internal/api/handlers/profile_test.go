@@ -785,7 +785,7 @@ func setupProfileHandlerTest(t *testing.T) (*ProfileHandler, *db.DB, func()) {
 
 	logger := createTestLogger()
 	metricsRegistry := metrics.NewRegistry()
-	handler := NewProfileHandler(database, logger, metricsRegistry)
+	handler := NewProfileHandler(db.NewProfileRepository(database), logger, metricsRegistry)
 
 	// Clean up any leftover test data
 	_, _ = database.Exec(`DELETE FROM scan_profiles WHERE name LIKE 'ProfileTest%'`)
@@ -816,7 +816,7 @@ func TestProfileHandler_ListProfiles_Integration(t *testing.T) {
 	profile1Name := generateUniqueProfileName()
 	profile2Name := generateUniqueProfileName()
 
-	_, err := database.CreateProfile(ctx, db.CreateProfileInput{
+	_, err := db.NewProfileRepository(database).CreateProfile(ctx, db.CreateProfileInput{
 		Name:        profile1Name,
 		Description: "Test profile 1",
 		ScanType:    "connect",
@@ -825,7 +825,7 @@ func TestProfileHandler_ListProfiles_Integration(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = database.CreateProfile(ctx, db.CreateProfileInput{
+	_, err = db.NewProfileRepository(database).CreateProfile(ctx, db.CreateProfileInput{
 		Name:        profile2Name,
 		Description: "Test profile 2",
 		ScanType:    "syn",
@@ -883,7 +883,7 @@ func TestProfileHandler_ListProfiles_WithFilters_Integration(t *testing.T) {
 	connectProfileName := generateUniqueProfileName()
 	synProfileName := generateUniqueProfileName()
 
-	_, err := database.CreateProfile(ctx, db.CreateProfileInput{
+	_, err := db.NewProfileRepository(database).CreateProfile(ctx, db.CreateProfileInput{
 		Name:        connectProfileName,
 		Description: "Connect scan profile",
 		ScanType:    "connect",
@@ -892,7 +892,7 @@ func TestProfileHandler_ListProfiles_WithFilters_Integration(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = database.CreateProfile(ctx, db.CreateProfileInput{
+	_, err = db.NewProfileRepository(database).CreateProfile(ctx, db.CreateProfileInput{
 		Name:        synProfileName,
 		Description: "SYN scan profile",
 		ScanType:    "syn",
@@ -1100,7 +1100,7 @@ func TestProfileHandler_ListProfiles_Pagination_Integration(t *testing.T) {
 
 	// Create multiple profiles for pagination testing
 	for i := 0; i < 5; i++ {
-		_, err := database.CreateProfile(ctx, db.CreateProfileInput{
+		_, err := db.NewProfileRepository(database).CreateProfile(ctx, db.CreateProfileInput{
 			Name:        fmt.Sprintf("%s_%d", generateUniqueProfileName(), i),
 			Description: fmt.Sprintf("Test profile %d", i),
 			ScanType:    "connect",

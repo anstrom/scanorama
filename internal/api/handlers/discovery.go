@@ -389,17 +389,12 @@ func (h *DiscoveryHandler) executeDiscoveryAsync(ctx context.Context, jobID uuid
 
 // completeDiscoveryJob flips the job's status to completed and records completed_at.
 func (h *DiscoveryHandler) completeDiscoveryJob(ctx context.Context, jobID uuid.UUID) error {
-	query := `
-		UPDATE discovery_jobs
-		SET status = 'completed', completed_at = NOW()
-		WHERE id = $1 AND status = 'running'`
-
-	concreteDB, ok := h.database.(*db.DB)
-	if !ok {
-		// In tests the store may be a mock; skip the raw query.
-		return nil
-	}
-	_, err := concreteDB.ExecContext(ctx, query, jobID)
+	completed := "completed"
+	now := time.Now().UTC()
+	_, err := h.database.UpdateDiscoveryJob(ctx, jobID, db.UpdateDiscoveryJobInput{
+		Status:      &completed,
+		CompletedAt: &now,
+	})
 	return err
 }
 

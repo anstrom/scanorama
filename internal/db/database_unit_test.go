@@ -1357,7 +1357,7 @@ func TestCreateProfile_UniqueNameConflict(t *testing.T) {
 		Timing:   "normal",
 	}
 
-	_, err := db.CreateProfile(context.Background(), profileData)
+	_, err := NewProfileRepository(db).CreateProfile(context.Background(), profileData)
 
 	require.Error(t, err)
 	assert.True(t, errors.IsCode(err, errors.CodeConflict),
@@ -1383,7 +1383,7 @@ func TestCreateProfile_NonPQError(t *testing.T) {
 		Timing:   "normal",
 	}
 
-	_, err := db.CreateProfile(context.Background(), profileData)
+	_, err := NewProfileRepository(db).CreateProfile(context.Background(), profileData)
 
 	require.Error(t, err)
 	assert.False(t, errors.IsCode(err, errors.CodeConflict))
@@ -1418,7 +1418,7 @@ func TestCreateHost_UniqueIPConflict(t *testing.T) {
 		IPAddress: "10.0.0.1",
 	}
 
-	_, err := db.CreateHost(context.Background(), hostData)
+	_, err := NewHostRepository(db).CreateHost(context.Background(), hostData)
 
 	require.Error(t, err)
 	assert.True(t, errors.IsCode(err, errors.CodeConflict),
@@ -1444,7 +1444,7 @@ func TestCreateHost_UniqueViolationOtherConstraint(t *testing.T) {
 		IPAddress: "10.0.0.2",
 	}
 
-	_, err := db.CreateHost(context.Background(), hostData)
+	_, err := NewHostRepository(db).CreateHost(context.Background(), hostData)
 
 	require.Error(t, err)
 	assert.True(t, errors.IsCode(err, errors.CodeConflict),
@@ -1466,7 +1466,7 @@ func TestCreateHost_NonPQError(t *testing.T) {
 		IPAddress: "10.0.0.3",
 	}
 
-	_, err := db.CreateHost(context.Background(), hostData)
+	_, err := NewHostRepository(db).CreateHost(context.Background(), hostData)
 
 	require.Error(t, err)
 	assert.False(t, errors.IsCode(err, errors.CodeConflict))

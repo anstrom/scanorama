@@ -42,7 +42,7 @@ func setupHostHandlerTest(t *testing.T) (*HostHandler, *db.DB, func()) {
 
 	logger := createTestLogger()
 	metricsRegistry := metrics.NewRegistry()
-	handler := NewHostHandler(database, logger, metricsRegistry)
+	handler := NewHostHandler(db.NewHostRepository(database), logger, metricsRegistry)
 
 	// Clean up any leftover test data (hostname-based and hardcoded IPs used in integration tests)
 	_, _ = database.Exec(`DELETE FROM hosts WHERE hostname LIKE 'HostTest%'`)
@@ -668,10 +668,10 @@ func TestHostHandler_ListHosts_Integration(t *testing.T) {
 		Status:    "up",
 	}
 
-	_, err := database.CreateHost(ctx, host1Data)
+	_, err := db.NewHostRepository(database).CreateHost(ctx, host1Data)
 	require.NoError(t, err)
 
-	_, err = database.CreateHost(ctx, host2Data)
+	_, err = db.NewHostRepository(database).CreateHost(ctx, host2Data)
 	require.NoError(t, err)
 
 	// Test listing hosts
@@ -758,7 +758,7 @@ func TestHostHandler_GetHost_Integration(t *testing.T) {
 		Status:    "up",
 	}
 
-	createdHost, err := database.CreateHost(ctx, hostData)
+	createdHost, err := db.NewHostRepository(database).CreateHost(ctx, hostData)
 	require.NoError(t, err)
 
 	// Test getting the host
@@ -795,7 +795,7 @@ func TestHostHandler_UpdateHost_Integration(t *testing.T) {
 		Status:    "up",
 	}
 
-	createdHost, err := database.CreateHost(ctx, hostData)
+	createdHost, err := db.NewHostRepository(database).CreateHost(ctx, hostData)
 	require.NoError(t, err)
 
 	// Update the host
@@ -843,7 +843,7 @@ func TestHostHandler_DeleteHost_Integration(t *testing.T) {
 		Status:    "up",
 	}
 
-	createdHost, err := database.CreateHost(ctx, hostData)
+	createdHost, err := db.NewHostRepository(database).CreateHost(ctx, hostData)
 	require.NoError(t, err)
 
 	// Delete the host
@@ -858,7 +858,7 @@ func TestHostHandler_DeleteHost_Integration(t *testing.T) {
 
 	// Verify the host is deleted
 	if w.Code == http.StatusNoContent {
-		_, err = database.GetHost(ctx, createdHost.ID)
+		_, err = db.NewHostRepository(database).GetHost(ctx, createdHost.ID)
 		assert.Error(t, err)
 	}
 }
@@ -881,7 +881,7 @@ func TestHostHandler_GetHostScans_Integration(t *testing.T) {
 		Status:    "up",
 	}
 
-	createdHost, err := database.CreateHost(ctx, hostData)
+	createdHost, err := db.NewHostRepository(database).CreateHost(ctx, hostData)
 	require.NoError(t, err)
 
 	// Get host scans (might be empty but should not error)
@@ -1104,10 +1104,10 @@ func TestHostHandler_ListHosts_WithFilters_Integration(t *testing.T) {
 		Status:    "up",
 	}
 
-	_, err := database.CreateHost(ctx, linuxData)
+	_, err := db.NewHostRepository(database).CreateHost(ctx, linuxData)
 	require.NoError(t, err)
 
-	_, err = database.CreateHost(ctx, windowsData)
+	_, err = db.NewHostRepository(database).CreateHost(ctx, windowsData)
 	require.NoError(t, err)
 
 	// Test filtering by OS

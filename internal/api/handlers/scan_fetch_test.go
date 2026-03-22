@@ -55,7 +55,7 @@ func TestScanHandler_ListScans_WithPagination(t *testing.T) {
 	scanNames := make([]string, 5)
 	for i := 0; i < 5; i++ {
 		scanNames[i] = generateUniqueScanName()
-		_, err := database.CreateScan(ctx, db.CreateScanInput{
+		_, err := db.NewScanRepository(database).CreateScan(ctx, db.CreateScanInput{
 			Name:     scanNames[i],
 			Targets:  []string{fmt.Sprintf("192.168.%d.0/24", i)},
 			ScanType: "connect",
@@ -146,7 +146,7 @@ func TestScanHandler_ListScans_WithFilters(t *testing.T) {
 	}
 
 	for _, ts := range testScans {
-		_, err := database.CreateScan(ctx, db.CreateScanInput{
+		_, err := db.NewScanRepository(database).CreateScan(ctx, db.CreateScanInput{
 			Name:     ts.name,
 			Targets:  []string{"192.168.1.0/24"},
 			ScanType: ts.scanType,
@@ -292,7 +292,7 @@ func TestScanHandler_GetScanResults_WithPagination(t *testing.T) {
 
 	// Create a scan
 	scanName := generateUniqueScanName()
-	scan, err := database.CreateScan(ctx, db.CreateScanInput{
+	scan, err := db.NewScanRepository(database).CreateScan(ctx, db.CreateScanInput{
 		Name:     scanName,
 		Targets:  []string{"192.168.1.0/24"},
 		ScanType: "connect",
@@ -373,7 +373,7 @@ func TestScanHandler_GetScanResults_EmptyResults(t *testing.T) {
 
 	// Create a scan without results
 	scanName := generateUniqueScanName()
-	scan, err := database.CreateScan(ctx, db.CreateScanInput{
+	scan, err := db.NewScanRepository(database).CreateScan(ctx, db.CreateScanInput{
 		Name:     scanName,
 		Targets:  []string{"192.168.1.0/24"},
 		ScanType: "connect",
@@ -410,7 +410,7 @@ func TestScanHandler_GetScan_ValidID(t *testing.T) {
 
 	// Create a test scan
 	scanName := generateUniqueScanName()
-	scan, err := database.CreateScan(ctx, db.CreateScanInput{
+	scan, err := db.NewScanRepository(database).CreateScan(ctx, db.CreateScanInput{
 		Name:        scanName,
 		Description: "Test scan description",
 		Targets:     []string{generateUniqueCIDR(40)},
@@ -473,7 +473,7 @@ func TestScanHandler_ListScans_SortOrder(t *testing.T) {
 	scanNames := make([]string, 3)
 	for i := 0; i < 3; i++ {
 		scanNames[i] = generateUniqueScanName()
-		_, err := database.CreateScan(ctx, db.CreateScanInput{
+		_, err := db.NewScanRepository(database).CreateScan(ctx, db.CreateScanInput{
 			Name:     scanNames[i],
 			Targets:  []string{"192.168.1.0/24"},
 			ScanType: "connect",
@@ -510,7 +510,7 @@ func TestScanHandler_GetScanResults_ResponseStructure(t *testing.T) {
 
 	// Create a scan
 	scanName := generateUniqueScanName()
-	scan, err := database.CreateScan(ctx, db.CreateScanInput{
+	scan, err := db.NewScanRepository(database).CreateScan(ctx, db.CreateScanInput{
 		Name:     scanName,
 		Targets:  []string{"192.168.1.0/24"},
 		ScanType: "connect",
@@ -550,7 +550,7 @@ func TestScanHandler_ListScans_ResponseFields(t *testing.T) {
 	scanName := generateUniqueScanName()
 	profileID := "linux-server"
 
-	_, err := database.CreateScan(ctx, db.CreateScanInput{
+	_, err := db.NewScanRepository(database).CreateScan(ctx, db.CreateScanInput{
 		Name:        scanName,
 		Description: "Full test scan",
 		Targets:     []string{"192.168.1.0/24", "10.0.0.0/24"},
@@ -595,7 +595,7 @@ func TestScanHandler_ConcurrentListScans(t *testing.T) {
 
 	// Create some test data
 	for i := 0; i < 3; i++ {
-		_, err := database.CreateScan(ctx, db.CreateScanInput{
+		_, err := db.NewScanRepository(database).CreateScan(ctx, db.CreateScanInput{
 			Name:     generateUniqueScanName(),
 			Targets:  []string{"192.168.1.0/24"},
 			ScanType: "connect",
@@ -955,7 +955,7 @@ func TestScanHandler_GetScan_WithAllFields(t *testing.T) {
 	ctx := context.Background()
 
 	scanName := generateUniqueScanName()
-	scan, err := database.CreateScan(ctx, db.CreateScanInput{
+	scan, err := db.NewScanRepository(database).CreateScan(ctx, db.CreateScanInput{
 		Name:        scanName,
 		Description: "Comprehensive test",
 		Targets:     []string{generateUniqueCIDR(41)},
@@ -1010,7 +1010,7 @@ func TestScanHandler_ListScans_WithComplexFilters(t *testing.T) {
 	}
 
 	for _, td := range testData {
-		_, err := database.CreateScan(ctx, db.CreateScanInput{
+		_, err := db.NewScanRepository(database).CreateScan(ctx, db.CreateScanInput{
 			Name:     td.name,
 			Targets:  []string{"192.168.1.0/24"},
 			ScanType: td.scanType,

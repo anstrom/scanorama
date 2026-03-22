@@ -32,7 +32,7 @@ func TestListDiscoveryJobs(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery(`SELECT COUNT`).WillReturnError(fmt.Errorf("count failed"))
 
-		_, _, err := db.ListDiscoveryJobs(context.Background(), DiscoveryFilters{}, 0, 10)
+		_, _, err := NewDiscoveryRepository(db).ListDiscoveryJobs(context.Background(), DiscoveryFilters{}, 0, 10)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "count discovery jobs")
 	})
@@ -43,7 +43,7 @@ func TestListDiscoveryJobs(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 		mock.ExpectQuery(`SELECT`).WillReturnError(fmt.Errorf("list failed"))
 
-		_, _, err := db.ListDiscoveryJobs(context.Background(), DiscoveryFilters{}, 0, 10)
+		_, _, err := NewDiscoveryRepository(db).ListDiscoveryJobs(context.Background(), DiscoveryFilters{}, 0, 10)
 		require.Error(t, err)
 	})
 
@@ -54,7 +54,8 @@ func TestListDiscoveryJobs(t *testing.T) {
 		mock.ExpectQuery(`SELECT`).
 			WillReturnRows(sqlmock.NewRows(discoveryJobColumns))
 
-		jobs, total, err := db.ListDiscoveryJobs(context.Background(), DiscoveryFilters{}, 0, 10)
+		jobs, total, err := NewDiscoveryRepository(db).ListDiscoveryJobs(
+			context.Background(), DiscoveryFilters{}, 0, 10)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), total)
 		assert.Empty(t, jobs)
@@ -69,7 +70,8 @@ func TestListDiscoveryJobs(t *testing.T) {
 				id, nil, "tcp", nil, nil, 0, 0, "pending", now,
 			))
 
-		jobs, total, err := db.ListDiscoveryJobs(context.Background(), DiscoveryFilters{}, 0, 10)
+		jobs, total, err := NewDiscoveryRepository(db).ListDiscoveryJobs(
+			context.Background(), DiscoveryFilters{}, 0, 10)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), total)
 		require.Len(t, jobs, 1)
@@ -89,7 +91,7 @@ func TestCreateDiscoveryJob(t *testing.T) {
 
 	t.Run("empty networks returns validation error", func(t *testing.T) {
 		db, _ := newMockDB(t)
-		_, err := db.CreateDiscoveryJob(context.Background(), CreateDiscoveryJobInput{})
+		_, err := NewDiscoveryRepository(db).CreateDiscoveryJob(context.Background(), CreateDiscoveryJobInput{})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "networks are required")
 	})
@@ -99,7 +101,7 @@ func TestCreateDiscoveryJob(t *testing.T) {
 		mock.ExpectExec(`INSERT INTO discovery_jobs`).
 			WillReturnError(fmt.Errorf("insert failed"))
 
-		_, err := db.CreateDiscoveryJob(context.Background(), validInput)
+		_, err := NewDiscoveryRepository(db).CreateDiscoveryJob(context.Background(), validInput)
 		require.Error(t, err)
 	})
 
@@ -108,7 +110,7 @@ func TestCreateDiscoveryJob(t *testing.T) {
 		mock.ExpectExec(`INSERT INTO discovery_jobs`).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
-		job, err := db.CreateDiscoveryJob(context.Background(), validInput)
+		job, err := NewDiscoveryRepository(db).CreateDiscoveryJob(context.Background(), validInput)
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		assert.Equal(t, "pending", job.Status)
@@ -127,7 +129,7 @@ func TestGetDiscoveryJob(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery(`SELECT`).WillReturnError(sql.ErrNoRows)
 
-		_, err := db.GetDiscoveryJob(context.Background(), id)
+		_, err := NewDiscoveryRepository(db).GetDiscoveryJob(context.Background(), id)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
 	})
@@ -136,7 +138,7 @@ func TestGetDiscoveryJob(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery(`SELECT`).WillReturnError(fmt.Errorf("db error"))
 
-		_, err := db.GetDiscoveryJob(context.Background(), id)
+		_, err := NewDiscoveryRepository(db).GetDiscoveryJob(context.Background(), id)
 		require.Error(t, err)
 		assert.False(t, errors.IsCode(err, errors.CodeNotFound))
 	})
@@ -148,7 +150,7 @@ func TestGetDiscoveryJob(t *testing.T) {
 				id, "10.0.0.0/8", "tcp", nil, nil, 0, 0, "pending", now,
 			))
 
-		job, err := db.GetDiscoveryJob(context.Background(), id)
+		job, err := NewDiscoveryRepository(db).GetDiscoveryJob(context.Background(), id)
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		assert.Equal(t, id, job.ID)
@@ -166,7 +168,7 @@ func TestDeleteDiscoveryJob(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`DELETE`).WillReturnResult(sqlmock.NewResult(1, 1))
 
-		err := db.DeleteDiscoveryJob(context.Background(), id)
+		err := NewDiscoveryRepository(db).DeleteDiscoveryJob(context.Background(), id)
 		require.NoError(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -175,7 +177,7 @@ func TestDeleteDiscoveryJob(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`DELETE`).WillReturnResult(sqlmock.NewResult(0, 0))
 
-		err := db.DeleteDiscoveryJob(context.Background(), id)
+		err := NewDiscoveryRepository(db).DeleteDiscoveryJob(context.Background(), id)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
 	})
@@ -184,7 +186,7 @@ func TestDeleteDiscoveryJob(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`DELETE`).WillReturnError(fmt.Errorf("delete failed"))
 
-		err := db.DeleteDiscoveryJob(context.Background(), id)
+		err := NewDiscoveryRepository(db).DeleteDiscoveryJob(context.Background(), id)
 		require.Error(t, err)
 	})
 }
@@ -198,7 +200,7 @@ func TestStartDiscoveryJob(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`UPDATE discovery_jobs`).WillReturnResult(sqlmock.NewResult(0, 1))
 
-		err := db.StartDiscoveryJob(context.Background(), id)
+		err := NewDiscoveryRepository(db).StartDiscoveryJob(context.Background(), id)
 		require.NoError(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -207,7 +209,7 @@ func TestStartDiscoveryJob(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`UPDATE discovery_jobs`).WillReturnResult(sqlmock.NewResult(0, 0))
 
-		err := db.StartDiscoveryJob(context.Background(), id)
+		err := NewDiscoveryRepository(db).StartDiscoveryJob(context.Background(), id)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
 	})
@@ -216,7 +218,7 @@ func TestStartDiscoveryJob(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`UPDATE discovery_jobs`).WillReturnError(fmt.Errorf("update failed"))
 
-		err := db.StartDiscoveryJob(context.Background(), id)
+		err := NewDiscoveryRepository(db).StartDiscoveryJob(context.Background(), id)
 		require.Error(t, err)
 	})
 }
@@ -230,7 +232,7 @@ func TestStopDiscoveryJob(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`UPDATE discovery_jobs`).WillReturnResult(sqlmock.NewResult(0, 1))
 
-		err := db.StopDiscoveryJob(context.Background(), id)
+		err := NewDiscoveryRepository(db).StopDiscoveryJob(context.Background(), id)
 		require.NoError(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -239,7 +241,7 @@ func TestStopDiscoveryJob(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`UPDATE discovery_jobs`).WillReturnResult(sqlmock.NewResult(0, 0))
 
-		err := db.StopDiscoveryJob(context.Background(), id)
+		err := NewDiscoveryRepository(db).StopDiscoveryJob(context.Background(), id)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
 	})
@@ -248,7 +250,7 @@ func TestStopDiscoveryJob(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`UPDATE discovery_jobs`).WillReturnError(fmt.Errorf("update failed"))
 
-		err := db.StopDiscoveryJob(context.Background(), id)
+		err := NewDiscoveryRepository(db).StopDiscoveryJob(context.Background(), id)
 		require.Error(t, err)
 	})
 }

@@ -21,7 +21,7 @@ func TestGetProfile_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery("SELECT").WillReturnError(sql.ErrNoRows)
 
-		_, err := db.GetProfile(context.Background(), "test-profile")
+		_, err := NewProfileRepository(db).GetProfile(context.Background(), "test-profile")
 
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound),
@@ -33,7 +33,7 @@ func TestGetProfile_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery("SELECT").WillReturnError(fmt.Errorf("db error"))
 
-		_, err := db.GetProfile(context.Background(), "test-profile")
+		_, err := NewProfileRepository(db).GetProfile(context.Background(), "test-profile")
 
 		require.Error(t, err)
 		assert.False(t, errors.IsCode(err, errors.CodeNotFound))
@@ -60,7 +60,7 @@ func TestDeleteProfile_Unit(t *testing.T) {
 		mock.ExpectExec("DELETE").WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
-		err := db.DeleteProfile(context.Background(), profileID)
+		err := NewProfileRepository(db).DeleteProfile(context.Background(), profileID)
 
 		require.NoError(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -75,7 +75,7 @@ func TestDeleteProfile_Unit(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"exists", "built_in"}).
 				AddRow(false, false))
 
-		err := db.DeleteProfile(context.Background(), profileID)
+		err := NewProfileRepository(db).DeleteProfile(context.Background(), profileID)
 
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound),
@@ -89,7 +89,7 @@ func TestDeleteProfile_Unit(t *testing.T) {
 		mock.ExpectQuery("SELECT COUNT").
 			WillReturnError(fmt.Errorf("db error"))
 
-		err := db.DeleteProfile(context.Background(), profileID)
+		err := NewProfileRepository(db).DeleteProfile(context.Background(), profileID)
 
 		require.Error(t, err)
 	})
@@ -103,7 +103,7 @@ func TestListProfiles_Unit(t *testing.T) {
 		mock.ExpectQuery("SELECT COUNT").
 			WillReturnError(fmt.Errorf("count failed"))
 
-		_, _, err := db.ListProfiles(context.Background(), ProfileFilters{}, 0, 10)
+		_, _, err := NewProfileRepository(db).ListProfiles(context.Background(), ProfileFilters{}, 0, 10)
 
 		require.Error(t, err)
 	})
@@ -115,7 +115,7 @@ func TestListProfiles_Unit(t *testing.T) {
 		mock.ExpectQuery("SELECT").
 			WillReturnError(fmt.Errorf("list failed"))
 
-		_, _, err := db.ListProfiles(context.Background(), ProfileFilters{}, 0, 10)
+		_, _, err := NewProfileRepository(db).ListProfiles(context.Background(), ProfileFilters{}, 0, 10)
 
 		require.Error(t, err)
 	})

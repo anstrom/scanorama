@@ -39,11 +39,11 @@ func New(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry)
 
 	// Initialize individual handler groups
 	hm.health = NewHealthHandler(database, logger, metricsManager)
-	hm.scan = NewScanHandler(database, logger, metricsManager)
-	hm.host = NewHostHandler(database, logger, metricsManager)
-	hm.discovery = NewDiscoveryHandler(database, logger, metricsManager)
-	hm.profile = NewProfileHandler(database, logger, metricsManager)
-	hm.schedule = NewScheduleHandler(database, logger, metricsManager)
+	hm.scan = NewScanHandler(db.NewScanRepository(database), logger, metricsManager)
+	hm.host = NewHostHandler(db.NewHostRepository(database), logger, metricsManager)
+	hm.discovery = NewDiscoveryHandler(db.NewDiscoveryRepository(database), logger, metricsManager)
+	hm.profile = NewProfileHandler(db.NewProfileRepository(database), logger, metricsManager)
+	hm.schedule = NewScheduleHandler(db.NewScheduleRepository(database), logger, metricsManager)
 	hm.admin = NewAdminHandler(logger, metricsManager)
 	hm.websocket = NewWebSocketHandler(logger, metricsManager)
 
