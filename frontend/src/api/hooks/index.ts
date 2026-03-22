@@ -15,7 +15,29 @@ export {
   useCreateGlobalExclusion,
   useDeleteExclusion,
 } from "./use-networks";
-export { useProfile, useProfiles } from "./use-profiles";
+export {
+  useProfile,
+  useProfiles,
+  useCreateProfile,
+  useUpdateProfile,
+  useDeleteProfile,
+} from "./use-profiles";
+export {
+  useSchedules,
+  useSchedule,
+  useCreateSchedule,
+  useUpdateSchedule,
+  useDeleteSchedule,
+  useEnableSchedule,
+  useDisableSchedule,
+} from "./use-schedules";
+export {
+  useDiscoveryJobs,
+  useDiscoveryJob,
+  useCreateDiscoveryJob,
+  useStartDiscovery,
+  useStopDiscovery,
+} from "./use-discovery";
 export {
   useScans,
   useScan,
