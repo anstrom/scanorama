@@ -439,19 +439,19 @@ func TestGetScan_Unit(t *testing.T) {
 // ── CreateScan ────────────────────────────────────────────────────────────────
 
 func TestCreateScan_Unit(t *testing.T) {
-	t.Run("invalid input type returns error", func(t *testing.T) {
+	t.Run("empty name returns validation error", func(t *testing.T) {
 		db, _ := newMockDB(t)
-		_, err := db.CreateScan(context.Background(), "not-a-map")
+		_, err := db.CreateScan(context.Background(), CreateScanInput{})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid scan data format")
+		assert.Contains(t, err.Error(), "name is required")
 	})
 
 	t.Run("begin transaction error is wrapped", func(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectBegin().WillReturnError(fmt.Errorf("tx unavailable"))
 
-		_, err := db.CreateScan(context.Background(), map[string]interface{}{
-			"name": "Scan", "targets": []string{"10.0.0.0/8"}, "scan_type": "connect",
+		_, err := db.CreateScan(context.Background(), CreateScanInput{
+			Name: "Scan", Targets: []string{"10.0.0.0/8"}, ScanType: "connect",
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to begin transaction")
@@ -468,8 +468,8 @@ func TestCreateScan_Unit(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
-		scan, err := db.CreateScan(context.Background(), map[string]interface{}{
-			"name": "Reuse Scan", "targets": []string{"10.0.0.0/8"}, "scan_type": "connect",
+		scan, err := db.CreateScan(context.Background(), CreateScanInput{
+			Name: "Reuse Scan", Targets: []string{"10.0.0.0/8"}, ScanType: "connect",
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "Reuse Scan", scan.Name)
@@ -488,12 +488,12 @@ func TestCreateScan_Unit(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
-		scan, err := db.CreateScan(context.Background(), map[string]interface{}{
-			"name":        "New Scan",
-			"description": "my desc",
-			"targets":     []string{"192.168.1.0/24"},
-			"scan_type":   "syn",
-			"ports":       "22,443",
+		scan, err := db.CreateScan(context.Background(), CreateScanInput{
+			Name:        "New Scan",
+			Description: "my desc",
+			Targets:     []string{"192.168.1.0/24"},
+			ScanType:    "syn",
+			Ports:       "22,443",
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "New Scan", scan.Name)
@@ -519,8 +519,8 @@ func TestCreateScan_Unit(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
-		scan, err := db.CreateScan(context.Background(), map[string]interface{}{
-			"name": "Colliding Name", "targets": []string{"172.16.0.0/12"}, "scan_type": "connect",
+		scan, err := db.CreateScan(context.Background(), CreateScanInput{
+			Name: "Colliding Name", Targets: []string{"172.16.0.0/12"}, ScanType: "connect",
 		})
 		require.NoError(t, err)
 		assert.NotNil(t, scan)
@@ -534,8 +534,8 @@ func TestCreateScan_Unit(t *testing.T) {
 		mock.ExpectQuery(`SELECT id FROM networks`).WillReturnError(fmt.Errorf("network error"))
 		mock.ExpectRollback()
 
-		_, err := db.CreateScan(context.Background(), map[string]interface{}{
-			"name": "Scan", "targets": []string{"10.0.0.0/8"}, "scan_type": "connect",
+		_, err := db.CreateScan(context.Background(), CreateScanInput{
+			Name: "Scan", Targets: []string{"10.0.0.0/8"}, ScanType: "connect",
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "look up network by CIDR")
@@ -551,8 +551,8 @@ func TestCreateScan_Unit(t *testing.T) {
 		mock.ExpectExec(`INSERT INTO scan_jobs`).WillReturnError(fmt.Errorf("job insert failed"))
 		mock.ExpectRollback()
 
-		_, err := db.CreateScan(context.Background(), map[string]interface{}{
-			"name": "Scan", "targets": []string{"10.0.0.0/8"}, "scan_type": "connect",
+		_, err := db.CreateScan(context.Background(), CreateScanInput{
+			Name: "Scan", Targets: []string{"10.0.0.0/8"}, ScanType: "connect",
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "create scan job")
@@ -577,10 +577,10 @@ func TestCreateScan_Unit(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
-		scan, err := db.CreateScan(context.Background(), map[string]interface{}{
-			"name":      "Multi Scan",
-			"targets":   []string{"10.0.0.0/8", "192.168.0.0/16"},
-			"scan_type": "connect",
+		scan, err := db.CreateScan(context.Background(), CreateScanInput{
+			Name:     "Multi Scan",
+			Targets:  []string{"10.0.0.0/8", "192.168.0.0/16"},
+			ScanType: "connect",
 		})
 		require.NoError(t, err)
 		// firstJobID is from target-1's job.
@@ -601,11 +601,11 @@ func TestCreateScan_Unit(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
-		scan, err := db.CreateScan(context.Background(), map[string]interface{}{
-			"name":       "Profile Scan",
-			"targets":    []string{"10.0.0.0/8"},
-			"scan_type":  "connect",
-			"profile_id": &profile,
+		scan, err := db.CreateScan(context.Background(), CreateScanInput{
+			Name:      "Profile Scan",
+			Targets:   []string{"10.0.0.0/8"},
+			ScanType:  "connect",
+			ProfileID: &profile,
 		})
 		require.NoError(t, err)
 		require.NotNil(t, scan.ProfileID)
@@ -805,18 +805,12 @@ func TestUpdateScan_Unit(t *testing.T) {
 	now := time.Now().UTC()
 	id := uuid.New()
 
-	t.Run("invalid data type returns error", func(t *testing.T) {
-		db, _ := newMockDB(t)
-		_, err := db.UpdateScan(context.Background(), id, "not-a-map")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid scan data format")
-	})
-
 	t.Run("begin tx error is wrapped", func(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectBegin().WillReturnError(fmt.Errorf("tx error"))
 
-		_, err := db.UpdateScan(context.Background(), id, map[string]interface{}{"name": "x"})
+		name := "x"
+		_, err := db.UpdateScan(context.Background(), id, UpdateScanInput{Name: &name})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to begin transaction")
 	})
@@ -828,7 +822,8 @@ func TestUpdateScan_Unit(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 		mock.ExpectRollback()
 
-		_, err := db.UpdateScan(context.Background(), id, map[string]interface{}{"name": "x"})
+		name := "x"
+		_, err := db.UpdateScan(context.Background(), id, UpdateScanInput{Name: &name})
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
 	})
@@ -841,7 +836,7 @@ func TestUpdateScan_Unit(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 		mock.ExpectExec(`UPDATE networks`).
 			WillReturnResult(sqlmock.NewResult(0, 1))
-		// updateScanJob is a no-op for name/scan_type (not in jobFieldMappings).
+		// updateScanJob is a no-op when Status and ProfileID are both nil.
 		mock.ExpectCommit()
 		// GetScan called after commit.
 		mock.ExpectQuery(`SELECT`).WillReturnRows(
@@ -850,21 +845,23 @@ func TestUpdateScan_Unit(t *testing.T) {
 				"syn", "", nil, "pending", now, nil, nil, nil, false,
 			))
 
-		scan, err := db.UpdateScan(context.Background(), id, map[string]interface{}{
-			"name": "Renamed", "scan_type": "syn",
+		renamed := "Renamed"
+		synType := "syn"
+		scan, err := db.UpdateScan(context.Background(), id, UpdateScanInput{
+			Name: &renamed, ScanType: &synType,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "Renamed", scan.Name)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("empty update map skips SQL and still calls GetScan", func(t *testing.T) {
+	t.Run("empty input skips SQL and still calls GetScan", func(t *testing.T) {
 		db, mock := newMockDB(t)
 
 		mock.ExpectBegin()
 		mock.ExpectQuery(`SELECT EXISTS`).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
-		// Neither UPDATE should fire when data map is empty.
+		// Neither UPDATE should fire when all fields are nil.
 		mock.ExpectCommit()
 		mock.ExpectQuery(`SELECT`).WillReturnRows(
 			sqlmock.NewRows(getScanColumns).AddRow(
@@ -872,7 +869,7 @@ func TestUpdateScan_Unit(t *testing.T) {
 				"connect", "", nil, "pending", now, nil, nil, nil, false,
 			))
 
-		scan, err := db.UpdateScan(context.Background(), id, map[string]interface{}{})
+		scan, err := db.UpdateScan(context.Background(), id, UpdateScanInput{})
 		require.NoError(t, err)
 		assert.Equal(t, "Unchanged", scan.Name)
 	})

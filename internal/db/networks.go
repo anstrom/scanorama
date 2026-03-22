@@ -110,26 +110,19 @@ func (db *DB) ListDiscoveryJobs(
 }
 
 // CreateDiscoveryJob creates a new discovery job.
-func (db *DB) CreateDiscoveryJob(ctx context.Context, jobData interface{}) (*DiscoveryJob, error) {
-	data, ok := jobData.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid discovery job data format")
-	}
-
-	// Extract data from request.
-	networks, ok := data["networks"].([]string)
-	if !ok || len(networks) == 0 {
+func (db *DB) CreateDiscoveryJob(ctx context.Context, input CreateDiscoveryJobInput) (*DiscoveryJob, error) {
+	if len(input.Networks) == 0 {
 		return nil, fmt.Errorf("networks are required and must be a string array")
 	}
 
-	method := data["method"].(string)
+	method := input.Method
 	if method == "" {
 		method = DiscoveryMethodTCP
 	}
 
 	// For simplicity, create one discovery job for the first network.
 	// In a production system, you might create multiple jobs or handle multiple networks differently.
-	network := networks[0]
+	network := input.Networks[0]
 
 	jobID := uuid.New()
 	now := time.Now().UTC()
@@ -188,12 +181,9 @@ func (db *DB) GetDiscoveryJob(ctx context.Context, id uuid.UUID) (*DiscoveryJob,
 }
 
 // UpdateDiscoveryJob updates an existing discovery job.
-func (db *DB) UpdateDiscoveryJob(ctx context.Context, id uuid.UUID, jobData interface{}) (*DiscoveryJob, error) {
-	data, ok := jobData.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid discovery job data format")
-	}
-
+func (db *DB) UpdateDiscoveryJob(
+	ctx context.Context, id uuid.UUID, input UpdateDiscoveryJobInput,
+) (*DiscoveryJob, error) {
 	// Check existence first.
 	var exists bool
 	if err := db.QueryRowContext(ctx,
@@ -205,45 +195,40 @@ func (db *DB) UpdateDiscoveryJob(ctx context.Context, id uuid.UUID, jobData inte
 		return nil, errors.ErrNotFoundWithID("discovery job", id.String())
 	}
 
-	// Build dynamic SET clause.
-	setParts := []string{}
-	args := []interface{}{}
+	// Build dynamic SET clause from non-nil pointer fields.
+	var setParts []string
+	var args []interface{}
 	argIndex := 1
 
-	stringFields := map[string]string{
-		"method": "method",
-		"status": "status",
+	if input.Method != nil {
+		setParts = append(setParts, fmt.Sprintf("method = $%d", argIndex))
+		args = append(args, *input.Method)
+		argIndex++
 	}
-	for dataKey, col := range stringFields {
-		if val, ok := data[dataKey]; ok && val != nil {
-			setParts = append(setParts, fmt.Sprintf("%s = $%d", col, argIndex))
-			args = append(args, val)
-			argIndex++
-		}
+	if input.Status != nil {
+		setParts = append(setParts, fmt.Sprintf("status = $%d", argIndex))
+		args = append(args, *input.Status)
+		argIndex++
 	}
-
-	intFields := map[string]string{
-		"hosts_discovered": "hosts_discovered",
-		"hosts_responsive": "hosts_responsive",
+	if input.HostsDiscovered != nil {
+		setParts = append(setParts, fmt.Sprintf("hosts_discovered = $%d", argIndex))
+		args = append(args, *input.HostsDiscovered)
+		argIndex++
 	}
-	for dataKey, col := range intFields {
-		if val, ok := data[dataKey]; ok && val != nil {
-			setParts = append(setParts, fmt.Sprintf("%s = $%d", col, argIndex))
-			args = append(args, val)
-			argIndex++
-		}
+	if input.HostsResponsive != nil {
+		setParts = append(setParts, fmt.Sprintf("hosts_responsive = $%d", argIndex))
+		args = append(args, *input.HostsResponsive)
+		argIndex++
 	}
-
-	timeFields := map[string]string{
-		"started_at":   "started_at",
-		"completed_at": "completed_at",
+	if input.StartedAt != nil {
+		setParts = append(setParts, fmt.Sprintf("started_at = $%d", argIndex))
+		args = append(args, *input.StartedAt)
+		argIndex++
 	}
-	for dataKey, col := range timeFields {
-		if val, ok := data[dataKey]; ok && val != nil {
-			setParts = append(setParts, fmt.Sprintf("%s = $%d", col, argIndex))
-			args = append(args, val)
-			argIndex++
-		}
+	if input.CompletedAt != nil {
+		setParts = append(setParts, fmt.Sprintf("completed_at = $%d", argIndex))
+		args = append(args, *input.CompletedAt)
+		argIndex++
 	}
 
 	if len(setParts) == 0 {

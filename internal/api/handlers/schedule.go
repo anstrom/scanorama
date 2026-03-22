@@ -114,20 +114,20 @@ func (h *ScheduleHandler) ListSchedules(w http.ResponseWriter, r *http.Request) 
 
 // CreateSchedule handles POST /api/v1/schedules - create a new schedule.
 func (h *ScheduleHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
-	CreateEntity[db.Schedule, ScheduleRequest](
+	CreateEntity[db.Schedule, db.CreateScheduleInput](
 		w, r,
 		"schedule",
 		h.logger,
 		h.metrics,
-		func(r *http.Request) (interface{}, error) {
+		func(r *http.Request) (db.CreateScheduleInput, error) {
 			var req ScheduleRequest
 			if err := parseJSON(r, &req); err != nil {
-				return nil, err
+				return db.CreateScheduleInput{}, err
 			}
 			if err := h.validateScheduleRequest(&req); err != nil {
-				return nil, err
+				return db.CreateScheduleInput{}, err
 			}
-			return h.requestToDBSchedule(&req), nil
+			return h.requestToCreateSchedule(&req), nil
 		},
 		h.database.CreateSchedule,
 		func(schedule *db.Schedule) interface{} {
@@ -160,20 +160,20 @@ func (h *ScheduleHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSchedule handles PUT /api/v1/schedules/{id} - update a schedule.
 func (h *ScheduleHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
-	UpdateEntity[db.Schedule, ScheduleRequest](
+	UpdateEntity[db.Schedule, db.UpdateScheduleInput](
 		w, r,
 		"schedule",
 		h.logger,
 		h.metrics,
-		func(r *http.Request) (interface{}, error) {
+		func(r *http.Request) (db.UpdateScheduleInput, error) {
 			var req ScheduleRequest
 			if err := parseJSON(r, &req); err != nil {
-				return nil, err
+				return db.UpdateScheduleInput{}, err
 			}
 			if err := h.validateScheduleRequest(&req); err != nil {
-				return nil, err
+				return db.UpdateScheduleInput{}, err
 			}
-			return h.requestToDBSchedule(&req), nil
+			return h.requestToUpdateSchedule(&req), nil
 		},
 		h.database.UpdateSchedule,
 		func(schedule *db.Schedule) interface{} {
@@ -449,9 +449,9 @@ func (h *ScheduleHandler) getScheduleFilters(r *http.Request) db.ScheduleFilters
 	return filters
 }
 
-// requestToDBSchedule converts a schedule request to database schedule object.
-func (h *ScheduleHandler) requestToDBSchedule(req *ScheduleRequest) interface{} {
-	// Build job_config from request fields that don't have dedicated DB columns
+// buildScheduleJobConfig assembles the job_config map from a ScheduleRequest,
+// packing fields that don't have dedicated DB columns.
+func buildScheduleJobConfig(req *ScheduleRequest) map[string]interface{} {
 	jobConfig := map[string]interface{}{
 		"network_id":     req.NetworkID.String(),
 		"max_run_time":   req.MaxRunTime.String(),
@@ -462,20 +462,40 @@ func (h *ScheduleHandler) requestToDBSchedule(req *ScheduleRequest) interface{} 
 		"notify_emails":  req.NotifyEmails,
 		"tags":           req.Tags,
 	}
-
-	// Merge user-provided options into job config
 	if req.Options != nil {
 		jobConfig["options"] = req.Options
 	}
+	return jobConfig
+}
 
-	return map[string]interface{}{
-		"name":            req.Name,
-		"description":     req.Description,
-		"cron_expression": req.CronExpr,
-		"job_type":        req.Type,
-		"job_config":      jobConfig,
-		"enabled":         req.Enabled,
+// requestToCreateSchedule converts a ScheduleRequest to a typed CreateScheduleInput for the DB layer.
+func (h *ScheduleHandler) requestToCreateSchedule(req *ScheduleRequest) db.CreateScheduleInput {
+	return db.CreateScheduleInput{
+		Name:           req.Name,
+		JobType:        req.Type,
+		CronExpression: req.CronExpr,
+		JobConfig:      buildScheduleJobConfig(req),
+		Enabled:        req.Enabled,
 	}
+}
+
+// requestToUpdateSchedule converts a ScheduleRequest to a typed UpdateScheduleInput for the DB layer.
+// Only non-empty fields are set so that absent values don't overwrite existing data.
+func (h *ScheduleHandler) requestToUpdateSchedule(req *ScheduleRequest) db.UpdateScheduleInput {
+	input := db.UpdateScheduleInput{
+		JobConfig: buildScheduleJobConfig(req),
+	}
+	if req.Name != "" {
+		input.Name = &req.Name
+	}
+	if req.Type != "" {
+		input.JobType = &req.Type
+	}
+	if req.CronExpr != "" {
+		input.CronExpression = &req.CronExpr
+	}
+	input.Enabled = &req.Enabled
+	return input
 }
 
 // scheduleToResponse converts a database schedule to response format.

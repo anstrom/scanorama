@@ -215,46 +215,36 @@ func (db *DB) ListHosts(ctx context.Context, filters *HostFilters, offset, limit
 }
 
 // CreateHost creates a new host record.
-func (db *DB) CreateHost(ctx context.Context, hostData interface{}) (*Host, error) {
-	data, ok := hostData.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid host data format")
-	}
-
-	// Extract required IP address.
-	ipAddress, ok := data["ip_address"].(string)
-	if !ok {
+func (db *DB) CreateHost(ctx context.Context, input CreateHostInput) (*Host, error) {
+	if input.IPAddress == "" {
 		return nil, fmt.Errorf("ip_address is required")
 	}
 
 	hostID := uuid.New()
 	now := time.Now().UTC()
 
-	// Field mappings for optional fields.
-	fieldMappings := map[string]string{
-		"hostname":        "hostname",
-		"vendor":          "vendor",
-		"os_family":       "os_family",
-		"os_name":         "os_name",
-		"os_version":      "os_version",
-		"ignore_scanning": "ignore_scanning",
-		"status":          "status",
-	}
+	// Start with required columns.
+	columns := []string{"id", "ip_address", "first_seen", "last_seen", "ignore_scanning"}
+	placeholders := []string{"$1", "$2", "$3", "$4", "$5"}
+	args := []interface{}{hostID, input.IPAddress, now, now, input.IgnoreScanning}
+	argIndex := 6
 
-	// Build dynamic insert with optional fields.
-	columns := []string{"id", "ip_address", "first_seen", "last_seen"}
-	placeholders := []string{"$1", "$2", "$3", "$4"}
-	args := []interface{}{hostID, ipAddress, now, now}
-	argIndex := 5
-
-	for requestField, dbField := range fieldMappings {
-		if value, exists := data[requestField]; exists && value != nil {
-			columns = append(columns, dbField)
+	// Add optional string fields only when non-empty.
+	addStr := func(col, val string) {
+		if val != "" {
+			columns = append(columns, col)
 			placeholders = append(placeholders, fmt.Sprintf("$%d", argIndex))
-			args = append(args, value)
+			args = append(args, val)
 			argIndex++
 		}
 	}
+
+	addStr("hostname", input.Hostname)
+	addStr("vendor", input.Vendor)
+	addStr("os_family", input.OSFamily)
+	addStr("os_name", input.OSName)
+	addStr("os_version", input.OSVersion)
+	addStr("status", input.Status)
 
 	query := fmt.Sprintf(
 		"INSERT INTO hosts (%s) VALUES (%s)",
@@ -266,7 +256,8 @@ func (db *DB) CreateHost(ctx context.Context, hostData interface{}) (*Host, erro
 		// Check for PostgreSQL constraint violations.
 		if pqErr := pq.As(err, pqerror.UniqueViolation); pqErr != nil {
 			if pqErr.Constraint == "unique_ip_address" {
-				return nil, errors.ErrConflictWithReason("host", fmt.Sprintf("IP address %s already exists", ipAddress))
+				return nil, errors.ErrConflictWithReason("host",
+					fmt.Sprintf("IP address %s already exists", input.IPAddress))
 			}
 		}
 		return nil, sanitizeDBError("create host", err)
@@ -413,13 +404,7 @@ func (db *DB) GetHost(ctx context.Context, id uuid.UUID) (*Host, error) {
 }
 
 // UpdateHost updates an existing host.
-func (db *DB) UpdateHost(ctx context.Context, id uuid.UUID, hostData interface{}) (*Host, error) {
-	// Convert the interface{} to host data.
-	data, ok := hostData.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid host data format")
-	}
-
+func (db *DB) UpdateHost(ctx context.Context, id uuid.UUID, input UpdateHostInput) (*Host, error) {
 	// Start a transaction.
 	tx, err := db.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -442,19 +427,31 @@ func (db *DB) UpdateHost(ctx context.Context, id uuid.UUID, hostData interface{}
 		return nil, errors.ErrNotFoundWithID("host", id.String())
 	}
 
-	// Build dynamic update query using field mapping.
-	fieldMappings := map[string]string{
-		"hostname":        "hostname",
-		"vendor":          "vendor",
-		"os_family":       "os_family",
-		"os_name":         "os_name",
-		"os_version":      "os_version",
-		"ignore_scanning": "ignore_scanning",
-		"status":          "status",
+	// Build dynamic SET clause from non-nil pointer fields.
+	var setParts []string
+	var args []interface{}
+	argIndex := 1
+
+	addStr := func(col string, val *string) {
+		if val != nil {
+			setParts = append(setParts, fmt.Sprintf("%s = $%d", col, argIndex))
+			args = append(args, *val)
+			argIndex++
+		}
 	}
 
-	setParts, args := buildUpdateQuery(data, fieldMappings)
-	argIndex := len(args) + 1
+	addStr("hostname", input.Hostname)
+	addStr("vendor", input.Vendor)
+	addStr("os_family", input.OSFamily)
+	addStr("os_name", input.OSName)
+	addStr("os_version", input.OSVersion)
+	addStr("status", input.Status)
+
+	if input.IgnoreScanning != nil {
+		setParts = append(setParts, fmt.Sprintf("ignore_scanning = $%d", argIndex))
+		args = append(args, *input.IgnoreScanning)
+		argIndex++
+	}
 
 	// If no fields to update, return error.
 	if len(setParts) == 0 {
@@ -465,10 +462,9 @@ func (db *DB) UpdateHost(ctx context.Context, id uuid.UUID, hostData interface{}
 	setParts = append(setParts, "last_seen = NOW()")
 
 	// Build and execute update query safely.
-	setClause := strings.Join(setParts, ", ")
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString("UPDATE hosts SET ")
-	queryBuilder.WriteString(setClause)
+	queryBuilder.WriteString(strings.Join(setParts, ", "))
 	queryBuilder.WriteString(" WHERE id = $")
 	queryBuilder.WriteString(strconv.Itoa(argIndex))
 	updateQuery := queryBuilder.String()

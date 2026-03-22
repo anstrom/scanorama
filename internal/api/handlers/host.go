@@ -138,7 +138,7 @@ func (h *HostHandler) CreateHost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create host in database
-	host, err := h.database.CreateHost(r.Context(), h.requestToDBHost(&req))
+	host, err := h.database.CreateHost(r.Context(), h.requestToCreateHost(&req))
 	if err != nil {
 		if errors.IsConflict(err) {
 			writeError(w, r, http.StatusConflict,
@@ -190,17 +190,17 @@ func (h *HostHandler) GetHost(w http.ResponseWriter, r *http.Request) {
 
 // UpdateHost handles PUT /api/v1/hosts/{id} - update a host.
 func (h *HostHandler) UpdateHost(w http.ResponseWriter, r *http.Request) {
-	UpdateEntity[db.Host, HostRequest](
+	UpdateEntity[db.Host, db.UpdateHostInput](
 		w, r,
 		"host",
 		h.logger,
 		h.metrics,
-		func(r *http.Request) (interface{}, error) {
+		func(r *http.Request) (db.UpdateHostInput, error) {
 			var req HostRequest
 			if err := parseJSON(r, &req); err != nil {
-				return nil, err
+				return db.UpdateHostInput{}, err
 			}
-			return h.requestToDBHost(&req), nil
+			return h.requestToUpdateHost(&req), nil
 		},
 		h.database.UpdateHost,
 		func(host *db.Host) interface{} {
@@ -390,35 +390,41 @@ func (h *HostHandler) getScanFilters(r *http.Request) map[string]interface{} {
 	return filters
 }
 
-// requestToDBHost converts a host request to database host object.
-func (h *HostHandler) requestToDBHost(req *HostRequest) interface{} {
-	data := map[string]interface{}{
-		"ip_address":      req.IP,
-		"status":          "up",
-		"ignore_scanning": !req.Active,
+// requestToCreateHost converts a HostRequest to a typed CreateHostInput for the DB layer.
+func (h *HostHandler) requestToCreateHost(req *HostRequest) db.CreateHostInput {
+	input := db.CreateHostInput{
+		IPAddress:      req.IP,
+		Status:         "up",
+		IgnoreScanning: !req.Active,
 	}
-
-	// Helper function to add non-empty string fields
-	addIfNotEmpty := func(key, value string) {
-		if value != "" {
-			data[key] = value
-		}
+	if req.Hostname != "" {
+		input.Hostname = req.Hostname
 	}
-
-	addIfNotEmpty("hostname", req.Hostname)
-	addIfNotEmpty("description", req.Description)
-	addIfNotEmpty("os_family", req.OS)
-	addIfNotEmpty("os_name", req.OSVersion)
-
-	if len(req.Tags) > 0 {
-		data["tags"] = req.Tags
+	if req.OS != "" {
+		input.OSFamily = req.OS
 	}
-
-	if len(req.Metadata) > 0 {
-		data["metadata"] = req.Metadata
+	if req.OSVersion != "" {
+		input.OSName = req.OSVersion
 	}
+	return input
+}
 
-	return data
+// requestToUpdateHost converts a HostRequest to a typed UpdateHostInput for the DB layer.
+func (h *HostHandler) requestToUpdateHost(req *HostRequest) db.UpdateHostInput {
+	input := db.UpdateHostInput{}
+	if req.Hostname != "" {
+		input.Hostname = &req.Hostname
+	}
+	if req.OS != "" {
+		input.OSFamily = &req.OS
+	}
+	if req.OSVersion != "" {
+		input.OSName = &req.OSVersion
+	}
+	// Always propagate the active/ignore_scanning flag.
+	ignoreScanning := !req.Active
+	input.IgnoreScanning = &ignoreScanning
+	return input
 }
 
 // hostToResponse converts a database host to response format.

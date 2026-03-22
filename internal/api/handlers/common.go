@@ -441,14 +441,15 @@ func (op *CRUDOperation[T]) ExecuteUpdate(
 }
 
 // UpdateEntity is a generic helper to eliminate duplication in update operations.
-func UpdateEntity[T any, R any](
+// The type parameter I is the typed input struct passed to updateInDB (e.g. db.UpdateScanInput).
+func UpdateEntity[T any, I any](
 	w http.ResponseWriter,
 	r *http.Request,
 	entityType string,
 	logger *slog.Logger,
 	metricsRegistry metrics.MetricsRegistry,
-	parseAndConvert func(*http.Request) (interface{}, error),
-	updateInDB func(context.Context, uuid.UUID, interface{}) (*T, error),
+	parseAndConvert func(*http.Request) (I, error),
+	updateInDB func(context.Context, uuid.UUID, I) (*T, error),
 	toResponse func(*T) interface{},
 	metricName string,
 ) {
@@ -458,32 +459,42 @@ func UpdateEntity[T any, R any](
 		return
 	}
 
-	crudOp := &CRUDOperation[T]{
-		EntityType: entityType,
-		Logger:     logger,
-		Metrics:    metricsRegistry,
+	requestID := getRequestIDFromContext(r.Context())
+	logger.Info(fmt.Sprintf("Updating %s", entityType), "request_id", requestID, "id", id)
+
+	req, err := parseAndConvert(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
 	}
 
-	crudOp.ExecuteUpdate(w, r, id,
-		parseAndConvert,
-		func(_ interface{}) error {
-			// Skip validation for now as we converted to DB format
-			return nil
-		},
-		updateInDB,
-		toResponse,
-		metricName)
+	item, err := updateInDB(r.Context(), id, req)
+	if err != nil {
+		handleDatabaseError(w, r, err, "update", entityType, logger)
+		return
+	}
+
+	response := toResponse(item)
+
+	logger.Info(fmt.Sprintf("%s updated successfully", entityType),
+		"request_id", requestID,
+		"id", id)
+
+	writeJSON(w, r, http.StatusOK, response)
+
+	recordCRUDMetric(metricsRegistry, metricName, nil)
 }
 
 // CreateEntity is a generic helper to eliminate duplication in create operations.
-func CreateEntity[T any, R any](
+// The type parameter I is the typed input struct passed to createInDB (e.g. db.CreateScanInput).
+func CreateEntity[T any, I any](
 	w http.ResponseWriter,
 	r *http.Request,
 	entityType string,
 	logger *slog.Logger,
 	metricsRegistry metrics.MetricsRegistry,
-	parseAndConvert func(*http.Request) (interface{}, error),
-	createInDB func(context.Context, interface{}) (*T, error),
+	parseAndConvert func(*http.Request) (I, error),
+	createInDB func(context.Context, I) (*T, error),
 	toResponse func(*T) interface{},
 	metricName string,
 ) {

@@ -200,7 +200,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create scan in database
-	scan, err := h.database.CreateScan(r.Context(), h.requestToDBScan(&req))
+	scan, err := h.database.CreateScan(r.Context(), h.requestToCreateScan(&req))
 	if err != nil {
 		h.logger.Error("Failed to create scan", "request_id", requestID, "error", err)
 		writeError(w, r, http.StatusInternalServerError,
@@ -247,17 +247,17 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 
 // UpdateScan handles PUT /api/v1/scans/{id} - update a scan.
 func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
-	UpdateEntity[db.Scan, ScanRequest](
+	UpdateEntity[db.Scan, db.UpdateScanInput](
 		w, r,
 		"scan",
 		h.logger,
 		h.metrics,
-		func(r *http.Request) (interface{}, error) {
+		func(r *http.Request) (db.UpdateScanInput, error) {
 			var req ScanRequest
 			if err := parseJSON(r, &req); err != nil {
-				return nil, err
+				return db.UpdateScanInput{}, err
 			}
-			return h.requestToDBScan(&req), nil
+			return h.requestToUpdateScan(&req), nil
 		},
 		h.database.UpdateScan,
 		func(scan *db.Scan) interface{} {
@@ -719,24 +719,39 @@ func (h *ScanHandler) getScanFilters(r *http.Request) db.ScanFilters {
 	return filters
 }
 
-// requestToDBScan converts a scan request to database scan object.
-func (h *ScanHandler) requestToDBScan(req *ScanRequest) interface{} {
-	// This should return the appropriate database scan type
-	// The exact structure would depend on the database package implementation
-	return map[string]interface{}{
-		"name":         req.Name,
-		"description":  req.Description,
-		"targets":      req.Targets,
-		"scan_type":    req.ScanType,
-		"ports":        req.Ports,
-		"profile_id":   req.ProfileID,
-		"options":      req.Options,
-		"schedule_id":  req.ScheduleID,
-		"tags":         req.Tags,
-		"status":       "pending",
-		"created_at":   time.Now().UTC(),
-		"os_detection": req.OSDetection,
+// requestToCreateScan converts a ScanRequest to a typed CreateScanInput for the DB layer.
+func (h *ScanHandler) requestToCreateScan(req *ScanRequest) db.CreateScanInput {
+	return db.CreateScanInput{
+		Name:        req.Name,
+		Description: req.Description,
+		Targets:     req.Targets,
+		ScanType:    req.ScanType,
+		Ports:       req.Ports,
+		ProfileID:   req.ProfileID,
+		OSDetection: req.OSDetection,
 	}
+}
+
+// requestToUpdateScan converts a ScanRequest to a typed UpdateScanInput for the DB layer.
+// Only non-empty string fields are set so that absent-but-valid empty values don't
+// accidentally overwrite existing data.
+func (h *ScanHandler) requestToUpdateScan(req *ScanRequest) db.UpdateScanInput {
+	input := db.UpdateScanInput{
+		ProfileID: req.ProfileID, // may be nil — leave profile unchanged if not provided
+	}
+	if req.Name != "" {
+		input.Name = &req.Name
+	}
+	if req.Description != "" {
+		input.Description = &req.Description
+	}
+	if req.ScanType != "" {
+		input.ScanType = &req.ScanType
+	}
+	if req.Ports != "" {
+		input.Ports = &req.Ports
+	}
+	return input
 }
 
 // scanToResponse converts a database scan to response format.

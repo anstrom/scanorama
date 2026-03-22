@@ -187,7 +187,7 @@ func (h *DiscoveryHandler) CreateDiscoveryJob(w http.ResponseWriter, r *http.Req
 	}
 
 	// Create discovery job in database
-	job, err := h.database.CreateDiscoveryJob(r.Context(), h.requestToDBDiscovery(&req))
+	job, err := h.database.CreateDiscoveryJob(r.Context(), h.requestToCreateDiscovery(&req))
 	if err != nil {
 		h.logger.Error("Failed to create discovery job", "request_id", requestID, "error", err)
 		writeError(w, r, http.StatusInternalServerError,
@@ -234,17 +234,17 @@ func (h *DiscoveryHandler) GetDiscoveryJob(w http.ResponseWriter, r *http.Reques
 
 // UpdateDiscoveryJob handles PUT /api/v1/discovery/{id} - update an existing discovery job.
 func (h *DiscoveryHandler) UpdateDiscoveryJob(w http.ResponseWriter, r *http.Request) {
-	UpdateEntity[db.DiscoveryJob, DiscoveryRequest](
+	UpdateEntity[db.DiscoveryJob, db.UpdateDiscoveryJobInput](
 		w, r,
 		"discovery job",
 		h.logger,
 		h.metrics,
-		func(r *http.Request) (interface{}, error) {
+		func(r *http.Request) (db.UpdateDiscoveryJobInput, error) {
 			var req DiscoveryRequest
 			if err := parseJSON(r, &req); err != nil {
-				return nil, err
+				return db.UpdateDiscoveryJobInput{}, err
 			}
-			return h.requestToDBDiscovery(&req), nil
+			return h.requestToUpdateDiscovery(&req), nil
 		},
 		h.database.UpdateDiscoveryJob,
 		func(job *db.DiscoveryJob) interface{} {
@@ -552,15 +552,23 @@ func (h *DiscoveryHandler) getDiscoveryFilters(r *http.Request) db.DiscoveryFilt
 	return filters
 }
 
-// requestToDBDiscovery converts a discovery request to the map expected by db.CreateDiscoveryJob.
-// Only the keys that the database layer reads are included:
-//   - "networks" ([]string): read by CreateDiscoveryJob to derive the target CIDR
-//   - "method"   (string):   read by CreateDiscoveryJob and UpdateDiscoveryJob
-func (h *DiscoveryHandler) requestToDBDiscovery(req *DiscoveryRequest) interface{} {
-	return map[string]interface{}{
-		"networks": req.Networks,
-		"method":   req.Method,
+// requestToCreateDiscovery converts a DiscoveryRequest to a typed CreateDiscoveryJobInput for the DB layer.
+func (h *DiscoveryHandler) requestToCreateDiscovery(req *DiscoveryRequest) db.CreateDiscoveryJobInput {
+	return db.CreateDiscoveryJobInput{
+		Networks: req.Networks,
+		Method:   req.Method,
 	}
+}
+
+// requestToUpdateDiscovery converts a DiscoveryRequest to a typed UpdateDiscoveryJobInput for the DB layer.
+// Only the Method field is propagated since that is the only field the DB update function honors
+// for API-initiated updates.
+func (h *DiscoveryHandler) requestToUpdateDiscovery(req *DiscoveryRequest) db.UpdateDiscoveryJobInput {
+	input := db.UpdateDiscoveryJobInput{}
+	if req.Method != "" {
+		input.Method = &req.Method
+	}
+	return input
 }
 
 // discoveryToResponse converts a database discovery job to response format.

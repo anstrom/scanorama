@@ -55,14 +55,11 @@ func TestScanHandler_ListScans_WithPagination(t *testing.T) {
 	scanNames := make([]string, 5)
 	for i := 0; i < 5; i++ {
 		scanNames[i] = generateUniqueScanName()
-		scanData := map[string]interface{}{
-			"name":       scanNames[i],
-			"targets":    []string{fmt.Sprintf("192.168.%d.0/24", i)},
-			"scan_type":  "connect",
-			"status":     "pending",
-			"created_at": time.Now().UTC().Add(time.Duration(i) * time.Second),
-		}
-		_, err := database.CreateScan(ctx, scanData)
+		_, err := database.CreateScan(ctx, db.CreateScanInput{
+			Name:     scanNames[i],
+			Targets:  []string{fmt.Sprintf("192.168.%d.0/24", i)},
+			ScanType: "connect",
+		})
 		require.NoError(t, err)
 	}
 
@@ -149,14 +146,11 @@ func TestScanHandler_ListScans_WithFilters(t *testing.T) {
 	}
 
 	for _, ts := range testScans {
-		scanData := map[string]interface{}{
-			"name":       ts.name,
-			"targets":    []string{"192.168.1.0/24"},
-			"scan_type":  ts.scanType,
-			"status":     ts.status,
-			"created_at": time.Now().UTC(),
-		}
-		_, err := database.CreateScan(ctx, scanData)
+		_, err := database.CreateScan(ctx, db.CreateScanInput{
+			Name:     ts.name,
+			Targets:  []string{"192.168.1.0/24"},
+			ScanType: ts.scanType,
+		})
 		require.NoError(t, err)
 	}
 
@@ -298,14 +292,11 @@ func TestScanHandler_GetScanResults_WithPagination(t *testing.T) {
 
 	// Create a scan
 	scanName := generateUniqueScanName()
-	scanData := map[string]interface{}{
-		"name":       scanName,
-		"targets":    []string{"192.168.1.0/24"},
-		"scan_type":  "connect",
-		"status":     "completed",
-		"created_at": time.Now().UTC(),
-	}
-	scan, err := database.CreateScan(ctx, scanData)
+	scan, err := database.CreateScan(ctx, db.CreateScanInput{
+		Name:     scanName,
+		Targets:  []string{"192.168.1.0/24"},
+		ScanType: "connect",
+	})
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -382,14 +373,11 @@ func TestScanHandler_GetScanResults_EmptyResults(t *testing.T) {
 
 	// Create a scan without results
 	scanName := generateUniqueScanName()
-	scanData := map[string]interface{}{
-		"name":       scanName,
-		"targets":    []string{"192.168.1.0/24"},
-		"scan_type":  "connect",
-		"status":     "pending",
-		"created_at": time.Now().UTC(),
-	}
-	scan, err := database.CreateScan(ctx, scanData)
+	scan, err := database.CreateScan(ctx, db.CreateScanInput{
+		Name:     scanName,
+		Targets:  []string{"192.168.1.0/24"},
+		ScanType: "connect",
+	})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/scans/%s/results", scan.ID), http.NoBody)
@@ -422,16 +410,13 @@ func TestScanHandler_GetScan_ValidID(t *testing.T) {
 
 	// Create a test scan
 	scanName := generateUniqueScanName()
-	scanData := map[string]interface{}{
-		"name":        scanName,
-		"description": "Test scan description",
-		"targets":     []string{generateUniqueCIDR(40)},
-		"scan_type":   "connect",
-		"ports":       "22,80,443",
-		"status":      "pending",
-		"created_at":  time.Now().UTC(),
-	}
-	scan, err := database.CreateScan(ctx, scanData)
+	scan, err := database.CreateScan(ctx, db.CreateScanInput{
+		Name:        scanName,
+		Description: "Test scan description",
+		Targets:     []string{generateUniqueCIDR(40)},
+		ScanType:    "connect",
+		Ports:       "22,80,443",
+	})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/scans/%s", scan.ID), http.NoBody)
@@ -488,14 +473,11 @@ func TestScanHandler_ListScans_SortOrder(t *testing.T) {
 	scanNames := make([]string, 3)
 	for i := 0; i < 3; i++ {
 		scanNames[i] = generateUniqueScanName()
-		scanData := map[string]interface{}{
-			"name":       scanNames[i],
-			"targets":    []string{"192.168.1.0/24"},
-			"scan_type":  "connect",
-			"status":     "pending",
-			"created_at": time.Now().UTC().Add(time.Duration(i) * time.Hour),
-		}
-		_, err := database.CreateScan(ctx, scanData)
+		_, err := database.CreateScan(ctx, db.CreateScanInput{
+			Name:     scanNames[i],
+			Targets:  []string{"192.168.1.0/24"},
+			ScanType: "connect",
+		})
 		require.NoError(t, err)
 	}
 
@@ -528,14 +510,11 @@ func TestScanHandler_GetScanResults_ResponseStructure(t *testing.T) {
 
 	// Create a scan
 	scanName := generateUniqueScanName()
-	scanData := map[string]interface{}{
-		"name":       scanName,
-		"targets":    []string{"192.168.1.0/24"},
-		"scan_type":  "connect",
-		"status":     "completed",
-		"created_at": time.Now().UTC(),
-	}
-	scan, err := database.CreateScan(ctx, scanData)
+	scan, err := database.CreateScan(ctx, db.CreateScanInput{
+		Name:     scanName,
+		Targets:  []string{"192.168.1.0/24"},
+		ScanType: "connect",
+	})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/scans/%s/results", scan.ID), http.NoBody)
@@ -570,23 +549,15 @@ func TestScanHandler_ListScans_ResponseFields(t *testing.T) {
 	// Create a scan with all optional fields
 	scanName := generateUniqueScanName()
 	profileID := "linux-server"
-	scheduleID := int64(1)
 
-	scanData := map[string]interface{}{
-		"name":        scanName,
-		"description": "Full test scan",
-		"targets":     []string{"192.168.1.0/24", "10.0.0.0/24"},
-		"scan_type":   "comprehensive",
-		"ports":       "1-65535",
-		"profile_id":  &profileID,
-		"schedule_id": scheduleID,
-		"options":     map[string]string{"option1": "value1"},
-		"tags":        []string{"test", "comprehensive"},
-		"status":      "pending",
-		"progress":    0.0,
-		"created_at":  time.Now().UTC(),
-	}
-	_, err := database.CreateScan(ctx, scanData)
+	_, err := database.CreateScan(ctx, db.CreateScanInput{
+		Name:        scanName,
+		Description: "Full test scan",
+		Targets:     []string{"192.168.1.0/24", "10.0.0.0/24"},
+		ScanType:    "comprehensive",
+		Ports:       "1-65535",
+		ProfileID:   &profileID,
+	})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/api/v1/scans", http.NoBody)
@@ -624,14 +595,11 @@ func TestScanHandler_ConcurrentListScans(t *testing.T) {
 
 	// Create some test data
 	for i := 0; i < 3; i++ {
-		scanData := map[string]interface{}{
-			"name":       generateUniqueScanName(),
-			"targets":    []string{"192.168.1.0/24"},
-			"scan_type":  "connect",
-			"status":     "pending",
-			"created_at": time.Now().UTC(),
-		}
-		_, err := database.CreateScan(ctx, scanData)
+		_, err := database.CreateScan(ctx, db.CreateScanInput{
+			Name:     generateUniqueScanName(),
+			Targets:  []string{"192.168.1.0/24"},
+			ScanType: "connect",
+		})
 		require.NoError(t, err)
 	}
 
@@ -765,13 +733,10 @@ func TestScanHandler_ConversionHelpers(t *testing.T) {
 			ScanType: "connect",
 		}
 
-		result := handler.requestToDBScan(req)
-		resultMap, ok := result.(map[string]interface{})
-		require.True(t, ok)
-		assert.Equal(t, "Minimal Scan", resultMap["name"])
-		assert.Equal(t, "connect", resultMap["scan_type"])
-		assert.Nil(t, resultMap["profile_id"])
-		assert.Nil(t, resultMap["schedule_id"])
+		result := handler.requestToCreateScan(req)
+		assert.Equal(t, "Minimal Scan", result.Name)
+		assert.Equal(t, "connect", result.ScanType)
+		assert.Nil(t, result.ProfileID)
 	})
 
 	t.Run("scanToResponse with nil optional fields", func(t *testing.T) {
@@ -810,7 +775,7 @@ func TestScanHandler_ConversionHelpers(t *testing.T) {
 	})
 }
 
-// TestScanHandler_RequestToDBScan_Unit tests requestToDBScan conversion
+// TestScanHandler_RequestToDBScan_Unit tests requestToCreateScan conversion
 func TestScanHandler_RequestToDBScan_Unit(t *testing.T) {
 	logger := createTestLogger()
 	handler := NewScanHandler(nil, logger, nil)
@@ -830,19 +795,14 @@ func TestScanHandler_RequestToDBScan_Unit(t *testing.T) {
 		Tags:        []string{"production", "critical"},
 	}
 
-	result := handler.requestToDBScan(req)
-	resultMap, ok := result.(map[string]interface{})
-	require.True(t, ok)
+	result := handler.requestToCreateScan(req)
 
-	assert.Equal(t, "Test Scan", resultMap["name"])
-	assert.Equal(t, "Test Description", resultMap["description"])
-	assert.Equal(t, []string{"192.168.1.0/24", "10.0.0.0/24"}, resultMap["targets"])
-	assert.Equal(t, "connect", resultMap["scan_type"])
-	assert.Equal(t, "22,80,443", resultMap["ports"])
-	assert.Equal(t, &profileID, resultMap["profile_id"])
-	assert.Equal(t, &scheduleID, resultMap["schedule_id"])
-	assert.NotNil(t, resultMap["options"])
-	assert.NotNil(t, resultMap["tags"])
+	assert.Equal(t, "Test Scan", result.Name)
+	assert.Equal(t, "Test Description", result.Description)
+	assert.Equal(t, []string{"192.168.1.0/24", "10.0.0.0/24"}, result.Targets)
+	assert.Equal(t, "connect", result.ScanType)
+	assert.Equal(t, "22,80,443", result.Ports)
+	assert.Equal(t, &profileID, result.ProfileID)
 }
 
 // TestScanHandler_ScanToResponse_Unit tests scanToResponse conversion
@@ -995,16 +955,13 @@ func TestScanHandler_GetScan_WithAllFields(t *testing.T) {
 	ctx := context.Background()
 
 	scanName := generateUniqueScanName()
-	now := time.Now().UTC()
-	scanData := map[string]interface{}{
-		"name":        scanName,
-		"description": "Comprehensive test",
-		"targets":     []string{generateUniqueCIDR(41)},
-		"scan_type":   "comprehensive",
-		"ports":       "1-65535",
-		"created_at":  now,
-	}
-	scan, err := database.CreateScan(ctx, scanData)
+	scan, err := database.CreateScan(ctx, db.CreateScanInput{
+		Name:        scanName,
+		Description: "Comprehensive test",
+		Targets:     []string{generateUniqueCIDR(41)},
+		ScanType:    "comprehensive",
+		Ports:       "1-65535",
+	})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/scans/%s", scan.ID), http.NoBody)
@@ -1053,14 +1010,11 @@ func TestScanHandler_ListScans_WithComplexFilters(t *testing.T) {
 	}
 
 	for _, td := range testData {
-		scanData := map[string]interface{}{
-			"name":       td.name,
-			"targets":    []string{"192.168.1.0/24"},
-			"scan_type":  td.scanType,
-			"status":     td.status,
-			"created_at": time.Now().UTC(),
-		}
-		_, err := database.CreateScan(ctx, scanData)
+		_, err := database.CreateScan(ctx, db.CreateScanInput{
+			Name:     td.name,
+			Targets:  []string{"192.168.1.0/24"},
+			ScanType: td.scanType,
+		})
 		require.NoError(t, err)
 	}
 

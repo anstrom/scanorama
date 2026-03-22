@@ -42,18 +42,18 @@ func (m *MockProfileStore) EXPECT() *MockProfileStoreMockRecorder {
 }
 
 // CreateProfile mocks base method.
-func (m *MockProfileStore) CreateProfile(ctx context.Context, profileData any) (*db.ScanProfile, error) {
+func (m *MockProfileStore) CreateProfile(ctx context.Context, input db.CreateProfileInput) (*db.ScanProfile, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateProfile", ctx, profileData)
+	ret := m.ctrl.Call(m, "CreateProfile", ctx, input)
 	ret0, _ := ret[0].(*db.ScanProfile)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateProfile indicates an expected call of CreateProfile.
-func (mr *MockProfileStoreMockRecorder) CreateProfile(ctx, profileData any) *MockProfileStoreCreateProfileCall {
+func (mr *MockProfileStoreMockRecorder) CreateProfile(ctx, input any) *MockProfileStoreCreateProfileCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateProfile", reflect.TypeOf((*MockProfileStore)(nil).CreateProfile), ctx, profileData)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateProfile", reflect.TypeOf((*MockProfileStore)(nil).CreateProfile), ctx, input)
 	return &MockProfileStoreCreateProfileCall{Call: call}
 }
 
@@ -69,13 +69,13 @@ func (c *MockProfileStoreCreateProfileCall) Return(arg0 *db.ScanProfile, arg1 er
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockProfileStoreCreateProfileCall) Do(f func(context.Context, any) (*db.ScanProfile, error)) *MockProfileStoreCreateProfileCall {
+func (c *MockProfileStoreCreateProfileCall) Do(f func(context.Context, db.CreateProfileInput) (*db.ScanProfile, error)) *MockProfileStoreCreateProfileCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockProfileStoreCreateProfileCall) DoAndReturn(f func(context.Context, any) (*db.ScanProfile, error)) *MockProfileStoreCreateProfileCall {
+func (c *MockProfileStoreCreateProfileCall) DoAndReturn(f func(context.Context, db.CreateProfileInput) (*db.ScanProfile, error)) *MockProfileStoreCreateProfileCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -198,18 +198,18 @@ func (c *MockProfileStoreListProfilesCall) DoAndReturn(f func(context.Context, d
 }
 
 // UpdateProfile mocks base method.
-func (m *MockProfileStore) UpdateProfile(ctx context.Context, id string, profileData any) (*db.ScanProfile, error) {
+func (m *MockProfileStore) UpdateProfile(ctx context.Context, id string, input db.UpdateProfileInput) (*db.ScanProfile, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateProfile", ctx, id, profileData)
+	ret := m.ctrl.Call(m, "UpdateProfile", ctx, id, input)
 	ret0, _ := ret[0].(*db.ScanProfile)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateProfile indicates an expected call of UpdateProfile.
-func (mr *MockProfileStoreMockRecorder) UpdateProfile(ctx, id, profileData any) *MockProfileStoreUpdateProfileCall {
+func (mr *MockProfileStoreMockRecorder) UpdateProfile(ctx, id, input any) *MockProfileStoreUpdateProfileCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateProfile", reflect.TypeOf((*MockProfileStore)(nil).UpdateProfile), ctx, id, profileData)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateProfile", reflect.TypeOf((*MockProfileStore)(nil).UpdateProfile), ctx, id, input)
 	return &MockProfileStoreUpdateProfileCall{Call: call}
 }
 
@@ -225,13 +225,13 @@ func (c *MockProfileStoreUpdateProfileCall) Return(arg0 *db.ScanProfile, arg1 er
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockProfileStoreUpdateProfileCall) Do(f func(context.Context, string, any) (*db.ScanProfile, error)) *MockProfileStoreUpdateProfileCall {
+func (c *MockProfileStoreUpdateProfileCall) Do(f func(context.Context, string, db.UpdateProfileInput) (*db.ScanProfile, error)) *MockProfileStoreUpdateProfileCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockProfileStoreUpdateProfileCall) DoAndReturn(f func(context.Context, string, any) (*db.ScanProfile, error)) *MockProfileStoreUpdateProfileCall {
+func (c *MockProfileStoreUpdateProfileCall) DoAndReturn(f func(context.Context, string, db.UpdateProfileInput) (*db.ScanProfile, error)) *MockProfileStoreUpdateProfileCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

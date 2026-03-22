@@ -43,18 +43,18 @@ func (m *MockDiscoveryStore) EXPECT() *MockDiscoveryStoreMockRecorder {
 }
 
 // CreateDiscoveryJob mocks base method.
-func (m *MockDiscoveryStore) CreateDiscoveryJob(ctx context.Context, jobData any) (*db.DiscoveryJob, error) {
+func (m *MockDiscoveryStore) CreateDiscoveryJob(ctx context.Context, input db.CreateDiscoveryJobInput) (*db.DiscoveryJob, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateDiscoveryJob", ctx, jobData)
+	ret := m.ctrl.Call(m, "CreateDiscoveryJob", ctx, input)
 	ret0, _ := ret[0].(*db.DiscoveryJob)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateDiscoveryJob indicates an expected call of CreateDiscoveryJob.
-func (mr *MockDiscoveryStoreMockRecorder) CreateDiscoveryJob(ctx, jobData any) *MockDiscoveryStoreCreateDiscoveryJobCall {
+func (mr *MockDiscoveryStoreMockRecorder) CreateDiscoveryJob(ctx, input any) *MockDiscoveryStoreCreateDiscoveryJobCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDiscoveryJob", reflect.TypeOf((*MockDiscoveryStore)(nil).CreateDiscoveryJob), ctx, jobData)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDiscoveryJob", reflect.TypeOf((*MockDiscoveryStore)(nil).CreateDiscoveryJob), ctx, input)
 	return &MockDiscoveryStoreCreateDiscoveryJobCall{Call: call}
 }
 
@@ -70,13 +70,13 @@ func (c *MockDiscoveryStoreCreateDiscoveryJobCall) Return(arg0 *db.DiscoveryJob,
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockDiscoveryStoreCreateDiscoveryJobCall) Do(f func(context.Context, any) (*db.DiscoveryJob, error)) *MockDiscoveryStoreCreateDiscoveryJobCall {
+func (c *MockDiscoveryStoreCreateDiscoveryJobCall) Do(f func(context.Context, db.CreateDiscoveryJobInput) (*db.DiscoveryJob, error)) *MockDiscoveryStoreCreateDiscoveryJobCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockDiscoveryStoreCreateDiscoveryJobCall) DoAndReturn(f func(context.Context, any) (*db.DiscoveryJob, error)) *MockDiscoveryStoreCreateDiscoveryJobCall {
+func (c *MockDiscoveryStoreCreateDiscoveryJobCall) DoAndReturn(f func(context.Context, db.CreateDiscoveryJobInput) (*db.DiscoveryJob, error)) *MockDiscoveryStoreCreateDiscoveryJobCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -275,18 +275,18 @@ func (c *MockDiscoveryStoreStopDiscoveryJobCall) DoAndReturn(f func(context.Cont
 }
 
 // UpdateDiscoveryJob mocks base method.
-func (m *MockDiscoveryStore) UpdateDiscoveryJob(ctx context.Context, id uuid.UUID, jobData any) (*db.DiscoveryJob, error) {
+func (m *MockDiscoveryStore) UpdateDiscoveryJob(ctx context.Context, id uuid.UUID, input db.UpdateDiscoveryJobInput) (*db.DiscoveryJob, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateDiscoveryJob", ctx, id, jobData)
+	ret := m.ctrl.Call(m, "UpdateDiscoveryJob", ctx, id, input)
 	ret0, _ := ret[0].(*db.DiscoveryJob)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateDiscoveryJob indicates an expected call of UpdateDiscoveryJob.
-func (mr *MockDiscoveryStoreMockRecorder) UpdateDiscoveryJob(ctx, id, jobData any) *MockDiscoveryStoreUpdateDiscoveryJobCall {
+func (mr *MockDiscoveryStoreMockRecorder) UpdateDiscoveryJob(ctx, id, input any) *MockDiscoveryStoreUpdateDiscoveryJobCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateDiscoveryJob", reflect.TypeOf((*MockDiscoveryStore)(nil).UpdateDiscoveryJob), ctx, id, jobData)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateDiscoveryJob", reflect.TypeOf((*MockDiscoveryStore)(nil).UpdateDiscoveryJob), ctx, id, input)
 	return &MockDiscoveryStoreUpdateDiscoveryJobCall{Call: call}
 }
 
@@ -302,13 +302,13 @@ func (c *MockDiscoveryStoreUpdateDiscoveryJobCall) Return(arg0 *db.DiscoveryJob,
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockDiscoveryStoreUpdateDiscoveryJobCall) Do(f func(context.Context, uuid.UUID, any) (*db.DiscoveryJob, error)) *MockDiscoveryStoreUpdateDiscoveryJobCall {
+func (c *MockDiscoveryStoreUpdateDiscoveryJobCall) Do(f func(context.Context, uuid.UUID, db.UpdateDiscoveryJobInput) (*db.DiscoveryJob, error)) *MockDiscoveryStoreUpdateDiscoveryJobCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockDiscoveryStoreUpdateDiscoveryJobCall) DoAndReturn(f func(context.Context, uuid.UUID, any) (*db.DiscoveryJob, error)) *MockDiscoveryStoreUpdateDiscoveryJobCall {
+func (c *MockDiscoveryStoreUpdateDiscoveryJobCall) DoAndReturn(f func(context.Context, uuid.UUID, db.UpdateDiscoveryJobInput) (*db.DiscoveryJob, error)) *MockDiscoveryStoreUpdateDiscoveryJobCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

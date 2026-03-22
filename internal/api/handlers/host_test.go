@@ -314,17 +314,12 @@ func TestHostHandler_RequestToDBHost(t *testing.T) {
 		Metadata:    map[string]string{"env": "test"},
 	}
 
-	result := handler.requestToDBHost(request)
-	data, ok := result.(map[string]interface{})
-	require.True(t, ok)
+	result := handler.requestToCreateHost(request)
 
-	assert.Equal(t, request.IP, data["ip_address"])
-	assert.Equal(t, request.Hostname, data["hostname"])
-	assert.Equal(t, request.Description, data["description"])
-	assert.Equal(t, request.OS, data["os_family"])
-	assert.Equal(t, request.OSVersion, data["os_name"])
-	assert.Equal(t, request.Tags, data["tags"])
-	assert.Equal(t, request.Metadata, data["metadata"])
+	assert.Equal(t, request.IP, result.IPAddress)
+	assert.Equal(t, request.Hostname, result.Hostname)
+	assert.Equal(t, request.OS, result.OSFamily)
+	assert.Equal(t, request.OSVersion, result.OSName)
 }
 
 func TestHostHandler_HostToResponse(t *testing.T) {
@@ -659,18 +654,18 @@ func TestHostHandler_ListHosts_Integration(t *testing.T) {
 	host1Name := generateUniqueHostname()
 	host2Name := generateUniqueHostname()
 
-	host1Data := map[string]interface{}{
-		"ip_address": "192.168.1.100",
-		"hostname":   host1Name,
-		"os_family":  "linux",
-		"status":     "up",
+	host1Data := db.CreateHostInput{
+		IPAddress: "192.168.1.100",
+		Hostname:  host1Name,
+		OSFamily:  "linux",
+		Status:    "up",
 	}
 
-	host2Data := map[string]interface{}{
-		"ip_address": "192.168.1.101",
-		"hostname":   host2Name,
-		"os_family":  "windows",
-		"status":     "up",
+	host2Data := db.CreateHostInput{
+		IPAddress: "192.168.1.101",
+		Hostname:  host2Name,
+		OSFamily:  "windows",
+		Status:    "up",
 	}
 
 	_, err := database.CreateHost(ctx, host1Data)
@@ -756,11 +751,11 @@ func TestHostHandler_GetHost_Integration(t *testing.T) {
 
 	// Create a test host
 	hostName := generateUniqueHostname()
-	hostData := map[string]interface{}{
-		"ip_address": "192.168.1.200",
-		"hostname":   hostName,
-		"os_family":  "linux",
-		"status":     "up",
+	hostData := db.CreateHostInput{
+		IPAddress: "192.168.1.200",
+		Hostname:  hostName,
+		OSFamily:  "linux",
+		Status:    "up",
 	}
 
 	createdHost, err := database.CreateHost(ctx, hostData)
@@ -793,11 +788,11 @@ func TestHostHandler_UpdateHost_Integration(t *testing.T) {
 
 	// Create a test host
 	hostName := generateUniqueHostname()
-	hostData := map[string]interface{}{
-		"ip_address": "192.168.1.210",
-		"hostname":   hostName,
-		"os_family":  "linux",
-		"status":     "up",
+	hostData := db.CreateHostInput{
+		IPAddress: "192.168.1.210",
+		Hostname:  hostName,
+		OSFamily:  "linux",
+		Status:    "up",
 	}
 
 	createdHost, err := database.CreateHost(ctx, hostData)
@@ -841,11 +836,11 @@ func TestHostHandler_DeleteHost_Integration(t *testing.T) {
 
 	// Create a test host
 	hostName := generateUniqueHostname()
-	hostData := map[string]interface{}{
-		"ip_address": "192.168.1.220",
-		"hostname":   hostName,
-		"os_family":  "linux",
-		"status":     "up",
+	hostData := db.CreateHostInput{
+		IPAddress: "192.168.1.220",
+		Hostname:  hostName,
+		OSFamily:  "linux",
+		Status:    "up",
 	}
 
 	createdHost, err := database.CreateHost(ctx, hostData)
@@ -879,11 +874,11 @@ func TestHostHandler_GetHostScans_Integration(t *testing.T) {
 
 	// Create a test host
 	hostName := generateUniqueHostname()
-	hostData := map[string]interface{}{
-		"ip_address": "192.168.1.230",
-		"hostname":   hostName,
-		"os_family":  "linux",
-		"status":     "up",
+	hostData := db.CreateHostInput{
+		IPAddress: "192.168.1.230",
+		Hostname:  hostName,
+		OSFamily:  "linux",
+		Status:    "up",
 	}
 
 	createdHost, err := database.CreateHost(ctx, hostData)
@@ -1095,18 +1090,18 @@ func TestHostHandler_ListHosts_WithFilters_Integration(t *testing.T) {
 	linuxHost := generateUniqueHostname()
 	windowsHost := generateUniqueHostname()
 
-	linuxData := map[string]interface{}{
-		"ip_address": "192.168.1.240",
-		"hostname":   linuxHost,
-		"os_family":  "linux",
-		"status":     "up",
+	linuxData := db.CreateHostInput{
+		IPAddress: "192.168.1.240",
+		Hostname:  linuxHost,
+		OSFamily:  "linux",
+		Status:    "up",
 	}
 
-	windowsData := map[string]interface{}{
-		"ip_address": "192.168.1.241",
-		"hostname":   windowsHost,
-		"os_family":  "windows",
-		"status":     "up",
+	windowsData := db.CreateHostInput{
+		IPAddress: "192.168.1.241",
+		Hostname:  windowsHost,
+		OSFamily:  "windows",
+		Status:    "up",
 	}
 
 	_, err := database.CreateHost(ctx, linuxData)

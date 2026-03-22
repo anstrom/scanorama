@@ -82,16 +82,16 @@ func TestListDiscoveryJobs(t *testing.T) {
 // ── CreateDiscoveryJob ────────────────────────────────────────────────────────
 
 func TestCreateDiscoveryJob(t *testing.T) {
-	validInput := map[string]interface{}{
-		"networks": []string{"10.0.0.0/8"},
-		"method":   "tcp",
+	validInput := CreateDiscoveryJobInput{
+		Networks: []string{"10.0.0.0/8"},
+		Method:   "tcp",
 	}
 
-	t.Run("invalid input type", func(t *testing.T) {
+	t.Run("empty networks returns validation error", func(t *testing.T) {
 		db, _ := newMockDB(t)
-		_, err := db.CreateDiscoveryJob(context.Background(), "not-a-map")
+		_, err := db.CreateDiscoveryJob(context.Background(), CreateDiscoveryJobInput{})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid")
+		assert.Contains(t, err.Error(), "networks are required")
 	})
 
 	t.Run("db error propagates", func(t *testing.T) {

@@ -164,20 +164,20 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 
 // CreateProfile handles POST /api/v1/profiles - create a new profile.
 func (h *ProfileHandler) CreateProfile(w http.ResponseWriter, r *http.Request) {
-	CreateEntity[db.ScanProfile, ProfileRequest](
+	CreateEntity[db.ScanProfile, db.CreateProfileInput](
 		w, r,
 		"profile",
 		h.logger,
 		h.metrics,
-		func(r *http.Request) (interface{}, error) {
+		func(r *http.Request) (db.CreateProfileInput, error) {
 			var req ProfileRequest
 			if err := parseJSON(r, &req); err != nil {
-				return nil, err
+				return db.CreateProfileInput{}, err
 			}
 			if err := h.validateProfileRequest(&req); err != nil {
-				return nil, err
+				return db.CreateProfileInput{}, err
 			}
-			return h.requestToDBProfile(&req), nil
+			return h.requestToCreateProfile(&req), nil
 		},
 		h.database.CreateProfile,
 		func(profile *db.ScanProfile) interface{} {
@@ -237,7 +237,7 @@ func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update profile in database
-	profile, err := h.database.UpdateProfile(r.Context(), profileID, h.requestToDBProfile(&req))
+	profile, err := h.database.UpdateProfile(r.Context(), profileID, h.requestToUpdateProfile(&req))
 	if err != nil {
 		if errors.IsNotFound(err) {
 			writeError(w, r, http.StatusNotFound, fmt.Errorf("profile not found"))
@@ -449,17 +449,13 @@ func (h *ProfileHandler) getProfileFilters(r *http.Request) db.ProfileFilters {
 	return filters
 }
 
-// requestToDBProfile converts a profile request to database profile object.
-func (h *ProfileHandler) requestToDBProfile(req *ProfileRequest) interface{} {
-	// Store boolean scan options in the options field since they're not in the database schema
+// buildProfileOptions assembles the options map from a ProfileRequest, merging
+// user-provided key/value pairs with the boolean scan flags.
+func buildProfileOptions(req *ProfileRequest) map[string]interface{} {
 	options := make(map[string]interface{})
-	if req.Options != nil {
-		for k, v := range req.Options {
-			options[k] = v
-		}
+	for k, v := range req.Options {
+		options[k] = v
 	}
-
-	// Add boolean flags to options
 	options["service_detection"] = req.ServiceDetection
 	options["os_detection"] = req.OSDetection
 	options["script_scan"] = req.ScriptScan
@@ -471,19 +467,43 @@ func (h *ProfileHandler) requestToDBProfile(req *ProfileRequest) interface{} {
 	options["max_host_group_size"] = req.MaxHostGroupSize
 	options["min_host_group_size"] = req.MinHostGroupSize
 	options["default"] = req.Default
+	return options
+}
 
-	return map[string]interface{}{
-		"name":        req.Name,
-		"description": req.Description,
-		"scan_type":   req.ScanType,
-		"ports":       req.Ports,
-		"options":     options,
-		"timing":      req.Timing.Template, // Just store the template string
-		"tags":        req.Tags,
-		"usage_count": 0,
-		"created_at":  time.Now().UTC(),
-		"updated_at":  time.Now().UTC(),
+// requestToCreateProfile converts a ProfileRequest to a typed CreateProfileInput for the DB layer.
+func (h *ProfileHandler) requestToCreateProfile(req *ProfileRequest) db.CreateProfileInput {
+	return db.CreateProfileInput{
+		Name:        req.Name,
+		Description: req.Description,
+		ScanType:    req.ScanType,
+		Ports:       req.Ports,
+		Options:     buildProfileOptions(req),
+		Timing:      req.Timing.Template,
 	}
+}
+
+// requestToUpdateProfile converts a ProfileRequest to a typed UpdateProfileInput for the DB layer.
+// Only non-empty / non-nil fields are set so that absent values don't overwrite existing data.
+func (h *ProfileHandler) requestToUpdateProfile(req *ProfileRequest) db.UpdateProfileInput {
+	input := db.UpdateProfileInput{
+		Options: buildProfileOptions(req),
+	}
+	if req.Name != "" {
+		input.Name = &req.Name
+	}
+	if req.Description != "" {
+		input.Description = &req.Description
+	}
+	if req.ScanType != "" {
+		input.ScanType = &req.ScanType
+	}
+	if req.Ports != "" {
+		input.Ports = &req.Ports
+	}
+	if req.Timing.Template != "" {
+		input.Timing = &req.Timing.Template
+	}
+	return input
 }
 
 // parseProfileOptions parses JSON options and converts to string map

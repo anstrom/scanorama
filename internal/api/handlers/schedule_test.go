@@ -738,21 +738,17 @@ func TestScheduleHandler_requestToDBSchedule(t *testing.T) {
 		NotifyEmails: []string{"admin@example.com"},
 	}
 
-	result := handler.requestToDBSchedule(req)
+	result := handler.requestToCreateSchedule(req)
 
-	resultMap, ok := result.(map[string]interface{})
-	require.True(t, ok, "result should be a map")
+	// Top-level fields
+	assert.Equal(t, req.Name, result.Name)
+	assert.Equal(t, req.CronExpr, result.CronExpression)
+	assert.Equal(t, req.Type, result.JobType)
+	assert.Equal(t, req.Enabled, result.Enabled)
 
-	// Top-level fields use DB column names
-	assert.Equal(t, req.Name, resultMap["name"])
-	assert.Equal(t, req.Description, resultMap["description"])
-	assert.Equal(t, req.CronExpr, resultMap["cron_expression"])
-	assert.Equal(t, req.Type, resultMap["job_type"])
-	assert.Equal(t, req.Enabled, resultMap["enabled"])
-
-	// Extra request fields are nested inside job_config
-	jobConfig, ok := resultMap["job_config"].(map[string]interface{})
-	require.True(t, ok, "job_config should be a map")
+	// Extra request fields are nested inside JobConfig
+	jobConfig := result.JobConfig
+	require.NotNil(t, jobConfig, "JobConfig should not be nil")
 
 	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", jobConfig["network_id"])
 	assert.Equal(t, req.MaxRunTime.String(), jobConfig["max_run_time"])

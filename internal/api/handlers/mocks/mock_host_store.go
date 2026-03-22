@@ -43,18 +43,18 @@ func (m *MockHostStore) EXPECT() *MockHostStoreMockRecorder {
 }
 
 // CreateHost mocks base method.
-func (m *MockHostStore) CreateHost(ctx context.Context, hostData any) (*db.Host, error) {
+func (m *MockHostStore) CreateHost(ctx context.Context, input db.CreateHostInput) (*db.Host, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateHost", ctx, hostData)
+	ret := m.ctrl.Call(m, "CreateHost", ctx, input)
 	ret0, _ := ret[0].(*db.Host)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateHost indicates an expected call of CreateHost.
-func (mr *MockHostStoreMockRecorder) CreateHost(ctx, hostData any) *MockHostStoreCreateHostCall {
+func (mr *MockHostStoreMockRecorder) CreateHost(ctx, input any) *MockHostStoreCreateHostCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateHost", reflect.TypeOf((*MockHostStore)(nil).CreateHost), ctx, hostData)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateHost", reflect.TypeOf((*MockHostStore)(nil).CreateHost), ctx, input)
 	return &MockHostStoreCreateHostCall{Call: call}
 }
 
@@ -70,13 +70,13 @@ func (c *MockHostStoreCreateHostCall) Return(arg0 *db.Host, arg1 error) *MockHos
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockHostStoreCreateHostCall) Do(f func(context.Context, any) (*db.Host, error)) *MockHostStoreCreateHostCall {
+func (c *MockHostStoreCreateHostCall) Do(f func(context.Context, db.CreateHostInput) (*db.Host, error)) *MockHostStoreCreateHostCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockHostStoreCreateHostCall) DoAndReturn(f func(context.Context, any) (*db.Host, error)) *MockHostStoreCreateHostCall {
+func (c *MockHostStoreCreateHostCall) DoAndReturn(f func(context.Context, db.CreateHostInput) (*db.Host, error)) *MockHostStoreCreateHostCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -239,18 +239,18 @@ func (c *MockHostStoreListHostsCall) DoAndReturn(f func(context.Context, *db.Hos
 }
 
 // UpdateHost mocks base method.
-func (m *MockHostStore) UpdateHost(ctx context.Context, id uuid.UUID, hostData any) (*db.Host, error) {
+func (m *MockHostStore) UpdateHost(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateHost", ctx, id, hostData)
+	ret := m.ctrl.Call(m, "UpdateHost", ctx, id, input)
 	ret0, _ := ret[0].(*db.Host)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateHost indicates an expected call of UpdateHost.
-func (mr *MockHostStoreMockRecorder) UpdateHost(ctx, id, hostData any) *MockHostStoreUpdateHostCall {
+func (mr *MockHostStoreMockRecorder) UpdateHost(ctx, id, input any) *MockHostStoreUpdateHostCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateHost", reflect.TypeOf((*MockHostStore)(nil).UpdateHost), ctx, id, hostData)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateHost", reflect.TypeOf((*MockHostStore)(nil).UpdateHost), ctx, id, input)
 	return &MockHostStoreUpdateHostCall{Call: call}
 }
 
@@ -266,13 +266,13 @@ func (c *MockHostStoreUpdateHostCall) Return(arg0 *db.Host, arg1 error) *MockHos
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockHostStoreUpdateHostCall) Do(f func(context.Context, uuid.UUID, any) (*db.Host, error)) *MockHostStoreUpdateHostCall {
+func (c *MockHostStoreUpdateHostCall) Do(f func(context.Context, uuid.UUID, db.UpdateHostInput) (*db.Host, error)) *MockHostStoreUpdateHostCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockHostStoreUpdateHostCall) DoAndReturn(f func(context.Context, uuid.UUID, any) (*db.Host, error)) *MockHostStoreUpdateHostCall {
+func (c *MockHostStoreUpdateHostCall) DoAndReturn(f func(context.Context, uuid.UUID, db.UpdateHostInput) (*db.Host, error)) *MockHostStoreUpdateHostCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

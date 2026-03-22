@@ -711,81 +711,6 @@ func TestBuildHostFilters(t *testing.T) {
 	})
 }
 
-// TestExtractScanData tests the extractScanData utility function.
-func TestExtractScanData(t *testing.T) {
-	t.Run("valid_minimal_data", func(t *testing.T) {
-		input := map[string]interface{}{
-			"name":      "Test Scan",
-			"scan_type": "connect",
-			"targets":   []string{"192.168.1.0/24"},
-		}
-
-		result, err := extractScanData(input)
-		require.NoError(t, err)
-		assert.Equal(t, "Test Scan", result.name)
-		assert.Equal(t, "connect", result.scanType)
-		assert.Equal(t, []string{"192.168.1.0/24"}, result.targets)
-		assert.Empty(t, result.description)
-		assert.Empty(t, result.ports)
-		assert.Nil(t, result.profileID)
-	})
-
-	t.Run("valid_complete_data", func(t *testing.T) {
-		profileID := "linux-server"
-		input := map[string]interface{}{
-			"name":        "Complete Scan",
-			"description": "A complete scan test",
-			"scan_type":   "syn",
-			"targets":     []string{"10.0.0.0/8", "172.16.0.0/12"},
-			"ports":       "22,80,443",
-			"profile_id":  &profileID,
-		}
-
-		result, err := extractScanData(input)
-		require.NoError(t, err)
-		assert.Equal(t, "Complete Scan", result.name)
-		assert.Equal(t, "A complete scan test", result.description)
-		assert.Equal(t, "syn", result.scanType)
-		assert.Equal(t, []string{"10.0.0.0/8", "172.16.0.0/12"}, result.targets)
-		assert.Equal(t, "22,80,443", result.ports)
-		require.NotNil(t, result.profileID)
-		assert.Equal(t, "linux-server", *result.profileID)
-	})
-
-	t.Run("invalid_input_type", func(t *testing.T) {
-		input := "not a map"
-		result, err := extractScanData(input)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid scan data format")
-		assert.Nil(t, result)
-	})
-
-	t.Run("missing_targets", func(t *testing.T) {
-		input := map[string]interface{}{
-			"name":      "Test Scan",
-			"scan_type": "connect",
-		}
-
-		result, err := extractScanData(input)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "targets must be a string array")
-		assert.Nil(t, result)
-	})
-
-	t.Run("invalid_targets_type", func(t *testing.T) {
-		input := map[string]interface{}{
-			"name":      "Test Scan",
-			"scan_type": "connect",
-			"targets":   "not an array",
-		}
-
-		result, err := extractScanData(input)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "targets must be a string array")
-		assert.Nil(t, result)
-	})
-}
-
 // TestParsePostgreSQLArray tests the parsePostgreSQLArray utility function.
 func TestParsePostgreSQLArray(t *testing.T) {
 	t.Run("nil_input", func(t *testing.T) {
@@ -1425,11 +1350,11 @@ func TestCreateProfile_UniqueNameConflict(t *testing.T) {
 	}
 	mock.ExpectExec("INSERT INTO scan_profiles").WillReturnError(pqErr)
 
-	profileData := map[string]interface{}{
-		"name":      "My Profile",
-		"scan_type": "connect",
-		"ports":     "22,80,443",
-		"timing":    "normal",
+	profileData := CreateProfileInput{
+		Name:     "My Profile",
+		ScanType: "connect",
+		Ports:    "22,80,443",
+		Timing:   "normal",
 	}
 
 	_, err := db.CreateProfile(context.Background(), profileData)
@@ -1451,11 +1376,11 @@ func TestCreateProfile_NonPQError(t *testing.T) {
 		fmt.Errorf("connection reset by peer"),
 	)
 
-	profileData := map[string]interface{}{
-		"name":      "My Profile",
-		"scan_type": "connect",
-		"ports":     "22,80,443",
-		"timing":    "normal",
+	profileData := CreateProfileInput{
+		Name:     "My Profile",
+		ScanType: "connect",
+		Ports:    "22,80,443",
+		Timing:   "normal",
 	}
 
 	_, err := db.CreateProfile(context.Background(), profileData)
@@ -1489,8 +1414,8 @@ func TestCreateHost_UniqueIPConflict(t *testing.T) {
 	}
 	mock.ExpectExec("INSERT INTO hosts").WillReturnError(pqErr)
 
-	hostData := map[string]interface{}{
-		"ip_address": "10.0.0.1",
+	hostData := CreateHostInput{
+		IPAddress: "10.0.0.1",
 	}
 
 	_, err := db.CreateHost(context.Background(), hostData)
@@ -1515,8 +1440,8 @@ func TestCreateHost_UniqueViolationOtherConstraint(t *testing.T) {
 	}
 	mock.ExpectExec("INSERT INTO hosts").WillReturnError(pqErr)
 
-	hostData := map[string]interface{}{
-		"ip_address": "10.0.0.2",
+	hostData := CreateHostInput{
+		IPAddress: "10.0.0.2",
 	}
 
 	_, err := db.CreateHost(context.Background(), hostData)
@@ -1537,8 +1462,8 @@ func TestCreateHost_NonPQError(t *testing.T) {
 		fmt.Errorf("connection reset by peer"),
 	)
 
-	hostData := map[string]interface{}{
-		"ip_address": "10.0.0.3",
+	hostData := CreateHostInput{
+		IPAddress: "10.0.0.3",
 	}
 
 	_, err := db.CreateHost(context.Background(), hostData)

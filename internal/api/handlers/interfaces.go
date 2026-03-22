@@ -17,9 +17,9 @@ import (
 //go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_scan_store.go -package mocks github.com/anstrom/scanorama/internal/api/handlers ScanStore
 type ScanStore interface {
 	ListScans(ctx context.Context, filters db.ScanFilters, offset, limit int) ([]*db.Scan, int64, error)
-	CreateScan(ctx context.Context, input interface{}) (*db.Scan, error)
+	CreateScan(ctx context.Context, input db.CreateScanInput) (*db.Scan, error)
 	GetScan(ctx context.Context, id uuid.UUID) (*db.Scan, error)
-	UpdateScan(ctx context.Context, id uuid.UUID, scanData interface{}) (*db.Scan, error)
+	UpdateScan(ctx context.Context, id uuid.UUID, input db.UpdateScanInput) (*db.Scan, error)
 	DeleteScan(ctx context.Context, id uuid.UUID) error
 	StartScan(ctx context.Context, id uuid.UUID) error
 	CompleteScan(ctx context.Context, id uuid.UUID) error
@@ -35,9 +35,9 @@ type ScanStore interface {
 //nolint:dupl
 type ScheduleStore interface {
 	ListSchedules(ctx context.Context, filters db.ScheduleFilters, offset, limit int) ([]*db.Schedule, int64, error)
-	CreateSchedule(ctx context.Context, scheduleData interface{}) (*db.Schedule, error)
+	CreateSchedule(ctx context.Context, input db.CreateScheduleInput) (*db.Schedule, error)
 	GetSchedule(ctx context.Context, id uuid.UUID) (*db.Schedule, error)
-	UpdateSchedule(ctx context.Context, id uuid.UUID, scheduleData interface{}) (*db.Schedule, error)
+	UpdateSchedule(ctx context.Context, id uuid.UUID, input db.UpdateScheduleInput) (*db.Schedule, error)
 	DeleteSchedule(ctx context.Context, id uuid.UUID) error
 	EnableSchedule(ctx context.Context, id uuid.UUID) error
 	DisableSchedule(ctx context.Context, id uuid.UUID) error
@@ -50,9 +50,9 @@ type ScheduleStore interface {
 type DiscoveryStore interface {
 	ListDiscoveryJobs(ctx context.Context, filters db.DiscoveryFilters, offset, limit int) (
 		[]*db.DiscoveryJob, int64, error)
-	CreateDiscoveryJob(ctx context.Context, jobData interface{}) (*db.DiscoveryJob, error)
+	CreateDiscoveryJob(ctx context.Context, input db.CreateDiscoveryJobInput) (*db.DiscoveryJob, error)
 	GetDiscoveryJob(ctx context.Context, id uuid.UUID) (*db.DiscoveryJob, error)
-	UpdateDiscoveryJob(ctx context.Context, id uuid.UUID, jobData interface{}) (*db.DiscoveryJob, error)
+	UpdateDiscoveryJob(ctx context.Context, id uuid.UUID, input db.UpdateDiscoveryJobInput) (*db.DiscoveryJob, error)
 	DeleteDiscoveryJob(ctx context.Context, id uuid.UUID) error
 	StartDiscoveryJob(ctx context.Context, id uuid.UUID) error
 	StopDiscoveryJob(ctx context.Context, id uuid.UUID) error
@@ -63,9 +63,9 @@ type DiscoveryStore interface {
 //go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_host_store.go -package mocks github.com/anstrom/scanorama/internal/api/handlers HostStore
 type HostStore interface {
 	ListHosts(ctx context.Context, filters *db.HostFilters, offset, limit int) ([]*db.Host, int64, error)
-	CreateHost(ctx context.Context, hostData interface{}) (*db.Host, error)
+	CreateHost(ctx context.Context, input db.CreateHostInput) (*db.Host, error)
 	GetHost(ctx context.Context, id uuid.UUID) (*db.Host, error)
-	UpdateHost(ctx context.Context, id uuid.UUID, hostData interface{}) (*db.Host, error)
+	UpdateHost(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error)
 	DeleteHost(ctx context.Context, id uuid.UUID) error
 	GetHostScans(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*db.Scan, int64, error)
 }
@@ -75,9 +75,9 @@ type HostStore interface {
 //go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_profile_store.go -package mocks github.com/anstrom/scanorama/internal/api/handlers ProfileStore
 type ProfileStore interface {
 	ListProfiles(ctx context.Context, filters db.ProfileFilters, offset, limit int) ([]*db.ScanProfile, int64, error)
-	CreateProfile(ctx context.Context, profileData interface{}) (*db.ScanProfile, error)
+	CreateProfile(ctx context.Context, input db.CreateProfileInput) (*db.ScanProfile, error)
 	GetProfile(ctx context.Context, id string) (*db.ScanProfile, error)
-	UpdateProfile(ctx context.Context, id string, profileData interface{}) (*db.ScanProfile, error)
+	UpdateProfile(ctx context.Context, id string, input db.UpdateProfileInput) (*db.ScanProfile, error)
 	DeleteProfile(ctx context.Context, id string) error
 }
 

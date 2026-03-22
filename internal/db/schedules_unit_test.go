@@ -189,21 +189,12 @@ func TestDisableSchedule_Unit(t *testing.T) {
 func TestCreateSchedule_Unit(t *testing.T) {
 	id := uuid.New()
 
-	validInput := map[string]interface{}{
-		"name":            "S",
-		"job_type":        "scan",
-		"cron_expression": "* * * * *",
-		"enabled":         true,
+	validInput := CreateScheduleInput{
+		Name:           "S",
+		JobType:        "scan",
+		CronExpression: "* * * * *",
+		Enabled:        true,
 	}
-
-	t.Run("invalid input type", func(t *testing.T) {
-		db, _ := newMockDB(t)
-
-		_, err := db.CreateSchedule(context.Background(), "not-a-map")
-
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid schedule data format")
-	})
 
 	t.Run("db error is wrapped", func(t *testing.T) {
 		db, mock := newMockDB(t)

@@ -416,68 +416,6 @@ func (db *DB) ListScans(ctx context.Context, filters ScanFilters, offset, limit 
 	return scans, total, nil
 }
 
-// scanData holds extracted scan parameters.
-type scanData struct {
-	name        string
-	description string
-	scanType    string
-	ports       string
-	targets     []string
-	profileID   *string
-	osDetection bool
-}
-
-// extractScanData extracts and validates scan data from interface.
-func extractScanData(input interface{}) (*scanData, error) {
-	data, ok := input.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid scan data format")
-	}
-
-	targets, ok := data["targets"].([]string)
-	if !ok {
-		return nil, fmt.Errorf("targets must be a string array")
-	}
-
-	name, ok := data["name"].(string)
-	if !ok || name == "" {
-		return nil, errors.NewScanError(errors.CodeValidation, "name is required")
-	}
-
-	scanType, ok := data["scan_type"].(string)
-	if !ok || scanType == "" {
-		return nil, errors.NewScanError(errors.CodeValidation, "scan_type is required")
-	}
-
-	result := &scanData{
-		name:     name,
-		scanType: scanType,
-		targets:  targets,
-	}
-
-	// Use map-based extraction for optional fields.
-	optionalFields := map[string]interface{}{
-		"description": &result.description,
-		"ports":       &result.ports,
-	}
-
-	for key, dest := range optionalFields {
-		if value, exists := data[key].(string); exists {
-			*dest.(*string) = value
-		}
-	}
-
-	if pid, ok := data["profile_id"].(*string); ok && pid != nil {
-		result.profileID = pid
-	}
-
-	if osDetection, ok := data["os_detection"].(bool); ok {
-		result.osDetection = osDetection
-	}
-
-	return result, nil
-}
-
 // findOrCreateNetwork finds an existing network by CIDR or creates a new one.
 // Returns the network UUID to store as scan_jobs.network_id.
 func (db *DB) findOrCreateNetwork(ctx context.Context, tx *sql.Tx,
@@ -568,11 +506,16 @@ func buildScanResponse(jobID uuid.UUID, name, description string, targets []stri
 }
 
 // CreateScan creates a new scan record.
-func (db *DB) CreateScan(ctx context.Context, input interface{}) (*Scan, error) {
-	// Extract and validate data.
-	data, err := extractScanData(input)
-	if err != nil {
-		return nil, err
+func (db *DB) CreateScan(ctx context.Context, input CreateScanInput) (*Scan, error) {
+	// Validate required fields.
+	if input.Name == "" {
+		return nil, errors.NewScanError(errors.CodeValidation, "name is required")
+	}
+	if input.ScanType == "" {
+		return nil, errors.NewScanError(errors.CodeValidation, "scan_type is required")
+	}
+	if len(input.Targets) == 0 {
+		return nil, errors.NewScanError(errors.CodeValidation, "targets are required")
 	}
 
 	// Start a transaction.
@@ -590,26 +533,26 @@ func (db *DB) CreateScan(ctx context.Context, input interface{}) (*Scan, error) 
 	var firstJobID uuid.UUID
 
 	// For each target CIDR, find or create a network then create the scan job.
-	for i, target := range data.targets {
+	for i, target := range input.Targets {
 		jobID := uuid.New()
 
 		if i == 0 {
 			firstJobID = jobID
 		}
 
-		networkName := data.name
-		if len(data.targets) > 1 {
-			networkName = fmt.Sprintf("%s-target-%d", data.name, i+1)
+		networkName := input.Name
+		if len(input.Targets) > 1 {
+			networkName = fmt.Sprintf("%s-target-%d", input.Name, i+1)
 		}
 
 		networkID, err := db.findOrCreateNetwork(ctx, tx, networkName, target,
-			data.description, data.ports, data.scanType)
+			input.Description, input.Ports, input.ScanType)
 		if err != nil {
 			return nil, err
 		}
 
 		// Create scan job.
-		if err := db.createScanJob(ctx, tx, jobID, networkID, data.profileID, now, data.osDetection); err != nil {
+		if err := db.createScanJob(ctx, tx, jobID, networkID, input.ProfileID, now, input.OSDetection); err != nil {
 			return nil, err
 		}
 	}
@@ -620,8 +563,8 @@ func (db *DB) CreateScan(ctx context.Context, input interface{}) (*Scan, error) 
 	}
 
 	// Build and return response.
-	return buildScanResponse(firstJobID, data.name, data.description, data.targets,
-		data.scanType, data.ports, data.profileID, now), nil
+	return buildScanResponse(firstJobID, input.Name, input.Description, input.Targets,
+		input.ScanType, input.Ports, input.ProfileID, now), nil
 }
 
 // GetScan retrieves a scan by ID.
@@ -721,27 +664,43 @@ func (db *DB) GetScan(ctx context.Context, id uuid.UUID) (*Scan, error) {
 // updateScanTarget updates the scan_targets row linked to a scan job within a transaction.
 func updateScanNetwork(ctx context.Context, tx interface {
 	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
-}, id uuid.UUID, data map[string]interface{}) error {
-	networkFieldMappings := map[string]string{
-		"name":        "name",
-		"description": "description",
-		"scan_type":   "scan_type",
-		"ports":       "scan_ports",
+}, id uuid.UUID, input UpdateScanInput) error {
+	var setParts []string
+	var args []interface{}
+	argIndex := 1
+
+	if input.Name != nil {
+		setParts = append(setParts, fmt.Sprintf("name = $%d", argIndex))
+		args = append(args, *input.Name)
+		argIndex++
+	}
+	if input.Description != nil {
+		setParts = append(setParts, fmt.Sprintf("description = $%d", argIndex))
+		args = append(args, *input.Description)
+		argIndex++
+	}
+	if input.ScanType != nil {
+		setParts = append(setParts, fmt.Sprintf("scan_type = $%d", argIndex))
+		args = append(args, *input.ScanType)
+		argIndex++
+	}
+	if input.Ports != nil {
+		setParts = append(setParts, fmt.Sprintf("scan_ports = $%d", argIndex))
+		args = append(args, *input.Ports)
+		argIndex++
 	}
 
-	setParts, args := buildUpdateQuery(data, networkFieldMappings)
 	if len(setParts) == 0 {
 		return nil
 	}
 
 	setParts = append(setParts, "updated_at = NOW()")
-	paramNum := len(args) + 1
 
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString("UPDATE networks SET ")
 	queryBuilder.WriteString(strings.Join(setParts, ", "))
 	queryBuilder.WriteString(" WHERE id = (SELECT network_id FROM scan_jobs WHERE id = $")
-	queryBuilder.WriteString(strconv.Itoa(paramNum))
+	queryBuilder.WriteString(strconv.Itoa(argIndex))
 	queryBuilder.WriteString(")")
 
 	args = append(args, id)
@@ -754,41 +713,40 @@ func updateScanNetwork(ctx context.Context, tx interface {
 // updateScanJob updates the scan_jobs row within a transaction.
 func updateScanJob(ctx context.Context, tx interface {
 	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
-}, id uuid.UUID, data map[string]interface{}) error {
-	jobFieldMappings := map[string]string{
-		"status": "status",
-	}
-	jobSetParts, jobArgs := buildUpdateQuery(data, jobFieldMappings)
+}, id uuid.UUID, input UpdateScanInput) error {
+	var setParts []string
+	var args []interface{}
+	argIndex := 1
 
-	if profileID, ok := data["profile_id"].(*string); ok && profileID != nil {
-		jobSetParts = append(jobSetParts, fmt.Sprintf("profile_id = $%d", len(jobArgs)+1))
-		jobArgs = append(jobArgs, *profileID)
+	if input.Status != nil {
+		setParts = append(setParts, fmt.Sprintf("status = $%d", argIndex))
+		args = append(args, *input.Status)
+		argIndex++
+	}
+	if input.ProfileID != nil {
+		setParts = append(setParts, fmt.Sprintf("profile_id = $%d", argIndex))
+		args = append(args, *input.ProfileID)
+		argIndex++
 	}
 
-	if len(jobSetParts) == 0 {
+	if len(setParts) == 0 {
 		return nil
 	}
 
-	paramNum := len(jobArgs) + 1
 	var jobQueryBuilder strings.Builder
 	jobQueryBuilder.WriteString("UPDATE scan_jobs SET ")
-	jobQueryBuilder.WriteString(strings.Join(jobSetParts, ", "))
+	jobQueryBuilder.WriteString(strings.Join(setParts, ", "))
 	jobQueryBuilder.WriteString(" WHERE id = $")
-	jobQueryBuilder.WriteString(strconv.Itoa(paramNum))
+	jobQueryBuilder.WriteString(strconv.Itoa(argIndex))
 
-	jobArgs = append(jobArgs, id)
-	if _, err := tx.ExecContext(ctx, jobQueryBuilder.String(), jobArgs...); err != nil {
+	args = append(args, id)
+	if _, err := tx.ExecContext(ctx, jobQueryBuilder.String(), args...); err != nil {
 		return sanitizeDBError("update scan job", err)
 	}
 	return nil
 }
 
-func (db *DB) UpdateScan(ctx context.Context, id uuid.UUID, scanData interface{}) (*Scan, error) {
-	data, ok := scanData.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid scan data format")
-	}
-
+func (db *DB) UpdateScan(ctx context.Context, id uuid.UUID, input UpdateScanInput) (*Scan, error) {
 	tx, err := db.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
@@ -808,11 +766,11 @@ func (db *DB) UpdateScan(ctx context.Context, id uuid.UUID, scanData interface{}
 		return nil, errors.ErrNotFoundWithID("scan", id.String())
 	}
 
-	if err := updateScanNetwork(ctx, tx, id, data); err != nil {
+	if err := updateScanNetwork(ctx, tx, id, input); err != nil {
 		return nil, err
 	}
 
-	if err := updateScanJob(ctx, tx, id, data); err != nil {
+	if err := updateScanJob(ctx, tx, id, input); err != nil {
 		return nil, err
 	}
 
