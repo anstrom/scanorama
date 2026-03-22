@@ -802,6 +802,14 @@ export interface components {
       name?: string;
       /** @example 550e8400-e29b-41d4-a716-446655440001 */
       profile_id?: string;
+      /** @enum {string} */
+      scan_type?:
+        | "connect"
+        | "syn"
+        | "ack"
+        | "udp"
+        | "aggressive"
+        | "comprehensive";
       scan_options?: {
         [key: string]: unknown;
       };
@@ -888,6 +896,13 @@ export interface components {
        *     ]
        */
       open_ports?: number[];
+      ports?: Array<{
+        port: number;
+        protocol: string;
+        state: string;
+        service?: string;
+        last_seen: string;
+      }>;
       /**
        * nmap OS detection confidence percentage (0-100)
        * @example 95

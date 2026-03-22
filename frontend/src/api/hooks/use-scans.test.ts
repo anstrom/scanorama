@@ -148,7 +148,7 @@ describe("useScans", () => {
     );
   });
 
-  it("caches the result under the ['scans', params] query key", async () => {
+  it("caches the result under the ['scans', 'list', params] query key", async () => {
     const params = { page: 1, page_size: 20 };
     mockGet.mockResolvedValue(
       ok({ data: mockScans, pagination: mockPagination }),
@@ -157,7 +157,7 @@ describe("useScans", () => {
     const { result, queryClient } = renderHookWithQuery(() => useScans(params));
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const cached = queryClient.getQueryData(["scans", params]);
+    const cached = queryClient.getQueryData(["scans", "list", params]);
     expect(cached).toBeDefined();
   });
 });
@@ -212,7 +212,7 @@ describe("useScan", () => {
     );
   });
 
-  it("caches the result under the ['scans', id] query key", async () => {
+  it("caches the result under the ['scans', 'detail', id] query key", async () => {
     mockGet.mockResolvedValue(ok(mockScans[0]));
 
     const { result, queryClient } = renderHookWithQuery(() =>
@@ -220,7 +220,7 @@ describe("useScan", () => {
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const cached = queryClient.getQueryData(["scans", "scan-1"]);
+    const cached = queryClient.getQueryData(["scans", "detail", "scan-1"]);
     expect(cached).toBeDefined();
     expect((cached as (typeof mockScans)[0]).id).toBe("scan-1");
   });
@@ -363,7 +363,7 @@ describe("useScanResults", () => {
     );
   });
 
-  it("caches the result under the ['scans', scanId, 'results'] query key", async () => {
+  it("caches the result under the ['scans', 'results', scanId] query key", async () => {
     mockGet.mockResolvedValue(ok(mockScanResults));
 
     const { result, queryClient } = renderHookWithQuery(() =>
@@ -371,7 +371,7 @@ describe("useScanResults", () => {
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const cached = queryClient.getQueryData(["scans", "scan-1", "results"]);
+    const cached = queryClient.getQueryData(["scans", "results", "scan-1"]);
     expect(cached).toBeDefined();
   });
 });

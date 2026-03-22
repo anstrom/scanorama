@@ -11,7 +11,6 @@ const SCAN_TYPES = [
   { value: "connect", label: "Connect (-sT)" },
   { value: "syn", label: "SYN stealth (-sS)" },
   { value: "ack", label: "ACK (-sA)" },
-  { value: "udp", label: "UDP (-sU)" },
   { value: "aggressive", label: "Aggressive (-sS -sV -A)" },
   { value: "comprehensive", label: "Comprehensive (-sS -sV --script=default)" },
 ] as const;

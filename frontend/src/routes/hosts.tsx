@@ -14,13 +14,7 @@ import type { components } from "../api/types";
 
 type HostResponse = components["schemas"]["docs.HostResponse"];
 
-interface PortInfo {
-  port: number;
-  protocol: string;
-  state: string;
-  service?: string;
-  last_seen: string;
-}
+type PortInfo = NonNullable<HostResponse["ports"]>[number];
 
 const PAGE_SIZE = 25;
 
@@ -392,11 +386,11 @@ export function HostsPage() {
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
   };
 
-  const { data, isLoading } = useHosts(queryParams);
+  const { data, isLoading, isError } = useHosts(queryParams);
 
   const hosts = data?.data ?? [];
   const pagination = data?.pagination;
-  const totalPages = pagination?.total_pages ?? 1;
+  const totalPages = pagination?.total_pages ?? 0;
 
   // Clamp page back when a filter/search change reduces total_pages below current page.
   if (!isLoading && totalPages > 0 && page > totalPages) {
@@ -482,7 +476,16 @@ export function HostsPage() {
                 </tr>
               </thead>
               <tbody>
-                {isLoading ? (
+                {isError ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="py-10 text-center text-xs text-danger"
+                    >
+                      Failed to load hosts.
+                    </td>
+                  </tr>
+                ) : isLoading ? (
                   <SkeletonRows count={8} />
                 ) : hosts.length === 0 ? (
                   <tr>
@@ -513,11 +516,7 @@ export function HostsPage() {
                         {host.mac_address ?? "—"}
                       </td>
                       <td className="py-3 pr-4">
-                        <PortTags
-                          ports={
-                            (host as unknown as { ports?: PortInfo[] }).ports
-                          }
-                        />
+                        <PortTags ports={host.ports} />
                       </td>
                       <td className="py-3 pr-4 text-text-muted whitespace-nowrap">
                         {host.last_seen
