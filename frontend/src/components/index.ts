@@ -7,6 +7,7 @@ export { Skeleton } from "./skeleton";
 export { RecentScansTable } from "./recent-scans-table";
 export { PaginationBar } from "./pagination-bar";
 export { RunScanModal } from "./run-scan-modal";
+export { ScanDetailPanel } from "./scan-detail-panel";
 export { AddNetworkModal } from "./add-network-modal";
 export { AddExclusionModal } from "./add-exclusion-modal";
 export * from "./layout";

@@ -1,27 +1,3 @@
-export const STATUS_COLORS = {
-  up: "text-success",
-  healthy: "text-success",
-  completed: "text-success",
-  open: "text-success",
-  success: "text-success",
-
-  running: "text-info",
-
-  pending: "text-warning",
-  degraded: "text-warning",
-
-  down: "text-danger",
-  failed: "text-danger",
-  error: "text-danger",
-  cancelled: "text-danger",
-  stopped: "text-danger",
-
-  unknown: "text-text-muted",
-  filtered: "text-text-muted",
-  closed: "text-text-muted",
-  inactive: "text-text-muted",
-} as const;
-
 export const STATUS_BG_COLORS = {
   up: "bg-success/15 text-success",
   healthy: "bg-success/15 text-success",
@@ -46,4 +22,4 @@ export const STATUS_BG_COLORS = {
   inactive: "bg-text-muted/15 text-text-muted",
 } as const;
 
-export type StatusKey = keyof typeof STATUS_COLORS;
+export type StatusKey = keyof typeof STATUS_BG_COLORS;

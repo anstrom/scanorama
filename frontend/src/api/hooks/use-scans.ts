@@ -41,12 +41,18 @@ export interface ScanResultsData {
 interface ScanListParams {
   page?: number;
   page_size?: number;
-  status?: "pending" | "running" | "completed" | "failed" | "cancelled";
+  status?:
+    | "pending"
+    | "running"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "stopped";
 }
 
 export function useScans(params: ScanListParams = {}) {
   return useQuery({
-    queryKey: ["scans", params],
+    queryKey: ["scans", "list", params],
     queryFn: async () => {
       const { data, error } = await api.GET("/scans", {
         params: { query: params },
@@ -66,7 +72,7 @@ export function useScans(params: ScanListParams = {}) {
 
 export function useScan(id: string) {
   return useQuery({
-    queryKey: ["scans", id],
+    queryKey: ["scans", "detail", id],
     queryFn: async () => {
       const { data, error } = await api.GET("/scans/{scanId}", {
         params: { path: { scanId: id } },
@@ -100,7 +106,13 @@ export function useCreateScan() {
     mutationFn: async (body: {
       name: string;
       targets: string[];
-      scan_type: string;
+      scan_type:
+        | "connect"
+        | "syn"
+        | "ack"
+        | "udp"
+        | "aggressive"
+        | "comprehensive";
       ports?: string;
       os_detection?: boolean;
       description?: string;
@@ -122,7 +134,7 @@ export function useCreateScan() {
 
 export function useScanResults(scanId: string, scanStatus?: string) {
   return useQuery({
-    queryKey: ["scans", scanId, "results"],
+    queryKey: ["scans", "results", scanId],
     queryFn: async () => {
       const { data, error } = await api.GET("/scans/{scanId}/results", {
         params: { path: { scanId } },

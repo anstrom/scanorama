@@ -6,7 +6,7 @@ import { useActiveHostCount } from "../api/hooks/use-hosts";
 import { StatCard } from "../components/stat-card";
 import { SystemInfoCard } from "../components/system-info-card";
 import { RecentScansTable } from "../components/recent-scans-table";
-import { ScanDetailPanel } from "./scans";
+import { ScanDetailPanel } from "../components";
 import { Network, Server, MonitorCheck, ShieldOff } from "lucide-react";
 import type { components } from "../api/types";
 

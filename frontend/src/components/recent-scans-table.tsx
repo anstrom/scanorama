@@ -8,8 +8,8 @@ interface Scan {
   id?: string;
   status?: string;
   targets?: string[];
-  hosts_discovered?: number;
-  ports_scanned?: number;
+  ports_scanned?: string;
+  started_at?: string;
   created_at?: string;
   duration?: string;
 }
@@ -75,7 +75,6 @@ export function RecentScansTable({
               <tr className="text-text-muted border-b border-border">
                 <th className="text-left font-medium pb-2 pr-4">Status</th>
                 <th className="text-left font-medium pb-2 pr-4">Targets</th>
-                <th className="text-right font-medium pb-2 pr-4">Hosts</th>
                 <th className="text-right font-medium pb-2 pr-4">Ports</th>
                 <th className="text-right font-medium pb-2">When</th>
               </tr>
@@ -97,14 +96,13 @@ export function RecentScansTable({
                     {scan.targets?.join(", ") ?? "—"}
                   </td>
                   <td className="py-2 pr-4 text-right text-text-secondary tabular-nums">
-                    {scan.hosts_discovered ?? "—"}
-                  </td>
-                  <td className="py-2 pr-4 text-right text-text-secondary tabular-nums">
                     {scan.ports_scanned ?? "—"}
                   </td>
                   <td className="py-2 text-right text-text-muted">
-                    {scan.created_at
-                      ? formatRelativeTime(scan.created_at)
+                    {(scan.started_at ?? scan.created_at)
+                      ? formatRelativeTime(
+                          (scan.started_at ?? scan.created_at)!,
+                        )
                       : "—"}
                   </td>
                 </tr>

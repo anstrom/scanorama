@@ -434,7 +434,7 @@ describe("RunScanModal", () => {
     await user.click(screen.getByRole("button", { name: "Run scan" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Failed to start scan.",
+      "Failed to create scan.",
     );
   });
 
@@ -449,5 +449,78 @@ describe("RunScanModal", () => {
     render(<RunScanModal onClose={vi.fn()} />);
     const submitBtn = screen.getByRole("button", { name: /Starting/ });
     expect(submitBtn).toBeDisabled();
+  });
+
+  // ── Bug 7: startScan failure after createScan succeeds ────────────────────
+
+  it("shows a pending error, calls onSubmitted, but does NOT close the modal when startScan fails", async () => {
+    const user = userEvent.setup();
+    const createScan = vi.fn().mockResolvedValue({ id: "new-scan-id" });
+    const startScan = vi.fn().mockRejectedValue(new Error("start failed"));
+    const onSubmitted = vi.fn();
+    const onClose = vi.fn();
+
+    mockUseCreateScan.mockReturnValue({
+      mutateAsync: createScan,
+      isPending: false,
+    } as unknown as ReturnType<typeof useCreateScan>);
+    mockUseStartScan.mockReturnValue({
+      mutateAsync: startScan,
+      isPending: false,
+    } as unknown as ReturnType<typeof useStartScan>);
+
+    render(<RunScanModal onClose={onClose} onSubmitted={onSubmitted} />);
+    await user.type(screen.getByLabelText("Target"), "10.0.0.1");
+    await user.selectOptions(screen.getByLabelText("Select profile"), "p1");
+    await user.click(screen.getByRole("button", { name: "Run scan" }));
+
+    // List should refresh so the pending scan is visible.
+    expect(onSubmitted).toHaveBeenCalledTimes(1);
+    // Modal must stay open so the user sees the error message.
+    expect(onClose).not.toHaveBeenCalled();
+    // Error message must mention the pending state.
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/pending|could not be started/i);
+  });
+
+  // ── Bug 8: client-side port-spec validation ───────────────────────────────
+
+  it("shows a validation error and does not call createScan for an out-of-range port", async () => {
+    const user = userEvent.setup();
+    const createScan = vi.fn().mockResolvedValue({ id: "scan-x" });
+    mockUseCreateScan.mockReturnValue({
+      mutateAsync: createScan,
+      isPending: false,
+    } as unknown as ReturnType<typeof useCreateScan>);
+
+    render(<RunScanModal onClose={vi.fn()} />);
+    await user.click(screen.getByRole("radio", { name: "Custom ports" }));
+    await user.type(screen.getByLabelText("Target"), "10.0.0.1");
+    // Port 99999 is > 65535 — invalid.
+    await user.type(screen.getByLabelText(/Ports/), "99999");
+    await user.click(screen.getByRole("button", { name: "Run scan" }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(createScan).not.toHaveBeenCalled();
+  });
+
+  it("passes validation and calls createScan for a valid port spec", async () => {
+    const user = userEvent.setup();
+    const createScan = vi.fn().mockResolvedValue({ id: "scan-y" });
+    mockUseCreateScan.mockReturnValue({
+      mutateAsync: createScan,
+      isPending: false,
+    } as unknown as ReturnType<typeof useCreateScan>);
+
+    render(<RunScanModal onClose={vi.fn()} />);
+    await user.click(screen.getByRole("radio", { name: "Custom ports" }));
+    await user.type(screen.getByLabelText("Target"), "10.0.0.1");
+    // Valid comma-separated list.
+    await user.type(screen.getByLabelText(/Ports/), "22,80,443");
+    await user.click(screen.getByRole("button", { name: "Run scan" }));
+
+    expect(createScan).toHaveBeenCalledWith(
+      expect.objectContaining({ ports: "22,80,443" }),
+    );
   });
 });

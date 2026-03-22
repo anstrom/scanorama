@@ -3,7 +3,7 @@ import { X, Loader2 } from "lucide-react";
 import { Button } from "./button";
 import { useProfiles } from "../api/hooks/use-profiles";
 import { useCreateScan, useStartScan } from "../api/hooks/use-scans";
-import { cn } from "../lib/utils";
+import { cn, validatePortSpec } from "../lib/utils";
 
 type Mode = "profile" | "custom";
 
@@ -74,6 +74,14 @@ export function RunScanModal({
       return;
     }
 
+    if (mode === "custom" && ports.trim()) {
+      const portError = validatePortSpec(ports.trim());
+      if (portError) {
+        setError(portError);
+        return;
+      }
+    }
+
     // Split comma/whitespace-separated targets into an array.
     const targets = trimmedTarget
       .split(/[\s,]+/)
@@ -88,8 +96,8 @@ export function RunScanModal({
     // Auto-generate a name from the first target.
     const name = `Ad-hoc scan: ${targets[0]}${targets.length > 1 ? ` +${targets.length - 1}` : ""}`;
 
+    let result: Awaited<ReturnType<typeof createScan>> | undefined;
     try {
-      let result: Awaited<ReturnType<typeof createScan>>;
       if (mode === "profile") {
         // Expand the profile's settings into the request — the backend
         // expects scan_type at the top level, not a UUID profile_id.
@@ -111,15 +119,27 @@ export function RunScanModal({
           ...(osDetection ? { os_detection: true } : {}),
         });
       }
-      const scanId = result?.id;
-      if (scanId) {
-        await startScan(scanId);
-      }
-      onSubmitted?.();
-      onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to start scan.");
+      setError(err instanceof Error ? err.message : "Failed to create scan.");
+      return;
     }
+
+    const scanId = result?.id;
+    if (scanId) {
+      try {
+        await startScan(scanId);
+      } catch {
+        // Scan was created (ID exists) but start failed — it sits as pending.
+        setError(
+          'Scan was created but could not be started. It will appear as "pending" in the Scans page.',
+        );
+        onSubmitted?.();
+        return; // leave modal open so user sees the message
+      }
+    }
+
+    onSubmitted?.();
+    onClose();
   }
 
   return (

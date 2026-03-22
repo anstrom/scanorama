@@ -5,7 +5,6 @@ import { DashboardPage } from "./dashboard";
 
 // Mock all the API hooks so we don't need MSW or network requests
 vi.mock("../api/hooks/use-system", () => ({
-  useHealth: vi.fn(),
   useVersion: vi.fn(),
 }));
 
@@ -21,23 +20,17 @@ vi.mock("../api/hooks/use-hosts", () => ({
   useActiveHostCount: vi.fn(),
 }));
 
-import { useHealth, useVersion } from "../api/hooks/use-system";
+import { useVersion } from "../api/hooks/use-system";
 import { useNetworkStats } from "../api/hooks/use-networks";
 import { useRecentScans } from "../api/hooks/use-scans";
 import { useActiveHostCount } from "../api/hooks/use-hosts";
 
-const mockUseHealth = vi.mocked(useHealth);
 const mockUseVersion = vi.mocked(useVersion);
 const mockUseNetworkStats = vi.mocked(useNetworkStats);
 const mockUseRecentScans = vi.mocked(useRecentScans);
 const mockUseActiveHostCount = vi.mocked(useActiveHostCount);
 
 function setupDefaultMocks() {
-  mockUseHealth.mockReturnValue({
-    data: { status: "healthy", uptime: "2h30m" },
-    isLoading: false,
-  } as unknown as ReturnType<typeof useHealth>);
-
   mockUseVersion.mockReturnValue({
     data: {
       version: "v0.15.0",
