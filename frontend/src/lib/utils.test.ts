@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { formatRelativeTime, formatAbsoluteTime } from "./utils";
+import { formatRelativeTime, formatAbsoluteTime, describeCron } from "./utils";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -130,5 +130,41 @@ describe("formatAbsoluteTime", () => {
     const a = formatAbsoluteTime("2024-01-01T00:00:00Z");
     const b = formatAbsoluteTime("2024-12-31T23:59:59Z");
     expect(a).not.toBe(b);
+  });
+});
+
+// ── describeCron ──────────────────────────────────────────────────────────────
+
+describe("describeCron", () => {
+  it('returns "Every minute" for "* * * * *"', () => {
+    expect(describeCron("* * * * *")).toBe("Every minute");
+  });
+
+  it('returns "Every day at 02:00" for "0 2 * * *"', () => {
+    expect(describeCron("0 2 * * *")).toBe("Every day at 02:00");
+  });
+
+  it('returns "Every day at 14:30" for "30 14 * * *"', () => {
+    expect(describeCron("30 14 * * *")).toBe("Every day at 14:30");
+  });
+
+  it('returns "Every hour at :30" for "30 * * * *"', () => {
+    expect(describeCron("30 * * * *")).toBe("Every hour at :30");
+  });
+
+  it('returns "Every Monday at 09:00" for "0 9 * * 1"', () => {
+    expect(describeCron("0 9 * * 1")).toBe("Every Monday at 09:00");
+  });
+
+  it('returns "Every Friday at 14:00" for "0 14 * * 5"', () => {
+    expect(describeCron("0 14 * * 5")).toBe("Every Friday at 14:00");
+  });
+
+  it("returns the raw expression when dom is not a wildcard", () => {
+    expect(describeCron("0 2 1 * *")).toBe("0 2 1 * *");
+  });
+
+  it("returns the raw expression when input has fewer than 5 parts", () => {
+    expect(describeCron("0 2 * *")).toBe("0 2 * *");
   });
 });
