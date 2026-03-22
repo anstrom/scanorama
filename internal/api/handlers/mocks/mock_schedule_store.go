@@ -43,18 +43,18 @@ func (m *MockScheduleStore) EXPECT() *MockScheduleStoreMockRecorder {
 }
 
 // CreateSchedule mocks base method.
-func (m *MockScheduleStore) CreateSchedule(ctx context.Context, scheduleData any) (*db.Schedule, error) {
+func (m *MockScheduleStore) CreateSchedule(ctx context.Context, input db.CreateScheduleInput) (*db.Schedule, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateSchedule", ctx, scheduleData)
+	ret := m.ctrl.Call(m, "CreateSchedule", ctx, input)
 	ret0, _ := ret[0].(*db.Schedule)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateSchedule indicates an expected call of CreateSchedule.
-func (mr *MockScheduleStoreMockRecorder) CreateSchedule(ctx, scheduleData any) *MockScheduleStoreCreateScheduleCall {
+func (mr *MockScheduleStoreMockRecorder) CreateSchedule(ctx, input any) *MockScheduleStoreCreateScheduleCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSchedule", reflect.TypeOf((*MockScheduleStore)(nil).CreateSchedule), ctx, scheduleData)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSchedule", reflect.TypeOf((*MockScheduleStore)(nil).CreateSchedule), ctx, input)
 	return &MockScheduleStoreCreateScheduleCall{Call: call}
 }
 
@@ -70,13 +70,13 @@ func (c *MockScheduleStoreCreateScheduleCall) Return(arg0 *db.Schedule, arg1 err
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockScheduleStoreCreateScheduleCall) Do(f func(context.Context, any) (*db.Schedule, error)) *MockScheduleStoreCreateScheduleCall {
+func (c *MockScheduleStoreCreateScheduleCall) Do(f func(context.Context, db.CreateScheduleInput) (*db.Schedule, error)) *MockScheduleStoreCreateScheduleCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockScheduleStoreCreateScheduleCall) DoAndReturn(f func(context.Context, any) (*db.Schedule, error)) *MockScheduleStoreCreateScheduleCall {
+func (c *MockScheduleStoreCreateScheduleCall) DoAndReturn(f func(context.Context, db.CreateScheduleInput) (*db.Schedule, error)) *MockScheduleStoreCreateScheduleCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -275,18 +275,18 @@ func (c *MockScheduleStoreListSchedulesCall) DoAndReturn(f func(context.Context,
 }
 
 // UpdateSchedule mocks base method.
-func (m *MockScheduleStore) UpdateSchedule(ctx context.Context, id uuid.UUID, scheduleData any) (*db.Schedule, error) {
+func (m *MockScheduleStore) UpdateSchedule(ctx context.Context, id uuid.UUID, input db.UpdateScheduleInput) (*db.Schedule, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateSchedule", ctx, id, scheduleData)
+	ret := m.ctrl.Call(m, "UpdateSchedule", ctx, id, input)
 	ret0, _ := ret[0].(*db.Schedule)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateSchedule indicates an expected call of UpdateSchedule.
-func (mr *MockScheduleStoreMockRecorder) UpdateSchedule(ctx, id, scheduleData any) *MockScheduleStoreUpdateScheduleCall {
+func (mr *MockScheduleStoreMockRecorder) UpdateSchedule(ctx, id, input any) *MockScheduleStoreUpdateScheduleCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSchedule", reflect.TypeOf((*MockScheduleStore)(nil).UpdateSchedule), ctx, id, scheduleData)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSchedule", reflect.TypeOf((*MockScheduleStore)(nil).UpdateSchedule), ctx, id, input)
 	return &MockScheduleStoreUpdateScheduleCall{Call: call}
 }
 
@@ -302,13 +302,13 @@ func (c *MockScheduleStoreUpdateScheduleCall) Return(arg0 *db.Schedule, arg1 err
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockScheduleStoreUpdateScheduleCall) Do(f func(context.Context, uuid.UUID, any) (*db.Schedule, error)) *MockScheduleStoreUpdateScheduleCall {
+func (c *MockScheduleStoreUpdateScheduleCall) Do(f func(context.Context, uuid.UUID, db.UpdateScheduleInput) (*db.Schedule, error)) *MockScheduleStoreUpdateScheduleCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockScheduleStoreUpdateScheduleCall) DoAndReturn(f func(context.Context, uuid.UUID, any) (*db.Schedule, error)) *MockScheduleStoreUpdateScheduleCall {
+func (c *MockScheduleStoreUpdateScheduleCall) DoAndReturn(f func(context.Context, uuid.UUID, db.UpdateScheduleInput) (*db.Schedule, error)) *MockScheduleStoreUpdateScheduleCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

@@ -284,21 +284,14 @@ func TestScanHandler_RequestToDBScan(t *testing.T) {
 		Tags:        []string{"test", "api"},
 	}
 
-	result := handler.requestToDBScan(request)
-	data, ok := result.(map[string]interface{})
-	require.True(t, ok)
+	result := handler.requestToCreateScan(request)
 
-	assert.Equal(t, request.Name, data["name"])
-	assert.Equal(t, request.Description, data["description"])
-	assert.Equal(t, request.Targets, data["targets"])
-	assert.Equal(t, request.ScanType, data["scan_type"])
-	assert.Equal(t, request.Ports, data["ports"])
-	assert.Equal(t, request.ProfileID, data["profile_id"])
-	assert.Equal(t, request.Options, data["options"])
-	assert.Equal(t, request.ScheduleID, data["schedule_id"])
-	assert.Equal(t, request.Tags, data["tags"])
-	assert.Equal(t, "pending", data["status"])
-	assert.Contains(t, data, "created_at")
+	assert.Equal(t, request.Name, result.Name)
+	assert.Equal(t, request.Description, result.Description)
+	assert.Equal(t, request.Targets, result.Targets)
+	assert.Equal(t, request.ScanType, result.ScanType)
+	assert.Equal(t, request.Ports, result.Ports)
+	assert.Equal(t, request.ProfileID, result.ProfileID)
 }
 
 func TestScanHandler_ScanToResponse(t *testing.T) {
@@ -1046,20 +1039,16 @@ func TestScanHandler_ListScans_Integration(t *testing.T) {
 	scan1Name := generateUniqueScanName()
 	scan2Name := generateUniqueScanName()
 
-	scan1Data := map[string]interface{}{
-		"name":       scan1Name,
-		"targets":    []string{generateUniqueCIDR(42)},
-		"scan_type":  "connect",
-		"status":     "pending",
-		"created_at": time.Now().UTC(),
+	scan1Data := db.CreateScanInput{
+		Name:     scan1Name,
+		Targets:  []string{generateUniqueCIDR(42)},
+		ScanType: "connect",
 	}
 
-	scan2Data := map[string]interface{}{
-		"name":       scan2Name,
-		"targets":    []string{generateUniqueCIDR(43)},
-		"scan_type":  "syn",
-		"status":     "pending",
-		"created_at": time.Now().UTC(),
+	scan2Data := db.CreateScanInput{
+		Name:     scan2Name,
+		Targets:  []string{generateUniqueCIDR(43)},
+		ScanType: "syn",
 	}
 
 	_, err := database.CreateScan(ctx, scan1Data)
@@ -1149,12 +1138,10 @@ func TestScanHandler_GetScan_Integration(t *testing.T) {
 
 	// Create a test scan
 	scanName := generateUniqueScanName()
-	scanData := map[string]interface{}{
-		"name":       scanName,
-		"targets":    []string{generateUniqueCIDR(44)},
-		"scan_type":  "connect",
-		"status":     "pending",
-		"created_at": time.Now().UTC(),
+	scanData := db.CreateScanInput{
+		Name:     scanName,
+		Targets:  []string{generateUniqueCIDR(44)},
+		ScanType: "connect",
 	}
 
 	createdScan, err := database.CreateScan(ctx, scanData)
@@ -1188,12 +1175,10 @@ func TestScanHandler_UpdateScan_Integration(t *testing.T) {
 
 	// Create a test scan
 	scanName := generateUniqueScanName()
-	scanData := map[string]interface{}{
-		"name":       scanName,
-		"targets":    []string{"192.168.1.0/24"},
-		"scan_type":  "connect",
-		"status":     "pending",
-		"created_at": time.Now().UTC(),
+	scanData := db.CreateScanInput{
+		Name:     scanName,
+		Targets:  []string{"192.168.1.0/24"},
+		ScanType: "connect",
 	}
 
 	createdScan, err := database.CreateScan(ctx, scanData)
@@ -1238,12 +1223,10 @@ func TestScanHandler_DeleteScan_Integration(t *testing.T) {
 
 	// Create a test scan
 	scanName := generateUniqueScanName()
-	scanData := map[string]interface{}{
-		"name":       scanName,
-		"targets":    []string{"192.168.1.0/24"},
-		"scan_type":  "connect",
-		"status":     "pending",
-		"created_at": time.Now().UTC(),
+	scanData := db.CreateScanInput{
+		Name:     scanName,
+		Targets:  []string{"192.168.1.0/24"},
+		ScanType: "connect",
 	}
 
 	createdScan, err := database.CreateScan(ctx, scanData)
@@ -1274,12 +1257,10 @@ func TestScanHandler_StartScan_Integration(t *testing.T) {
 
 	// Create a test scan
 	scanName := generateUniqueScanName()
-	scanData := map[string]interface{}{
-		"name":       scanName,
-		"targets":    []string{"192.168.1.1"},
-		"scan_type":  "connect",
-		"status":     "pending",
-		"created_at": time.Now().UTC(),
+	scanData := db.CreateScanInput{
+		Name:     scanName,
+		Targets:  []string{"192.168.1.1"},
+		ScanType: "connect",
 	}
 
 	createdScan, err := database.CreateScan(ctx, scanData)
@@ -1307,12 +1288,10 @@ func TestScanHandler_StopScan_Integration(t *testing.T) {
 
 	// Create a test scan
 	scanName := generateUniqueScanName()
-	scanData := map[string]interface{}{
-		"name":       scanName,
-		"targets":    []string{"192.168.1.1"},
-		"scan_type":  "connect",
-		"status":     "running",
-		"created_at": time.Now().UTC(),
+	scanData := db.CreateScanInput{
+		Name:     scanName,
+		Targets:  []string{"192.168.1.1"},
+		ScanType: "connect",
 	}
 
 	createdScan, err := database.CreateScan(ctx, scanData)
@@ -1342,12 +1321,10 @@ func TestScanHandler_GetScanResults_Integration(t *testing.T) {
 
 	// Create a test scan
 	scanName := generateUniqueScanName()
-	scanData := map[string]interface{}{
-		"name":       scanName,
-		"targets":    []string{"192.168.1.1"},
-		"scan_type":  "connect",
-		"status":     "completed",
-		"created_at": time.Now().UTC(),
+	scanData := db.CreateScanInput{
+		Name:     scanName,
+		Targets:  []string{"192.168.1.1"},
+		ScanType: "connect",
 	}
 
 	createdScan, err := database.CreateScan(ctx, scanData)

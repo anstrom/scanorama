@@ -589,17 +589,10 @@ func TestDiscoveryHandler_RequestToDBDiscovery(t *testing.T) {
 	logger := createTestLogger()
 	handler := NewDiscoveryHandler(nilDiscoveryStore{}, logger, metrics.NewRegistry())
 
-	// Keys that must never appear in the map returned to the DB layer.
-	forbiddenKeys := []string{
-		"name", "description", "ports", "timeout", "retries",
-		"options", "schedule_id", "tags", "enabled",
-		"status", "created_at", "updated_at",
-	}
-
 	tests := []struct {
 		name     string
 		request  *DiscoveryRequest
-		validate func(t *testing.T, data interface{})
+		validate func(t *testing.T, result db.CreateDiscoveryJobInput)
 	}{
 		{
 			name: "basic request – networks and method are present",
@@ -609,17 +602,9 @@ func TestDiscoveryHandler_RequestToDBDiscovery(t *testing.T) {
 				Method:   "ping",
 				Enabled:  true,
 			},
-			validate: func(t *testing.T, data interface{}) {
-				m, ok := data.(map[string]interface{})
-				require.True(t, ok, "result must be map[string]interface{}")
-
-				// "networks" must be a []string matching the request.
-				networks, ok := m["networks"].([]string)
-				require.True(t, ok, "networks must be []string")
-				assert.Equal(t, []string{"192.168.1.0/24"}, networks)
-
-				// "method" must match the request.
-				assert.Equal(t, "ping", m["method"])
+			validate: func(t *testing.T, result db.CreateDiscoveryJobInput) {
+				assert.Equal(t, []string{"192.168.1.0/24"}, result.Networks)
+				assert.Equal(t, "ping", result.Method)
 			},
 		},
 		{
@@ -629,15 +614,9 @@ func TestDiscoveryHandler_RequestToDBDiscovery(t *testing.T) {
 				Networks: []string{"192.168.1.0/24", "10.0.0.0/8"},
 				Method:   "tcp_connect",
 			},
-			validate: func(t *testing.T, data interface{}) {
-				m, ok := data.(map[string]interface{})
-				require.True(t, ok, "result must be map[string]interface{}")
-
-				networks, ok := m["networks"].([]string)
-				require.True(t, ok, "networks must be []string")
-				assert.Equal(t, []string{"192.168.1.0/24", "10.0.0.0/8"}, networks)
-
-				assert.Equal(t, "tcp_connect", m["method"])
+			validate: func(t *testing.T, result db.CreateDiscoveryJobInput) {
+				assert.Equal(t, []string{"192.168.1.0/24", "10.0.0.0/8"}, result.Networks)
+				assert.Equal(t, "tcp_connect", result.Method)
 			},
 		},
 		{
@@ -654,18 +633,10 @@ func TestDiscoveryHandler_RequestToDBDiscovery(t *testing.T) {
 				Tags:        []string{"test", "prod"},
 				Enabled:     true,
 			},
-			validate: func(t *testing.T, data interface{}) {
-				m, ok := data.(map[string]interface{})
-				require.True(t, ok, "result must be map[string]interface{}")
-
-				// Core keys must be present and correct.
-				networks, ok := m["networks"].([]string)
-				require.True(t, ok, "networks must be []string")
-				assert.Equal(t, []string{"192.168.1.0/24"}, networks)
-				assert.Equal(t, "arp", m["method"])
-
-				// The map must contain exactly two keys.
-				assert.Len(t, m, 2, "map must contain exactly 'networks' and 'method'")
+			validate: func(t *testing.T, result db.CreateDiscoveryJobInput) {
+				// The typed struct ensures only Networks and Method are exposed to the DB layer.
+				assert.Equal(t, []string{"192.168.1.0/24"}, result.Networks)
+				assert.Equal(t, "arp", result.Method)
 			},
 		},
 		{
@@ -680,21 +651,18 @@ func TestDiscoveryHandler_RequestToDBDiscovery(t *testing.T) {
 				Tags:        []string{"infra"},
 				Enabled:     false,
 			},
-			validate: func(t *testing.T, data interface{}) {
-				m, ok := data.(map[string]interface{})
-				require.True(t, ok, "result must be map[string]interface{}")
-
-				for _, key := range forbiddenKeys {
-					_, exists := m[key]
-					assert.False(t, exists, "key %q must not be present in the DB map", key)
-				}
+			validate: func(t *testing.T, result db.CreateDiscoveryJobInput) {
+				// The typed struct eliminates forbidden-key concerns:
+				// only Networks and Method fields exist on CreateDiscoveryJobInput.
+				assert.Equal(t, []string{"172.16.0.0/12"}, result.Networks)
+				assert.Equal(t, "icmp", result.Method)
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := handler.requestToDBDiscovery(tt.request)
+			result := handler.requestToCreateDiscovery(tt.request)
 			tt.validate(t, result)
 		})
 	}

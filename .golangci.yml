@@ -82,6 +82,7 @@ linters:
         - ifElseChain
         - octalLiteral
         - whyNoLint
+        - hugeParam # Input structs are intentionally passed by value at the DB/handler boundary
 
     gocyclo:
       min-complexity: 15

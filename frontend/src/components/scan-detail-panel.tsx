@@ -2,7 +2,8 @@ import React from "react";
 import { X } from "lucide-react";
 import { useProfile } from "../api/hooks/use-profiles";
 import { useScanResults } from "../api/hooks/use-scans";
-import { StatusBadge, Skeleton } from "./index";
+import { StatusBadge } from "./status-badge";
+import { Skeleton } from "./skeleton";
 import { formatRelativeTime, cn } from "../lib/utils";
 import type { components } from "../api/types";
 
@@ -271,9 +272,7 @@ export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
                       <th className="text-left font-medium pb-2 pr-3">
                         Hostname
                       </th>
-                      <th className="text-left font-medium pb-2 pr-3">
-                        Port
-                      </th>
+                      <th className="text-left font-medium pb-2 pr-3">Port</th>
                       <th className="text-left font-medium pb-2 pr-3">
                         Protocol
                       </th>

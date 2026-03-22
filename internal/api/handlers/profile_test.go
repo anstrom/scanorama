@@ -234,18 +234,16 @@ func TestProfileHandler_RequestToDBProfile(t *testing.T) {
 		Tags:             []string{"comprehensive", "slow"},
 	}
 
-	result := handler.requestToDBProfile(request)
-	data, ok := result.(map[string]interface{})
-	require.True(t, ok)
+	result := handler.requestToCreateProfile(request)
 
-	assert.Equal(t, request.Name, data["name"])
-	assert.Equal(t, request.Description, data["description"])
-	assert.Equal(t, request.ScanType, data["scan_type"])
-	assert.Equal(t, request.Ports, data["ports"])
-	assert.Equal(t, request.Timing.Template, data["timing"])
+	assert.Equal(t, request.Name, result.Name)
+	assert.Equal(t, request.Description, result.Description)
+	assert.Equal(t, request.ScanType, result.ScanType)
+	assert.Equal(t, request.Ports, result.Ports)
+	assert.Equal(t, request.Timing.Template, result.Timing)
 	// Check that options contains both the original options and the merged scan configuration
-	options, ok := data["options"].(map[string]interface{})
-	require.True(t, ok, "options should be a map[string]interface{}")
+	options := result.Options
+	require.NotNil(t, options, "options should not be nil")
 
 	// Check original options are included
 	for k, v := range request.Options {
@@ -264,7 +262,6 @@ func TestProfileHandler_RequestToDBProfile(t *testing.T) {
 	assert.Equal(t, request.MaxHostGroupSize, options["max_host_group_size"])
 	assert.Equal(t, request.MinHostGroupSize, options["min_host_group_size"])
 	assert.Equal(t, request.Default, options["default"])
-	assert.Equal(t, request.Tags, data["tags"])
 }
 
 func TestProfileHandler_ProfileToResponse(t *testing.T) {
@@ -819,34 +816,22 @@ func TestProfileHandler_ListProfiles_Integration(t *testing.T) {
 	profile1Name := generateUniqueProfileName()
 	profile2Name := generateUniqueProfileName()
 
-	profile1Data := map[string]interface{}{
-		"name":        profile1Name,
-		"description": "Test profile 1",
-		"scan_type":   "connect",
-		"ports":       "1-1000",
-		"timing":      "normal",
-		"priority":    1,
-		"built_in":    false,
-		"created_at":  time.Now().UTC(),
-		"updated_at":  time.Now().UTC(),
-	}
-
-	profile2Data := map[string]interface{}{
-		"name":        profile2Name,
-		"description": "Test profile 2",
-		"scan_type":   "syn",
-		"ports":       "22,80,443",
-		"timing":      "aggressive",
-		"priority":    2,
-		"built_in":    false,
-		"created_at":  time.Now().UTC(),
-		"updated_at":  time.Now().UTC(),
-	}
-
-	_, err := database.CreateProfile(ctx, profile1Data)
+	_, err := database.CreateProfile(ctx, db.CreateProfileInput{
+		Name:        profile1Name,
+		Description: "Test profile 1",
+		ScanType:    "connect",
+		Ports:       "1-1000",
+		Timing:      "normal",
+	})
 	require.NoError(t, err)
 
-	_, err = database.CreateProfile(ctx, profile2Data)
+	_, err = database.CreateProfile(ctx, db.CreateProfileInput{
+		Name:        profile2Name,
+		Description: "Test profile 2",
+		ScanType:    "syn",
+		Ports:       "22,80,443",
+		Timing:      "aggressive",
+	})
 	require.NoError(t, err)
 
 	// Test listing profiles
@@ -898,34 +883,22 @@ func TestProfileHandler_ListProfiles_WithFilters_Integration(t *testing.T) {
 	connectProfileName := generateUniqueProfileName()
 	synProfileName := generateUniqueProfileName()
 
-	connectData := map[string]interface{}{
-		"name":        connectProfileName,
-		"description": "Connect scan profile",
-		"scan_type":   "connect",
-		"ports":       "1-1000",
-		"timing":      "normal",
-		"priority":    1,
-		"built_in":    false,
-		"created_at":  time.Now().UTC(),
-		"updated_at":  time.Now().UTC(),
-	}
-
-	synData := map[string]interface{}{
-		"name":        synProfileName,
-		"description": "SYN scan profile",
-		"scan_type":   "syn",
-		"ports":       "1-1000",
-		"timing":      "normal",
-		"priority":    1,
-		"built_in":    false,
-		"created_at":  time.Now().UTC(),
-		"updated_at":  time.Now().UTC(),
-	}
-
-	_, err := database.CreateProfile(ctx, connectData)
+	_, err := database.CreateProfile(ctx, db.CreateProfileInput{
+		Name:        connectProfileName,
+		Description: "Connect scan profile",
+		ScanType:    "connect",
+		Ports:       "1-1000",
+		Timing:      "normal",
+	})
 	require.NoError(t, err)
 
-	_, err = database.CreateProfile(ctx, synData)
+	_, err = database.CreateProfile(ctx, db.CreateProfileInput{
+		Name:        synProfileName,
+		Description: "SYN scan profile",
+		ScanType:    "syn",
+		Ports:       "1-1000",
+		Timing:      "normal",
+	})
 	require.NoError(t, err)
 
 	// Test filtering by scan_type=connect
@@ -1127,19 +1100,13 @@ func TestProfileHandler_ListProfiles_Pagination_Integration(t *testing.T) {
 
 	// Create multiple profiles for pagination testing
 	for i := 0; i < 5; i++ {
-		profileData := map[string]interface{}{
-			"name":        fmt.Sprintf("%s_%d", generateUniqueProfileName(), i),
-			"description": fmt.Sprintf("Test profile %d", i),
-			"scan_type":   "connect",
-			"ports":       "22,80,443",
-			"timing":      "normal",
-			"priority":    i,
-			"built_in":    false,
-			"created_at":  time.Now().UTC(),
-			"updated_at":  time.Now().UTC(),
-		}
-
-		_, err := database.CreateProfile(ctx, profileData)
+		_, err := database.CreateProfile(ctx, db.CreateProfileInput{
+			Name:        fmt.Sprintf("%s_%d", generateUniqueProfileName(), i),
+			Description: fmt.Sprintf("Test profile %d", i),
+			ScanType:    "connect",
+			Ports:       "22,80,443",
+			Timing:      "normal",
+		})
 		require.NoError(t, err)
 	}
 

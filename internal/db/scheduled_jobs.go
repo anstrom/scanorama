@@ -146,26 +146,12 @@ func (db *DB) ListSchedules(
 }
 
 // CreateSchedule creates a new schedule.
-func (db *DB) CreateSchedule(ctx context.Context, scheduleData interface{}) (*Schedule, error) {
-	data, ok := scheduleData.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid schedule data format")
-	}
-
-	name, _ := data["name"].(string)
-	jobType, _ := data["job_type"].(string)
-	cronExpression, _ := data["cron_expression"].(string)
-
-	enabled := true
-	if v, ok := data["enabled"].(bool); ok {
-		enabled = v
-	}
-
+func (db *DB) CreateSchedule(ctx context.Context, input CreateScheduleInput) (*Schedule, error) {
 	// Marshal job_config map to JSON for the JSONB column.
 	var configJSON []byte
 	var err error
-	if jobConfig, ok := data["job_config"]; ok && jobConfig != nil {
-		configJSON, err = json.Marshal(jobConfig)
+	if len(input.JobConfig) > 0 {
+		configJSON, err = json.Marshal(input.JobConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal job config: %w", err)
 		}
@@ -180,7 +166,8 @@ func (db *DB) CreateSchedule(ctx context.Context, scheduleData interface{}) (*Sc
 		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 		RETURNING id, name, type, cron_expression, config, enabled, last_run, next_run, created_at`
 
-	row := db.QueryRowContext(ctx, query, id, name, jobType, cronExpression, configJSON, enabled)
+	row := db.QueryRowContext(ctx, query,
+		id, input.Name, input.JobType, input.CronExpression, configJSON, input.Enabled)
 	s, err := scanScheduleRow(row)
 	if err != nil {
 		return nil, sanitizeDBError("create schedule", err)
@@ -210,29 +197,29 @@ func (db *DB) GetSchedule(ctx context.Context, id uuid.UUID) (*Schedule, error) 
 
 // buildScheduleSetParts builds the SET clause parts and args for an UpdateSchedule query.
 // It returns an error only if JSON marshaling of job_config fails.
-func buildScheduleSetParts(data map[string]interface{}) (setParts []string, args []interface{}, err error) {
+func buildScheduleSetParts(input UpdateScheduleInput) (setParts []string, args []interface{}, err error) {
 	argIndex := 1
 
-	if v, ok := data["name"]; ok && v != nil {
+	if input.Name != nil {
 		setParts = append(setParts, fmt.Sprintf("name = $%d", argIndex))
-		args = append(args, v)
+		args = append(args, *input.Name)
 		argIndex++
 	}
 
-	if v, ok := data["job_type"]; ok && v != nil {
+	if input.JobType != nil {
 		setParts = append(setParts, fmt.Sprintf("type = $%d", argIndex))
-		args = append(args, v)
+		args = append(args, *input.JobType)
 		argIndex++
 	}
 
-	if v, ok := data["cron_expression"]; ok && v != nil {
+	if input.CronExpression != nil {
 		setParts = append(setParts, fmt.Sprintf("cron_expression = $%d", argIndex))
-		args = append(args, v)
+		args = append(args, *input.CronExpression)
 		argIndex++
 	}
 
-	if v, ok := data["job_config"]; ok && v != nil {
-		configJSON, jsonErr := json.Marshal(v)
+	if input.JobConfig != nil {
+		configJSON, jsonErr := json.Marshal(input.JobConfig)
 		if jsonErr != nil {
 			return nil, nil, fmt.Errorf("failed to marshal job config: %w", jsonErr)
 		}
@@ -241,15 +228,15 @@ func buildScheduleSetParts(data map[string]interface{}) (setParts []string, args
 		argIndex++
 	}
 
-	if v, ok := data["enabled"]; ok && v != nil {
+	if input.Enabled != nil {
 		setParts = append(setParts, fmt.Sprintf("enabled = $%d", argIndex))
-		args = append(args, v)
+		args = append(args, *input.Enabled)
 		argIndex++
 	}
 
-	if v, ok := data["next_run"]; ok && v != nil {
+	if input.NextRun != nil {
 		setParts = append(setParts, fmt.Sprintf("next_run = $%d", argIndex))
-		args = append(args, v)
+		args = append(args, *input.NextRun)
 		_ = argIndex // argIndex intentionally not incremented after last field
 	}
 
@@ -257,12 +244,7 @@ func buildScheduleSetParts(data map[string]interface{}) (setParts []string, args
 }
 
 // UpdateSchedule updates an existing schedule.
-func (db *DB) UpdateSchedule(ctx context.Context, id uuid.UUID, scheduleData interface{}) (*Schedule, error) {
-	data, ok := scheduleData.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid schedule data format")
-	}
-
+func (db *DB) UpdateSchedule(ctx context.Context, id uuid.UUID, input UpdateScheduleInput) (*Schedule, error) {
 	// Check existence first.
 	var exists bool
 	if err := db.QueryRowContext(ctx,
@@ -274,7 +256,7 @@ func (db *DB) UpdateSchedule(ctx context.Context, id uuid.UUID, scheduleData int
 		return nil, errors.ErrNotFoundWithID("schedule", id.String())
 	}
 
-	setParts, args, err := buildScheduleSetParts(data)
+	setParts, args, err := buildScheduleSetParts(input)
 	if err != nil {
 		return nil, err
 	}

@@ -18,22 +18,6 @@ import (
 	"github.com/anstrom/scanorama/internal/errors"
 )
 
-// marshalSQLArg ensures that complex types (maps, slices) are JSON-marshaled
-// to []byte before being passed as SQL arguments, which the driver cannot handle
-// natively.
-func marshalSQLArg(val interface{}) interface{} {
-	switch val.(type) {
-	case map[string]interface{}, []interface{}:
-		b, err := json.Marshal(val)
-		if err != nil {
-			return val
-		}
-		return b
-	default:
-		return val
-	}
-}
-
 // parsePostgreSQLArray converts a PostgreSQL array interface{} to []string.
 func parsePostgreSQLArray(arrayInterface interface{}) []string {
 	if arrayInterface == nil {
@@ -165,52 +149,31 @@ func (db *DB) ListProfiles(ctx context.Context, filters ProfileFilters,
 }
 
 // CreateProfile creates a new profile.
-func (db *DB) CreateProfile(ctx context.Context, profileData interface{}) (*ScanProfile, error) {
-	data, ok := profileData.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid profile data format")
-	}
-
-	// Extract data from request.
-	name, ok := data["name"].(string)
-	if !ok {
+func (db *DB) CreateProfile(ctx context.Context, input CreateProfileInput) (*ScanProfile, error) {
+	if input.Name == "" {
 		return nil, fmt.Errorf("profile name is required")
 	}
-
-	description := ""
-	if desc, ok := data["description"].(string); ok {
-		description = desc
-	}
-
-	scanType, ok := data["scan_type"].(string)
-	if !ok {
+	if input.ScanType == "" {
 		return nil, fmt.Errorf("scan_type is required")
 	}
-
-	ports, ok := data["ports"].(string)
-	if !ok {
+	if input.Ports == "" {
 		return nil, fmt.Errorf("ports is required")
 	}
 
-	// Extract options and timing.
+	// Marshal options to JSON.
 	var optionsJSON []byte
-	var timingStr string
-
-	if options, ok := data["options"].(map[string]interface{}); ok {
-		if optionsBytes, err := json.Marshal(options); err == nil {
-			optionsJSON = optionsBytes
+	if len(input.Options) > 0 {
+		var err error
+		if optionsJSON, err = json.Marshal(input.Options); err != nil {
+			return nil, fmt.Errorf("failed to marshal options: %w", err)
 		}
 	}
 	if optionsJSON == nil {
 		optionsJSON = []byte("{}")
 	}
 
-	if timing, ok := data["timing"].(string); ok {
-		timingStr = timing
-	}
-
 	// Generate profile ID from name (sanitized).
-	profileID := strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+	profileID := strings.ToLower(strings.ReplaceAll(input.Name, " ", "-"))
 	now := time.Now().UTC()
 
 	query := `
@@ -218,24 +181,24 @@ func (db *DB) CreateProfile(ctx context.Context, profileData interface{}) (*Scan
 		       (id, name, description, ports, scan_type, options, timing, priority, built_in, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, 0, false, $8, $9)`
 
-	_, err := db.ExecContext(ctx, query, profileID, name, description,
-		ports, scanType, optionsJSON, timingStr, now, now)
+	_, err := db.ExecContext(ctx, query, profileID, input.Name, input.Description,
+		input.Ports, input.ScanType, optionsJSON, input.Timing, now, now)
 	if err != nil {
 		if pq.As(err, pqerror.UniqueViolation) != nil {
 			return nil, errors.ErrConflictWithReason("profile",
-				fmt.Sprintf("a profile named %q already exists", name))
+				fmt.Sprintf("a profile named %q already exists", input.Name))
 		}
 		return nil, sanitizeDBError("create profile", err)
 	}
 
 	profile := &ScanProfile{
 		ID:          profileID,
-		Name:        name,
-		Description: description,
-		Ports:       ports,
-		ScanType:    scanType,
+		Name:        input.Name,
+		Description: input.Description,
+		Ports:       input.Ports,
+		ScanType:    input.ScanType,
 		Options:     JSONB(optionsJSON),
-		Timing:      timingStr,
+		Timing:      input.Timing,
 		Priority:    0,
 		BuiltIn:     false,
 		CreatedAt:   now,
@@ -311,13 +274,7 @@ func (db *DB) GetProfile(ctx context.Context, id string) (*ScanProfile, error) {
 }
 
 // UpdateProfile updates an existing profile.
-func (db *DB) UpdateProfile(ctx context.Context, id string, profileData interface{}) (*ScanProfile, error) {
-	// Convert the interface{} to profile data.
-	data, ok := profileData.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid profile data format")
-	}
-
+func (db *DB) UpdateProfile(ctx context.Context, id string, input UpdateProfileInput) (*ScanProfile, error) {
 	// Start a transaction.
 	tx, err := db.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -349,51 +306,25 @@ func (db *DB) UpdateProfile(ctx context.Context, id string, profileData interfac
 		return nil, errors.ErrForbidden("cannot update built-in profile")
 	}
 
-	// Build dynamic update query.
-	fieldMappings := map[string]string{
-		"name":        "name",
-		"description": "description",
-		"scan_type":   "scan_type",
-		"ports":       "ports",
-		"timing":      "timing",
-		"scripts":     "scripts",
-		"options":     "options",
-		"priority":    "priority",
+	setParts, args, err := buildProfileUpdateSetParts(input)
+	if err != nil {
+		return nil, err
 	}
-
-	setParts := []string{}
-	args := []interface{}{}
-	argCount := 1
-
-	for dataField, dbField := range fieldMappings {
-		if value, exists := data[dataField]; exists {
-			setParts = append(setParts, fmt.Sprintf("%s = $%d", dbField, argCount))
-			args = append(args, marshalSQLArg(value))
-			argCount++
-		}
-	}
-
 	if len(setParts) == 0 {
 		return nil, fmt.Errorf("no fields to update")
 	}
 
-	// Always update the updated_at timestamp.
-	setParts = append(setParts, fmt.Sprintf("updated_at = $%d", argCount))
-	args = append(args, time.Now().UTC())
-	argCount++
-
-	// Add WHERE clause argument.
+	// Append the WHERE clause argument and build the query.
+	whereArgNum := len(args) + 1
 	args = append(args, id)
 
-	setClause := strings.Join(setParts, ", ")
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString("UPDATE scan_profiles SET ")
-	queryBuilder.WriteString(setClause)
+	queryBuilder.WriteString(strings.Join(setParts, ", "))
 	queryBuilder.WriteString(" WHERE id = $")
-	queryBuilder.WriteString(strconv.Itoa(argCount))
-	updateQuery := queryBuilder.String()
+	queryBuilder.WriteString(strconv.Itoa(whereArgNum))
 
-	_, err = tx.ExecContext(ctx, updateQuery, args...)
+	_, err = tx.ExecContext(ctx, queryBuilder.String(), args...)
 	if err != nil {
 		return nil, sanitizeDBError("update profile", err)
 	}
@@ -405,6 +336,54 @@ func (db *DB) UpdateProfile(ctx context.Context, id string, profileData interfac
 
 	// Retrieve the updated profile.
 	return db.GetProfile(ctx, id)
+}
+
+// buildProfileUpdateSetParts constructs the SET clause parts and argument slice
+// for an UPDATE scan_profiles statement from the non-nil fields in input.
+func buildProfileUpdateSetParts(input UpdateProfileInput) (setParts []string, args []interface{}, err error) {
+	argCount := 1
+
+	addStr := func(col string, val *string) {
+		if val != nil {
+			setParts = append(setParts, fmt.Sprintf("%s = $%d", col, argCount))
+			args = append(args, *val)
+			argCount++
+		}
+	}
+
+	addStr("name", input.Name)
+	addStr("description", input.Description)
+	addStr("scan_type", input.ScanType)
+	addStr("ports", input.Ports)
+	addStr("timing", input.Timing)
+
+	if input.Scripts != nil {
+		setParts = append(setParts, fmt.Sprintf("scripts = $%d", argCount))
+		args = append(args, pq.Array(input.Scripts))
+		argCount++
+	}
+
+	if input.Options != nil {
+		var optionsJSON []byte
+		if optionsJSON, err = json.Marshal(input.Options); err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal options: %w", err)
+		}
+		setParts = append(setParts, fmt.Sprintf("options = $%d", argCount))
+		args = append(args, optionsJSON)
+		argCount++
+	}
+
+	if input.Priority != nil {
+		setParts = append(setParts, fmt.Sprintf("priority = $%d", argCount))
+		args = append(args, *input.Priority)
+		argCount++
+	}
+
+	// Always update the updated_at timestamp.
+	setParts = append(setParts, fmt.Sprintf("updated_at = $%d", argCount))
+	args = append(args, time.Now().UTC())
+
+	return setParts, args, nil
 }
 
 // DeleteProfile deletes a profile by ID.

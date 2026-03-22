@@ -34,13 +34,13 @@ type nilScanStore struct{}
 func (nilScanStore) ListScans(_ context.Context, _ db.ScanFilters, _, _ int) ([]*db.Scan, int64, error) {
 	panic("nilScanStore: ListScans called unexpectedly")
 }
-func (nilScanStore) CreateScan(_ context.Context, _ interface{}) (*db.Scan, error) {
+func (nilScanStore) CreateScan(_ context.Context, _ db.CreateScanInput) (*db.Scan, error) {
 	panic("nilScanStore: CreateScan called unexpectedly")
 }
 func (nilScanStore) GetScan(_ context.Context, _ uuid.UUID) (*db.Scan, error) {
 	panic("nilScanStore: GetScan called unexpectedly")
 }
-func (nilScanStore) UpdateScan(_ context.Context, _ uuid.UUID, _ interface{}) (*db.Scan, error) {
+func (nilScanStore) UpdateScan(_ context.Context, _ uuid.UUID, _ db.UpdateScanInput) (*db.Scan, error) {
 	panic("nilScanStore: UpdateScan called unexpectedly")
 }
 func (nilScanStore) DeleteScan(_ context.Context, _ uuid.UUID) error {
@@ -73,13 +73,13 @@ func (nilScheduleStore) ListSchedules(
 ) ([]*db.Schedule, int64, error) {
 	panic("nilScheduleStore: ListSchedules called unexpectedly")
 }
-func (nilScheduleStore) CreateSchedule(_ context.Context, _ interface{}) (*db.Schedule, error) {
+func (nilScheduleStore) CreateSchedule(_ context.Context, _ db.CreateScheduleInput) (*db.Schedule, error) {
 	panic("nilScheduleStore: CreateSchedule called unexpectedly")
 }
 func (nilScheduleStore) GetSchedule(_ context.Context, _ uuid.UUID) (*db.Schedule, error) {
 	panic("nilScheduleStore: GetSchedule called unexpectedly")
 }
-func (nilScheduleStore) UpdateSchedule(_ context.Context, _ uuid.UUID, _ interface{}) (*db.Schedule, error) {
+func (nilScheduleStore) UpdateSchedule(_ context.Context, _ uuid.UUID, _ db.UpdateScheduleInput) (*db.Schedule, error) {
 	panic("nilScheduleStore: UpdateSchedule called unexpectedly")
 }
 func (nilScheduleStore) DeleteSchedule(_ context.Context, _ uuid.UUID) error {
@@ -100,13 +100,15 @@ func (nilDiscoveryStore) ListDiscoveryJobs(
 ) ([]*db.DiscoveryJob, int64, error) {
 	panic("nilDiscoveryStore: ListDiscoveryJobs called unexpectedly")
 }
-func (nilDiscoveryStore) CreateDiscoveryJob(_ context.Context, _ interface{}) (*db.DiscoveryJob, error) {
+func (nilDiscoveryStore) CreateDiscoveryJob(_ context.Context, _ db.CreateDiscoveryJobInput) (*db.DiscoveryJob, error) {
 	panic("nilDiscoveryStore: CreateDiscoveryJob called unexpectedly")
 }
 func (nilDiscoveryStore) GetDiscoveryJob(_ context.Context, _ uuid.UUID) (*db.DiscoveryJob, error) {
 	panic("nilDiscoveryStore: GetDiscoveryJob called unexpectedly")
 }
-func (nilDiscoveryStore) UpdateDiscoveryJob(_ context.Context, _ uuid.UUID, _ interface{}) (*db.DiscoveryJob, error) {
+func (nilDiscoveryStore) UpdateDiscoveryJob(
+	_ context.Context, _ uuid.UUID, _ db.UpdateDiscoveryJobInput,
+) (*db.DiscoveryJob, error) {
 	panic("nilDiscoveryStore: UpdateDiscoveryJob called unexpectedly")
 }
 func (nilDiscoveryStore) DeleteDiscoveryJob(_ context.Context, _ uuid.UUID) error {
@@ -125,13 +127,13 @@ type nilHostStore struct{}
 func (nilHostStore) ListHosts(_ context.Context, _ *db.HostFilters, _, _ int) ([]*db.Host, int64, error) {
 	panic("nilHostStore: ListHosts called unexpectedly")
 }
-func (nilHostStore) CreateHost(_ context.Context, _ interface{}) (*db.Host, error) {
+func (nilHostStore) CreateHost(_ context.Context, _ db.CreateHostInput) (*db.Host, error) {
 	panic("nilHostStore: CreateHost called unexpectedly")
 }
 func (nilHostStore) GetHost(_ context.Context, _ uuid.UUID) (*db.Host, error) {
 	panic("nilHostStore: GetHost called unexpectedly")
 }
-func (nilHostStore) UpdateHost(_ context.Context, _ uuid.UUID, _ interface{}) (*db.Host, error) {
+func (nilHostStore) UpdateHost(_ context.Context, _ uuid.UUID, _ db.UpdateHostInput) (*db.Host, error) {
 	panic("nilHostStore: UpdateHost called unexpectedly")
 }
 func (nilHostStore) DeleteHost(_ context.Context, _ uuid.UUID) error {
@@ -149,13 +151,13 @@ func (nilProfileStore) ListProfiles(
 ) ([]*db.ScanProfile, int64, error) {
 	panic("nilProfileStore: ListProfiles called unexpectedly")
 }
-func (nilProfileStore) CreateProfile(_ context.Context, _ interface{}) (*db.ScanProfile, error) {
+func (nilProfileStore) CreateProfile(_ context.Context, _ db.CreateProfileInput) (*db.ScanProfile, error) {
 	panic("nilProfileStore: CreateProfile called unexpectedly")
 }
 func (nilProfileStore) GetProfile(_ context.Context, _ string) (*db.ScanProfile, error) {
 	panic("nilProfileStore: GetProfile called unexpectedly")
 }
-func (nilProfileStore) UpdateProfile(_ context.Context, _ string, _ interface{}) (*db.ScanProfile, error) {
+func (nilProfileStore) UpdateProfile(_ context.Context, _ string, _ db.UpdateProfileInput) (*db.ScanProfile, error) {
 	panic("nilProfileStore: UpdateProfile called unexpectedly")
 }
 func (nilProfileStore) DeleteProfile(_ context.Context, _ string) error {

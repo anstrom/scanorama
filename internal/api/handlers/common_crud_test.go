@@ -354,19 +354,16 @@ func TestCreateEntity(t *testing.T) {
 		Name string `json:"name"`
 	}
 
-	parseAndConvert := func(r *http.Request) (interface{}, error) {
+	parseAndConvert := func(r *http.Request) (TestRequest, error) {
 		var req TestRequest
 		if err := parseJSON(r, &req); err != nil {
-			return nil, err
+			return TestRequest{}, err
 		}
 		return req, nil
 	}
 
-	createInDB := func(_ context.Context, data interface{}) (*TestEntity, error) {
-		if req, ok := data.(TestRequest); ok {
-			return &TestEntity{ID: uuid.New(), Name: req.Name}, nil
-		}
-		return nil, errors.New("invalid data type")
+	createInDB := func(_ context.Context, data TestRequest) (*TestEntity, error) {
+		return &TestEntity{ID: uuid.New(), Name: data.Name}, nil
 	}
 
 	toResponse := func(entity *TestEntity) interface{} {
@@ -418,19 +415,16 @@ func TestUpdateEntity(t *testing.T) {
 
 	testID := uuid.New()
 
-	parseAndConvert := func(r *http.Request) (interface{}, error) {
+	parseAndConvert := func(r *http.Request) (TestRequest, error) {
 		var req TestRequest
 		if err := parseJSON(r, &req); err != nil {
-			return nil, err
+			return TestRequest{}, err
 		}
 		return req, nil
 	}
 
-	updateInDB := func(_ context.Context, id uuid.UUID, data interface{}) (*TestEntity, error) {
-		if req, ok := data.(TestRequest); ok {
-			return &TestEntity{ID: id, Name: req.Name}, nil
-		}
-		return nil, errors.New("invalid data type")
+	updateInDB := func(_ context.Context, id uuid.UUID, data TestRequest) (*TestEntity, error) {
+		return &TestEntity{ID: id, Name: data.Name}, nil
 	}
 
 	toResponse := func(entity *TestEntity) interface{} {
@@ -494,24 +488,21 @@ func TestCommonHandlers_Integration(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		CreateEntity[TestEntity, map[string]string](w, req, "entity", logger, metricsRegistry,
-			func(r *http.Request) (interface{}, error) {
+			func(r *http.Request) (map[string]string, error) {
 				var data map[string]string
 				if err := parseJSON(r, &data); err != nil {
 					return nil, err
 				}
 				return data, nil
 			},
-			func(_ context.Context, data interface{}) (*TestEntity, error) {
-				if req, ok := data.(map[string]string); ok {
-					entity := &TestEntity{
-						ID:        uuid.New(),
-						Name:      req["name"],
-						CreatedAt: time.Now(),
-					}
-					storage[entity.ID] = entity
-					return entity, nil
+			func(_ context.Context, data map[string]string) (*TestEntity, error) {
+				entity := &TestEntity{
+					ID:        uuid.New(),
+					Name:      data["name"],
+					CreatedAt: time.Now(),
 				}
-				return nil, errors.New("invalid data")
+				storage[entity.ID] = entity
+				return entity, nil
 			},
 			func(entity *TestEntity) interface{} {
 				return map[string]interface{}{
