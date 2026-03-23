@@ -1144,4 +1144,78 @@ query := `
 6. **Add line breaks before major clauses**: WHERE, ORDER BY, GROUP BY, etc.
 
 ## Test coverage
-Always add test if needed when adding code or refactoring
+
+### Non-negotiable rule
+**Every PR that adds or modifies code MUST include tests in the same commit. Do not open or amend a PR without covering the new code. This is not optional.**
+
+Codecov enforces patch coverage on every PR. A PR with 0% patch coverage on new files will be flagged and must be fixed before merge.
+
+### What "covered" means
+- Every new function must have at least one test exercising its happy path.
+- Every non-trivial branch (error returns, guard clauses, state-machine checks) must have a test exercising that branch.
+- New service files (e.g. `internal/services/*.go`) must have corresponding `*_test.go` files in the same package.
+- New handler endpoints must have corresponding mock-based tests in `handlers_mock_test.go`.
+
+### When to write tests — the checklist
+Before opening or updating a PR, ask for every changed file:
+1. Is this a new file? → write a `*_test.go` for it in the same PR commit.
+2. Is this a new exported function/method? → add a test.
+3. Is this a new unexported function with logic (validation, state checks, error branches)? → add a test.
+4. Did you move code from one package to another? → ensure coverage moves with it.
+5. Did you add a new HTTP endpoint? → add a mock-based handler test.
+
+### Patterns by layer
+
+#### Service layer (`internal/services/`)
+- Repository interfaces are unexported → write hand-rolled test doubles in the same package (`package services`).
+- Use a struct with function fields for each interface method; tests set only the fields they need.
+- Cover: constructor, every method's happy path, every validation/guard branch, every error propagation path.
+
+```scanorama/internal/services/example_test.go#L1-20
+package services
+
+type mockExampleRepo struct {
+    getByID func(ctx context.Context, id uuid.UUID) (*db.Thing, error)
+}
+
+func (m *mockExampleRepo) GetByID(ctx context.Context, id uuid.UUID) (*db.Thing, error) {
+    if m.getByID != nil {
+        return m.getByID(ctx, id)
+    }
+    return nil, nil
+}
+
+func TestExampleService_GetByID_NotFound(t *testing.T) {
+    svc := NewExampleService(&mockExampleRepo{
+        getByID: func(_ context.Context, _ uuid.UUID) (*db.Thing, error) {
+            return nil, errors.NewDatabaseError(errors.CodeNotFound, "not found")
+        },
+    }, slog.Default())
+    _, err := svc.GetByID(context.Background(), uuid.New())
+    require.Error(t, err)
+}
+```
+
+#### Handler layer (`internal/api/handlers/`)
+- Use the generated gomock mocks in `mocks/` and the `newXxxHandlerWithMock` helpers already defined in `handlers_mock_test.go`.
+- Every new endpoint handler needs: success (2xx), not-found (404), bad input (400), and service error (500) subtests.
+- Add tests directly to `handlers_mock_test.go` alongside the existing mock tests.
+
+#### DB / sqlmock layer (`internal/db/`, `internal/scanning/`)
+- For code that calls the database but has no live-DB integration test path reachable under `-short`, add a sqlmock test (see `internal/auth/db_operations_mock_test.go` for the pattern).
+
+### Coverage targets (from TODO.md)
+| Package | Target |
+|---|---|
+| `internal/services` | >50% |
+| `internal/api/handlers` | >70% |
+| `internal/auth` | >60% |
+| `internal/scanning` | >60% |
+| `internal/db` | >40% |
+
+### Verifying before commit
+```
+go test -short -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out | grep -v "100.0%"
+```
+Any new file showing 0.0% on all functions is a blocker — add tests before committing.

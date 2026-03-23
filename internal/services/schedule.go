@@ -19,6 +19,8 @@ import (
 // -- Repository interface --
 
 // scheduleRepository is the DB-facing interface consumed by ScheduleService.
+//
+//nolint:dupl // interface mirrored by mockScheduleRepo in schedule_test.go; duplication is unavoidable
 type scheduleRepository interface {
 	ListSchedules(ctx context.Context, filters db.ScheduleFilters, offset, limit int) ([]*db.Schedule, int64, error)
 	CreateSchedule(ctx context.Context, input db.CreateScheduleInput) (*db.Schedule, error)
