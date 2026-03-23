@@ -519,7 +519,7 @@ export function NetworksPage() {
   const [showAddNetwork, setShowAddNetwork] = useState(false);
 
   // Debounce name search
-  const debounceRef = { current: 0 as ReturnType<typeof setTimeout> };
+  const debounceRef = { current: 0 as unknown as ReturnType<typeof setTimeout> };
   const handleNameInput = useCallback(
     (value: string) => {
       setNameSearch(value);

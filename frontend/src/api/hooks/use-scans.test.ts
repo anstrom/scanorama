@@ -408,7 +408,7 @@ describe("useCreateScan", () => {
     const body = {
       name: "Custom scan",
       targets: ["10.0.0.1", "10.0.0.2"],
-      scan_type: "syn",
+      scan_type: "syn" as const,
       ports: "22,80,443",
       os_detection: true,
     };

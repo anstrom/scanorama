@@ -278,7 +278,7 @@ export function ProfilesPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   // Debounce name search
-  const debounceRef = { current: 0 as ReturnType<typeof setTimeout> };
+  const debounceRef = { current: 0 as unknown as ReturnType<typeof setTimeout> };
   const handleSearchInput = useCallback(
     (value: string) => {
       setSearch(value);
