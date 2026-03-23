@@ -270,11 +270,13 @@ deps: ## Download and tidy Go dependencies
 # ─── Docs ────────────────────────────────────────────────────────────────────
 
 .PHONY: docs
-docs: ## Generate Swagger/OpenAPI docs
+docs: frontend-deps ## Generate Swagger/OpenAPI docs and regenerate frontend types
 	@command -v swag >/dev/null 2>&1 \
 		|| (echo "Install: go install github.com/swaggo/swag/cmd/swag@latest" && exit 1)
 	@cd docs && swag init -g swagger_docs.go -o ./swagger --parseDependency --parseInternal
 	@echo "✓ Swagger docs generated"
+	@cd frontend && npm run generate-types
+	@echo "✓ Frontend types regenerated (src/api/types.ts)"
 
 # ─── CI / Workflows ─────────────────────────────────────────────────────────
 
