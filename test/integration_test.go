@@ -129,7 +129,12 @@ func cleanupRows(t *testing.T, database *db.DB, startTime time.Time) {
 		"DELETE FROM discovery_jobs WHERE created_at >= $1",
 		// Only delete hosts that are NOT the shared localhost target.
 		"DELETE FROM hosts WHERE first_seen >= $1 AND ip_address != '127.0.0.1'::inet",
-		"DELETE FROM networks WHERE created_at >= $1 AND is_active = false AND scan_enabled = false",
+		// Delete all networks created during this test. The is_active/scan_enabled
+		// conditions were removed because tests like TestScanWithPreExistingScanJob
+		// create networks with is_active=true, scan_enabled=false which the old
+		// condition silently skipped, leaving orphan rows that broke subsequent
+		// TestNetworkHandler_ListNetworks assertions.
+		"DELETE FROM networks WHERE created_at >= $1",
 	}
 	for _, q := range queries {
 		if _, err := database.ExecContext(ctx, q, startTime); err != nil {

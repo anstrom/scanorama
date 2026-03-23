@@ -4,6 +4,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"log/slog"
@@ -234,9 +235,22 @@ func findOrCreateNetwork(ctx context.Context, tx *sql.Tx,
 }
 
 // createScanJob creates a scan job in the database.
+// createScanJob inserts a single scan_jobs row. When allTargets contains more
+// than one entry the full list is stored in execution_details["scan_targets"]
+// so that GetScan can reconstruct the complete target set for the scanner,
+// which only sees the single network CIDR stored in the networks FK.
 func createScanJob(ctx context.Context, tx *sql.Tx, jobID, networkID uuid.UUID,
-	profileID *string, now time.Time, osDetection bool) error {
-	execDetails := fmt.Sprintf(`{"os_detection": %t}`, osDetection)
+	profileID *string, now time.Time, osDetection bool, allTargets []string) error {
+	var execDetails string
+	if len(allTargets) > 1 {
+		targetsJSON, err := json.Marshal(allTargets)
+		if err != nil {
+			return fmt.Errorf("marshal scan targets: %w", err)
+		}
+		execDetails = fmt.Sprintf(`{"os_detection": %t, "scan_targets": %s}`, osDetection, targetsJSON)
+	} else {
+		execDetails = fmt.Sprintf(`{"os_detection": %t}`, osDetection)
+	}
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO scan_jobs (id, network_id, profile_id, status, created_at, execution_details)
 		VALUES ($1, $2, $3, 'pending', $4, $5)
@@ -292,30 +306,26 @@ func (r *ScanRepository) CreateScan(ctx context.Context, input CreateScanInput) 
 	}()
 
 	now := time.Now().UTC()
-	var firstJobID uuid.UUID
 
-	for i, target := range input.Targets {
-		jobID := uuid.New()
+	// Always create exactly one scan_job, regardless of how many targets were
+	// supplied. The first target's network provides the required network_id FK.
+	// When there are multiple targets the full list is persisted inside
+	// execution_details["scan_targets"] and read back by GetScan, ensuring the
+	// scanner receives every target rather than only the primary network CIDR.
+	jobID := uuid.New()
 
-		if i == 0 {
-			firstJobID = jobID
-		}
-
-		networkName := input.Name
-		if len(input.Targets) > 1 {
-			networkName = fmt.Sprintf("%s-target-%d", input.Name, i+1)
-		}
-
-		networkID, err := findOrCreateNetwork(ctx, tx, networkName, target,
-			input.Description, input.Ports, input.ScanType)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := createScanJob(ctx, tx, jobID, networkID, input.ProfileID, now, input.OSDetection); err != nil {
-			return nil, err
-		}
+	networkID, err := findOrCreateNetwork(ctx, tx, input.Name, input.Targets[0],
+		input.Description, input.Ports, input.ScanType)
+	if err != nil {
+		return nil, err
 	}
+
+	if err := createScanJob(ctx, tx, jobID, networkID, input.ProfileID, now,
+		input.OSDetection, input.Targets); err != nil {
+		return nil, err
+	}
+
+	var firstJobID = jobID
 
 	if err = tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
@@ -323,6 +333,29 @@ func (r *ScanRepository) CreateScan(ctx context.Context, input CreateScanInput) 
 
 	return buildScanResponse(firstJobID, input.Name, input.Description, input.Targets,
 		input.ScanType, input.Ports, input.ProfileID, now), nil
+}
+
+// scanTargetsFromExecDetails returns the stored scan_targets list from the
+// execution_details JSON when present, falling back to the single network CIDR
+// otherwise. This allows CreateScan to persist a multi-target list without a
+// schema change.
+func scanTargetsFromExecDetails(execDetailsJSON, networkCIDR string) []string {
+	if execDetailsJSON == "" {
+		return []string{networkCIDR}
+	}
+	var execDetails map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(execDetailsJSON), &execDetails); err != nil {
+		return []string{networkCIDR}
+	}
+	rawTargets, ok := execDetails["scan_targets"]
+	if !ok {
+		return []string{networkCIDR}
+	}
+	var storedTargets []string
+	if err := json.Unmarshal(rawTargets, &storedTargets); err != nil || len(storedTargets) == 0 {
+		return []string{networkCIDR}
+	}
+	return storedTargets
 }
 
 // GetScan retrieves a scan by ID.
@@ -334,15 +367,16 @@ func (r *ScanRepository) GetScan(ctx context.Context, id uuid.UUID) (*Scan, erro
 			n.description,
 			n.cidr::text as targets,
 			COALESCE(sp.scan_type, n.scan_type) as scan_type,
-				n.scan_ports as ports,
-				sj.profile_id,
-				sj.status,
-				sj.created_at,
-				sj.started_at,
-				sj.completed_at,
-				sj.error_message,
-				COALESCE((sj.execution_details->>'os_detection')::boolean, false) as os_detection
-			FROM scan_jobs sj
+			n.scan_ports as ports,
+			sj.profile_id,
+			sj.status,
+			sj.created_at,
+			sj.started_at,
+			sj.completed_at,
+			sj.error_message,
+			COALESCE((sj.execution_details->>'os_detection')::boolean, false) as os_detection,
+			sj.execution_details::text as execution_details
+		FROM scan_jobs sj
 			JOIN networks n ON sj.network_id = n.id
 		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id
 		WHERE sj.id = $1
@@ -353,6 +387,7 @@ func (r *ScanRepository) GetScan(ctx context.Context, id uuid.UUID) (*Scan, erro
 	var profileID *string
 	var description sql.NullString
 	var osDetection bool
+	var execDetailsStr sql.NullString
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&scan.ID,
@@ -368,6 +403,7 @@ func (r *ScanRepository) GetScan(ctx context.Context, id uuid.UUID) (*Scan, erro
 		&scan.CompletedAt,
 		&scan.ErrorMessage,
 		&osDetection,
+		&execDetailsStr,
 	)
 	if err != nil {
 		if stderrors.Is(err, sql.ErrNoRows) {
@@ -380,7 +416,9 @@ func (r *ScanRepository) GetScan(ctx context.Context, id uuid.UUID) (*Scan, erro
 		scan.Description = description.String
 	}
 
-	scan.Targets = []string{targetsStr}
+	// Prefer the full target list stored in execution_details over the single
+	// network CIDR. This is set by CreateScan when len(targets) > 1.
+	scan.Targets = scanTargetsFromExecDetails(execDetailsStr.String, targetsStr)
 	scan.Options = map[string]interface{}{"os_detection": osDetection}
 
 	if profileID != nil {

@@ -300,6 +300,9 @@ func TestFindOrCreateNetwork_ReuseExisting(t *testing.T) {
 
 	ctx := context.Background()
 	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.99.0.0/24'`)
+	t.Cleanup(func() {
+		_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.99.0.0/24'`)
+	})
 
 	existing := uuid.New()
 	_, err := database.ExecContext(ctx, `

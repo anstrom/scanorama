@@ -25,8 +25,8 @@ var scanColumns = []string{
 	"error_message",
 }
 
-// getScanColumns are the columns returned by the GetScan query (one extra: os_detection).
-var getScanColumns = append(scanColumns, "os_detection")
+// getScanColumns are the columns returned by the GetScan query (two extra: os_detection, execution_details).
+var getScanColumns = append(scanColumns, "os_detection", "execution_details")
 
 // driverValues converts []interface{} to []driver.Value so it can be spread
 // into sqlmock's AddRow(...driver.Value) variadic parameter.
@@ -367,6 +367,7 @@ func TestGetScan_Unit(t *testing.T) {
 				id, "Scan", sql.NullString{Valid: false}, "10.0.0.0/8",
 				"connect", "", nil, "pending",
 				now, nil, nil, nil, false,
+				sql.NullString{Valid: false},
 			))
 
 		scan, err := NewScanRepository(db).GetScan(context.Background(), id)
@@ -390,6 +391,7 @@ func TestGetScan_Unit(t *testing.T) {
 				"192.168.1.0/24", "version", "80,443",
 				&profile, "completed",
 				now, nil, nil, nil, true,
+				sql.NullString{Valid: false},
 			))
 
 		scan, err := NewScanRepository(db).GetScan(context.Background(), id)
@@ -411,6 +413,7 @@ func TestGetScan_Unit(t *testing.T) {
 				id, "Scan", sql.NullString{Valid: false}, "10.0.0.0/8",
 				"connect", "", nil, "completed",
 				now, started, completed, nil, false,
+				sql.NullString{Valid: false},
 			))
 
 		scan, err := NewScanRepository(db).GetScan(context.Background(), id)
@@ -428,12 +431,45 @@ func TestGetScan_Unit(t *testing.T) {
 				id, "Scan", sql.NullString{Valid: false}, "10.0.0.0/8",
 				"connect", "", nil, "running",
 				now, started, nil, nil, false,
+				sql.NullString{Valid: false},
 			))
 
 		scan, err := NewScanRepository(db).GetScan(context.Background(), id)
 		require.NoError(t, err)
 		assert.Nil(t, scan.DurationStr)
 		assert.Equal(t, started, scan.UpdatedAt)
+	})
+
+	t.Run("stored scan_targets override network CIDR", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		execDetails := `{"os_detection": false, "scan_targets": ["10.0.0.1", "10.0.0.2"]}`
+		mock.ExpectQuery(`SELECT`).WillReturnRows(
+			sqlmock.NewRows(getScanColumns).AddRow(
+				id, "Multi-target", sql.NullString{Valid: false}, "10.0.0.1/32",
+				"connect", "80,443", nil, "pending",
+				now, nil, nil, nil, false,
+				sql.NullString{String: execDetails, Valid: true},
+			))
+
+		scan, err := NewScanRepository(db).GetScan(context.Background(), id)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"10.0.0.1", "10.0.0.2"}, scan.Targets)
+	})
+
+	t.Run("invalid scan_targets JSON falls back to network CIDR", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		execDetails := `{"os_detection": false, "scan_targets": "not-an-array"}`
+		mock.ExpectQuery(`SELECT`).WillReturnRows(
+			sqlmock.NewRows(getScanColumns).AddRow(
+				id, "Fallback", sql.NullString{Valid: false}, "10.0.0.1/32",
+				"connect", "", nil, "pending",
+				now, nil, nil, nil, false,
+				sql.NullString{String: execDetails, Valid: true},
+			))
+
+		scan, err := NewScanRepository(db).GetScan(context.Background(), id)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"10.0.0.1/32"}, scan.Targets)
 	})
 }
 
@@ -475,6 +511,32 @@ func TestCreateScan_Unit(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Reuse Scan", scan.Name)
 		assert.Equal(t, "connect", scan.ScanType)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("multiple targets create exactly one job", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		networkID := uuid.New()
+
+		mock.ExpectBegin()
+		// Only ONE network lookup — for the first target only.
+		mock.ExpectQuery(`SELECT id FROM networks`).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(networkID))
+		// Only ONE scan_jobs INSERT — not one per target.
+		mock.ExpectExec(`INSERT INTO scan_jobs`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		scan, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{
+			Name:     "Multi-target",
+			Targets:  []string{"10.0.0.1", "10.0.0.2"},
+			ScanType: "connect",
+			Ports:    "80,443",
+		})
+		require.NoError(t, err)
+		// The response must carry the full original target list.
+		assert.Equal(t, []string{"10.0.0.1", "10.0.0.2"}, scan.Targets)
+		assert.Equal(t, "pending", scan.Status)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -559,21 +621,15 @@ func TestCreateScan_Unit(t *testing.T) {
 		assert.Contains(t, err.Error(), "create scan job")
 	})
 
-	t.Run("multiple targets create one job each", func(t *testing.T) {
+	t.Run("multiple targets create exactly one job using first target's network", func(t *testing.T) {
 		db, mock := newMockDB(t)
 		net1 := uuid.New()
-		net2 := uuid.New()
 
 		mock.ExpectBegin()
-		// Target 1: exists.
+		// Only the FIRST target is looked up — no second SELECT.
 		mock.ExpectQuery(`SELECT id FROM networks`).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(net1))
-		mock.ExpectExec(`INSERT INTO scan_jobs`).
-			WillReturnResult(sqlmock.NewResult(1, 1))
-		// Target 2: new.
-		mock.ExpectQuery(`SELECT id FROM networks`).WillReturnError(sql.ErrNoRows)
-		mock.ExpectExec(`INSERT INTO networks`).
-			WillReturnResult(sqlmock.NewResult(1, 1))
+		// Only ONE scan_jobs INSERT regardless of target count.
 		mock.ExpectExec(`INSERT INTO scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
@@ -584,9 +640,9 @@ func TestCreateScan_Unit(t *testing.T) {
 			ScanType: "connect",
 		})
 		require.NoError(t, err)
-		// firstJobID is from target-1's job.
 		assert.NotEqual(t, uuid.Nil, scan.ID)
-		_ = net2
+		// The full target list must be preserved in the response.
+		assert.Equal(t, []string{"10.0.0.0/8", "192.168.0.0/16"}, scan.Targets)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -844,6 +900,7 @@ func TestUpdateScan_Unit(t *testing.T) {
 			sqlmock.NewRows(getScanColumns).AddRow(
 				id, "Renamed", sql.NullString{Valid: false}, "10.0.0.0/8",
 				"syn", "", nil, "pending", now, nil, nil, nil, false,
+				sql.NullString{Valid: false},
 			))
 
 		renamed := "Renamed"
@@ -868,6 +925,7 @@ func TestUpdateScan_Unit(t *testing.T) {
 			sqlmock.NewRows(getScanColumns).AddRow(
 				id, "Unchanged", sql.NullString{Valid: false}, "10.0.0.0/8",
 				"connect", "", nil, "pending", now, nil, nil, nil, false,
+				sql.NullString{Valid: false},
 			))
 
 		scan, err := NewScanRepository(db).UpdateScan(context.Background(), id, UpdateScanInput{})
