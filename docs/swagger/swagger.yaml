@@ -13,19 +13,28 @@ definitions:
     type: object
   docs.CreateDiscoveryJobRequest:
     properties:
+      description:
+        type: string
+      enabled:
+        example: true
+        type: boolean
       method:
         enum:
-        - tcp
-        - icmp
+        - ping
         - arp
-        example: tcp
+        - icmp
+        - tcp_connect
+        example: ping
         type: string
       name:
         example: Office Network Discovery
         type: string
-      network:
-        example: 192.168.1.0/24
-        type: string
+      networks:
+        example:
+        - 192.168.1.0/24
+        items:
+          type: string
+        type: array
     type: object
   docs.CreateExclusionRequest:
     properties:
@@ -49,6 +58,7 @@ definitions:
         - ping
         - tcp
         - arp
+        - icmp
         example: ping
         type: string
       is_active:
@@ -70,12 +80,20 @@ definitions:
         example: Custom Scan Profile
         type: string
       options:
-        additionalProperties: true
+        additionalProperties:
+          type: string
         type: object
       ports:
         example: 22,80,443,8080
         type: string
       scan_type:
+        enum:
+        - connect
+        - syn
+        - ack
+        - udp
+        - aggressive
+        - comprehensive
         example: connect
         type: string
     type: object
@@ -87,12 +105,33 @@ definitions:
       name:
         example: Weekly security scan
         type: string
+      options:
+        additionalProperties:
+          type: string
+        type: object
+      os_detection:
+        example: false
+        type: boolean
+      ports:
+        example: 22,80,443
+        type: string
       profile_id:
         example: 550e8400-e29b-41d4-a716-446655440001
         type: string
-      scan_options:
-        additionalProperties: true
-        type: object
+      scan_type:
+        enum:
+        - connect
+        - syn
+        - ack
+        - udp
+        - aggressive
+        - comprehensive
+        example: connect
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
       targets:
         example:
         - 192.168.1.0/24
@@ -102,7 +141,7 @@ definitions:
     type: object
   docs.CreateScheduleRequest:
     properties:
-      cron_expression:
+      cron_expr:
         example: 0 2 * * *
         type: string
       enabled:
@@ -111,35 +150,57 @@ definitions:
       name:
         example: Daily Security Scan
         type: string
-      profile_id:
-        example: 550e8400-e29b-41d4-a716-446655440001
+      network_id:
+        example: 550e8400-e29b-41d4-a716-446655440010
         type: string
-      targets:
+      type:
+        enum:
+        - scan
+        - discovery
+        example: scan
+        type: string
+    type: object
+  docs.DiscoveryJobResponse:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      hosts_found:
+        example: 12
+        type: integer
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440004
+        type: string
+      last_error:
+        type: string
+      last_run:
+        type: string
+      method:
+        enum:
+        - ping
+        - arp
+        - icmp
+        - tcp_connect
+        example: ping
+        type: string
+      name:
+        example: Network Discovery
+        type: string
+      networks:
         example:
         - 192.168.1.0/24
         items:
           type: string
         type: array
-    type: object
-  docs.DiscoveryJobResponse:
-    properties:
-      created_at:
-        type: string
-      id:
-        example: 550e8400-e29b-41d4-a716-446655440004
-        type: string
-      method:
-        enum:
-        - tcp
-        - icmp
-        - arp
-        example: tcp
-        type: string
-      name:
-        example: Network Discovery
-        type: string
-      network:
-        example: 192.168.1.0/24
+      next_run:
         type: string
       progress:
         example: 45.5
@@ -153,6 +214,8 @@ definitions:
         - completed
         - failed
         example: running
+        type: string
+      updated_at:
         type: string
     type: object
   docs.ErrorResponse:
@@ -275,6 +338,7 @@ definitions:
         - ping
         - tcp
         - arp
+        - icmp
         example: ping
         type: string
       host_count:
@@ -290,12 +354,31 @@ definitions:
         type: string
       last_scan:
         type: string
+      modified_by:
+        example: admin
+        type: string
       name:
         example: Office Network
         type: string
       scan_enabled:
         example: true
         type: boolean
+      scan_interval_seconds:
+        example: 3600
+        type: integer
+      scan_ports:
+        example: 22,80,443,8080
+        type: string
+      scan_type:
+        enum:
+        - connect
+        - syn
+        - ack
+        - udp
+        - aggressive
+        - comprehensive
+        example: connect
+        type: string
       updated_at:
         type: string
     type: object
@@ -394,12 +477,20 @@ definitions:
         example: Quick Connect Scan
         type: string
       options:
-        additionalProperties: true
+        additionalProperties:
+          type: string
         type: object
       ports:
         example: 22,80,443
         type: string
       scan_type:
+        enum:
+        - connect
+        - syn
+        - ack
+        - udp
+        - aggressive
+        - comprehensive
         example: connect
         type: string
       updated_at:
@@ -417,26 +508,31 @@ definitions:
         type: string
       created_at:
         type: string
+      created_by:
+        type: string
+      description:
+        type: string
       duration:
         example: 14m30s
         type: string
       error_message:
         type: string
-      hosts_discovered:
-        example: 25
-        type: integer
       id:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
       name:
         example: 'Ad-hoc scan: 192.168.1.0/24'
         type: string
+      options:
+        additionalProperties:
+          type: string
+        type: object
       ports:
         example: 22,80,443
         type: string
       ports_scanned:
-        example: 2500
-        type: integer
+        example: 443 open / 1200 total
+        type: string
       profile_id:
         example: 550e8400-e29b-41d4-a716-446655440001
         type: string
@@ -447,9 +543,9 @@ definitions:
         enum:
         - connect
         - syn
-        - version
+        - ack
+        - udp
         - aggressive
-        - stealth
         - comprehensive
         example: connect
         type: string
@@ -461,45 +557,68 @@ definitions:
         - running
         - completed
         - failed
-        - cancelled
         example: running
         type: string
+      tags:
+        items:
+          type: string
+        type: array
       targets:
         example:
         - 192.168.1.0/24
         items:
           type: string
         type: array
+      updated_at:
+        type: string
     type: object
   docs.ScheduleResponse:
     properties:
       created_at:
         type: string
-      cron_expression:
+      created_by:
+        type: string
+      cron_expr:
         example: 0 2 * * 1
+        type: string
+      description:
         type: string
       enabled:
         example: true
         type: boolean
+      error_count:
+        example: 0
+        type: integer
       id:
         example: 550e8400-e29b-41d4-a716-446655440005
+        type: string
+      last_error:
         type: string
       last_run:
         type: string
       name:
         example: Weekly Security Scan
         type: string
+      network_id:
+        example: 550e8400-e29b-41d4-a716-446655440010
+        type: string
+      network_name:
+        example: Office Network
+        type: string
       next_run:
         type: string
-      profile_id:
-        example: 550e8400-e29b-41d4-a716-446655440001
+      run_count:
+        example: 5
+        type: integer
+      status:
+        example: active
         type: string
-      targets:
-        example:
-        - 192.168.1.0/24
-        items:
-          type: string
-        type: array
+      type:
+        enum:
+        - scan
+        - discovery
+        example: scan
+        type: string
       updated_at:
         type: string
     type: object
@@ -530,6 +649,7 @@ definitions:
         - ping
         - tcp
         - arp
+        - icmp
         example: ping
         type: string
       is_active:
@@ -554,22 +674,24 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      os_detection:
+        example: false
+        type: boolean
       ports:
         example: 22,80,443
         type: string
       profile_id:
-        type: integer
+        type: string
       scan_type:
         enum:
         - connect
         - syn
         - ack
+        - udp
         - aggressive
         - comprehensive
         example: connect
         type: string
-      schedule_id:
-        type: integer
       tags:
         items:
           type: string

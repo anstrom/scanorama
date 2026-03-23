@@ -8,7 +8,8 @@ import {
 import { cn } from "../lib/utils";
 
 const METHODS = [
-  { value: "tcp", label: "TCP" },
+  { value: "ping", label: "Ping" },
+  { value: "tcp_connect", label: "TCP Connect" },
   { value: "icmp", label: "ICMP" },
   { value: "arp", label: "ARP" },
 ] as const;
@@ -51,7 +52,7 @@ export function CreateDiscoveryModal({
     try {
       const result = await createDiscoveryJob({
         name: name.trim() || undefined,
-        network: trimmedNetwork,
+        networks: [trimmedNetwork],
         method,
       });
 

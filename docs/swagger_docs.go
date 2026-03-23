@@ -96,31 +96,38 @@ type AdminStatusResponse struct {
 
 // ScanResponse represents a scan object
 type ScanResponse struct {
-	ID              string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	Name            string     `json:"name" example:"Ad-hoc scan: 192.168.1.0/24"`
-	ProfileID       string     `json:"profile_id" example:"550e8400-e29b-41d4-a716-446655440001"`
-	ScanType        string     `json:"scan_type" example:"connect" enums:"connect,syn,ack,udp,aggressive,comprehensive"`
-	Ports           string     `json:"ports,omitempty" example:"22,80,443"`
-	Targets         []string   `json:"targets" example:"192.168.1.0/24"`
-	Status          string     `json:"status" example:"running" enums:"pending,running,completed,failed,cancelled"`
-	Progress        float64    `json:"progress" example:"65.5"`
-	CreatedAt       time.Time  `json:"created_at"`
-	StartedAt       *time.Time `json:"started_at,omitempty"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty"`
-	Duration        *string    `json:"duration,omitempty" example:"14m30s"`
-	HostsDiscovered int        `json:"hosts_discovered" example:"25"`
-	PortsScanned    int        `json:"ports_scanned" example:"2500"`
-	ErrorMessage    *string    `json:"error_message,omitempty"`
+	ID           string            `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Name         string            `json:"name" example:"Ad-hoc scan: 192.168.1.0/24"`
+	Description  string            `json:"description,omitempty"`
+	ProfileID    *string           `json:"profile_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
+	ScanType     string            `json:"scan_type" example:"connect" enums:"connect,syn,ack,udp,aggressive,comprehensive"`
+	Ports        string            `json:"ports,omitempty" example:"22,80,443"`
+	Targets      []string          `json:"targets" example:"192.168.1.0/24"`
+	Options      map[string]string `json:"options,omitempty"`
+	Tags         []string          `json:"tags,omitempty"`
+	Status       string            `json:"status" example:"running" enums:"pending,running,completed,failed"`
+	Progress     float64           `json:"progress" example:"65.5"`
+	CreatedAt    time.Time         `json:"created_at"`
+	UpdatedAt    time.Time         `json:"updated_at"`
+	StartedAt    *time.Time        `json:"started_at,omitempty"`
+	CompletedAt  *time.Time        `json:"completed_at,omitempty"`
+	Duration     *string           `json:"duration,omitempty" example:"14m30s"`
+	PortsScanned *string           `json:"ports_scanned,omitempty" example:"443 open / 1200 total"`
+	ErrorMessage *string           `json:"error_message,omitempty"`
+	CreatedBy    string            `json:"created_by,omitempty"`
 }
 
 // CreateScanRequest represents a request to create a new scan
 type CreateScanRequest struct {
-	ProfileID   string                 `json:"profile_id" example:"550e8400-e29b-41d4-a716-446655440001"`
-	Targets     []string               `json:"targets" example:"192.168.1.0/24"`
-	Name        *string                `json:"name,omitempty" example:"Weekly security scan"`
-	Description *string                `json:"description,omitempty" example:"Regular security assessment"`
-	ScanOptions map[string]interface{} `json:"scan_options,omitempty"`
-	OSDetection bool                   `json:"os_detection,omitempty" example:"false"`
+	Name        string            `json:"name" example:"Weekly security scan"`
+	Targets     []string          `json:"targets" example:"192.168.1.0/24"`
+	ScanType    string            `json:"scan_type" example:"connect" enums:"connect,syn,ack,udp,aggressive,comprehensive"`
+	ProfileID   *string           `json:"profile_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
+	Description string            `json:"description,omitempty" example:"Regular security assessment"`
+	Ports       string            `json:"ports,omitempty" example:"22,80,443"`
+	Options     map[string]string `json:"options,omitempty"`
+	OSDetection bool              `json:"os_detection,omitempty" example:"false"`
+	Tags        []string          `json:"tags,omitempty"`
 }
 
 // HostResponse represents a discovered host
@@ -138,65 +145,83 @@ type HostResponse struct {
 
 // ProfileResponse represents a scan profile
 type ProfileResponse struct {
-	ID          string                 `json:"id" example:"550e8400-e29b-41d4-a716-446655440003"`
-	Name        string                 `json:"name" example:"Quick Connect Scan"`
-	Description *string                `json:"description,omitempty" example:"Fast TCP connect scan"`
-	ScanType    string                 `json:"scan_type" example:"connect"`
-	Ports       *string                `json:"ports,omitempty" example:"22,80,443"`
-	Options     map[string]interface{} `json:"options,omitempty"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ID          string            `json:"id" example:"550e8400-e29b-41d4-a716-446655440003"`
+	Name        string            `json:"name" example:"Quick Connect Scan"`
+	Description string            `json:"description,omitempty" example:"Fast TCP connect scan"`
+	ScanType    string            `json:"scan_type" example:"connect" enums:"connect,syn,ack,udp,aggressive,comprehensive"`
+	Ports       string            `json:"ports,omitempty" example:"22,80,443"`
+	Options     map[string]string `json:"options,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
 }
 
 // CreateProfileRequest represents a request to create a scan profile
 type CreateProfileRequest struct {
-	Name        string                 `json:"name" example:"Custom Scan Profile"`
-	Description *string                `json:"description,omitempty" example:"Custom scan configuration"`
-	ScanType    string                 `json:"scan_type" example:"connect"`
-	Ports       *string                `json:"ports,omitempty" example:"22,80,443,8080"`
-	Options     map[string]interface{} `json:"options,omitempty"`
+	Name        string            `json:"name" example:"Custom Scan Profile"`
+	Description string            `json:"description,omitempty" example:"Custom scan configuration"`
+	ScanType    string            `json:"scan_type" example:"connect" enums:"connect,syn,ack,udp,aggressive,comprehensive"`
+	Ports       string            `json:"ports,omitempty" example:"22,80,443,8080"`
+	Options     map[string]string `json:"options,omitempty"`
 }
 
 // DiscoveryJobResponse represents a discovery job
 type DiscoveryJobResponse struct {
-	ID        string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440004"`
-	Name      string     `json:"name" example:"Network Discovery"`
-	Network   string     `json:"network" example:"192.168.1.0/24"`
-	Method    string     `json:"method" example:"tcp" enums:"tcp,icmp,arp"`
-	Status    string     `json:"status" example:"running" enums:"pending,running,completed,failed"`
-	Progress  float64    `json:"progress" example:"45.5"`
-	CreatedAt time.Time  `json:"created_at"`
-	StartedAt *time.Time `json:"started_at,omitempty"`
+	ID          string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440004"`
+	Name        string     `json:"name" example:"Network Discovery"`
+	Description string     `json:"description,omitempty"`
+	Networks    []string   `json:"networks" example:"192.168.1.0/24"`
+	Method      string     `json:"method" example:"ping" enums:"ping,arp,icmp,tcp_connect"`
+	Status      string     `json:"status" example:"running" enums:"pending,running,completed,failed"`
+	Progress    float64    `json:"progress" example:"45.5"`
+	HostsFound  int        `json:"hosts_found" example:"12"`
+	Enabled     bool       `json:"enabled" example:"true"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	LastRun     *time.Time `json:"last_run,omitempty"`
+	NextRun     *time.Time `json:"next_run,omitempty"`
+	LastError   string     `json:"last_error,omitempty"`
+	CreatedBy   string     `json:"created_by,omitempty"`
 }
 
 // CreateDiscoveryJobRequest represents a request to create a discovery job
 type CreateDiscoveryJobRequest struct {
-	Name    string `json:"name" example:"Office Network Discovery"`
-	Network string `json:"network" example:"192.168.1.0/24"`
-	Method  string `json:"method" example:"tcp" enums:"tcp,icmp,arp"`
+	Name        string   `json:"name" example:"Office Network Discovery"`
+	Networks    []string `json:"networks" example:"192.168.1.0/24"`
+	Method      string   `json:"method" example:"ping" enums:"ping,arp,icmp,tcp_connect"`
+	Description string   `json:"description,omitempty"`
+	Enabled     bool     `json:"enabled" example:"true"`
 }
 
 // ScheduleResponse represents a scheduled scan
 type ScheduleResponse struct {
-	ID        string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440005"`
-	Name      string     `json:"name" example:"Weekly Security Scan"`
-	CronExpr  string     `json:"cron_expression" example:"0 2 * * 1"`
-	ProfileID string     `json:"profile_id" example:"550e8400-e29b-41d4-a716-446655440001"`
-	Targets   []string   `json:"targets" example:"192.168.1.0/24"`
-	Enabled   bool       `json:"enabled" example:"true"`
-	LastRun   *time.Time `json:"last_run,omitempty"`
-	NextRun   *time.Time `json:"next_run,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	ID          string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440005"`
+	Name        string     `json:"name" example:"Weekly Security Scan"`
+	Description string     `json:"description,omitempty"`
+	CronExpr    string     `json:"cron_expr" example:"0 2 * * 1"`
+	Type        string     `json:"type" example:"scan" enums:"scan,discovery"`
+	NetworkID   string     `json:"network_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440010"`
+	NetworkName string     `json:"network_name,omitempty" example:"Office Network"`
+	Enabled     bool       `json:"enabled" example:"true"`
+	Status      string     `json:"status" example:"active"`
+	LastRun     *time.Time `json:"last_run,omitempty"`
+	NextRun     *time.Time `json:"next_run,omitempty"`
+	RunCount    int        `json:"run_count" example:"5"`
+	ErrorCount  int        `json:"error_count" example:"0"`
+	LastError   string     `json:"last_error,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	CreatedBy   string     `json:"created_by,omitempty"`
 }
 
 // CreateScheduleRequest represents a request to create a schedule
 type CreateScheduleRequest struct {
-	Name      string   `json:"name" example:"Daily Security Scan"`
-	CronExpr  string   `json:"cron_expression" example:"0 2 * * *"`
-	ProfileID string   `json:"profile_id" example:"550e8400-e29b-41d4-a716-446655440001"`
-	Targets   []string `json:"targets" example:"192.168.1.0/24"`
-	Enabled   bool     `json:"enabled" example:"true"`
+	Name      string `json:"name" example:"Daily Security Scan"`
+	CronExpr  string `json:"cron_expr" example:"0 2 * * *"`
+	Type      string `json:"type" example:"scan" enums:"scan,discovery"`
+	NetworkID string `json:"network_id" example:"550e8400-e29b-41d4-a716-446655440010"`
+	Enabled   bool   `json:"enabled" example:"true"`
 }
 
 // PaginationInfo represents pagination metadata
@@ -239,20 +264,24 @@ type PaginatedSchedulesResponse struct {
 
 // NetworkResponse represents a network object
 type NetworkResponse struct {
-	ID              string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440010"`
-	Name            string     `json:"name" example:"Office Network"`
-	CIDR            string     `json:"cidr" example:"192.168.1.0/24"`
-	Description     *string    `json:"description,omitempty" example:"Main office network"`
-	DiscoveryMethod string     `json:"discovery_method" example:"ping" enums:"ping,tcp,arp"`
-	IsActive        bool       `json:"is_active" example:"true"`
-	ScanEnabled     bool       `json:"scan_enabled" example:"true"`
-	LastDiscovery   *time.Time `json:"last_discovery,omitempty"`
-	LastScan        *time.Time `json:"last_scan,omitempty"`
-	HostCount       int        `json:"host_count" example:"25"`
-	ActiveHostCount int        `json:"active_host_count" example:"20"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	CreatedBy       *string    `json:"created_by,omitempty" example:"admin"`
+	ID                  string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440010"`
+	Name                string     `json:"name" example:"Office Network"`
+	CIDR                string     `json:"cidr" example:"192.168.1.0/24"`
+	Description         *string    `json:"description,omitempty" example:"Main office network"`
+	DiscoveryMethod     string     `json:"discovery_method" example:"ping" enums:"ping,tcp,arp,icmp"`
+	IsActive            bool       `json:"is_active" example:"true"`
+	ScanEnabled         bool       `json:"scan_enabled" example:"true"`
+	ScanIntervalSeconds int        `json:"scan_interval_seconds" example:"3600"`
+	ScanPorts           string     `json:"scan_ports" example:"22,80,443,8080"`
+	ScanType            string     `json:"scan_type" example:"connect" enums:"connect,syn,ack,udp,aggressive,comprehensive"`
+	LastDiscovery       *time.Time `json:"last_discovery,omitempty"`
+	LastScan            *time.Time `json:"last_scan,omitempty"`
+	HostCount           int        `json:"host_count" example:"25"`
+	ActiveHostCount     int        `json:"active_host_count" example:"20"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+	CreatedBy           *string    `json:"created_by,omitempty" example:"admin"`
+	ModifiedBy          *string    `json:"modified_by,omitempty" example:"admin"`
 }
 
 // CreateNetworkRequest represents a request to create a network
@@ -260,7 +289,7 @@ type CreateNetworkRequest struct {
 	Name            string  `json:"name" example:"Office Network"`
 	CIDR            string  `json:"cidr" example:"192.168.1.0/24"`
 	Description     *string `json:"description,omitempty" example:"Main office network"`
-	DiscoveryMethod string  `json:"discovery_method" example:"ping" enums:"ping,tcp,arp"`
+	DiscoveryMethod string  `json:"discovery_method" example:"ping" enums:"ping,tcp,arp,icmp"`
 	IsActive        *bool   `json:"is_active,omitempty" example:"true"`
 	ScanEnabled     *bool   `json:"scan_enabled,omitempty" example:"true"`
 }
@@ -270,7 +299,7 @@ type UpdateNetworkRequest struct {
 	Name            *string `json:"name,omitempty" example:"Office Network"`
 	CIDR            *string `json:"cidr,omitempty" example:"192.168.1.0/24"`
 	Description     *string `json:"description,omitempty" example:"Main office network"`
-	DiscoveryMethod *string `json:"discovery_method,omitempty" example:"ping" enums:"ping,tcp,arp"`
+	DiscoveryMethod *string `json:"discovery_method,omitempty" example:"ping" enums:"ping,tcp,arp,icmp"`
 	IsActive        *bool   `json:"is_active,omitempty" example:"true"`
 	ScanEnabled     *bool   `json:"scan_enabled,omitempty" example:"true"`
 }
@@ -327,7 +356,6 @@ type UpdateScanRequest struct {
 	Ports       string            `json:"ports,omitempty" example:"22,80,443"`
 	ProfileID   *string           `json:"profile_id,omitempty"`
 	Options     map[string]string `json:"options,omitempty"`
-	ScheduleID  *int64            `json:"schedule_id,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
 	OSDetection bool              `json:"os_detection,omitempty" example:"false"`
 }
