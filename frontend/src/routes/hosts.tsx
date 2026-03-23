@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { isNotFound } from "../api/errors";
 import { Search, ScanLine, X, Monitor } from "lucide-react";
 import { Button } from "../components/button";
 import { useHosts, useHost } from "../api/hooks/use-hosts";
@@ -40,7 +41,7 @@ function HostDetailPanel({
   onClose: () => void;
   onScan: (ip: string) => void;
 }) {
-  const { data: full, isLoading } = useHost(host.id ?? "");
+  const { data: full, isLoading, isError, error } = useHost(host.id ?? "");
   const h = full ?? host;
 
   return (
@@ -85,6 +86,13 @@ function HostDetailPanel({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+          {isError && (
+            <p className="text-xs text-danger">
+              {isNotFound(error)
+                ? "This host no longer exists."
+                : "Failed to load host details."}
+            </p>
+          )}
           {/* OS Detection */}
           {(isLoading || h.os_family || h.os_name || h.os_version_detail) && (
             <section>

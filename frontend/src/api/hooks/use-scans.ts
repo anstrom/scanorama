@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../client";
+import { ApiError } from "../errors";
 
 export interface ScanResultEntry {
   id?: string;
@@ -38,26 +39,32 @@ export interface ScanResultsData {
   summary?: ScanResultsSummary;
 }
 
+type ScanStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "stopped";
+
 interface ScanListParams {
   page?: number;
   page_size?: number;
-  status?:
-    | "pending"
-    | "running"
-    | "completed"
-    | "failed"
-    | "cancelled"
-    | "stopped";
+  status?: ScanStatus;
 }
 
 export function useScans(params: ScanListParams = {}) {
   return useQuery({
     queryKey: ["scans", "list", params],
     queryFn: async () => {
-      const { data, error } = await api.GET("/scans", {
-        params: { query: params },
+      // Cast status: the generated types omit "stopped" but the backend supports it.
+      const query = params as Omit<typeof params, "status"> & {
+        status?: "pending" | "running" | "completed" | "failed" | "cancelled";
+      };
+      const { data, error, response } = await api.GET("/scans", {
+        params: { query },
       });
-      if (error) throw error;
+      if (error) throw new ApiError(response.status, error);
       return data;
     },
     refetchInterval: (query) => {
@@ -74,10 +81,10 @@ export function useScan(id: string) {
   return useQuery({
     queryKey: ["scans", "detail", id],
     queryFn: async () => {
-      const { data, error } = await api.GET("/scans/{scanId}", {
+      const { data, error, response } = await api.GET("/scans/{scanId}", {
         params: { path: { scanId: id } },
       });
-      if (error) throw error;
+      if (error) throw new ApiError(response.status, error);
       return data;
     },
     enabled: !!id,
@@ -88,10 +95,13 @@ export function useStartScan() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (scanId: string) => {
-      const { data, error } = await api.POST("/scans/{scanId}/start", {
-        params: { path: { scanId } },
-      });
-      if (error) throw error;
+      const { data, error, response } = await api.POST(
+        "/scans/{scanId}/start",
+        {
+          params: { path: { scanId } },
+        },
+      );
+      if (error) throw new ApiError(response.status, error);
       return data;
     },
     onSuccess: () => {
@@ -100,30 +110,27 @@ export function useStartScan() {
   });
 }
 
+export type ScanType =
+  | "connect"
+  | "syn"
+  | "ack"
+  | "udp"
+  | "aggressive"
+  | "comprehensive";
+
 export function useCreateScan() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (body: {
       name: string;
       targets: string[];
-      scan_type:
-        | "connect"
-        | "syn"
-        | "ack"
-        | "udp"
-        | "aggressive"
-        | "comprehensive";
+      scan_type: ScanType;
       ports?: string;
       os_detection?: boolean;
       description?: string;
     }) => {
-      const { data, error } = await api.POST("/scans", { body });
-      if (error) {
-        const apiError = error as { message?: string; error?: string };
-        throw new Error(
-          apiError.message ?? apiError.error ?? "Scan creation failed.",
-        );
-      }
+      const { data, error, response } = await api.POST("/scans", { body });
+      if (error) throw new ApiError(response.status, error);
       return data;
     },
     onSuccess: () => {
@@ -136,10 +143,13 @@ export function useScanResults(scanId: string, scanStatus?: string) {
   return useQuery({
     queryKey: ["scans", "results", scanId],
     queryFn: async () => {
-      const { data, error } = await api.GET("/scans/{scanId}/results", {
-        params: { path: { scanId } },
-      });
-      if (error) throw error;
+      const { data, error, response } = await api.GET(
+        "/scans/{scanId}/results",
+        {
+          params: { path: { scanId } },
+        },
+      );
+      if (error) throw new ApiError(response.status, error);
       return data as ScanResultsData | undefined;
     },
     enabled: !!scanId,
@@ -152,10 +162,10 @@ export function useRecentScans(limit = 5) {
   return useQuery({
     queryKey: ["scans", "recent", limit],
     queryFn: async () => {
-      const { data, error } = await api.GET("/scans", {
+      const { data, error, response } = await api.GET("/scans", {
         params: { query: { page: 1, page_size: limit } },
       });
-      if (error) throw error;
+      if (error) throw new ApiError(response.status, error);
       return data;
     },
     refetchInterval: 30_000,

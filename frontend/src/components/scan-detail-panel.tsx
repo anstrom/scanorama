@@ -2,6 +2,7 @@ import React from "react";
 import { X } from "lucide-react";
 import { useProfile } from "../api/hooks/use-profiles";
 import { useScanResults } from "../api/hooks/use-scans";
+import { isNotFound } from "../api/errors";
 import { StatusBadge } from "./status-badge";
 import { Skeleton } from "./skeleton";
 import { formatRelativeTime, cn } from "../lib/utils";
@@ -230,7 +231,9 @@ export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
 
             {resultsError ? (
               <p className="text-xs text-danger">
-                Failed to load scan results.
+                {isNotFound(resultsError)
+                  ? "Scan results are no longer available."
+                  : "Failed to load scan results."}
               </p>
             ) : resultsLoading ? (
               <div className="overflow-x-auto">

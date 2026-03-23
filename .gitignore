@@ -117,3 +117,4 @@ REFACTORING_COMPLETE.md
 # Coverage reports
 coverage-reports/
 .backend.pid
+.claude/HANDOFF.md

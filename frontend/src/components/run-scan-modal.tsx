@@ -7,7 +7,15 @@ import { cn, validatePortSpec } from "../lib/utils";
 
 type Mode = "profile" | "custom";
 
-const SCAN_TYPES = [
+type ScanType =
+  | "connect"
+  | "syn"
+  | "ack"
+  | "udp"
+  | "aggressive"
+  | "comprehensive";
+
+const SCAN_TYPES: { value: ScanType; label: string }[] = [
   { value: "connect", label: "Connect (-sT)" },
   { value: "syn", label: "SYN stealth (-sS)" },
   { value: "ack", label: "ACK (-sA)" },
@@ -35,7 +43,7 @@ export function RunScanModal({
   const [mode, setMode] = useState<Mode>("profile");
   const [profileId, setProfileId] = useState("");
   const [ports, setPorts] = useState("");
-  const [scanType, setScanType] = useState<string>("connect");
+  const [scanType, setScanType] = useState<ScanType>("connect");
   const [osDetection, setOsDetection] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,7 +114,7 @@ export function RunScanModal({
         result = await createScan({
           name,
           targets,
-          scan_type: selectedProfile?.scan_type ?? "connect",
+          scan_type: (selectedProfile?.scan_type ?? "connect") as ScanType,
           ports: selectedProfile?.ports || "1-65535",
           ...(osDetection ? { os_detection: true } : {}),
         });
@@ -337,7 +345,7 @@ export function RunScanModal({
                 <select
                   id={`${id}-scan-type`}
                   value={scanType}
-                  onChange={(e) => setScanType(e.target.value)}
+                  onChange={(e) => setScanType(e.target.value as ScanType)}
                   aria-label="Select scan type"
                   className={cn(
                     "w-full px-3 py-1.5 text-xs rounded border border-border",
