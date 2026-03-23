@@ -345,14 +345,14 @@ jobs:
 
     steps:
       - name: Download no-services coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage-nodb
           path: artifacts/nodb
         continue-on-error: true
 
       - name: Download services coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage-services
           path: artifacts/services
