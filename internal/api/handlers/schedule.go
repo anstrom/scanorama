@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/robfig/cron/v3"
 
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/services"
 )
 
 // Schedule validation constants.
@@ -30,19 +30,19 @@ const (
 
 // ScheduleHandler handles schedule-related API endpoints.
 type ScheduleHandler struct {
-	database ScheduleStore
-	logger   *slog.Logger
-	metrics  *metrics.Registry
+	service ScheduleServicer
+	logger  *slog.Logger
+	metrics *metrics.Registry
 }
 
 // NewScheduleHandler creates a new schedule handler.
 func NewScheduleHandler(
-	database ScheduleStore, logger *slog.Logger, metricsManager *metrics.Registry,
+	service ScheduleServicer, logger *slog.Logger, metricsManager *metrics.Registry,
 ) *ScheduleHandler {
 	return &ScheduleHandler{
-		database: database,
-		logger:   logger.With("handler", "schedule"),
-		metrics:  metricsManager,
+		service: service,
+		logger:  logger.With("handler", "schedule"),
+		metrics: metricsManager,
 	}
 }
 
@@ -104,7 +104,7 @@ func (h *ScheduleHandler) ListSchedules(w http.ResponseWriter, r *http.Request) 
 		Logger:     h.logger,
 		Metrics:    h.metrics,
 		GetFilters: h.getScheduleFilters,
-		ListFromDB: h.database.ListSchedules,
+		ListFromDB: h.service.ListSchedules,
 		ToResponse: func(schedule *db.Schedule) interface{} {
 			return h.scheduleToResponse(schedule)
 		},
@@ -114,26 +114,29 @@ func (h *ScheduleHandler) ListSchedules(w http.ResponseWriter, r *http.Request) 
 
 // CreateSchedule handles POST /api/v1/schedules - create a new schedule.
 func (h *ScheduleHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
-	CreateEntity[db.Schedule, db.CreateScheduleInput](
-		w, r,
-		"schedule",
-		h.logger,
-		h.metrics,
-		func(r *http.Request) (db.CreateScheduleInput, error) {
-			var req ScheduleRequest
-			if err := parseJSON(r, &req); err != nil {
-				return db.CreateScheduleInput{}, err
-			}
-			if err := h.validateScheduleRequest(&req); err != nil {
-				return db.CreateScheduleInput{}, err
-			}
-			return h.requestToCreateSchedule(&req), nil
-		},
-		h.database.CreateSchedule,
-		func(schedule *db.Schedule) interface{} {
-			return h.scheduleToResponse(schedule)
-		},
-		"api_schedules_created_total")
+	var req ScheduleRequest
+	if err := parseJSON(r, &req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+	if err := h.validateScheduleRequest(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+	schedule, err := h.service.CreateSchedule(r.Context(), h.requestToCreateSchedule(&req))
+	if err != nil {
+		if errors.IsCode(err, errors.CodeValidation) {
+			writeError(w, r, http.StatusBadRequest, err)
+			return
+		}
+		h.logger.Error("Failed to create schedule", "request_id", getRequestIDFromContext(r.Context()), "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to create schedule: %w", err))
+		return
+	}
+	writeJSON(w, r, http.StatusCreated, h.scheduleToResponse(schedule))
+	if h.metrics != nil {
+		h.metrics.Counter("api_schedules_created_total", nil)
+	}
 }
 
 // GetSchedule handles GET /api/v1/schedules/{id} - get a specific schedule.
@@ -151,7 +154,7 @@ func (h *ScheduleHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	crudOp.ExecuteGet(w, r, scheduleID,
-		h.database.GetSchedule,
+		h.service.GetSchedule,
 		func(schedule *db.Schedule) interface{} {
 			return h.scheduleToResponse(schedule)
 		},
@@ -160,26 +163,38 @@ func (h *ScheduleHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSchedule handles PUT /api/v1/schedules/{id} - update a schedule.
 func (h *ScheduleHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
-	UpdateEntity[db.Schedule, db.UpdateScheduleInput](
-		w, r,
-		"schedule",
-		h.logger,
-		h.metrics,
-		func(r *http.Request) (db.UpdateScheduleInput, error) {
-			var req ScheduleRequest
-			if err := parseJSON(r, &req); err != nil {
-				return db.UpdateScheduleInput{}, err
-			}
-			if err := h.validateScheduleRequest(&req); err != nil {
-				return db.UpdateScheduleInput{}, err
-			}
-			return h.requestToUpdateSchedule(&req), nil
-		},
-		h.database.UpdateSchedule,
-		func(schedule *db.Schedule) interface{} {
-			return h.scheduleToResponse(schedule)
-		},
-		"api_schedules_updated_total")
+	scheduleID, err := extractUUIDFromPath(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+	var req ScheduleRequest
+	if err := parseJSON(r, &req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+	if err := h.validateScheduleRequest(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+	schedule, err := h.service.UpdateSchedule(r.Context(), scheduleID, h.requestToUpdateSchedule(&req))
+	if err != nil {
+		if errors.IsCode(err, errors.CodeValidation) {
+			writeError(w, r, http.StatusBadRequest, err)
+			return
+		}
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, fmt.Errorf("schedule not found"))
+			return
+		}
+		h.logger.Error("Failed to update schedule", "request_id", getRequestIDFromContext(r.Context()), "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to update schedule: %w", err))
+		return
+	}
+	writeJSON(w, r, http.StatusOK, h.scheduleToResponse(schedule))
+	if h.metrics != nil {
+		h.metrics.Counter("api_schedules_updated_total", nil)
+	}
 }
 
 // DeleteSchedule handles DELETE /api/v1/schedules/{id} - delete a schedule.
@@ -196,7 +211,7 @@ func (h *ScheduleHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request)
 		Metrics:    h.metrics,
 	}
 
-	crudOp.ExecuteDelete(w, r, scheduleID, h.database.DeleteSchedule, "api_schedules_deleted_total")
+	crudOp.ExecuteDelete(w, r, scheduleID, h.service.DeleteSchedule, "api_schedules_deleted_total")
 }
 
 // EnableSchedule handles POST /api/v1/schedules/{id}/enable - enable a schedule.
@@ -213,7 +228,7 @@ func (h *ScheduleHandler) EnableSchedule(w http.ResponseWriter, r *http.Request)
 	h.logger.Info("Enabling schedule", "request_id", requestID, "schedule_id", scheduleID)
 
 	// Enable schedule in database
-	err = h.database.EnableSchedule(r.Context(), scheduleID)
+	err = h.service.EnableSchedule(r.Context(), scheduleID)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			writeError(w, r, http.StatusNotFound,
@@ -227,7 +242,7 @@ func (h *ScheduleHandler) EnableSchedule(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Get updated schedule
-	schedule, err := h.database.GetSchedule(r.Context(), scheduleID)
+	schedule, err := h.service.GetSchedule(r.Context(), scheduleID)
 	if err != nil {
 		h.logger.Error("Failed to get schedule after enable",
 			"request_id", requestID, "schedule_id", scheduleID, "error", err)
@@ -272,7 +287,7 @@ func (h *ScheduleHandler) DisableSchedule(w http.ResponseWriter, r *http.Request
 	h.logger.Info("Disabling schedule", "request_id", requestID, "schedule_id", scheduleID)
 
 	// Disable schedule in database
-	err = h.database.DisableSchedule(r.Context(), scheduleID)
+	err = h.service.DisableSchedule(r.Context(), scheduleID)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			writeError(w, r, http.StatusNotFound,
@@ -306,6 +321,34 @@ func (h *ScheduleHandler) DisableSchedule(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// GetScheduleNextRun handles GET /api/v1/schedules/{id}/next-run — return the next scheduled execution time.
+func (h *ScheduleHandler) GetScheduleNextRun(w http.ResponseWriter, r *http.Request) {
+	scheduleID, err := extractUUIDFromPath(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	requestID := getRequestIDFromContext(r.Context())
+	h.logger.Info("Computing next run time", "request_id", requestID, "schedule_id", scheduleID)
+
+	nextRun, err := h.service.NextRun(r.Context(), scheduleID)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, fmt.Errorf("schedule not found"))
+			return
+		}
+		h.logger.Error("Failed to compute next run", "request_id", requestID, "schedule_id", scheduleID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to compute next run: %w", err))
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, map[string]interface{}{
+		"schedule_id": scheduleID,
+		"next_run":    nextRun,
+	})
+}
+
 // Helper methods
 
 // validateScheduleRequest validates a schedule request.
@@ -313,7 +356,7 @@ func (h *ScheduleHandler) validateScheduleRequest(req *ScheduleRequest) error {
 	if err := h.validateBasicScheduleFields(req); err != nil {
 		return err
 	}
-	if err := h.validateScheduleCron(req.CronExpr); err != nil {
+	if err := services.ValidateCronExpression(req.CronExpr); err != nil {
 		return err
 	}
 	if err := h.validateScheduleType(req.Type); err != nil {
@@ -334,16 +377,6 @@ func (h *ScheduleHandler) validateBasicScheduleFields(req *ScheduleRequest) erro
 	}
 	if len(req.Description) > maxScheduleDescLength {
 		return fmt.Errorf("description too long (max %d characters)", maxScheduleDescLength)
-	}
-	return nil
-}
-
-func (h *ScheduleHandler) validateScheduleCron(cronExpr string) error {
-	if cronExpr == "" {
-		return fmt.Errorf("cron expression is required")
-	}
-	if err := h.validateCronExpression(cronExpr); err != nil {
-		return fmt.Errorf("invalid cron expression: %w", err)
 	}
 	return nil
 }
@@ -412,23 +445,6 @@ func (h *ScheduleHandler) validateScheduleTags(tags []string) error {
 			return fmt.Errorf("tag %d too long (max %d characters)", i+1, maxScheduleTagLength)
 		}
 	}
-	return nil
-}
-
-// validateCronExpression performs basic cron expression validation.
-func (h *ScheduleHandler) validateCronExpression(cronExpr string) error {
-	// Empty expression is invalid
-	if strings.TrimSpace(cronExpr) == "" {
-		return fmt.Errorf("cron expression cannot be empty")
-	}
-
-	// Use the robfig/cron parser to validate the expression
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	_, err := parser.Parse(cronExpr)
-	if err != nil {
-		return fmt.Errorf("invalid cron expression: %w", err)
-	}
-
 	return nil
 }
 

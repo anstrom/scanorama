@@ -73,17 +73,17 @@ func TestNewHostHandler(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		database HostStore
+		database HostServicer
 		metrics  *metrics.Registry
 	}{
 		{
 			name:     "with store and metrics",
-			database: nilHostStore{},
+			database: nilHostServicer{},
 			metrics:  testMetrics,
 		},
 		{
 			name:     "with nil store",
-			database: nilHostStore{},
+			database: nilHostServicer{},
 			metrics:  testMetrics,
 		},
 	}
@@ -102,7 +102,7 @@ func TestNewHostHandler(t *testing.T) {
 
 func TestHostHandler_ValidateHostRequest(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -214,7 +214,7 @@ func TestHostHandler_ValidateHostRequest(t *testing.T) {
 
 func TestHostHandler_GetHostFilters(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name           string
@@ -302,7 +302,7 @@ func TestHostHandler_GetHostFilters(t *testing.T) {
 
 func TestHostHandler_RequestToDBHost(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	request := &HostRequest{
 		IP:          "192.168.1.100",
@@ -324,7 +324,7 @@ func TestHostHandler_RequestToDBHost(t *testing.T) {
 
 func TestHostHandler_HostToResponse(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	testHostID := uuid.New()
 	hostname := "example-host"
@@ -352,7 +352,7 @@ func TestHostHandler_HostToResponse(t *testing.T) {
 
 func TestHostHandler_CreateHost_ValidationErrors(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -409,7 +409,7 @@ func TestHostHandler_CreateHost_ValidationErrors(t *testing.T) {
 
 func TestHostHandler_GetHost_InvalidUUID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("GET", "/api/v1/hosts/invalid-uuid", http.NoBody)
 	req.SetPathValue("id", "invalid-uuid")
@@ -422,7 +422,7 @@ func TestHostHandler_GetHost_InvalidUUID(t *testing.T) {
 
 func TestHostHandler_UpdateHost_InvalidUUID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	updateRequest := HostRequest{
 		IP:       "192.168.1.1",
@@ -442,7 +442,7 @@ func TestHostHandler_UpdateHost_InvalidUUID(t *testing.T) {
 
 func TestHostHandler_DeleteHost_InvalidUUID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("DELETE", "/api/v1/hosts/invalid-uuid", http.NoBody)
 	req.SetPathValue("id", "invalid-uuid")
@@ -455,7 +455,7 @@ func TestHostHandler_DeleteHost_InvalidUUID(t *testing.T) {
 
 func TestHostHandler_GetHostScans_InvalidUUID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("GET", "/api/v1/hosts/invalid-uuid/scans", http.NoBody)
 	req.SetPathValue("id", "invalid-uuid")
@@ -468,7 +468,7 @@ func TestHostHandler_GetHostScans_InvalidUUID(t *testing.T) {
 
 func TestHostHandler_EdgeCases(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	t.Run("IP validation edge cases", func(t *testing.T) {
 		testCases := []struct {
@@ -521,7 +521,7 @@ func TestHostHandler_EdgeCases(t *testing.T) {
 
 func TestHostHandler_RequestValidation_Comprehensive(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	t.Run("maximum valid host request", func(t *testing.T) {
 		req := &HostRequest{
@@ -562,7 +562,7 @@ func TestHostHandler_RequestValidation_Comprehensive(t *testing.T) {
 
 func BenchmarkHostHandler_ValidateHostRequest(b *testing.B) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	request := &HostRequest{
 		IP:          "192.168.1.100",
@@ -581,7 +581,7 @@ func BenchmarkHostHandler_ValidateHostRequest(b *testing.B) {
 
 func BenchmarkHostHandler_GetHostFilters(b *testing.B) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("GET", "/api/v1/hosts?status=up&os=linux&network=192.168.1.0/24", http.NoBody)
 
@@ -593,7 +593,7 @@ func BenchmarkHostHandler_GetHostFilters(b *testing.B) {
 
 func TestHostHandler_IPValidation_Detailed(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name    string
@@ -905,7 +905,7 @@ func TestHostHandler_GetHostScans_Integration(t *testing.T) {
 
 func TestHostHandler_GetScanFilters_WithTimestamps(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	t.Run("valid created_after timestamp", func(t *testing.T) {
 		ts := time.Now().UTC().Format(time.RFC3339)
@@ -974,7 +974,7 @@ func TestHostHandler_GetScanFilters_WithTimestamps(t *testing.T) {
 
 func TestHostHandler_ScanToHostScanResponse(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	t.Run("scan without start or end time", func(t *testing.T) {
 		scan := &db.Scan{
@@ -1136,7 +1136,7 @@ func TestHostHandler_ListHosts_WithFilters_Integration(t *testing.T) {
 
 func TestHostHandler_HostToResponse_NewFields(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	now := time.Now()
 
@@ -1314,7 +1314,7 @@ func TestHostHandler_HostToResponse_NewFields(t *testing.T) {
 
 func TestHostHandler_ValidateHostRequest_NewBranches(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewHostHandler(nilHostStore{}, logger, metrics.NewRegistry())
+	handler := NewHostHandler(nilHostServicer{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string

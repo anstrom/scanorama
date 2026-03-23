@@ -40,18 +40,18 @@ func conflictErr(resource, msg string) error {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-func newScanHandlerWithMock(t *testing.T) (*ScanHandler, *mocks.MockScanStore, *gomock.Controller) {
+func newScanHandlerWithMock(t *testing.T) (*ScanHandler, *mocks.MockScanServicer, *gomock.Controller) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
-	store := mocks.NewMockScanStore(ctrl)
+	store := mocks.NewMockScanServicer(ctrl)
 	h := NewScanHandler(store, createTestLogger(), metrics.NewRegistry())
 	return h, store, ctrl
 }
 
-func newScheduleHandlerWithMock(t *testing.T) (*ScheduleHandler, *mocks.MockScheduleStore, *gomock.Controller) {
+func newScheduleHandlerWithMock(t *testing.T) (*ScheduleHandler, *mocks.MockScheduleServicer, *gomock.Controller) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
-	store := mocks.NewMockScheduleStore(ctrl)
+	store := mocks.NewMockScheduleServicer(ctrl)
 	h := NewScheduleHandler(store, createTestLogger(), metrics.NewRegistry())
 	return h, store, ctrl
 }
@@ -64,18 +64,18 @@ func newDiscoveryHandlerWithMock(t *testing.T) (*DiscoveryHandler, *mocks.MockDi
 	return h, store, ctrl
 }
 
-func newHostHandlerWithMock(t *testing.T) (*HostHandler, *mocks.MockHostStore, *gomock.Controller) {
+func newHostHandlerWithMock(t *testing.T) (*HostHandler, *mocks.MockHostServicer, *gomock.Controller) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
-	store := mocks.NewMockHostStore(ctrl)
+	store := mocks.NewMockHostServicer(ctrl)
 	h := NewHostHandler(store, createTestLogger(), metrics.NewRegistry())
 	return h, store, ctrl
 }
 
-func newProfileHandlerWithMock(t *testing.T) (*ProfileHandler, *mocks.MockProfileStore, *gomock.Controller) {
+func newProfileHandlerWithMock(t *testing.T) (*ProfileHandler, *mocks.MockProfileServicer, *gomock.Controller) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
-	store := mocks.NewMockProfileStore(ctrl)
+	store := mocks.NewMockProfileServicer(ctrl)
 	h := NewProfileHandler(store, createTestLogger(), metrics.NewRegistry())
 	return h, store, ctrl
 }
@@ -438,12 +438,9 @@ func TestScanHandler_StartScan_Mock(t *testing.T) {
 		defer ctrl.Finish()
 
 		id := uuid.New()
-		scan := makeScan(id, "Pending Scan", "pending", "connect")
 		started := makeScan(id, "Pending Scan", "running", "connect")
 
-		store.EXPECT().GetScan(gomock.Any(), id).Return(scan, nil)
-		store.EXPECT().StartScan(gomock.Any(), id).Return(nil)
-		store.EXPECT().GetScan(gomock.Any(), id).Return(started, nil)
+		store.EXPECT().StartScan(gomock.Any(), id).Return(started, nil)
 
 		router, _ := routerWithID(http.MethodPost, "/api/v1/scans/{id}/start", h.StartScan)
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/scans/%s/start", id), nil)
@@ -458,8 +455,7 @@ func TestScanHandler_StartScan_Mock(t *testing.T) {
 		defer ctrl.Finish()
 
 		id := uuid.New()
-		scan := makeScan(id, "Running Scan", "running", "connect")
-		store.EXPECT().GetScan(gomock.Any(), id).Return(scan, nil)
+		store.EXPECT().StartScan(gomock.Any(), id).Return(nil, conflictErr("scan", "scan is already running"))
 
 		router, _ := routerWithID(http.MethodPost, "/api/v1/scans/{id}/start", h.StartScan)
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/scans/%s/start", id), nil)
@@ -474,8 +470,7 @@ func TestScanHandler_StartScan_Mock(t *testing.T) {
 		defer ctrl.Finish()
 
 		id := uuid.New()
-		scan := makeScan(id, "Done Scan", "completed", "connect")
-		store.EXPECT().GetScan(gomock.Any(), id).Return(scan, nil)
+		store.EXPECT().StartScan(gomock.Any(), id).Return(nil, conflictErr("scan", "scan is already completed"))
 
 		router, _ := routerWithID(http.MethodPost, "/api/v1/scans/{id}/start", h.StartScan)
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/scans/%s/start", id), nil)
@@ -580,7 +575,7 @@ func TestScanHandler_ExecuteScanAsync(t *testing.T) {
 	})
 
 	t.Run("type-asserting a mock store to *db.DB yields nil and runner still called", func(t *testing.T) {
-		// The store is a *mocks.MockScanStore, not *db.DB, so concreteDB will be
+		// The store is a *mocks.MockScanServicer, not *db.DB, so concreteDB will be
 		// nil. RunScanWithContext skips persistence when database is nil, so this
 		// must not panic.
 		h, store, ctrl := newScanHandlerWithMock(t)
@@ -2204,7 +2199,7 @@ func TestScanHandler_SubmitToQueue_DatabasePropagatedToRequest(t *testing.T) {
 		return capturedReq.Load() != nil
 	}, 2*time.Second, 10*time.Millisecond, "queue worker did not execute the scan in time")
 
-	// The handler's store is a *mocks.MockScanStore, not a *db.DB, so the
+	// The handler's store is a *mocks.MockScanServicer, not a *db.DB, so the
 	// type assertion yields nil — but it must NOT be the unset zero value from
 	// a missing assignment.  The key invariant is that the field was explicitly
 	// set (even if it ends up nil after the assertion) rather than left as the
@@ -2375,14 +2370,14 @@ func TestScanHandler_ExecuteScanAsync_ScanIDSetOnConfig(t *testing.T) {
 }
 
 func TestScanHandler_StartScan_DBFailure(t *testing.T) {
-	t.Run("returns 500 when GetScan fails before status check", func(t *testing.T) {
+	t.Run("returns 500 when service returns unexpected error", func(t *testing.T) {
 		h, store, ctrl := newScanHandlerWithMock(t)
 		defer ctrl.Finish()
 
 		id := uuid.New()
 		dbErr := fmt.Errorf("connection reset by peer")
 
-		store.EXPECT().GetScan(gomock.Any(), id).Return(nil, dbErr)
+		store.EXPECT().StartScan(gomock.Any(), id).Return(nil, dbErr)
 
 		router, _ := routerWithID(http.MethodPost, "/api/v1/scans/{id}/start", h.StartScan)
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/scans/%s/start", id), nil)
@@ -2392,52 +2387,13 @@ func TestScanHandler_StartScan_DBFailure(t *testing.T) {
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
-	t.Run("returns 500 when StartScan DB call fails", func(t *testing.T) {
-		h, store, ctrl := newScanHandlerWithMock(t)
-		defer ctrl.Finish()
-
-		id := uuid.New()
-		scan := makeScan(id, "Pending Scan", "pending", "connect")
-		dbErr := fmt.Errorf("deadlock detected")
-
-		store.EXPECT().GetScan(gomock.Any(), id).Return(scan, nil)
-		store.EXPECT().StartScan(gomock.Any(), id).Return(dbErr)
-
-		router, _ := routerWithID(http.MethodPost, "/api/v1/scans/{id}/start", h.StartScan)
-		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/scans/%s/start", id), nil)
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-	})
-
-	t.Run("returns 500 when second GetScan fails after StartScan succeeds", func(t *testing.T) {
-		h, store, ctrl := newScanHandlerWithMock(t)
-		defer ctrl.Finish()
-
-		id := uuid.New()
-		scan := makeScan(id, "Pending Scan", "pending", "connect")
-		dbErr := fmt.Errorf("timeout reading updated row")
-
-		store.EXPECT().GetScan(gomock.Any(), id).Return(scan, nil)
-		store.EXPECT().StartScan(gomock.Any(), id).Return(nil)
-		store.EXPECT().GetScan(gomock.Any(), id).Return(nil, dbErr)
-
-		router, _ := routerWithID(http.MethodPost, "/api/v1/scans/{id}/start", h.StartScan)
-		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/scans/%s/start", id), nil)
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-	})
-
-	t.Run("returns 404 when GetScan returns not-found error", func(t *testing.T) {
+	t.Run("returns 404 when service returns not-found error", func(t *testing.T) {
 		h, store, ctrl := newScanHandlerWithMock(t)
 		defer ctrl.Finish()
 
 		id := uuid.New()
 
-		store.EXPECT().GetScan(gomock.Any(), id).Return(nil, notFoundErr("scan", id.String()))
+		store.EXPECT().StartScan(gomock.Any(), id).Return(nil, notFoundErr("scan", id.String()))
 
 		router, _ := routerWithID(http.MethodPost, "/api/v1/scans/{id}/start", h.StartScan)
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/scans/%s/start", id), nil)

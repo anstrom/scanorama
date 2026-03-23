@@ -18,13 +18,17 @@ func (s *Server) setupRoutes() {
 
 	s.setupSystemRoutes(api)
 
-	scanHandler := apihandlers.NewScanHandler(db.NewScanRepository(s.database), s.logger, s.metrics).
+	scanHandler := apihandlers.NewScanHandler(
+		services.NewScanService(db.NewScanRepository(s.database), s.logger), s.logger, s.metrics).
 		WithScanMode(s.config.Scanning.ScanMode)
-	hostHandler := apihandlers.NewHostHandler(db.NewHostRepository(s.database), s.logger, s.metrics)
+	hostHandler := apihandlers.NewHostHandler(
+		services.NewHostService(db.NewHostRepository(s.database), s.logger), s.logger, s.metrics)
 	discoveryHandler := apihandlers.NewDiscoveryHandler(db.NewDiscoveryRepository(s.database), s.logger, s.metrics).
 		WithEngine(s.discoveryEngine)
-	profileHandler := apihandlers.NewProfileHandler(db.NewProfileRepository(s.database), s.logger, s.metrics)
-	scheduleHandler := apihandlers.NewScheduleHandler(db.NewScheduleRepository(s.database), s.logger, s.metrics)
+	profileHandler := apihandlers.NewProfileHandler(
+		services.NewProfileService(db.NewProfileRepository(s.database), s.logger), s.logger, s.metrics)
+	scheduleHandler := apihandlers.NewScheduleHandler(
+		services.NewScheduleService(db.NewScheduleRepository(s.database), s.logger), s.logger, s.metrics)
 	networkHandler := apihandlers.NewNetworkHandler(services.NewNetworkService(s.database), s.logger, s.metrics)
 	handlerManager := apihandlers.New(s.database, s.logger, s.metrics)
 
@@ -91,6 +95,7 @@ func (s *Server) setupProfileRoutes(api *mux.Router, h *apihandlers.ProfileHandl
 	api.HandleFunc("/profiles/{id}", h.GetProfile).Methods("GET")
 	api.HandleFunc("/profiles/{id}", h.UpdateProfile).Methods("PUT")
 	api.HandleFunc("/profiles/{id}", h.DeleteProfile).Methods("DELETE")
+	api.HandleFunc("/profiles/{id}/clone", h.CloneProfile).Methods("POST")
 }
 
 // setupScheduleRoutes registers scheduled job CRUD and control endpoints.
@@ -102,6 +107,7 @@ func (s *Server) setupScheduleRoutes(api *mux.Router, h *apihandlers.ScheduleHan
 	api.HandleFunc("/schedules/{id}", h.DeleteSchedule).Methods("DELETE")
 	api.HandleFunc("/schedules/{id}/enable", h.EnableSchedule).Methods("POST")
 	api.HandleFunc("/schedules/{id}/disable", h.DisableSchedule).Methods("POST")
+	api.HandleFunc("/schedules/{id}/next-run", h.GetScheduleNextRun).Methods("GET")
 }
 
 // setupNetworkRoutes registers network CRUD, control, and exclusion endpoints.

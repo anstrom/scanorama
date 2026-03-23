@@ -5,6 +5,7 @@ package handlers
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -12,28 +13,33 @@ import (
 	"github.com/anstrom/scanorama/internal/services"
 )
 
-// ScanStore is the subset of *db.DB used by ScanHandler.
+// ScanServicer is the service-level interface consumed by ScanHandler.
+// It extends the basic CRUD contract with a lifecycle-aware StartScan that
+// enforces the state machine and returns the updated scan in one round-trip.
 //
-//go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_scan_store.go -package mocks github.com/anstrom/scanorama/internal/api/handlers ScanStore
-type ScanStore interface {
+//go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_scan_servicer.go -package mocks github.com/anstrom/scanorama/internal/api/handlers ScanServicer
+type ScanServicer interface {
 	ListScans(ctx context.Context, filters db.ScanFilters, offset, limit int) ([]*db.Scan, int64, error)
 	CreateScan(ctx context.Context, input db.CreateScanInput) (*db.Scan, error)
 	GetScan(ctx context.Context, id uuid.UUID) (*db.Scan, error)
 	UpdateScan(ctx context.Context, id uuid.UUID, input db.UpdateScanInput) (*db.Scan, error)
 	DeleteScan(ctx context.Context, id uuid.UUID) error
-	StartScan(ctx context.Context, id uuid.UUID) error
-	CompleteScan(ctx context.Context, id uuid.UUID) error
+	// StartScan validates the scan is in a startable state, marks it running,
+	// and returns the refreshed scan record — saving the caller an extra GetScan call.
+	StartScan(ctx context.Context, id uuid.UUID) (*db.Scan, error)
 	StopScan(ctx context.Context, id uuid.UUID, errMsg ...string) error
+	CompleteScan(ctx context.Context, id uuid.UUID) error
 	GetScanResults(ctx context.Context, scanID uuid.UUID, offset, limit int) ([]*db.ScanResult, int64, error)
 	GetScanSummary(ctx context.Context, scanID uuid.UUID) (*db.ScanSummary, error)
 	GetProfile(ctx context.Context, id string) (*db.ScanProfile, error)
 }
 
-// ScheduleStore is the subset of *db.DB used by ScheduleHandler.
+// ScheduleServicer is the service-level interface consumed by ScheduleHandler.
+// It adds cron-expression validation (enforced inside CreateSchedule/UpdateSchedule)
+// and a NextRun helper on top of the standard CRUD operations.
 //
-//go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_schedule_store.go -package mocks github.com/anstrom/scanorama/internal/api/handlers ScheduleStore
-//nolint:dupl
-type ScheduleStore interface {
+//go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_schedule_servicer.go -package mocks github.com/anstrom/scanorama/internal/api/handlers ScheduleServicer
+type ScheduleServicer interface {
 	ListSchedules(ctx context.Context, filters db.ScheduleFilters, offset, limit int) ([]*db.Schedule, int64, error)
 	CreateSchedule(ctx context.Context, input db.CreateScheduleInput) (*db.Schedule, error)
 	GetSchedule(ctx context.Context, id uuid.UUID) (*db.Schedule, error)
@@ -41,12 +47,13 @@ type ScheduleStore interface {
 	DeleteSchedule(ctx context.Context, id uuid.UUID) error
 	EnableSchedule(ctx context.Context, id uuid.UUID) error
 	DisableSchedule(ctx context.Context, id uuid.UUID) error
+	// NextRun computes the next scheduled execution time for the given schedule.
+	NextRun(ctx context.Context, id uuid.UUID) (time.Time, error)
 }
 
 // DiscoveryStore is the subset of *db.DB used by DiscoveryHandler.
 //
 //go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_discovery_store.go -package mocks github.com/anstrom/scanorama/internal/api/handlers DiscoveryStore
-//nolint:dupl
 type DiscoveryStore interface {
 	ListDiscoveryJobs(ctx context.Context, filters db.DiscoveryFilters, offset, limit int) (
 		[]*db.DiscoveryJob, int64, error)
@@ -58,10 +65,10 @@ type DiscoveryStore interface {
 	StopDiscoveryJob(ctx context.Context, id uuid.UUID) error
 }
 
-// HostStore is the subset of *db.DB used by HostHandler.
+// HostServicer is the service-level interface consumed by HostHandler.
 //
-//go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_host_store.go -package mocks github.com/anstrom/scanorama/internal/api/handlers HostStore
-type HostStore interface {
+//go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_host_servicer.go -package mocks github.com/anstrom/scanorama/internal/api/handlers HostServicer
+type HostServicer interface {
 	ListHosts(ctx context.Context, filters *db.HostFilters, offset, limit int) ([]*db.Host, int64, error)
 	CreateHost(ctx context.Context, input db.CreateHostInput) (*db.Host, error)
 	GetHost(ctx context.Context, id uuid.UUID) (*db.Host, error)
@@ -70,15 +77,19 @@ type HostStore interface {
 	GetHostScans(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*db.Scan, int64, error)
 }
 
-// ProfileStore is the subset of *db.DB used by ProfileHandler.
+// ProfileServicer is the service-level interface consumed by ProfileHandler.
+// It extends the basic CRUD contract with a CloneProfile operation.
 //
-//go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_profile_store.go -package mocks github.com/anstrom/scanorama/internal/api/handlers ProfileStore
-type ProfileStore interface {
+//go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_profile_servicer.go -package mocks github.com/anstrom/scanorama/internal/api/handlers ProfileServicer
+type ProfileServicer interface {
 	ListProfiles(ctx context.Context, filters db.ProfileFilters, offset, limit int) ([]*db.ScanProfile, int64, error)
 	CreateProfile(ctx context.Context, input db.CreateProfileInput) (*db.ScanProfile, error)
 	GetProfile(ctx context.Context, id string) (*db.ScanProfile, error)
 	UpdateProfile(ctx context.Context, id string, input db.UpdateProfileInput) (*db.ScanProfile, error)
 	DeleteProfile(ctx context.Context, id string) error
+	// CloneProfile creates a new user-owned profile that is a copy of the source
+	// profile identified by fromID, assigned the given newName.
+	CloneProfile(ctx context.Context, fromID string, newName string) (*db.ScanProfile, error)
 }
 
 // NetworkServicer is the subset of *services.NetworkService used by NetworkHandler.

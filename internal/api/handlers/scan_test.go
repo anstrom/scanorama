@@ -18,6 +18,7 @@ import (
 
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/services"
 	"github.com/anstrom/scanorama/test/helpers"
 )
 
@@ -26,17 +27,17 @@ func TestNewScanHandler(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		database ScanStore
+		database ScanServicer
 		metrics  *metrics.Registry
 	}{
 		{
 			name:     "with store and metrics",
-			database: nilScanStore{},
+			database: nilScanServicer{},
 			metrics:  testMetrics,
 		},
 		{
 			name:     "with nil store",
-			database: nilScanStore{},
+			database: nilScanServicer{},
 			metrics:  testMetrics,
 		},
 	}
@@ -55,7 +56,7 @@ func TestNewScanHandler(t *testing.T) {
 
 func TestScanHandler_ValidateScanRequest(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -191,7 +192,7 @@ func TestScanHandler_ValidateScanRequest(t *testing.T) {
 
 func TestScanHandler_GetScanFilters(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name           string
@@ -270,7 +271,7 @@ func TestScanHandler_GetScanFilters(t *testing.T) {
 
 func TestScanHandler_RequestToDBScan(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	request := &ScanRequest{
 		Name:        "Test Scan",
@@ -296,7 +297,7 @@ func TestScanHandler_RequestToDBScan(t *testing.T) {
 
 func TestScanHandler_ScanToResponse(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	now := time.Now()
 	testScanID := uuid.New()
@@ -330,7 +331,7 @@ func TestScanHandler_ScanToResponse(t *testing.T) {
 
 func TestScanHandler_ScanToResponse_Completed(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	start := time.Now().Add(-10 * time.Minute)
 	end := time.Now()
@@ -354,7 +355,7 @@ func TestScanHandler_ScanToResponse_Completed(t *testing.T) {
 
 func TestScanHandler_ScanToResponse_WithOptions(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	testScan := &db.Scan{
 		ID:       uuid.New(),
@@ -378,7 +379,7 @@ func TestScanHandler_ScanToResponse_WithOptions(t *testing.T) {
 
 func TestScanHandler_ScanToResponse_FailedStatus(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	testScan := &db.Scan{
 		ID:       uuid.New(),
@@ -397,7 +398,7 @@ func TestScanHandler_ScanToResponse_FailedStatus(t *testing.T) {
 
 func TestScanHandler_ScanToResponse_NilTargets(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	testScan := &db.Scan{
 		ID:       uuid.New(),
@@ -415,7 +416,7 @@ func TestScanHandler_ScanToResponse_NilTargets(t *testing.T) {
 
 func TestScanHandler_ResultToResponse(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	now := time.Now().UTC()
 	testResultID := uuid.New()
@@ -446,7 +447,7 @@ func TestScanHandler_ResultToResponse(t *testing.T) {
 
 func TestScanHandler_CreateScan_ValidationErrors(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -506,7 +507,7 @@ func TestScanHandler_CreateScan_ValidationErrors(t *testing.T) {
 
 func TestScanHandler_GetScan_InvalidUUID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("GET", "/api/v1/scans/invalid-uuid", http.NoBody)
 	req.SetPathValue("id", "invalid-uuid")
@@ -519,7 +520,7 @@ func TestScanHandler_GetScan_InvalidUUID(t *testing.T) {
 
 func TestScanHandler_StartScan_InvalidUUID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("POST", "/api/v1/scans/invalid-uuid/start", http.NoBody)
 	req.SetPathValue("id", "invalid-uuid")
@@ -532,7 +533,7 @@ func TestScanHandler_StartScan_InvalidUUID(t *testing.T) {
 
 func TestScanHandler_StopScan_InvalidUUID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("POST", "/api/v1/scans/invalid-uuid/stop", http.NoBody)
 	req.SetPathValue("id", "invalid-uuid")
@@ -545,7 +546,7 @@ func TestScanHandler_StopScan_InvalidUUID(t *testing.T) {
 
 func TestScanHandler_DeleteScan_InvalidUUID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("DELETE", "/api/v1/scans/invalid-uuid", http.NoBody)
 	req.SetPathValue("id", "invalid-uuid")
@@ -558,7 +559,7 @@ func TestScanHandler_DeleteScan_InvalidUUID(t *testing.T) {
 
 func TestScanHandler_UpdateScan_InvalidUUID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	updateRequest := ScanRequest{
 		Name:     "Updated Scan",
@@ -579,7 +580,7 @@ func TestScanHandler_UpdateScan_InvalidUUID(t *testing.T) {
 
 func TestScanHandler_GetScanResults_InvalidUUID(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("GET", "/api/v1/scans/invalid-uuid/results", http.NoBody)
 	req.SetPathValue("id", "invalid-uuid")
@@ -592,7 +593,7 @@ func TestScanHandler_GetScanResults_InvalidUUID(t *testing.T) {
 
 func TestScanHandler_EdgeCases(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	t.Run("scan types validation", func(t *testing.T) {
 		validTypes := []string{"connect", "syn", "ack", "aggressive", "comprehensive"}
@@ -631,7 +632,7 @@ func TestScanHandler_EdgeCases(t *testing.T) {
 
 func BenchmarkScanHandler_ValidateScanRequest(b *testing.B) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	request := &ScanRequest{
 		Name:     "Benchmark Scan",
@@ -649,7 +650,7 @@ func BenchmarkScanHandler_ValidateScanRequest(b *testing.B) {
 
 func BenchmarkScanHandler_GetScanFilters(b *testing.B) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	req := httptest.NewRequest("GET", "/api/v1/scans?status=running&scan_type=syn&tag=test&profile_id=123", http.NoBody)
 
@@ -661,11 +662,11 @@ func BenchmarkScanHandler_GetScanFilters(b *testing.B) {
 
 func TestScanHandler_RequestValidation_Comprehensive(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	t.Run("maximum valid scan request", func(t *testing.T) {
 		req := &ScanRequest{
-			Name:        strings.Repeat("a", 255), // max length
+			Name:        strings.Repeat("a", services.MaxScanNameLength), // max length
 			Description: "Valid description",
 			Targets:     make([]string, 10), // multiple targets
 			ScanType:    "comprehensive",
@@ -688,7 +689,7 @@ func TestScanHandler_RequestValidation_Comprehensive(t *testing.T) {
 	t.Run("boundary conditions", func(t *testing.T) {
 		// Name exactly at max length with a valid target — should pass.
 		req := &ScanRequest{
-			Name:     strings.Repeat("a", 255),
+			Name:     strings.Repeat("a", services.MaxScanNameLength),
 			Targets:  []string{"10.0.0.1"},
 			ScanType: "connect",
 			Ports:    "80",
@@ -697,13 +698,13 @@ func TestScanHandler_RequestValidation_Comprehensive(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Name one over max length — should fail on name, not target.
-		req.Name = strings.Repeat("a", 256)
+		req.Name = strings.Repeat("a", services.MaxScanNameLength+1)
 		err = handler.validateScanRequest(req)
 		assert.Error(t, err)
 
 		// Target that exceeds maxTargetLength should fail.
 		req.Name = "valid"
-		req.Targets = []string{strings.Repeat("b", 256)}
+		req.Targets = []string{strings.Repeat("b", services.MaxTargetLength+1)}
 		err = handler.validateScanRequest(req)
 		assert.Error(t, err)
 	})
@@ -825,7 +826,7 @@ func TestParsePortSpec(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := parsePortSpec(tt.ports)
+			err := services.ParsePortSpec(tt.ports)
 			if tt.expectError {
 				assert.Error(t, err)
 				if tt.errorMsg != "" {
@@ -871,7 +872,7 @@ func TestGetOptionBool(t *testing.T) {
 
 func TestWithScanMode(t *testing.T) {
 	logger := createTestLogger()
-	h := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	h := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	t.Run("sets scan mode and returns same handler", func(t *testing.T) {
 		result := h.WithScanMode("syn")
@@ -921,7 +922,7 @@ func TestFirstNonEmpty(t *testing.T) {
 
 func TestValidateScanRequest_CIDRTarget(t *testing.T) {
 	logger := createTestLogger()
-	handler := NewScanHandler(nilScanStore{}, logger, metrics.NewRegistry())
+	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	tests := []struct {
 		name        string
@@ -992,7 +993,7 @@ func setupScanHandlerTest(t *testing.T) (*ScanHandler, *db.DB, func()) {
 
 	logger := createTestLogger()
 	metricsRegistry := metrics.NewRegistry()
-	handler := NewScanHandler(db.NewScanRepository(database), logger, metricsRegistry)
+	handler := NewScanHandler(services.NewScanService(db.NewScanRepository(database), logger), logger, metricsRegistry)
 
 	// Clean up any leftover test data from previous runs.
 	// scan_jobs.network_id → networks(id) ON DELETE CASCADE (migration 011),

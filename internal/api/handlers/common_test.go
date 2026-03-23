@@ -27,69 +27,74 @@ func createTestLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 }
 
-// nilScanStore is a ScanStore that panics if any method is called.
+// nilScanServicer is a ScanServicer that panics if any method is called.
 // Use it in tests that only exercise validation paths and never reach the DB.
-type nilScanStore struct{}
+type nilScanServicer struct{}
 
-func (nilScanStore) ListScans(_ context.Context, _ db.ScanFilters, _, _ int) ([]*db.Scan, int64, error) {
-	panic("nilScanStore: ListScans called unexpectedly")
+func (nilScanServicer) ListScans(_ context.Context, _ db.ScanFilters, _, _ int) ([]*db.Scan, int64, error) {
+	panic("nilScanServicer: ListScans called unexpectedly")
 }
-func (nilScanStore) CreateScan(_ context.Context, _ db.CreateScanInput) (*db.Scan, error) {
-	panic("nilScanStore: CreateScan called unexpectedly")
+func (nilScanServicer) CreateScan(_ context.Context, _ db.CreateScanInput) (*db.Scan, error) {
+	panic("nilScanServicer: CreateScan called unexpectedly")
 }
-func (nilScanStore) GetScan(_ context.Context, _ uuid.UUID) (*db.Scan, error) {
-	panic("nilScanStore: GetScan called unexpectedly")
+func (nilScanServicer) GetScan(_ context.Context, _ uuid.UUID) (*db.Scan, error) {
+	panic("nilScanServicer: GetScan called unexpectedly")
 }
-func (nilScanStore) UpdateScan(_ context.Context, _ uuid.UUID, _ db.UpdateScanInput) (*db.Scan, error) {
-	panic("nilScanStore: UpdateScan called unexpectedly")
+func (nilScanServicer) UpdateScan(_ context.Context, _ uuid.UUID, _ db.UpdateScanInput) (*db.Scan, error) {
+	panic("nilScanServicer: UpdateScan called unexpectedly")
 }
-func (nilScanStore) DeleteScan(_ context.Context, _ uuid.UUID) error {
-	panic("nilScanStore: DeleteScan called unexpectedly")
+func (nilScanServicer) DeleteScan(_ context.Context, _ uuid.UUID) error {
+	panic("nilScanServicer: DeleteScan called unexpectedly")
 }
-func (nilScanStore) StartScan(_ context.Context, _ uuid.UUID) error {
-	panic("nilScanStore: StartScan called unexpectedly")
+func (nilScanServicer) StartScan(_ context.Context, _ uuid.UUID) (*db.Scan, error) {
+	panic("nilScanServicer: StartScan called unexpectedly")
 }
-func (nilScanStore) CompleteScan(_ context.Context, _ uuid.UUID) error {
-	panic("nilScanStore: CompleteScan called unexpectedly")
+func (nilScanServicer) CompleteScan(_ context.Context, _ uuid.UUID) error {
+	panic("nilScanServicer: CompleteScan called unexpectedly")
 }
-func (nilScanStore) StopScan(_ context.Context, _ uuid.UUID, _ ...string) error {
-	panic("nilScanStore: StopScan called unexpectedly")
+func (nilScanServicer) StopScan(_ context.Context, _ uuid.UUID, _ ...string) error {
+	panic("nilScanServicer: StopScan called unexpectedly")
 }
-func (nilScanStore) GetScanResults(_ context.Context, _ uuid.UUID, _, _ int) ([]*db.ScanResult, int64, error) {
-	panic("nilScanStore: GetScanResults called unexpectedly")
+func (nilScanServicer) GetScanResults(_ context.Context, _ uuid.UUID, _, _ int) ([]*db.ScanResult, int64, error) {
+	panic("nilScanServicer: GetScanResults called unexpectedly")
 }
-func (nilScanStore) GetScanSummary(_ context.Context, _ uuid.UUID) (*db.ScanSummary, error) {
-	panic("nilScanStore: GetScanSummary called unexpectedly")
+func (nilScanServicer) GetScanSummary(_ context.Context, _ uuid.UUID) (*db.ScanSummary, error) {
+	panic("nilScanServicer: GetScanSummary called unexpectedly")
 }
-func (nilScanStore) GetProfile(_ context.Context, _ string) (*db.ScanProfile, error) {
-	panic("nilScanStore: GetProfile called unexpectedly")
+func (nilScanServicer) GetProfile(_ context.Context, _ string) (*db.ScanProfile, error) {
+	panic("nilScanServicer: GetProfile called unexpectedly")
 }
 
-// nilScheduleStore is a ScheduleStore that panics if any method is called.
-type nilScheduleStore struct{}
+// nilScheduleServicer is a ScheduleServicer that panics if any method is called.
+type nilScheduleServicer struct{}
 
-func (nilScheduleStore) ListSchedules(
+func (nilScheduleServicer) ListSchedules(
 	_ context.Context, _ db.ScheduleFilters, _, _ int,
 ) ([]*db.Schedule, int64, error) {
-	panic("nilScheduleStore: ListSchedules called unexpectedly")
+	panic("nilScheduleServicer: ListSchedules called unexpectedly")
 }
-func (nilScheduleStore) CreateSchedule(_ context.Context, _ db.CreateScheduleInput) (*db.Schedule, error) {
-	panic("nilScheduleStore: CreateSchedule called unexpectedly")
+func (nilScheduleServicer) CreateSchedule(_ context.Context, _ db.CreateScheduleInput) (*db.Schedule, error) {
+	panic("nilScheduleServicer: CreateSchedule called unexpectedly")
 }
-func (nilScheduleStore) GetSchedule(_ context.Context, _ uuid.UUID) (*db.Schedule, error) {
-	panic("nilScheduleStore: GetSchedule called unexpectedly")
+func (nilScheduleServicer) GetSchedule(_ context.Context, _ uuid.UUID) (*db.Schedule, error) {
+	panic("nilScheduleServicer: GetSchedule called unexpectedly")
 }
-func (nilScheduleStore) UpdateSchedule(_ context.Context, _ uuid.UUID, _ db.UpdateScheduleInput) (*db.Schedule, error) {
-	panic("nilScheduleStore: UpdateSchedule called unexpectedly")
+func (nilScheduleServicer) UpdateSchedule(
+	_ context.Context, _ uuid.UUID, _ db.UpdateScheduleInput,
+) (*db.Schedule, error) {
+	panic("nilScheduleServicer: UpdateSchedule called unexpectedly")
 }
-func (nilScheduleStore) DeleteSchedule(_ context.Context, _ uuid.UUID) error {
-	panic("nilScheduleStore: DeleteSchedule called unexpectedly")
+func (nilScheduleServicer) DeleteSchedule(_ context.Context, _ uuid.UUID) error {
+	panic("nilScheduleServicer: DeleteSchedule called unexpectedly")
 }
-func (nilScheduleStore) EnableSchedule(_ context.Context, _ uuid.UUID) error {
-	panic("nilScheduleStore: EnableSchedule called unexpectedly")
+func (nilScheduleServicer) EnableSchedule(_ context.Context, _ uuid.UUID) error {
+	panic("nilScheduleServicer: EnableSchedule called unexpectedly")
 }
-func (nilScheduleStore) DisableSchedule(_ context.Context, _ uuid.UUID) error {
-	panic("nilScheduleStore: DisableSchedule called unexpectedly")
+func (nilScheduleServicer) DisableSchedule(_ context.Context, _ uuid.UUID) error {
+	panic("nilScheduleServicer: DisableSchedule called unexpectedly")
+}
+func (nilScheduleServicer) NextRun(_ context.Context, _ uuid.UUID) (time.Time, error) {
+	panic("nilScheduleServicer: NextRun called unexpectedly")
 }
 
 // nilDiscoveryStore is a DiscoveryStore that panics if any method is called.
@@ -121,47 +126,50 @@ func (nilDiscoveryStore) StopDiscoveryJob(_ context.Context, _ uuid.UUID) error 
 	panic("nilDiscoveryStore: StopDiscoveryJob called unexpectedly")
 }
 
-// nilHostStore is a HostStore that panics if any method is called.
-type nilHostStore struct{}
+// nilHostServicer is a HostServicer that panics if any method is called.
+type nilHostServicer struct{}
 
-func (nilHostStore) ListHosts(_ context.Context, _ *db.HostFilters, _, _ int) ([]*db.Host, int64, error) {
-	panic("nilHostStore: ListHosts called unexpectedly")
+func (nilHostServicer) ListHosts(_ context.Context, _ *db.HostFilters, _, _ int) ([]*db.Host, int64, error) {
+	panic("nilHostServicer: ListHosts called unexpectedly")
 }
-func (nilHostStore) CreateHost(_ context.Context, _ db.CreateHostInput) (*db.Host, error) {
-	panic("nilHostStore: CreateHost called unexpectedly")
+func (nilHostServicer) CreateHost(_ context.Context, _ db.CreateHostInput) (*db.Host, error) {
+	panic("nilHostServicer: CreateHost called unexpectedly")
 }
-func (nilHostStore) GetHost(_ context.Context, _ uuid.UUID) (*db.Host, error) {
-	panic("nilHostStore: GetHost called unexpectedly")
+func (nilHostServicer) GetHost(_ context.Context, _ uuid.UUID) (*db.Host, error) {
+	panic("nilHostServicer: GetHost called unexpectedly")
 }
-func (nilHostStore) UpdateHost(_ context.Context, _ uuid.UUID, _ db.UpdateHostInput) (*db.Host, error) {
-	panic("nilHostStore: UpdateHost called unexpectedly")
+func (nilHostServicer) UpdateHost(_ context.Context, _ uuid.UUID, _ db.UpdateHostInput) (*db.Host, error) {
+	panic("nilHostServicer: UpdateHost called unexpectedly")
 }
-func (nilHostStore) DeleteHost(_ context.Context, _ uuid.UUID) error {
-	panic("nilHostStore: DeleteHost called unexpectedly")
+func (nilHostServicer) DeleteHost(_ context.Context, _ uuid.UUID) error {
+	panic("nilHostServicer: DeleteHost called unexpectedly")
 }
-func (nilHostStore) GetHostScans(_ context.Context, _ uuid.UUID, _, _ int) ([]*db.Scan, int64, error) {
-	panic("nilHostStore: GetHostScans called unexpectedly")
+func (nilHostServicer) GetHostScans(_ context.Context, _ uuid.UUID, _, _ int) ([]*db.Scan, int64, error) {
+	panic("nilHostServicer: GetHostScans called unexpectedly")
 }
 
-// nilProfileStore is a ProfileStore that panics if any method is called.
-type nilProfileStore struct{}
+// nilProfileServicer is a ProfileServicer that panics if any method is called.
+type nilProfileServicer struct{}
 
-func (nilProfileStore) ListProfiles(
+func (nilProfileServicer) ListProfiles(
 	_ context.Context, _ db.ProfileFilters, _, _ int,
 ) ([]*db.ScanProfile, int64, error) {
-	panic("nilProfileStore: ListProfiles called unexpectedly")
+	panic("nilProfileServicer: ListProfiles called unexpectedly")
 }
-func (nilProfileStore) CreateProfile(_ context.Context, _ db.CreateProfileInput) (*db.ScanProfile, error) {
-	panic("nilProfileStore: CreateProfile called unexpectedly")
+func (nilProfileServicer) CreateProfile(_ context.Context, _ db.CreateProfileInput) (*db.ScanProfile, error) {
+	panic("nilProfileServicer: CreateProfile called unexpectedly")
 }
-func (nilProfileStore) GetProfile(_ context.Context, _ string) (*db.ScanProfile, error) {
-	panic("nilProfileStore: GetProfile called unexpectedly")
+func (nilProfileServicer) GetProfile(_ context.Context, _ string) (*db.ScanProfile, error) {
+	panic("nilProfileServicer: GetProfile called unexpectedly")
 }
-func (nilProfileStore) UpdateProfile(_ context.Context, _ string, _ db.UpdateProfileInput) (*db.ScanProfile, error) {
-	panic("nilProfileStore: UpdateProfile called unexpectedly")
+func (nilProfileServicer) UpdateProfile(_ context.Context, _ string, _ db.UpdateProfileInput) (*db.ScanProfile, error) {
+	panic("nilProfileServicer: UpdateProfile called unexpectedly")
 }
-func (nilProfileStore) DeleteProfile(_ context.Context, _ string) error {
-	panic("nilProfileStore: DeleteProfile called unexpectedly")
+func (nilProfileServicer) DeleteProfile(_ context.Context, _ string) error {
+	panic("nilProfileServicer: DeleteProfile called unexpectedly")
+}
+func (nilProfileServicer) CloneProfile(_ context.Context, _, _ string) (*db.ScanProfile, error) {
+	panic("nilProfileServicer: CloneProfile called unexpectedly")
 }
 
 func TestNewBaseHandler(t *testing.T) {

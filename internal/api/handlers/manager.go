@@ -10,6 +10,7 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/anstrom/scanorama/internal/scanning"
+	"github.com/anstrom/scanorama/internal/services"
 )
 
 // HandlerManager manages all API handlers and their dependencies.
@@ -39,11 +40,13 @@ func New(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry)
 
 	// Initialize individual handler groups
 	hm.health = NewHealthHandler(database, logger, metricsManager)
-	hm.scan = NewScanHandler(db.NewScanRepository(database), logger, metricsManager)
-	hm.host = NewHostHandler(db.NewHostRepository(database), logger, metricsManager)
+	hm.scan = NewScanHandler(services.NewScanService(db.NewScanRepository(database), logger), logger, metricsManager)
+	hm.host = NewHostHandler(services.NewHostService(db.NewHostRepository(database), logger), logger, metricsManager)
 	hm.discovery = NewDiscoveryHandler(db.NewDiscoveryRepository(database), logger, metricsManager)
-	hm.profile = NewProfileHandler(db.NewProfileRepository(database), logger, metricsManager)
-	hm.schedule = NewScheduleHandler(db.NewScheduleRepository(database), logger, metricsManager)
+	hm.profile = NewProfileHandler(
+		services.NewProfileService(db.NewProfileRepository(database), logger), logger, metricsManager)
+	hm.schedule = NewScheduleHandler(
+		services.NewScheduleService(db.NewScheduleRepository(database), logger), logger, metricsManager)
 	hm.admin = NewAdminHandler(logger, metricsManager)
 	hm.websocket = NewWebSocketHandler(logger, metricsManager)
 
@@ -233,6 +236,16 @@ func (hm *HandlerManager) EnableSchedule(w http.ResponseWriter, r *http.Request)
 // DisableSchedule handles POST /api/v1/schedules/{id}/disable - disable a schedule.
 func (hm *HandlerManager) DisableSchedule(w http.ResponseWriter, r *http.Request) {
 	hm.schedule.DisableSchedule(w, r)
+}
+
+// CloneProfile handles POST /api/v1/profiles/{id}/clone — clone a profile.
+func (hm *HandlerManager) CloneProfile(w http.ResponseWriter, r *http.Request) {
+	hm.profile.CloneProfile(w, r)
+}
+
+// GetScheduleNextRun handles GET /api/v1/schedules/{id}/next-run — get next run time.
+func (hm *HandlerManager) GetScheduleNextRun(w http.ResponseWriter, r *http.Request) {
+	hm.schedule.GetScheduleNextRun(w, r)
 }
 
 // GetWorkerStatus retrieves the status of workers.
