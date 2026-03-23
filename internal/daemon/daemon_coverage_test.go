@@ -412,6 +412,7 @@ func TestStart_FailsWhenWorkDirUnreachable(t *testing.T) {
 	cfg := &config.Config{
 		Database: db.Config{
 			Host:     "localhost",
+			Port:     5432,
 			Database: "testdb",
 			Username: "testuser",
 		},

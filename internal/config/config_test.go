@@ -416,3 +416,63 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+// TestLoad_NormalizesValues verifies that Load applies normalisation via
+// ValidateAndNormalize so that enum fields (e.g. scan_mode) are folded to
+// lower-case before the config is returned to the caller.
+func TestLoad_NormalizesValues(t *testing.T) {
+	content := `
+database:
+  host: localhost
+  port: 5432
+  database: testdb
+  username: testuser
+  password: testpass
+  ssl_mode: disable
+scanning:
+  worker_pool_size: 4
+  scan_mode: SYN
+`
+	path, cleanup := createTestConfigFile(t, content)
+	defer cleanup()
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+
+	if cfg.Scanning.ScanMode != "syn" {
+		t.Errorf("ScanMode = %q after normalisation, want %q", cfg.Scanning.ScanMode, "syn")
+	}
+}
+
+// TestLoad_WarningsAreSilent verifies that configurations that produce
+// validation warnings (e.g. daemonize enabled without a pid_file) are
+// still loaded successfully — warnings must not abort loading.
+func TestLoad_WarningsAreSilent(t *testing.T) {
+	content := `
+database:
+  host: localhost
+  port: 5432
+  database: testdb
+  username: testuser
+  password: testpass
+  ssl_mode: disable
+daemon:
+  daemonize: true
+  # no pid_file — triggers a warning from ValidateDaemonConfig
+scanning:
+  worker_pool_size: 4
+`
+	path, cleanup := createTestConfigFile(t, content)
+	defer cleanup()
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() unexpected error for warning-only config: %v", err)
+	}
+
+	if !cfg.Daemon.Daemonize {
+		t.Error("Daemonize should be true")
+	}
+}
