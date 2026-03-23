@@ -3143,22 +3143,35 @@ const docTemplate = `{
         "docs.CreateDiscoveryJobRequest": {
             "type": "object",
             "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "method": {
                     "type": "string",
                     "enum": [
-                        "tcp",
+                        "ping",
+                        "arp",
                         "icmp",
-                        "arp"
+                        "tcp_connect"
                     ],
-                    "example": "tcp"
+                    "example": "ping"
                 },
                 "name": {
                     "type": "string",
                     "example": "Office Network Discovery"
                 },
-                "network": {
-                    "type": "string",
-                    "example": "192.168.1.0/24"
+                "networks": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "192.168.1.0/24"
+                    ]
                 }
             }
         },
@@ -3191,7 +3204,8 @@ const docTemplate = `{
                     "enum": [
                         "ping",
                         "tcp",
-                        "arp"
+                        "arp",
+                        "icmp"
                     ],
                     "example": "ping"
                 },
@@ -3222,7 +3236,9 @@ const docTemplate = `{
                 },
                 "options": {
                     "type": "object",
-                    "additionalProperties": true
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "ports": {
                     "type": "string",
@@ -3230,6 +3246,14 @@ const docTemplate = `{
                 },
                 "scan_type": {
                     "type": "string",
+                    "enum": [
+                        "connect",
+                        "syn",
+                        "ack",
+                        "udp",
+                        "aggressive",
+                        "comprehensive"
+                    ],
                     "example": "connect"
                 }
             }
@@ -3245,13 +3269,41 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Weekly security scan"
                 },
+                "options": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "os_detection": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "ports": {
+                    "type": "string",
+                    "example": "22,80,443"
+                },
                 "profile_id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440001"
                 },
-                "scan_options": {
-                    "type": "object",
-                    "additionalProperties": true
+                "scan_type": {
+                    "type": "string",
+                    "enum": [
+                        "connect",
+                        "syn",
+                        "ack",
+                        "udp",
+                        "aggressive",
+                        "comprehensive"
+                    ],
+                    "example": "connect"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "targets": {
                     "type": "array",
@@ -3267,7 +3319,7 @@ const docTemplate = `{
         "docs.CreateScheduleRequest": {
             "type": "object",
             "properties": {
-                "cron_expression": {
+                "cron_expr": {
                     "type": "string",
                     "example": "0 2 * * *"
                 },
@@ -3279,11 +3331,68 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Daily Security Scan"
                 },
-                "profile_id": {
+                "network_id": {
                     "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                    "example": "550e8400-e29b-41d4-a716-446655440010"
                 },
-                "targets": {
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "scan",
+                        "discovery"
+                    ],
+                    "example": "scan"
+                }
+            }
+        },
+        "docs.DiscoveryJobResponse": {
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "hosts_found": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440004"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_run": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string",
+                    "enum": [
+                        "ping",
+                        "arp",
+                        "icmp",
+                        "tcp_connect"
+                    ],
+                    "example": "ping"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Network Discovery"
+                },
+                "networks": {
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -3291,35 +3400,9 @@ const docTemplate = `{
                     "example": [
                         "192.168.1.0/24"
                     ]
-                }
-            }
-        },
-        "docs.DiscoveryJobResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
+                },
+                "next_run": {
                     "type": "string"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440004"
-                },
-                "method": {
-                    "type": "string",
-                    "enum": [
-                        "tcp",
-                        "icmp",
-                        "arp"
-                    ],
-                    "example": "tcp"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "Network Discovery"
-                },
-                "network": {
-                    "type": "string",
-                    "example": "192.168.1.0/24"
                 },
                 "progress": {
                     "type": "number",
@@ -3337,6 +3420,9 @@ const docTemplate = `{
                         "failed"
                     ],
                     "example": "running"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
@@ -3413,26 +3499,6 @@ const docTemplate = `{
                         80,
                         443
                     ]
-                },
-                "os_confidence": {
-                    "type": "integer",
-                    "description": "nmap OS detection confidence percentage (0-100)",
-                    "example": 95
-                },
-                "os_family": {
-                    "type": "string",
-                    "description": "Broad OS family detected by nmap",
-                    "example": "Linux"
-                },
-                "os_name": {
-                    "type": "string",
-                    "description": "Full OS name returned by nmap",
-                    "example": "Linux 5.15"
-                },
-                "os_version_detail": {
-                    "type": "string",
-                    "description": "OS generation or version string returned by nmap",
-                    "example": "5.15"
                 },
                 "scan_count": {
                     "type": "integer",
@@ -3527,7 +3593,8 @@ const docTemplate = `{
                     "enum": [
                         "ping",
                         "tcp",
-                        "arp"
+                        "arp",
+                        "icmp"
                     ],
                     "example": "ping"
                 },
@@ -3549,6 +3616,10 @@ const docTemplate = `{
                 "last_scan": {
                     "type": "string"
                 },
+                "modified_by": {
+                    "type": "string",
+                    "example": "admin"
+                },
                 "name": {
                     "type": "string",
                     "example": "Office Network"
@@ -3556,6 +3627,26 @@ const docTemplate = `{
                 "scan_enabled": {
                     "type": "boolean",
                     "example": true
+                },
+                "scan_interval_seconds": {
+                    "type": "integer",
+                    "example": 3600
+                },
+                "scan_ports": {
+                    "type": "string",
+                    "example": "22,80,443,8080"
+                },
+                "scan_type": {
+                    "type": "string",
+                    "enum": [
+                        "connect",
+                        "syn",
+                        "ack",
+                        "udp",
+                        "aggressive",
+                        "comprehensive"
+                    ],
+                    "example": "connect"
                 },
                 "updated_at": {
                     "type": "string"
@@ -3704,7 +3795,9 @@ const docTemplate = `{
                 },
                 "options": {
                     "type": "object",
-                    "additionalProperties": true
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "ports": {
                     "type": "string",
@@ -3712,6 +3805,14 @@ const docTemplate = `{
                 },
                 "scan_type": {
                     "type": "string",
+                    "enum": [
+                        "connect",
+                        "syn",
+                        "ack",
+                        "udp",
+                        "aggressive",
+                        "comprehensive"
+                    ],
                     "example": "connect"
                 },
                 "updated_at": {
@@ -3737,16 +3838,18 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
                 "duration": {
                     "type": "string",
                     "example": "14m30s"
                 },
                 "error_message": {
                     "type": "string"
-                },
-                "hosts_discovered": {
-                    "type": "integer",
-                    "example": 25
                 },
                 "id": {
                     "type": "string",
@@ -3756,13 +3859,19 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Ad-hoc scan: 192.168.1.0/24"
                 },
+                "options": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "ports": {
                     "type": "string",
                     "example": "22,80,443"
                 },
                 "ports_scanned": {
-                    "type": "integer",
-                    "example": 2500
+                    "type": "string",
+                    "example": "443 open / 1200 total"
                 },
                 "profile_id": {
                     "type": "string",
@@ -3777,9 +3886,9 @@ const docTemplate = `{
                     "enum": [
                         "connect",
                         "syn",
-                        "version",
+                        "ack",
+                        "udp",
                         "aggressive",
-                        "stealth",
                         "comprehensive"
                     ],
                     "example": "connect"
@@ -3793,10 +3902,15 @@ const docTemplate = `{
                         "pending",
                         "running",
                         "completed",
-                        "failed",
-                        "cancelled"
+                        "failed"
                     ],
                     "example": "running"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "targets": {
                     "type": "array",
@@ -3806,6 +3920,9 @@ const docTemplate = `{
                     "example": [
                         "192.168.1.0/24"
                     ]
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
@@ -3815,17 +3932,30 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
-                "cron_expression": {
+                "created_by": {
+                    "type": "string"
+                },
+                "cron_expr": {
                     "type": "string",
                     "example": "0 2 * * 1"
+                },
+                "description": {
+                    "type": "string"
                 },
                 "enabled": {
                     "type": "boolean",
                     "example": true
                 },
+                "error_count": {
+                    "type": "integer",
+                    "example": 0
+                },
                 "id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440005"
+                },
+                "last_error": {
+                    "type": "string"
                 },
                 "last_run": {
                     "type": "string"
@@ -3834,21 +3964,32 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Weekly Security Scan"
                 },
+                "network_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440010"
+                },
+                "network_name": {
+                    "type": "string",
+                    "example": "Office Network"
+                },
                 "next_run": {
                     "type": "string"
                 },
-                "profile_id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                "run_count": {
+                    "type": "integer",
+                    "example": 5
                 },
-                "targets": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "192.168.1.0/24"
-                    ]
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "scan",
+                        "discovery"
+                    ],
+                    "example": "scan"
                 },
                 "updated_at": {
                     "type": "string"
@@ -3891,7 +4032,8 @@ const docTemplate = `{
                     "enum": [
                         "ping",
                         "tcp",
-                        "arp"
+                        "arp",
+                        "icmp"
                     ],
                     "example": "ping"
                 },
@@ -3926,12 +4068,16 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "os_detection": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "ports": {
                     "type": "string",
                     "example": "22,80,443"
                 },
                 "profile_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "scan_type": {
                     "type": "string",
@@ -3939,13 +4085,11 @@ const docTemplate = `{
                         "connect",
                         "syn",
                         "ack",
+                        "udp",
                         "aggressive",
                         "comprehensive"
                     ],
                     "example": "connect"
-                },
-                "schedule_id": {
-                    "type": "integer"
                 },
                 "tags": {
                     "type": "array",

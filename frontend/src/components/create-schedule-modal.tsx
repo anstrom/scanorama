@@ -2,7 +2,7 @@ import { useState, useId } from "react";
 import { X } from "lucide-react";
 import { Button } from "./button";
 import { useCreateSchedule } from "../api/hooks/use-schedules";
-import { useProfiles } from "../api/hooks/use-profiles";
+import { useNetworks } from "../api/hooks/use-networks";
 import { cn, describeCron } from "../lib/utils";
 
 export interface CreateScheduleModalProps {
@@ -18,14 +18,14 @@ export function CreateScheduleModal({
 
   const [name, setName] = useState("");
   const [cronExpr, setCronExpr] = useState("0 2 * * *");
-  const [targets, setTargets] = useState("");
-  const [profileId, setProfileId] = useState("");
+  const [networkId, setNetworkId] = useState("");
+  const [type, setType] = useState<"scan" | "discovery">("scan");
   const [enabled, setEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const { mutateAsync: createSchedule, isPending } = useCreateSchedule();
-  const { data: profilesData } = useProfiles({ page: 1, page_size: 100 });
-  const profiles = profilesData?.data ?? [];
+  const { data: networksData } = useNetworks({ page: 1, page_size: 100 });
+  const networks = networksData?.data ?? [];
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,10 +33,6 @@ export function CreateScheduleModal({
 
     const trimmedName = name.trim();
     const trimmedCron = cronExpr.trim();
-    const targetList = targets
-      .split(/[\s,]+/)
-      .map((t) => t.trim())
-      .filter(Boolean);
 
     if (!trimmedName) {
       setError("Name is required.");
@@ -48,17 +44,17 @@ export function CreateScheduleModal({
       return;
     }
 
-    if (targetList.length === 0) {
-      setError("At least one target is required.");
+    if (!networkId) {
+      setError("A network is required.");
       return;
     }
 
     try {
       await createSchedule({
         name: trimmedName,
-        cron_expression: trimmedCron,
-        targets: targetList,
-        profile_id: profileId || undefined,
+        cron_expr: trimmedCron,
+        type,
+        network_id: networkId,
         enabled,
       });
       onCreated?.();
@@ -156,57 +152,59 @@ export function CreateScheduleModal({
             <p className="text-xs text-text-muted">{describeCron(cronExpr)}</p>
           </div>
 
-          {/* Targets */}
+          {/* Type */}
           <div className="space-y-1.5">
             <label
-              htmlFor={`${id}-targets`}
+              htmlFor={`${id}-type`}
               className="block text-xs font-medium text-text-primary"
             >
-              Targets
-            </label>
-            <textarea
-              id={`${id}-targets`}
-              value={targets}
-              onChange={(e) => setTargets(e.target.value)}
-              placeholder="192.168.1.0/24, 10.0.0.0/8"
-              rows={3}
-              className={cn(
-                "w-full px-3 py-1.5 text-xs rounded border border-border font-mono resize-none",
-                "bg-surface text-text-primary placeholder:text-text-muted",
-                "focus:outline-none focus:ring-1 focus:ring-border",
-              )}
-            />
-            <p className="text-xs text-text-muted">
-              Comma or whitespace-separated CIDRs or IPs.
-            </p>
-          </div>
-
-          {/* Profile */}
-          <div className="space-y-1.5">
-            <label
-              htmlFor={`${id}-profile`}
-              className="block text-xs font-medium text-text-primary"
-            >
-              Profile{" "}
-              <span className="text-text-muted font-normal">(optional)</span>
+              Type
             </label>
             <select
-              id={`${id}-profile`}
-              value={profileId}
-              onChange={(e) => setProfileId(e.target.value)}
+              id={`${id}-type`}
+              value={type}
+              onChange={(e) => setType(e.target.value as "scan" | "discovery")}
               className={cn(
                 "w-full px-3 py-1.5 text-xs rounded border border-border",
                 "bg-surface text-text-primary",
                 "focus:outline-none focus:ring-1 focus:ring-border",
               )}
             >
-              <option value="">— No profile —</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
+              <option value="scan">Scan</option>
+              <option value="discovery">Discovery</option>
+            </select>
+          </div>
+
+          {/* Network */}
+          <div className="space-y-1.5">
+            <label
+              htmlFor={`${id}-network`}
+              className="block text-xs font-medium text-text-primary"
+            >
+              Network
+            </label>
+            <select
+              id={`${id}-network`}
+              value={networkId}
+              onChange={(e) => setNetworkId(e.target.value)}
+              className={cn(
+                "w-full px-3 py-1.5 text-xs rounded border border-border",
+                "bg-surface text-text-primary",
+                "focus:outline-none focus:ring-1 focus:ring-border",
+              )}
+            >
+              <option value="">— Select a network —</option>
+              {networks.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.name} ({n.cidr})
                 </option>
               ))}
             </select>
+            {networks.length === 0 && (
+              <p className="text-xs text-text-muted">
+                No networks configured yet. Add a network first.
+              </p>
+            )}
           </div>
 
           {/* Enabled */}

@@ -65,8 +65,8 @@ const mockJobs = [
   {
     id: "job-1",
     name: "Office LAN Discovery",
-    network: "192.168.1.0/24",
-    method: "tcp" as const,
+    networks: ["192.168.1.0/24"],
+    method: "ping" as const,
     status: "completed" as const,
     progress: 100,
     started_at: "2024-01-01T10:00:00Z",
@@ -75,7 +75,7 @@ const mockJobs = [
   {
     id: "job-2",
     name: "DMZ Discovery",
-    network: "10.0.0.0/8",
+    networks: ["10.0.0.0/8"],
     method: "icmp" as const,
     status: "running" as const,
     progress: 45,
@@ -138,9 +138,7 @@ describe("useDiscoveryJobs", () => {
   });
 
   it("forwards page and page_size as query params", async () => {
-    mockGet.mockResolvedValue(
-      ok({ data: [], pagination: mockPagination }),
-    );
+    mockGet.mockResolvedValue(ok({ data: [], pagination: mockPagination }));
 
     const { result } = renderHookWithQuery(() =>
       useDiscoveryJobs({ page: 2, page_size: 10 }),
@@ -211,7 +209,7 @@ describe("useDiscoveryJob", () => {
 
     expect(result.current.data?.id).toBe("job-1");
     expect(result.current.data?.name).toBe("Office LAN Discovery");
-    expect(result.current.data?.network).toBe("192.168.1.0/24");
+    expect(result.current.data?.networks).toEqual(["192.168.1.0/24"]);
   });
 
   it("enters error state when api.GET returns an error", async () => {
@@ -272,8 +270,8 @@ describe("useCreateDiscoveryJob", () => {
     await actHook(async () => {
       created = (await result.current.mutateAsync({
         name: "Office LAN Discovery",
-        network: "192.168.1.0/24",
-        method: "tcp",
+        networks: ["192.168.1.0/24"],
+        method: "ping",
       })) as typeof mockJob;
     });
 
@@ -286,7 +284,7 @@ describe("useCreateDiscoveryJob", () => {
 
     const body = {
       name: "DMZ Scan",
-      network: "10.0.0.0/8",
+      networks: ["10.0.0.0/8"],
       method: "icmp" as const,
     };
     const { result, actHook } = renderHookWithQuery(() =>
@@ -310,7 +308,7 @@ describe("useCreateDiscoveryJob", () => {
     );
     await actHook(async () => {
       await expect(
-        result.current.mutateAsync({ network: "192.168.1.0/24" }),
+        result.current.mutateAsync({ networks: ["192.168.1.0/24"] }),
       ).rejects.toThrow("network already exists");
     });
   });
@@ -329,7 +327,7 @@ describe("useCreateDiscoveryJob", () => {
     );
     await actHook(async () => {
       await expect(
-        result.current.mutateAsync({ network: "192.168.1.0/24" }),
+        result.current.mutateAsync({ networks: ["192.168.1.0/24"] }),
       ).rejects.toThrow("Failed to create discovery job.");
     });
   });
@@ -348,8 +346,8 @@ describe("useCreateDiscoveryJob", () => {
     await actHook(async () => {
       await result.current.mutateAsync({
         name: "Office LAN Discovery",
-        network: "192.168.1.0/24",
-        method: "tcp",
+        networks: ["192.168.1.0/24"],
+        method: "ping",
       });
     });
 

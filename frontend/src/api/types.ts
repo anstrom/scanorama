@@ -750,14 +750,22 @@ export interface components {
     };
     "docs.CreateDiscoveryJobRequest": {
       /**
-       * @example tcp
+       * @example ping
        * @enum {string}
        */
-      method?: "tcp" | "icmp" | "arp";
+      method?: "ping" | "arp" | "icmp" | "tcp_connect";
       /** @example Office Network Discovery */
       name?: string;
-      /** @example 192.168.1.0/24 */
-      network?: string;
+      /**
+       * @example [
+       *       "192.168.1.0/24"
+       *     ]
+       */
+      networks?: string[];
+      /** @example Network discovery description */
+      description?: string;
+      /** @example true */
+      enabled?: boolean;
     };
     "docs.CreateExclusionRequest": {
       /** @example 192.168.1.128/25 */
@@ -788,21 +796,14 @@ export interface components {
       /** @example Custom Scan Profile */
       name?: string;
       options?: {
-        [key: string]: unknown;
+        [key: string]: string;
       };
       /** @example 22,80,443,8080 */
       ports?: string;
-      /** @example connect */
-      scan_type?: string;
-    };
-    "docs.CreateScanRequest": {
-      /** @example Regular security assessment */
-      description?: string;
-      /** @example Weekly security scan */
-      name?: string;
-      /** @example 550e8400-e29b-41d4-a716-446655440001 */
-      profile_id?: string;
-      /** @enum {string} */
+      /**
+       * @example connect
+       * @enum {string}
+       */
       scan_type?:
         | "connect"
         | "syn"
@@ -810,53 +811,91 @@ export interface components {
         | "udp"
         | "aggressive"
         | "comprehensive";
-      scan_options?: {
-        [key: string]: unknown;
-      };
-      /**
-       * @example [
-       *       "192.168.1.0/24"
-       *     ]
-       */
-      targets?: string[];
     };
-    "docs.CreateScheduleRequest": {
-      /** @example 0 2 * * * */
-      cron_expression?: string;
-      /** @example true */
-      enabled?: boolean;
-      /** @example Daily Security Scan */
+    "docs.CreateScanRequest": {
+      /** @example Weekly security scan */
       name?: string;
-      /** @example 550e8400-e29b-41d4-a716-446655440001 */
-      profile_id?: string;
       /**
        * @example [
        *       "192.168.1.0/24"
        *     ]
        */
       targets?: string[];
-    };
-    "docs.DiscoveryJobResponse": {
-      created_at?: string;
-      /** @example 550e8400-e29b-41d4-a716-446655440004 */
-      id?: string;
       /**
-       * @example tcp
+       * @example connect
        * @enum {string}
        */
-      method?: "tcp" | "icmp" | "arp";
+      scan_type?:
+        | "connect"
+        | "syn"
+        | "ack"
+        | "udp"
+        | "aggressive"
+        | "comprehensive";
+      /** @example 550e8400-e29b-41d4-a716-446655440001 */
+      profile_id?: string;
+      /** @example Regular security assessment */
+      description?: string;
+      /** @example 22,80,443 */
+      ports?: string;
+      options?: {
+        [key: string]: string;
+      };
+      /** @example false */
+      os_detection?: boolean;
+      tags?: string[];
+    };
+    "docs.CreateScheduleRequest": {
+      /** @example Daily Security Scan */
+      name?: string;
+      /** @example 0 2 * * * */
+      cron_expr?: string;
+      /**
+       * @example scan
+       * @enum {string}
+       */
+      type?: "scan" | "discovery";
+      /** @example 550e8400-e29b-41d4-a716-446655440010 */
+      network_id?: string;
+      /** @example true */
+      enabled?: boolean;
+    };
+    "docs.DiscoveryJobResponse": {
+      /** @example 550e8400-e29b-41d4-a716-446655440004 */
+      id?: string;
       /** @example Network Discovery */
       name?: string;
-      /** @example 192.168.1.0/24 */
-      network?: string;
-      /** @example 45.5 */
-      progress?: number;
-      started_at?: string;
+      description?: string;
+      /**
+       * @example [
+       *       "192.168.1.0/24"
+       *     ]
+       */
+      networks?: string[];
+      /**
+       * @example ping
+       * @enum {string}
+       */
+      method?: "ping" | "arp" | "icmp" | "tcp_connect";
       /**
        * @example running
        * @enum {string}
        */
       status?: "pending" | "running" | "completed" | "failed";
+      /** @example 45.5 */
+      progress?: number;
+      /** @example 12 */
+      hosts_found?: number;
+      /** @example true */
+      enabled?: boolean;
+      created_at?: string;
+      updated_at?: string;
+      started_at?: string;
+      completed_at?: string;
+      last_run?: string;
+      next_run?: string;
+      last_error?: string;
+      created_by?: string;
     };
     "docs.ErrorResponse": {
       /** @example Invalid request */
@@ -955,13 +994,12 @@ export interface components {
       updated_at?: string;
     };
     "docs.NetworkResponse": {
-      /** @example 20 */
-      active_host_count?: number;
+      /** @example 550e8400-e29b-41d4-a716-446655440010 */
+      id?: string;
+      /** @example Office Network */
+      name?: string;
       /** @example 192.168.1.0/24 */
       cidr?: string;
-      created_at?: string;
-      /** @example admin */
-      created_by?: string;
       /** @example Main office network */
       description?: string;
       /**
@@ -969,19 +1007,37 @@ export interface components {
        * @enum {string}
        */
       discovery_method?: "ping" | "tcp" | "arp" | "icmp";
-      /** @example 25 */
-      host_count?: number;
-      /** @example 550e8400-e29b-41d4-a716-446655440010 */
-      id?: string;
       /** @example true */
       is_active?: boolean;
-      last_discovery?: string;
-      last_scan?: string;
-      /** @example Office Network */
-      name?: string;
       /** @example true */
       scan_enabled?: boolean;
+      /** @example 3600 */
+      scan_interval_seconds?: number;
+      /** @example 22,80,443,8080 */
+      scan_ports?: string;
+      /**
+       * @example connect
+       * @enum {string}
+       */
+      scan_type?:
+        | "connect"
+        | "syn"
+        | "ack"
+        | "udp"
+        | "aggressive"
+        | "comprehensive";
+      last_discovery?: string;
+      last_scan?: string;
+      /** @example 25 */
+      host_count?: number;
+      /** @example 20 */
+      active_host_count?: number;
+      created_at?: string;
       updated_at?: string;
+      /** @example admin */
+      created_by?: string;
+      /** @example admin */
+      modified_by?: string;
     };
     "docs.NetworkStatsResponse": {
       exclusions?: {
@@ -1029,46 +1085,12 @@ export interface components {
       total_pages?: number;
     };
     "docs.ProfileResponse": {
-      created_at?: string;
-      /** @example Fast TCP connect scan */
-      description?: string;
       /** @example 550e8400-e29b-41d4-a716-446655440003 */
       id?: string;
       /** @example Quick Connect Scan */
       name?: string;
-      options?: {
-        [key: string]: unknown;
-      };
-      /** @example 22,80,443 */
-      ports?: string;
-      /** @example connect */
-      scan_type?: string;
-      updated_at?: string;
-    };
-    "docs.RenameNetworkRequest": {
-      /** @example New Office Network */
-      new_name?: string;
-    };
-    "docs.ScanResponse": {
-      completed_at?: string;
-      created_at?: string;
-      /** @example 14m30s */
-      duration?: string;
-      error_message?: string;
-      /** @example 25 */
-      hosts_discovered?: number;
-      /** @example 550e8400-e29b-41d4-a716-446655440000 */
-      id?: string;
-      /** @example Ad-hoc scan: 192.168.1.0/24 */
-      name?: string;
-      /** @example 22,80,443 */
-      ports?: string;
-      /** @example 2500 */
-      ports_scanned?: string;
-      /** @example 550e8400-e29b-41d4-a716-446655440001 */
-      profile_id?: string;
-      /** @example 65.5 */
-      progress?: number;
+      /** @example Fast TCP connect scan */
+      description?: string;
       /**
        * @example connect
        * @enum {string}
@@ -1080,46 +1102,98 @@ export interface components {
         | "udp"
         | "aggressive"
         | "comprehensive";
-      started_at?: string;
+      /** @example 22,80,443 */
+      ports?: string;
+      options?: {
+        [key: string]: string;
+      };
+      created_at?: string;
+      updated_at?: string;
+    };
+    "docs.RenameNetworkRequest": {
+      /** @example New Office Network */
+      new_name?: string;
+    };
+    "docs.ScanResponse": {
+      /** @example 550e8400-e29b-41d4-a716-446655440000 */
+      id?: string;
+      /** @example Ad-hoc scan: 192.168.1.0/24 */
+      name?: string;
+      description?: string;
+      /** @example 550e8400-e29b-41d4-a716-446655440001 */
+      profile_id?: string;
+      /**
+       * @example connect
+       * @enum {string}
+       */
+      scan_type?:
+        | "connect"
+        | "syn"
+        | "ack"
+        | "udp"
+        | "aggressive"
+        | "comprehensive";
+      /** @example 22,80,443 */
+      ports?: string;
+      /**
+       * @example [
+       *       "192.168.1.0/24"
+       *     ]
+       */
+      targets?: string[];
+      options?: {
+        [key: string]: string;
+      };
+      tags?: string[];
       /**
        * @example running
        * @enum {string}
        */
-      status?:
-        | "pending"
-        | "running"
-        | "completed"
-        | "failed"
-        | "cancelled"
-        | "stopped";
-      /**
-       * @example [
-       *       "192.168.1.0/24"
-       *     ]
-       */
-      targets?: string[];
+      status?: "pending" | "running" | "completed" | "failed";
+      /** @example 65.5 */
+      progress?: number;
+      created_at?: string;
+      updated_at?: string;
+      started_at?: string;
+      completed_at?: string;
+      /** @example 14m30s */
+      duration?: string;
+      /** @example 443 open / 1200 total */
+      ports_scanned?: string;
+      error_message?: string;
+      created_by?: string;
     };
     "docs.ScheduleResponse": {
-      created_at?: string;
-      /** @example 0 2 * * 1 */
-      cron_expression?: string;
-      /** @example true */
-      enabled?: boolean;
       /** @example 550e8400-e29b-41d4-a716-446655440005 */
       id?: string;
-      last_run?: string;
       /** @example Weekly Security Scan */
       name?: string;
-      next_run?: string;
-      /** @example 550e8400-e29b-41d4-a716-446655440001 */
-      profile_id?: string;
+      description?: string;
+      /** @example 0 2 * * 1 */
+      cron_expr?: string;
       /**
-       * @example [
-       *       "192.168.1.0/24"
-       *     ]
+       * @example scan
+       * @enum {string}
        */
-      targets?: string[];
+      type?: "scan" | "discovery";
+      /** @example 550e8400-e29b-41d4-a716-446655440010 */
+      network_id?: string;
+      /** @example Office Network */
+      network_name?: string;
+      /** @example true */
+      enabled?: boolean;
+      /** @example active */
+      status?: string;
+      last_run?: string;
+      next_run?: string;
+      /** @example 5 */
+      run_count?: number;
+      /** @example 0 */
+      error_count?: number;
+      last_error?: string;
+      created_at?: string;
       updated_at?: string;
+      created_by?: string;
     };
     "docs.StatusResponse": {
       /** @example scanorama-api */
@@ -1148,29 +1222,34 @@ export interface components {
       scan_enabled?: boolean;
     };
     "docs.UpdateScanRequest": {
-      /** @example Updated description */
-      description?: string;
       /** @example Updated scan name */
       name?: string;
-      options?: {
-        [key: string]: string;
-      };
-      /** @example 22,80,443 */
-      ports?: string;
-      profile_id?: number;
-      /**
-       * @example connect
-       * @enum {string}
-       */
-      scan_type?: "connect" | "syn" | "ack" | "aggressive" | "comprehensive";
-      schedule_id?: number;
-      tags?: string[];
+      /** @example Updated description */
+      description?: string;
       /**
        * @example [
        *       "192.168.1.0/24"
        *     ]
        */
       targets?: string[];
+      /**
+       * @example connect
+       * @enum {string}
+       */
+      scan_type?:
+        | "connect"
+        | "syn"
+        | "ack"
+        | "udp"
+        | "aggressive"
+        | "comprehensive";
+      /** @example 22,80,443 */
+      ports?: string;
+      profile_id?: string;
+      options?: {
+        [key: string]: string;
+      };
+      tags?: string[];
     };
     "docs.VersionResponse": {
       /** @example scanorama */
