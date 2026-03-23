@@ -190,7 +190,7 @@ jobs:
           go tool cover -func=coverage_nodb.out | tail -1
 
       - name: Upload no-services coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-nodb
           path: coverage_nodb.out
@@ -322,7 +322,7 @@ jobs:
           go tool cover -func=coverage_services.out | tail -1
 
       - name: Upload services coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-services
           path: coverage_services.out
