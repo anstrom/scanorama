@@ -29,17 +29,17 @@ const (
 
 // HostHandler handles host-related API endpoints.
 type HostHandler struct {
-	database HostStore
-	logger   *slog.Logger
-	metrics  *metrics.Registry
+	service HostServicer
+	logger  *slog.Logger
+	metrics *metrics.Registry
 }
 
 // NewHostHandler creates a new host handler.
-func NewHostHandler(database HostStore, logger *slog.Logger, metricsManager *metrics.Registry) *HostHandler {
+func NewHostHandler(service HostServicer, logger *slog.Logger, metricsManager *metrics.Registry) *HostHandler {
 	return &HostHandler{
-		database: database,
-		logger:   logger.With("handler", "host"),
-		metrics:  metricsManager,
+		service: service,
+		logger:  logger.With("handler", "host"),
+		metrics: metricsManager,
 	}
 }
 
@@ -111,7 +111,7 @@ func (h *HostHandler) ListHosts(w http.ResponseWriter, r *http.Request) {
 		Logger:     h.logger,
 		Metrics:    h.metrics,
 		GetFilters: h.getHostFilters,
-		ListFromDB: h.database.ListHosts,
+		ListFromDB: h.service.ListHosts,
 		ToResponse: func(host *db.Host) interface{} {
 			return h.hostToResponse(host)
 		},
@@ -138,7 +138,7 @@ func (h *HostHandler) CreateHost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create host in database
-	host, err := h.database.CreateHost(r.Context(), h.requestToCreateHost(&req))
+	host, err := h.service.CreateHost(r.Context(), h.requestToCreateHost(&req))
 	if err != nil {
 		if errors.IsConflict(err) {
 			writeError(w, r, http.StatusConflict,
@@ -181,7 +181,7 @@ func (h *HostHandler) GetHost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	crudOp.ExecuteGet(w, r, hostID,
-		h.database.GetHost,
+		h.service.GetHost,
 		func(host *db.Host) interface{} {
 			return h.hostToResponse(host)
 		},
@@ -202,7 +202,7 @@ func (h *HostHandler) UpdateHost(w http.ResponseWriter, r *http.Request) {
 			}
 			return h.requestToUpdateHost(&req), nil
 		},
-		h.database.UpdateHost,
+		h.service.UpdateHost,
 		func(host *db.Host) interface{} {
 			return h.hostToResponse(host)
 		},
@@ -223,7 +223,7 @@ func (h *HostHandler) DeleteHost(w http.ResponseWriter, r *http.Request) {
 		Metrics:    h.metrics,
 	}
 
-	crudOp.ExecuteDelete(w, r, hostID, h.database.DeleteHost, "api_hosts_deleted_total")
+	crudOp.ExecuteDelete(w, r, hostID, h.service.DeleteHost, "api_hosts_deleted_total")
 }
 
 // GetHostScans handles GET /api/v1/hosts/{id}/scans - get scans for a specific host.
@@ -240,7 +240,7 @@ func (h *HostHandler) GetHostScans(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Getting host scans", "request_id", requestID, "host_id", hostID)
 
 	// Verify the host exists before fetching its scans.
-	if _, err := h.database.GetHost(r.Context(), hostID); err != nil {
+	if _, err := h.service.GetHost(r.Context(), hostID); err != nil {
 		if errors.IsNotFound(err) {
 			writeError(w, r, http.StatusNotFound, fmt.Errorf("host not found"))
 			return
@@ -262,7 +262,7 @@ func (h *HostHandler) GetHostScans(w http.ResponseWriter, r *http.Request) {
 	filters["host_id"] = hostID
 
 	// Get host scans from database
-	scans, total, err := h.database.GetHostScans(r.Context(), hostID, params.Offset, params.PageSize)
+	scans, total, err := h.service.GetHostScans(r.Context(), hostID, params.Offset, params.PageSize)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			writeError(w, r, http.StatusNotFound,

@@ -1,6 +1,9 @@
 // Package handlers provides HTTP request handlers for the Scanorama API.
 // This file implements scan management endpoints including CRUD operations,
-// scan execution control, and results retrieval.
+// scan execution control, and result retrieval.
+//
+// Validation and lifecycle business rules live in services.ScanService; this
+// handler is a thin HTTP adapter (parse → call service → write response).
 package handlers
 
 import (
@@ -10,8 +13,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,7 @@ import (
 	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/anstrom/scanorama/internal/scanning"
+	"github.com/anstrom/scanorama/internal/services"
 )
 
 // Scan validation constants.
@@ -37,7 +39,7 @@ type scanRunnerFunc func(
 
 // ScanHandler handles scan-related API endpoints.
 type ScanHandler struct {
-	database   ScanStore
+	service    ScanServicer
 	logger     *slog.Logger
 	metrics    *metrics.Registry
 	scanQueue  *scanning.ScanQueue
@@ -46,9 +48,9 @@ type ScanHandler struct {
 }
 
 // NewScanHandler creates a new scan handler.
-func NewScanHandler(database ScanStore, logger *slog.Logger, metricsManager *metrics.Registry) *ScanHandler {
+func NewScanHandler(service ScanServicer, logger *slog.Logger, metricsManager *metrics.Registry) *ScanHandler {
 	return &ScanHandler{
-		database:   database,
+		service:    service,
 		logger:     logger.With("handler", "scan"),
 		metrics:    metricsManager,
 		scanRunner: scanning.RunScanWithContext,
@@ -58,6 +60,8 @@ func NewScanHandler(database ScanStore, logger *slog.Logger, metricsManager *met
 // WithScanMode sets the fallback scan mode used when a scan record does not
 // carry an explicit ScanType. The sentinel default "connect" is applied last
 // so callers may pass an empty string safely.
+// WithScanMode overrides the default scan mode used when the scan record has
+// no explicit scan_type set.
 func (h *ScanHandler) WithScanMode(mode string) *ScanHandler {
 	h.scanMode = mode
 	return h
@@ -76,6 +80,8 @@ func firstNonEmpty(values ...string) string {
 
 // SetScanQueue configures an optional scan execution queue. When set, StartScan
 // submits work to the queue instead of spawning an unbounded goroutine.
+// SetScanQueue injects an execution queue for API-triggered scans.
+// Pass nil to revert to fire-and-forget goroutine mode.
 func (h *ScanHandler) SetScanQueue(q *scanning.ScanQueue) {
 	h.scanQueue = q
 }
@@ -157,7 +163,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 		Logger:     h.logger,
 		Metrics:    h.metrics,
 		GetFilters: h.getScanFilters,
-		ListFromDB: h.database.ListScans,
+		ListFromDB: h.service.ListScans,
 		ToResponse: func(scan *db.Scan) interface{} {
 			return h.scanToResponse(scan)
 		},
@@ -165,43 +171,30 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 	listOp.Execute(w, r)
 }
 
-// CreateScan handles POST /api/v1/scans - create a new scan.
+// CreateScan handles POST /api/v1/scans — create a new scan.
+// Input validation (name, targets, scan type, ports, profile existence) is
+// performed by the service; validation errors are returned as HTTP 400.
 func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 	requestID := getRequestIDFromContext(r.Context())
 	h.logger.Info("Creating scan", "request_id", requestID)
 
-	// Parse request body
 	var req ScanRequest
 	if err := parseJSON(r, &req); err != nil {
 		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
-	// Validate request
 	if err := h.validateScanRequest(&req); err != nil {
 		writeError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
-	// Verify the referenced profile exists before inserting (avoids FK 500).
-	if req.ProfileID != nil && *req.ProfileID != "" {
-		if _, err := h.database.GetProfile(r.Context(), *req.ProfileID); err != nil {
-			if errors.IsNotFound(err) {
-				writeError(w, r, http.StatusBadRequest,
-					fmt.Errorf("profile %q not found", *req.ProfileID))
-				return
-			}
-			h.logger.Error("Failed to look up profile", "request_id", requestID,
-				"profile_id", *req.ProfileID, "error", err)
-			writeError(w, r, http.StatusInternalServerError,
-				fmt.Errorf("failed to look up profile: %w", err))
+	scan, err := h.service.CreateScan(r.Context(), h.requestToCreateScan(&req))
+	if err != nil {
+		if errors.IsCode(err, errors.CodeValidation) {
+			writeError(w, r, http.StatusBadRequest, err)
 			return
 		}
-	}
-
-	// Create scan in database
-	scan, err := h.database.CreateScan(r.Context(), h.requestToCreateScan(&req))
-	if err != nil {
 		h.logger.Error("Failed to create scan", "request_id", requestID, "error", err)
 		writeError(w, r, http.StatusInternalServerError,
 			fmt.Errorf("failed to create scan: %w", err))
@@ -217,7 +210,6 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, r, http.StatusCreated, response)
 
-	// Record metrics
 	if h.metrics != nil {
 		h.metrics.Counter("api_scans_created_total", map[string]string{
 			"scan_type": req.ScanType,
@@ -225,7 +217,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetScan handles GET /api/v1/scans/{id} - get a specific scan.
+// GetScan handles GET /api/v1/scans/{id} — get a specific scan.
 func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 	scanID, err := extractUUIDFromPath(r)
 	if err != nil {
@@ -239,13 +231,13 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 		Metrics:    h.metrics,
 	}
 
-	crudOp.ExecuteGet(w, r, scanID, h.database.GetScan,
+	crudOp.ExecuteGet(w, r, scanID, h.service.GetScan,
 		func(scan *db.Scan) interface{} {
 			return h.scanToResponse(scan)
 		}, "api_scans_retrieved_total")
 }
 
-// UpdateScan handles PUT /api/v1/scans/{id} - update a scan.
+// UpdateScan handles PUT /api/v1/scans/{id} — update a scan.
 func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 	UpdateEntity[db.Scan, db.UpdateScanInput](
 		w, r,
@@ -259,14 +251,14 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 			}
 			return h.requestToUpdateScan(&req), nil
 		},
-		h.database.UpdateScan,
+		h.service.UpdateScan,
 		func(scan *db.Scan) interface{} {
 			return h.scanToResponse(scan)
 		},
 		"api_scans_updated_total")
 }
 
-// DeleteScan handles DELETE /api/v1/scans/{id} - delete a scan.
+// DeleteScan handles DELETE /api/v1/scans/{id} — delete a scan.
 func (h *ScanHandler) DeleteScan(w http.ResponseWriter, r *http.Request) {
 	scanID, err := extractUUIDFromPath(r)
 	if err != nil {
@@ -280,7 +272,7 @@ func (h *ScanHandler) DeleteScan(w http.ResponseWriter, r *http.Request) {
 		Metrics:    h.metrics,
 	}
 
-	crudOp.ExecuteDelete(w, r, scanID, h.database.DeleteScan, "api_scans_deleted_total")
+	crudOp.ExecuteDelete(w, r, scanID, h.service.DeleteScan, "api_scans_deleted_total")
 }
 
 // GetScanResults handles GET /api/v1/scans/{id}/results - get scan results.
@@ -304,7 +296,7 @@ func (h *ScanHandler) GetScanResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the scan exists before querying results.
-	if _, err := h.database.GetScan(r.Context(), scanID); err != nil {
+	if _, err := h.service.GetScan(r.Context(), scanID); err != nil {
 		if errors.IsNotFound(err) {
 			writeError(w, r, http.StatusNotFound, fmt.Errorf("scan not found"))
 			return
@@ -316,7 +308,7 @@ func (h *ScanHandler) GetScanResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get scan results from database
-	results, _, err := h.database.GetScanResults(r.Context(), scanID, params.Offset, params.PageSize)
+	results, _, err := h.service.GetScanResults(r.Context(), scanID, params.Offset, params.PageSize)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			writeError(w, r, http.StatusNotFound, fmt.Errorf("scan not found"))
@@ -329,7 +321,7 @@ func (h *ScanHandler) GetScanResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get scan summary
-	summary, err := h.database.GetScanSummary(r.Context(), scanID)
+	summary, err := h.service.GetScanSummary(r.Context(), scanID)
 	if err != nil {
 		h.logger.Warn("Failed to get scan summary", "request_id", requestID, "scan_id", scanID, "error", err)
 		summary = &db.ScanSummary{
@@ -369,7 +361,9 @@ func (h *ScanHandler) GetScanResults(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// StartScan handles POST /api/v1/scans/{id}/start - start scan execution.
+// StartScan handles POST /api/v1/scans/{id}/start — start scan execution.
+// State-machine checks (already running / already completed) are enforced by
+// the service; this handler is responsible only for queue submission.
 func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 	requestID := getRequestIDFromContext(r.Context())
 	scanID, err := extractUUIDFromPath(r)
@@ -380,43 +374,27 @@ func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("Starting scan execution", "request_id", requestID, "scan_id", scanID)
 
-	// Get the scan from database
-	scan, err := h.database.GetScan(r.Context(), scanID)
+	// Service validates state-machine constraints and returns the updated scan.
+	scan, err := h.service.StartScan(r.Context(), scanID)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			writeError(w, r, http.StatusNotFound, fmt.Errorf("scan not found"))
 			return
 		}
-		h.logger.Error("Failed to get scan", "request_id", requestID, "scan_id", scanID, "error", err)
-		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get scan: %w", err))
-		return
-	}
-
-	// Check if scan is already running
-	if scan.Status == "running" {
-		writeError(w, r, http.StatusConflict, fmt.Errorf("scan is already running"))
-		return
-	}
-
-	// Check if scan is already completed
-	if scan.Status == db.ScanJobStatusCompleted {
-		writeError(w, r, http.StatusConflict, fmt.Errorf("scan is already completed"))
-		return
-	}
-
-	// Update scan status to running
-	err = h.database.StartScan(r.Context(), scanID)
-	if err != nil {
-		h.logger.Error("Failed to update scan status", "request_id", requestID, "scan_id", scanID, "error", err)
+		if errors.IsConflict(err) {
+			writeError(w, r, http.StatusConflict, err)
+			return
+		}
+		h.logger.Error("Failed to start scan", "request_id", requestID, "scan_id", scanID, "error", err)
 		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to start scan: %w", err))
 		return
 	}
 
-	// Convert scan to ScanConfig and execute asynchronously
+	// Submit to the execution queue or fall back to a fire-and-forget goroutine.
 	if h.scanQueue != nil {
 		if code, qErr := h.submitToQueue(scanID, scan); qErr != nil {
-			// Revert scan status since we couldn't queue it
-			if stopErr := h.database.StopScan(r.Context(), scanID); stopErr != nil {
+			// Revert scan status since we couldn't queue it.
+			if stopErr := h.service.StopScan(r.Context(), scanID); stopErr != nil {
 				h.logger.Error("Failed to revert scan status after queue rejection",
 					"request_id", requestID, "scan_id", scanID, "error", stopErr)
 			}
@@ -427,18 +405,8 @@ func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 		go h.executeScanAsync(scanID, scan)
 	}
 
-	// Return updated scan
-	updatedScan, err := h.database.GetScan(r.Context(), scanID)
-	if err != nil {
-		h.logger.Error("Failed to get updated scan", "request_id", requestID, "scan_id", scanID, "error", err)
-		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get updated scan: %w", err))
-		return
-	}
+	writeJSON(w, r, http.StatusOK, h.scanToResponse(scan))
 
-	response := h.scanToResponse(updatedScan)
-	writeJSON(w, r, http.StatusOK, response)
-
-	// Record metrics
 	if h.metrics != nil {
 		h.metrics.Counter("api_scans_started_total", map[string]string{
 			"scan_type": scan.ScanType,
@@ -451,12 +419,13 @@ func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 // submitToQueue enqueues the scan for execution via the bounded scan queue.
 // It returns the HTTP status code and error to write back, or 0/nil on success.
 func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error) {
-	// Type-assert to *db.ScanRepository so the runner can persist hosts and ports.
-	// If the store is a test double the cast yields nil, which RunScanWithContext
-	// handles gracefully (it skips persistence when database is nil).
+	// Type-assert to *services.ScanService so the runner can persist hosts and
+	// ports via the underlying DB connection. If the service is a test double
+	// the cast yields nil, which RunScanWithContext handles gracefully (it skips
+	// persistence when database is nil).
 	var concreteDB *db.DB
-	if repo, ok := h.database.(*db.ScanRepository); ok {
-		concreteDB = repo.DB()
+	if svc, ok := h.service.(*services.ScanService); ok {
+		concreteDB = svc.DB()
 	}
 
 	scanConfig := &scanning.ScanConfig{
@@ -496,14 +465,14 @@ func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error
 		if result.Error != nil {
 			h.logger.Error("Queued scan execution failed",
 				"scan_id", scanID, "error", result.Error)
-			if stopErr := h.database.StopScan(ctx, scanID, result.Error.Error()); stopErr != nil {
+			if stopErr := h.service.StopScan(ctx, scanID, result.Error.Error()); stopErr != nil {
 				h.logger.Error("Failed to mark scan as stopped after queue execution",
 					"scan_id", scanID, "error", stopErr)
 			}
 		} else {
 			h.logger.Info("Queued scan execution completed",
 				"scan_id", scanID, "duration", result.Duration)
-			if completeErr := h.database.CompleteScan(ctx, scanID); completeErr != nil {
+			if completeErr := h.service.CompleteScan(ctx, scanID); completeErr != nil {
 				h.logger.Error("Failed to mark scan as completed after queue execution",
 					"scan_id", scanID, "error", completeErr)
 			}
@@ -513,7 +482,7 @@ func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error
 	return 0, nil
 }
 
-// executeScanAsync executes a scan asynchronously and stores results
+// executeScanAsync executes a scan asynchronously and stores results.
 func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 	h.logger.Info("Starting async scan execution", "scan_id", scanID, "scan_name", scan.Name)
 
@@ -527,12 +496,12 @@ func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 		ScanID:      &scanID,
 	}
 
-	// Type-assert to *db.ScanRepository so the runner can persist hosts and ports.
-	// If the store is a test double the cast yields nil, which RunScanWithContext
-	// handles gracefully (it skips persistence when database is nil).
+	// Type-assert to *services.ScanService to reach the underlying DB connection
+	// for host/port persistence. A test double will yield nil here, which
+	// RunScanWithContext handles gracefully (it skips persistence when nil).
 	var concreteDB *db.DB
-	if repo, ok := h.database.(*db.ScanRepository); ok {
-		concreteDB = repo.DB()
+	if svc, ok := h.service.(*services.ScanService); ok {
+		concreteDB = svc.DB()
 	}
 
 	ctx := context.Background()
@@ -540,21 +509,21 @@ func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 
 	if err != nil {
 		h.logger.Error("Scan execution failed", "scan_id", scanID, "error", err)
-		if stopErr := h.database.StopScan(ctx, scanID, err.Error()); stopErr != nil {
+		if stopErr := h.service.StopScan(ctx, scanID, err.Error()); stopErr != nil {
 			h.logger.Error("Failed to mark scan as failed after execution error",
 				"scan_id", scanID, "error", stopErr)
 		}
 	} else {
 		h.logger.Info("Scan execution completed successfully", "scan_id", scanID,
 			"hosts_scanned", len(result.Hosts), "duration", result.Duration)
-		if completeErr := h.database.CompleteScan(ctx, scanID); completeErr != nil {
+		if completeErr := h.service.CompleteScan(ctx, scanID); completeErr != nil {
 			h.logger.Error("Failed to mark scan as completed",
 				"scan_id", scanID, "error", completeErr)
 		}
 	}
 }
 
-// StopScan handles POST /api/v1/scans/{id}/stop - stop scan execution.
+// StopScan handles POST /api/v1/scans/{id}/stop — stop scan execution.
 func (h *ScanHandler) StopScan(w http.ResponseWriter, r *http.Request) {
 	scanID, err := extractUUIDFromPath(r)
 	if err != nil {
@@ -569,51 +538,47 @@ func (h *ScanHandler) StopScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobOp.ExecuteStop(w, r, scanID, func(ctx context.Context, id uuid.UUID) error {
-		return h.database.StopScan(ctx, id)
+		return h.service.StopScan(ctx, id)
 	}, "api_scans_stopped_total")
 }
 
 // Helper methods
 
-// validateScanRequest validates a scan request.
+// validateScanRequest validates a scan request at the HTTP layer.
+// Deep business-rule validation (scan type, port spec, target format, profile
+// existence) is enforced by ScanService.CreateScan; this method is kept for
+// tests that exercise individual validation paths directly.
 func (h *ScanHandler) validateScanRequest(req *ScanRequest) error {
 	if req.Name == "" {
 		return fmt.Errorf("scan name is required")
 	}
 
-	if len(req.Name) > maxScanNameLength {
-		return fmt.Errorf("scan name too long (max %d characters)", maxScanNameLength)
+	if len(req.Name) > services.MaxScanNameLength {
+		return fmt.Errorf("scan name too long (max %d characters)", services.MaxScanNameLength)
 	}
 
 	if len(req.Targets) == 0 {
 		return fmt.Errorf("at least one target is required")
 	}
 
-	if len(req.Targets) > maxTargetCount {
-		return fmt.Errorf("too many targets (max %d)", maxTargetCount)
+	if len(req.Targets) > services.MaxTargetCount {
+		return fmt.Errorf("too many targets (max %d)", services.MaxTargetCount)
 	}
 
-	// Validate scan type — must match the cases handled by buildScanOptions.
 	validScanTypes := map[string]bool{
-		"connect":       true,
-		"syn":           true,
-		"ack":           true,
-		"udp":           true,
-		"aggressive":    true,
-		"comprehensive": true,
+		"connect": true, "syn": true, "ack": true,
+		"udp": true, "aggressive": true, "comprehensive": true,
 	}
-
 	if !validScanTypes[req.ScanType] {
 		return fmt.Errorf("invalid scan type: %s", req.ScanType)
 	}
 
-	// Validate targets format (basic validation)
 	for i, target := range req.Targets {
 		if target == "" {
 			return fmt.Errorf("target %d is empty", i+1)
 		}
-		if len(target) > maxTargetLength {
-			return fmt.Errorf("target %d too long (max %d characters)", i+1, maxTargetLength)
+		if len(target) > services.MaxTargetLength {
+			return fmt.Errorf("target %d too long (max %d characters)", i+1, services.MaxTargetLength)
 		}
 		if _, _, err := net.ParseCIDR(target); err != nil {
 			if net.ParseIP(target) == nil {
@@ -625,81 +590,7 @@ func (h *ScanHandler) validateScanRequest(req *ScanRequest) error {
 	if req.Ports == "" {
 		return fmt.Errorf("ports is required")
 	}
-	if err := parsePortSpec(req.Ports); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// parsePortSpec validates a port specification string.
-// The spec is comma-separated with optional T:/U: protocol prefixes and
-// optional hyphenated ranges (e.g. "T:80,U:53,1024-9999").
-// Every individual port value must be in the range 1–65535.
-func parsePortSpec(ports string) error {
-	for _, token := range strings.Split(ports, ",") {
-		token = strings.TrimSpace(token)
-		if token == "" {
-			continue
-		}
-		if err := parsePortToken(token); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// parsePortToken validates a single port token (after comma-splitting).
-// It strips an optional T:/U: prefix, rejects whitespace, and validates the
-// port number or range.
-func parsePortToken(token string) error {
-	// Strip optional protocol prefix (T: or U:)
-	if len(token) >= 2 && (token[0] == 'T' || token[0] == 'U') && token[1] == ':' {
-		token = token[2:]
-	}
-	// Reject tokens containing whitespace (e.g. "80 - 443").
-	if strings.ContainsAny(token, " \t") {
-		return fmt.Errorf("invalid port spec %q: whitespace not allowed", token)
-	}
-	parts := strings.SplitN(token, "-", 2)
-	if len(parts) == 2 {
-		return parsePortRange(parts[0], parts[1])
-	}
-	return validatePortNumber(parts[0])
-}
-
-// parsePortRange validates that start and end are valid ports and start <= end.
-func parsePortRange(startStr, endStr string) error {
-	startNum, err := strconv.Atoi(startStr)
-	if err != nil {
-		return fmt.Errorf("invalid port %q: must be a number", startStr)
-	}
-	if startNum < 1 || startNum > 65535 {
-		return fmt.Errorf("invalid port %d: must be between 1 and 65535", startNum)
-	}
-	endNum, err := strconv.Atoi(endStr)
-	if err != nil {
-		return fmt.Errorf("invalid port %q: must be a number", endStr)
-	}
-	if endNum < 1 || endNum > 65535 {
-		return fmt.Errorf("invalid port %d: must be between 1 and 65535", endNum)
-	}
-	if startNum > endNum {
-		return fmt.Errorf("invalid port range %d-%d: start must be <= end", startNum, endNum)
-	}
-	return nil
-}
-
-// validatePortNumber checks that s is a valid port number string (1–65535).
-func validatePortNumber(s string) error {
-	portNum, err := strconv.Atoi(s)
-	if err != nil {
-		return fmt.Errorf("invalid port %q: must be a number", s)
-	}
-	if portNum < 1 || portNum > 65535 {
-		return fmt.Errorf("invalid port %d: must be between 1 and 65535", portNum)
-	}
-	return nil
+	return services.ParsePortSpec(req.Ports)
 }
 
 // getScanFilters extracts filter parameters from request.

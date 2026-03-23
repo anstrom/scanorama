@@ -18,6 +18,7 @@ import (
 	"github.com/anstrom/scanorama/internal/api/handlers/mocks"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/errors"
+	"github.com/anstrom/scanorama/internal/services"
 )
 
 // forbiddenErr returns a ScanError with CodeForbidden, matching what the
@@ -67,13 +68,17 @@ func TestErrForbidden(t *testing.T) {
 // ── ScanHandler: CreateScan profile pre-flight ────────────────────────────────
 
 func TestScanHandler_CreateScan_ProfilePreflight(t *testing.T) {
+	// Profile existence checking moved into ScanService.CreateScan.
+	// The handler mock now receives a single CreateScan call whose return value
+	// controls the HTTP response; GetProfile is no longer called at the handler layer.
+
 	t.Run("returns 400 when profile_id not found", func(t *testing.T) {
 		h, store, ctrl := newScanHandlerWithMock(t)
 		defer ctrl.Finish()
 
 		store.EXPECT().
-			GetProfile(gomock.Any(), "no-such-profile").
-			Return(nil, errors.ErrNotFoundWithID("profile", "no-such-profile"))
+			CreateScan(gomock.Any(), gomock.Any()).
+			Return(nil, errors.NewScanError(errors.CodeValidation, `profile "no-such-profile" not found`))
 
 		body := `{"name":"S","targets":["10.0.0.1"],"scan_type":"connect","ports":"80","profile_id":"no-such-profile"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/scans", bytes.NewBufferString(body))
@@ -92,7 +97,7 @@ func TestScanHandler_CreateScan_ProfilePreflight(t *testing.T) {
 		defer ctrl.Finish()
 
 		store.EXPECT().
-			GetProfile(gomock.Any(), "bad-profile").
+			CreateScan(gomock.Any(), gomock.Any()).
 			Return(nil, fmt.Errorf("connection reset"))
 
 		body := `{"name":"S","targets":["10.0.0.1"],"scan_type":"connect","ports":"80","profile_id":"bad-profile"}`
@@ -112,7 +117,6 @@ func TestScanHandler_CreateScan_ProfilePreflight(t *testing.T) {
 		store.EXPECT().
 			CreateScan(gomock.Any(), gomock.Any()).
 			Return(makeScan(id, "S", "pending", "connect"), nil)
-		// GetProfile must NOT be called when profile_id is "".
 
 		body := `{"name":"S","targets":["10.0.0.1"],"scan_type":"connect","ports":"80","profile_id":""}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/scans", bytes.NewBufferString(body))
@@ -147,9 +151,7 @@ func TestScanHandler_CreateScan_ProfilePreflight(t *testing.T) {
 
 		profileID := "web-scan"
 		scanID := uuid.New()
-		store.EXPECT().
-			GetProfile(gomock.Any(), profileID).
-			Return(makeProfile(profileID, "Web Scan"), nil)
+		// Service handles profile existence check internally; handler only sees CreateScan.
 		store.EXPECT().
 			CreateScan(gomock.Any(), gomock.Any()).
 			Return(makeScan(scanID, "S", "pending", "connect"), nil)
@@ -446,7 +448,7 @@ func TestParsePortSpec_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := parsePortSpec(tt.ports)
+			err := services.ParsePortSpec(tt.ports)
 			if tt.wantError {
 				require.Error(t, err, "expected error for ports=%q", tt.ports)
 				if tt.errSubstr != "" {
@@ -579,7 +581,7 @@ func TestValidateProfileRequest_SubValidators(t *testing.T) {
 	})
 }
 
-// ── ScanHandler: GetScanResults mock store — MockScanStore ────────────────────
+// ── ScanHandler: GetScanResults mock store — MockScanServicer ────────────────────
 
 func TestScanHandler_GetScanResults_MockStore(t *testing.T) {
 	t.Run("returns 200 with empty results and zero summary on GetScanSummary failure", func(t *testing.T) {
@@ -631,6 +633,6 @@ func TestProfileHandler_GetProfile_InternalError(t *testing.T) {
 	})
 }
 
-// ── MockScanStore satisfies ScanStore interface (compile-time check) ──────────
+// ── MockScanServicer satisfies ScanServicer interface (compile-time check) ──────────
 
-var _ ScanStore = (*mocks.MockScanStore)(nil)
+var _ ScanServicer = (*mocks.MockScanServicer)(nil)

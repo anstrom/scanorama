@@ -15,6 +15,7 @@ import (
 
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/services"
 )
 
 func createTestScheduleHandler(t *testing.T) *ScheduleHandler {
@@ -22,7 +23,7 @@ func createTestScheduleHandler(t *testing.T) *ScheduleHandler {
 	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 	registry := metrics.NewRegistry()
 
-	return NewScheduleHandler(nilScheduleStore{}, logger, registry)
+	return NewScheduleHandler(nilScheduleServicer{}, logger, registry)
 }
 
 func TestNewScheduleHandler(t *testing.T) {
@@ -30,7 +31,7 @@ func TestNewScheduleHandler(t *testing.T) {
 		logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 		registry := metrics.NewRegistry()
 
-		handler := NewScheduleHandler(nilScheduleStore{}, logger, registry)
+		handler := NewScheduleHandler(nilScheduleServicer{}, logger, registry)
 
 		assert.NotNil(t, handler)
 		assert.NotNil(t, handler.logger)
@@ -107,8 +108,6 @@ func TestScheduleHandler_validateBasicScheduleFields(t *testing.T) {
 }
 
 func TestScheduleHandler_validateScheduleCron(t *testing.T) {
-	handler := createTestScheduleHandler(t)
-
 	tests := []struct {
 		name        string
 		cronExpr    string
@@ -168,7 +167,7 @@ func TestScheduleHandler_validateScheduleCron(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := handler.validateScheduleCron(tt.cronExpr)
+			err := services.ValidateCronExpression(tt.cronExpr)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -471,8 +470,6 @@ func TestScheduleHandler_validateScheduleTags(t *testing.T) {
 }
 
 func TestScheduleHandler_validateCronExpression(t *testing.T) {
-	handler := createTestScheduleHandler(t)
-
 	tests := []struct {
 		name        string
 		cronExpr    string
@@ -532,7 +529,7 @@ func TestScheduleHandler_validateCronExpression(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := handler.validateCronExpression(tt.cronExpr)
+			err := services.ValidateCronExpression(tt.cronExpr)
 
 			if tt.expectError {
 				assert.Error(t, err)

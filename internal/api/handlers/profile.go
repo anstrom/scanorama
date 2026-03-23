@@ -69,17 +69,17 @@ const (
 
 // ProfileHandler handles profile-related API endpoints.
 type ProfileHandler struct {
-	database ProfileStore
-	logger   *slog.Logger
-	metrics  *metrics.Registry
+	service ProfileServicer
+	logger  *slog.Logger
+	metrics *metrics.Registry
 }
 
 // NewProfileHandler creates a new profile handler.
-func NewProfileHandler(database ProfileStore, logger *slog.Logger, metricsManager *metrics.Registry) *ProfileHandler {
+func NewProfileHandler(service ProfileServicer, logger *slog.Logger, metricsManager *metrics.Registry) *ProfileHandler {
 	return &ProfileHandler{
-		database: database,
-		logger:   logger.With("handler", "profile"),
-		metrics:  metricsManager,
+		service: service,
+		logger:  logger.With("handler", "profile"),
+		metrics: metricsManager,
 	}
 }
 
@@ -154,7 +154,7 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 		Logger:     h.logger,
 		Metrics:    h.metrics,
 		GetFilters: h.getProfileFilters,
-		ListFromDB: h.database.ListProfiles,
+		ListFromDB: h.service.ListProfiles,
 		ToResponse: func(profile *db.ScanProfile) interface{} {
 			return h.profileToResponse(profile)
 		},
@@ -179,7 +179,7 @@ func (h *ProfileHandler) CreateProfile(w http.ResponseWriter, r *http.Request) {
 			}
 			return h.requestToCreateProfile(&req), nil
 		},
-		h.database.CreateProfile,
+		h.service.CreateProfile,
 		func(profile *db.ScanProfile) interface{} {
 			return h.profileToResponse(profile)
 		},
@@ -198,7 +198,7 @@ func (h *ProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Getting profile", "request_id", requestID, "profile_id", profileID)
 
 	// Get profile from database
-	profile, err := h.database.GetProfile(r.Context(), profileID)
+	profile, err := h.service.GetProfile(r.Context(), profileID)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			writeError(w, r, http.StatusNotFound, fmt.Errorf("profile not found"))
@@ -237,7 +237,7 @@ func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update profile in database
-	profile, err := h.database.UpdateProfile(r.Context(), profileID, h.requestToUpdateProfile(&req))
+	profile, err := h.service.UpdateProfile(r.Context(), profileID, h.requestToUpdateProfile(&req))
 	if err != nil {
 		if errors.IsNotFound(err) {
 			writeError(w, r, http.StatusNotFound, fmt.Errorf("profile not found"))
@@ -273,7 +273,7 @@ func (h *ProfileHandler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Deleting profile", "request_id", requestID, "profile_id", profileID)
 
 	// Delete profile from database
-	err = h.database.DeleteProfile(r.Context(), profileID)
+	err = h.service.DeleteProfile(r.Context(), profileID)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			writeError(w, r, http.StatusNotFound, fmt.Errorf("profile not found"))
@@ -293,6 +293,52 @@ func (h *ProfileHandler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 	// Record metrics
 	if h.metrics != nil {
 		h.metrics.Counter("api_profiles_deleted_total", nil)
+	}
+}
+
+// CloneProfile handles POST /api/v1/profiles/{id}/clone — create a copy of an existing profile.
+// The JSON body must contain {"name": "<new name>"}.
+func (h *ProfileHandler) CloneProfile(w http.ResponseWriter, r *http.Request) {
+	profileID, err := extractStringFromPath(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	requestID := getRequestIDFromContext(r.Context())
+	h.logger.Info("Cloning profile", "request_id", requestID, "profile_id", profileID)
+
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := parseJSON(r, &body); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+	if body.Name == "" {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("name is required"))
+		return
+	}
+
+	profile, err := h.service.CloneProfile(r.Context(), profileID, body.Name)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, fmt.Errorf("profile not found"))
+			return
+		}
+		if errors.IsConflict(err) {
+			writeError(w, r, http.StatusConflict, err)
+			return
+		}
+		h.logger.Error("Failed to clone profile", "request_id", requestID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to clone profile: %w", err))
+		return
+	}
+
+	writeJSON(w, r, http.StatusCreated, h.profileToResponse(profile))
+
+	if h.metrics != nil {
+		h.metrics.Counter("api_profiles_cloned_total", nil)
 	}
 }
 
