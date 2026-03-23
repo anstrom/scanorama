@@ -2403,3 +2403,303 @@ func TestScanHandler_StartScan_DBFailure(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 }
+
+// ── ScheduleHandler (UpdateSchedule + GetScheduleNextRun) ────────────────────
+
+func TestScheduleHandler_UpdateSchedule_Mock(t *testing.T) {
+	const validBody = `{"name":"Updated Schedule","cron_expr":"0 0 * * 0","type":"scan",` +
+		`"network_id":"550e8400-e29b-41d4-a716-446655440000"}`
+
+	t.Run("updates schedule and returns 200", func(t *testing.T) {
+		h, store, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		schedule := makeSchedule(id, "Updated Schedule")
+
+		store.EXPECT().
+			UpdateSchedule(gomock.Any(), id, gomock.Any()).
+			Return(schedule, nil)
+
+		router, _ := routerWithID(http.MethodPut, "/api/v1/schedules/{id}", h.UpdateSchedule)
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/schedules/%s", id),
+			bytes.NewBufferString(validBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, id.String(), resp["id"])
+	})
+
+	t.Run("returns 400 for invalid body", func(t *testing.T) {
+		h, _, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		router, _ := routerWithID(http.MethodPut, "/api/v1/schedules/{id}", h.UpdateSchedule)
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/schedules/%s", id),
+			bytes.NewBufferString("{bad json}"))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 404 when not found", func(t *testing.T) {
+		h, store, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		store.EXPECT().
+			UpdateSchedule(gomock.Any(), id, gomock.Any()).
+			Return(nil, notFoundErr("schedule", id.String()))
+
+		router, _ := routerWithID(http.MethodPut, "/api/v1/schedules/{id}", h.UpdateSchedule)
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/schedules/%s", id),
+			bytes.NewBufferString(validBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("returns 500 on service error", func(t *testing.T) {
+		h, store, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		store.EXPECT().
+			UpdateSchedule(gomock.Any(), id, gomock.Any()).
+			Return(nil, fmt.Errorf("unexpected db error"))
+
+		router, _ := routerWithID(http.MethodPut, "/api/v1/schedules/{id}", h.UpdateSchedule)
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/schedules/%s", id),
+			bytes.NewBufferString(validBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
+func TestScheduleHandler_GetScheduleNextRun_Mock(t *testing.T) {
+	// Convenience: builds a router for the next-run sub-resource.
+	newRouter := func(h *ScheduleHandler) *mux.Router {
+		r := mux.NewRouter()
+		r.HandleFunc("/api/v1/schedules/{id}/next-run", h.GetScheduleNextRun).Methods(http.MethodGet)
+		return r
+	}
+
+	t.Run("returns 200 with next_run field", func(t *testing.T) {
+		h, store, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		nextRun := time.Now().Add(time.Hour).UTC()
+
+		store.EXPECT().
+			NextRun(gomock.Any(), id).
+			Return(nextRun, nil)
+
+		req := httptest.NewRequest(http.MethodGet,
+			fmt.Sprintf("/api/v1/schedules/%s/next-run", id), nil)
+		w := httptest.NewRecorder()
+		newRouter(h).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Contains(t, resp, "next_run")
+	})
+
+	t.Run("returns 404 when not found", func(t *testing.T) {
+		h, store, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		store.EXPECT().
+			NextRun(gomock.Any(), id).
+			Return(time.Time{}, notFoundErr("schedule", id.String()))
+
+		req := httptest.NewRequest(http.MethodGet,
+			fmt.Sprintf("/api/v1/schedules/%s/next-run", id), nil)
+		w := httptest.NewRecorder()
+		newRouter(h).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("returns 400 for invalid UUID", func(t *testing.T) {
+		h, _, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		req := httptest.NewRequest(http.MethodGet,
+			"/api/v1/schedules/not-a-uuid/next-run", nil)
+		w := httptest.NewRecorder()
+		newRouter(h).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 500 on service error", func(t *testing.T) {
+		h, store, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		id := uuid.New()
+		store.EXPECT().
+			NextRun(gomock.Any(), id).
+			Return(time.Time{}, fmt.Errorf("unexpected error"))
+
+		req := httptest.NewRequest(http.MethodGet,
+			fmt.Sprintf("/api/v1/schedules/%s/next-run", id), nil)
+		w := httptest.NewRecorder()
+		newRouter(h).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
+// ── ProfileHandler (CloneProfile + DeleteProfile invalid-ID) ─────────────────
+// Note: TestProfileHandler_UpdateProfile_Mock already lives in coverage491_test.go
+// and covers success, 404, 403, 500 and invalid-JSON-body (400).  The function
+// below adds only the one subtest that is absent there: calling the handler
+// without mux routing so that extractStringFromPath returns "id not provided".
+
+// TestProfileHandler_UpdateProfile_MissingID_Mock verifies that UpdateProfile
+// returns 400 when the {id} path variable is absent (i.e. the handler is
+// called directly without going through a mux router, leaving mux.Vars nil).
+func TestProfileHandler_UpdateProfile_MissingID_Mock(t *testing.T) {
+	t.Run("returns 400 when ID is absent from path", func(t *testing.T) {
+		h, _, ctrl := newProfileHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		body := `{"name":"SSH Scan","scan_type":"connect","ports":"22"}`
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/profiles/ssh-scan",
+			bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.UpdateProfile(w, req) // no mux → mux.Vars nil → "id not provided" → 400
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+func TestProfileHandler_CloneProfile_Mock(t *testing.T) {
+	cloneRouter := func(h *ProfileHandler) *mux.Router {
+		r := mux.NewRouter()
+		r.HandleFunc("/api/v1/profiles/{id}/clone", h.CloneProfile).Methods(http.MethodPost)
+		return r
+	}
+
+	t.Run("clones profile and returns 201", func(t *testing.T) {
+		h, store, ctrl := newProfileHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		cloned := makeProfile("ssh-scan-copy", "SSH Scan Copy")
+		store.EXPECT().
+			CloneProfile(gomock.Any(), "ssh-scan", "SSH Scan Copy").
+			Return(cloned, nil)
+
+		body := `{"name":"SSH Scan Copy"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/profiles/ssh-scan/clone",
+			bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		cloneRouter(h).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+		var resp map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, "ssh-scan-copy", resp["id"])
+	})
+
+	t.Run("returns 400 when ID is absent from path", func(t *testing.T) {
+		h, _, ctrl := newProfileHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		// Calling the handler directly (no mux) means mux.Vars returns nil,
+		// so extractStringFromPath returns "id not provided" -> 400.
+		body := `{"name":"Clone"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/profiles/ssh-scan/clone",
+			bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.CloneProfile(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 404 when source profile not found", func(t *testing.T) {
+		h, store, ctrl := newProfileHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		store.EXPECT().
+			CloneProfile(gomock.Any(), "nonexistent", "Copy").
+			Return(nil, notFoundErr("profile", "nonexistent"))
+
+		body := `{"name":"Copy"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/profiles/nonexistent/clone",
+			bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		cloneRouter(h).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("returns 400 for missing name", func(t *testing.T) {
+		h, _, ctrl := newProfileHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		body := `{"name":""}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/profiles/ssh-scan/clone",
+			bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		cloneRouter(h).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 500 on service error", func(t *testing.T) {
+		h, store, ctrl := newProfileHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		store.EXPECT().
+			CloneProfile(gomock.Any(), "ssh-scan", "Clone Copy").
+			Return(nil, fmt.Errorf("unexpected db error"))
+
+		body := `{"name":"Clone Copy"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/profiles/ssh-scan/clone",
+			bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		cloneRouter(h).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
+// TestProfileHandler_DeleteProfile_InvalidID_Mock adds the 400 code path that
+// is absent from the existing TestProfileHandler_DeleteProfile_Mock.  Profile
+// IDs are arbitrary strings (not UUIDs); calling the handler directly without
+// going through a mux router leaves mux.Vars nil, so extractStringFromPath
+// returns "id not provided" -> 400.
+func TestProfileHandler_DeleteProfile_InvalidID_Mock(t *testing.T) {
+	t.Run("returns 400 when ID is absent from path", func(t *testing.T) {
+		h, _, ctrl := newProfileHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/profiles/some-id", nil)
+		w := httptest.NewRecorder()
+		h.DeleteProfile(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
