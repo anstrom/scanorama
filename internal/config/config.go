@@ -540,9 +540,10 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
-	// Validate configuration
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+	// Validate and normalize configuration (lowercasing, path cleaning, etc.).
+	// Warnings are non-fatal; only hard errors abort loading.
+	if result := ValidateAndNormalize(config); result.HasErrors() {
+		return nil, fmt.Errorf("invalid configuration: %w", result.AsError())
 	}
 
 	return config, nil
@@ -685,156 +686,12 @@ func safeJSONUnmarshal(data []byte, dest interface{}) error {
 	return nil
 }
 
-// Validate validates the configuration.
+// Validate validates the full configuration, returning the first hard error
+// found across all sections. Warnings (e.g. missing optional fields) are
+// silently discarded. Call ValidateConfig directly when you need the full
+// ValidationResult including warnings.
 func (c *Config) Validate() error {
-	if err := c.validateDatabase(); err != nil {
-		return err
-	}
-	if err := c.validateScanning(); err != nil {
-		return err
-	}
-	if err := c.validateAPI(); err != nil {
-		return err
-	}
-	if err := c.validateTLS(); err != nil {
-		return err
-	}
-	if err := c.validateLogging(); err != nil {
-		return err
-	}
-	return nil
-}
-
-// validateDatabase validates the database configuration.
-func (c *Config) validateDatabase() error {
-	if c.Database.Host == "" {
-		return fmt.Errorf("database host is required (set SCANORAMA_DB_HOST or configure in file)")
-	}
-	if c.Database.Database == "" {
-		return fmt.Errorf("database name is required (set SCANORAMA_DB_NAME or configure in file)")
-	}
-	if c.Database.Username == "" {
-		return fmt.Errorf("database username is required (set SCANORAMA_DB_USER or configure in file)")
-	}
-	return nil
-}
-
-// validateScanning validates the scanning configuration.
-func (c *Config) validateScanning() error {
-	if c.Scanning.WorkerPoolSize <= 0 {
-		return fmt.Errorf("worker pool size must be positive")
-	}
-	if c.Scanning.MaxConcurrentTargets <= 0 {
-		return fmt.Errorf("max concurrent targets must be positive")
-	}
-	if c.Scanning.DefaultInterval <= 0 {
-		return fmt.Errorf("default scan interval must be positive")
-	}
-
-	// Validate scan mode
-	validScanTypes := map[string]bool{
-		"connect":       true,
-		"syn":           true,
-		"ack":           true,
-		"udp":           true,
-		"aggressive":    true,
-		"comprehensive": true,
-	}
-	if !validScanTypes[c.Scanning.ScanMode] {
-		return fmt.Errorf("invalid scan_mode: %s", c.Scanning.ScanMode)
-	}
-	return nil
-}
-
-// validateAPI validates the API configuration.
-func (c *Config) validateAPI() error {
-	if !c.API.Enabled {
-		return nil
-	}
-
-	if c.API.Port <= 0 || c.API.Port > 65535 {
-		return fmt.Errorf("API port must be between 1 and 65535")
-	}
-	if c.API.Host == "" {
-		return fmt.Errorf("API host address is required when API is enabled")
-	}
-
-	// Validate timeouts
-	if c.API.ReadTimeout <= 0 {
-		return fmt.Errorf("API read timeout must be positive")
-	}
-	if c.API.WriteTimeout <= 0 {
-		return fmt.Errorf("API write timeout must be positive")
-	}
-	if c.API.IdleTimeout <= 0 {
-		return fmt.Errorf("API idle timeout must be positive")
-	}
-
-	// Validate max header bytes
-	if c.API.MaxHeaderBytes <= 0 {
-		return fmt.Errorf("API max header bytes must be positive")
-	}
-
-	// Validate rate limiting
-	if err := c.validateAPIRateLimiting(); err != nil {
-		return err
-	}
-
-	// Validate authentication
-	if c.API.AuthEnabled && len(c.API.APIKeys) == 0 {
-		return fmt.Errorf("at least one API key must be provided when authentication is enabled")
-	}
-
-	return nil
-}
-
-// validateAPIRateLimiting validates the API rate limiting configuration.
-func (c *Config) validateAPIRateLimiting() error {
-	if !c.API.RateLimitEnabled {
-		return nil
-	}
-	if c.API.RateLimitRequests <= 0 {
-		return fmt.Errorf("rate limit requests must be positive when rate limiting is enabled")
-	}
-	if c.API.RateLimitWindow <= 0 {
-		return fmt.Errorf("rate limit window must be positive when rate limiting is enabled")
-	}
-	return nil
-}
-
-// validateTLS validates the TLS configuration.
-func (c *Config) validateTLS() error {
-	if c.API.TLS.Enabled {
-		if c.API.TLS.CertFile == "" {
-			return fmt.Errorf("TLS certificate file is required when TLS is enabled")
-		}
-		if c.API.TLS.KeyFile == "" {
-			return fmt.Errorf("TLS key file is required when TLS is enabled")
-		}
-	}
-	return nil
-}
-
-// validateLogging validates the logging configuration.
-func (c *Config) validateLogging() error {
-	validLogLevels := map[string]bool{
-		"debug": true,
-		"info":  true,
-		"warn":  true,
-		"error": true,
-	}
-	if !validLogLevels[c.Logging.Level] {
-		return fmt.Errorf("invalid log level: %s", c.Logging.Level)
-	}
-
-	validLogFormats := map[string]bool{
-		"text": true,
-		"json": true,
-	}
-	if !validLogFormats[c.Logging.Format] {
-		return fmt.Errorf("invalid log format: %s", c.Logging.Format)
-	}
-	return nil
+	return ValidateConfig(c).AsError()
 }
 
 // GetDatabaseConfig returns the database configuration.

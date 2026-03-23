@@ -429,8 +429,19 @@ func setupServerEnvironment(logger *logging.Logger) (*config.Config, *db.DB, err
 			"Enable it by setting 'api.enabled: true' in config")
 	}
 
-	if err := cfg.Validate(); err != nil {
-		return nil, nil, fmt.Errorf("configuration validation failed: %w", err)
+	// Re-validate after flag overrides using the comprehensive validator so that
+	// any warnings (e.g. privileged ports, missing optional settings) are surfaced
+	// at startup rather than silently ignored.
+	if result := config.ValidateAndNormalize(cfg); result.HasErrors() {
+		return nil, nil, fmt.Errorf("configuration validation failed: %w", result.AsError())
+	} else {
+		for _, w := range result.Warnings {
+			logger.Warn("configuration warning",
+				"section", w.Section,
+				"field", w.Field,
+				"message", w.Message,
+			)
+		}
 	}
 
 	// Setup database
