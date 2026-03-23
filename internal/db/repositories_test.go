@@ -1011,11 +1011,18 @@ func TestScanRepository_CreateScan_MultipleTargets(t *testing.T) {
 		_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE cidr IN ('10.202.0.1/32','10.202.0.2/32')")
 	})
 
+	// The PR fix creates exactly ONE scan_job regardless of target count.
+	// The full target list is stored in execution_details["scan_targets"].
 	var count int
 	err = db.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM scan_jobs WHERE created_at >= $1", scan.CreatedAt).Scan(&count)
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, count, 2)
+	assert.Equal(t, 1, count, "multi-target scan must produce exactly one scan_job")
+
+	// GetScan must return all original targets, not just the primary network CIDR.
+	got, err := NewScanRepository(db).GetScan(ctx, scan.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"10.202.0.1", "10.202.0.2"}, got.Targets)
 }
 
 func TestScanRepository_ListScans_WithScanTypeFilter(t *testing.T) {
