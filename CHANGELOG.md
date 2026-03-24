@@ -16,6 +16,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - TBD
 
+## [0.20.0] - 2026-03-24
+
+### Added
+- Toast notification system (`ToastProvider` + `useToast` hook) with auto-dismiss, animated progress bar, and max-4 cap; wired into all mutations across the app (#545)
+- Admin panel: live System Status card (health badge, DB status, uptime, version/commit/build) and Workers table with auto-refresh; Config and Log Viewer stubs (#540)
+- Dashboard scan activity chart: 7-day `AreaChart` (completed/failed series) built from `useScanActivity` hook using recharts (#546)
+- Scan lifecycle actions: Stop button for pending/running scans and Delete button with inline confirmation for terminal-state scans (#541)
+- Schedule editing: dual-mode `ScheduleFormModal` (create/edit), Edit button in schedule detail panel (#542)
+- Network full editing: `EditNetworkModal` with CIDR validation, replaces inline rename in network detail panel (#543)
+- Host management: inline hostname editing, paginated scan history section, and Delete host with confirmation in host detail panel (#544)
+- `useStopScan`, `useDeleteScan`, `useScanActivity` hooks
+- `useUpdateNetwork`, `useUpdateHost`, `useHostScans`, `useDeleteHost` hooks
+- `useAdminStatus`, `useWorkers` hooks (30 s / 10 s polling)
+- `VersionInfo` exported type exposes `commit` and `build_time` fields
+
+### Fixed
+- Removed invalid `cancelled` and `stopped` options from the scans status filter dropdown (#541)
+- `discovery.tsx`: `job.network` corrected to `job.networks` (API field name)
+- `TestWebSocketHandler_CloseWithActiveConnections`: increased registration timeout 2 s → 10 s to prevent spurious CI flake on loaded runners
+
 ## [0.7.1] - 2025-08-15
 
 ### Added
