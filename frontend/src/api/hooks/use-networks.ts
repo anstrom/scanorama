@@ -3,6 +3,7 @@ import { api } from "../client";
 import type { components } from "../types";
 
 type CreateNetworkRequest = components["schemas"]["docs.CreateNetworkRequest"];
+type UpdateNetworkRequest = components["schemas"]["docs.UpdateNetworkRequest"];
 type CreateExclusionRequest =
   components["schemas"]["docs.CreateExclusionRequest"];
 
@@ -253,7 +254,7 @@ export function useUpdateNetwork() {
       body,
     }: {
       networkId: string;
-      body: CreateNetworkRequest;
+      body: UpdateNetworkRequest;
     }) => {
       const { data, error } = await api.PUT("/networks/{networkId}", {
         params: { path: { networkId } },
