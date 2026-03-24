@@ -967,6 +967,10 @@ func TestUpdateScan_Unit(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 		mock.ExpectExec(`UPDATE networks`).
 			WillReturnResult(sqlmock.NewResult(0, 1))
+		// updateHostOnlyScanDetails is a no-op for network-backed scans
+		// (WHERE network_id IS NULL matches nothing) but the exec is still issued.
+		mock.ExpectExec(`UPDATE scan_jobs`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
 		// updateScanJob is a no-op when Status and ProfileID are both nil.
 		mock.ExpectCommit()
 		// GetScan called after commit.
@@ -993,7 +997,8 @@ func TestUpdateScan_Unit(t *testing.T) {
 		mock.ExpectBegin()
 		mock.ExpectQuery(`SELECT EXISTS`).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
-		// Neither UPDATE should fire when all fields are nil.
+		// Neither updateScanNetwork nor updateHostOnlyScanDetails fire when
+		// all metadata fields are nil, and updateScanJob is also a no-op.
 		mock.ExpectCommit()
 		mock.ExpectQuery(`SELECT`).WillReturnRows(
 			sqlmock.NewRows(getScanColumns).AddRow(

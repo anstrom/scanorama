@@ -976,9 +976,11 @@ func TestScanRepository_CreateScan_NameCollision(t *testing.T) {
 	})
 
 	// CreateScan with the same name — findOrCreateNetwork should fall back to the CIDR as the name.
+	// Use a network CIDR (not a bare IP) so that findOrCreateNetwork is invoked; bare IPs are
+	// host-only targets and bypass network creation entirely.
 	scan, err := NewScanRepository(db).CreateScan(ctx, CreateScanInput{
 		Name:     "collision-name-test",
-		Targets:  []string{"10.250.100.5"},
+		Targets:  []string{"10.250.100.0/24"},
 		ScanType: "connect",
 		Ports:    "80",
 	})
@@ -986,10 +988,11 @@ func TestScanRepository_CreateScan_NameCollision(t *testing.T) {
 	require.NotNil(t, scan)
 	t.Cleanup(func() { _ = NewScanRepository(db).DeleteScan(ctx, scan.ID) })
 
-	// GetScan reads n.name from the DB — it should be the CIDR fallback.
+	// GetScan reads n.name from the DB — it should be the CIDR fallback because
+	// the requested name "collision-name-test" was already taken.
 	got, err := NewScanRepository(db).GetScan(ctx, scan.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "10.250.100.5", got.Name)
+	assert.Equal(t, "10.250.100.0/24", got.Name)
 }
 
 func TestScanRepository_CreateScan_MultipleTargets(t *testing.T) {

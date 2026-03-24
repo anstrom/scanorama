@@ -17,7 +17,7 @@ func NewNetworkSummaryRepository(db *DB) *NetworkSummaryRepository {
 
 // GetAll retrieves all network summaries.
 func (r *NetworkSummaryRepository) GetAll(ctx context.Context) ([]*NetworkSummary, error) {
-	var summaries []*NetworkSummary
+	summaries := []*NetworkSummary{}
 	query := `
 		SELECT *
 		FROM network_summary
