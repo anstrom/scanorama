@@ -338,7 +338,6 @@ func (h *DiscoveryHandler) StartDiscovery(w http.ResponseWriter, r *http.Request
 // then marks the job completed or failed in the database.
 func (h *DiscoveryHandler) executeDiscoveryAsync(ctx context.Context, jobID uuid.UUID, job *db.DiscoveryJob) {
 	defer func() {
-		// Always remove the cancel func when we're done.
 		h.cancelsMu.Lock()
 		delete(h.cancels, jobID)
 		h.cancelsMu.Unlock()
@@ -352,11 +351,7 @@ func (h *DiscoveryHandler) executeDiscoveryAsync(ctx context.Context, jobID uuid
 
 	h.logger.Info("Executing discovery", "job_id", jobID, "network", cfg.Network, "method", cfg.Method)
 
-	// engine.Discover creates a new DB row internally — we already have our
-	// row, so we call runDiscovery-level logic by using the engine's exported
-	// Discover function with the existing job's context.  The engine will save
-	// its own job row; we use the result only to update our row's counts.
-	engineJob, err := h.engine.Discover(ctx, cfg)
+	hostsFound, err := h.engine.ScanNetwork(ctx, cfg)
 
 	dbCtx := context.Background()
 
@@ -369,31 +364,23 @@ func (h *DiscoveryHandler) executeDiscoveryAsync(ctx context.Context, jobID uuid
 		return
 	}
 
-	// Wait for the engine's own job to reach a terminal state so we can copy
-	// the host counts back onto our API-facing job row.
-	if engineJob != nil {
-		if waitErr := h.engine.WaitForCompletion(dbCtx, engineJob.ID, 10*time.Minute); waitErr != nil {
-			h.logger.Warn("Timed out waiting for engine job to complete",
-				"job_id", jobID, "engine_job_id", engineJob.ID, "error", waitErr)
-		}
-	}
-
-	// Mark our job row as completed.
-	if completeErr := h.completeDiscoveryJob(dbCtx, jobID); completeErr != nil {
+	if err := h.completeDiscoveryJobWithCount(dbCtx, jobID, hostsFound); err != nil {
 		h.logger.Error("Failed to mark discovery job as completed",
-			"job_id", jobID, "error", completeErr)
+			"job_id", jobID, "error", err)
 	}
 
-	h.logger.Info("Discovery job finished", "job_id", jobID)
+	h.logger.Info("Discovery job finished", "job_id", jobID, "hosts_found", hostsFound)
 }
 
-// completeDiscoveryJob flips the job's status to completed and records completed_at.
-func (h *DiscoveryHandler) completeDiscoveryJob(ctx context.Context, jobID uuid.UUID) error {
-	completed := "completed"
+// completeDiscoveryJobWithCount flips the job's status to completed and records host counts.
+func (h *DiscoveryHandler) completeDiscoveryJobWithCount(ctx context.Context, jobID uuid.UUID, hostsFound int) error {
+	completed := db.DiscoveryJobStatusCompleted
 	now := time.Now().UTC()
 	_, err := h.database.UpdateDiscoveryJob(ctx, jobID, db.UpdateDiscoveryJobInput{
-		Status:      &completed,
-		CompletedAt: &now,
+		Status:          &completed,
+		CompletedAt:     &now,
+		HostsDiscovered: &hostsFound,
+		HostsResponsive: &hostsFound,
 	})
 	return err
 }
