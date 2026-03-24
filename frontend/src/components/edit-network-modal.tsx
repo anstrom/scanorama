@@ -1,106 +1,97 @@
 import { useState, useId } from "react";
-import { X } from "lucide-react";
+import { X, Loader2 } from "lucide-react";
 import { Button } from "./button";
-import {
-  useCreateSchedule,
-  useUpdateSchedule,
-} from "../api/hooks/use-schedules";
-import { useNetworks } from "../api/hooks/use-networks";
+import { useUpdateNetwork } from "../api/hooks/use-networks";
 import { useToast } from "./toast-provider";
-import { cn, describeCron } from "../lib/utils";
+import { cn } from "../lib/utils";
 
-export interface ScheduleFormModalProps {
-  mode: "create" | "edit";
-  initial?: {
+const DISCOVERY_METHODS = [
+  { value: "ping", label: "Ping (ICMP echo)" },
+  { value: "tcp", label: "TCP connect" },
+  { value: "arp", label: "ARP broadcast" },
+  { value: "icmp", label: "ICMP" },
+] as const;
+
+type DiscoveryMethod = (typeof DISCOVERY_METHODS)[number]["value"];
+
+export interface EditNetworkModalProps {
+  network: {
     id?: string;
     name?: string;
-    cron_expr?: string;
-    network_id?: string;
-    type?: "scan" | "discovery";
-    enabled?: boolean;
+    cidr?: string;
+    description?: string;
+    discovery_method?: string;
+    scan_enabled?: boolean;
+    is_active?: boolean;
   };
   onClose: () => void;
   onSaved?: () => void;
 }
 
-export function ScheduleFormModal({
-  mode,
-  initial,
+export function EditNetworkModal({
+  network,
   onClose,
   onSaved,
-}: ScheduleFormModalProps) {
+}: EditNetworkModalProps) {
   const id = useId();
   const { toast } = useToast();
 
-  const [name, setName] = useState(initial?.name ?? "");
-  const [cronExpr, setCronExpr] = useState(initial?.cron_expr ?? "0 2 * * *");
-  const [networkId, setNetworkId] = useState(initial?.network_id ?? "");
-  const [type, setType] = useState<"scan" | "discovery">(
-    initial?.type ?? "scan",
+  const [name, setName] = useState(network.name ?? "");
+  const [cidr, setCidr] = useState(network.cidr ?? "");
+  const [description, setDescription] = useState(network.description ?? "");
+  const [discoveryMethod, setDiscoveryMethod] = useState<DiscoveryMethod>(
+    (network.discovery_method as DiscoveryMethod) ?? "ping",
   );
-  const [enabled, setEnabled] = useState(initial?.enabled ?? true);
+  const [scanEnabled, setScanEnabled] = useState(network.scan_enabled ?? true);
   const [error, setError] = useState<string | null>(null);
 
-  const { mutateAsync: createSchedule, isPending: isCreating } =
-    useCreateSchedule();
-  const { mutateAsync: updateSchedule, isPending: isUpdating } =
-    useUpdateSchedule();
-  const isPending = isCreating || isUpdating;
-
-  const { data: networksData } = useNetworks({ page: 1, page_size: 100 });
-  const networks = networksData?.data ?? [];
+  const { mutateAsync: updateNetwork, isPending } = useUpdateNetwork();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
     const trimmedName = name.trim();
-    const trimmedCron = cronExpr.trim();
+    const trimmedCidr = cidr.trim();
 
     if (!trimmedName) {
-      setError("Name is required.");
+      setError("Network name is required.");
       return;
     }
 
-    if (!trimmedCron) {
-      setError("Cron expression is required.");
+    if (!trimmedCidr) {
+      setError("CIDR block is required (e.g. 192.168.1.0/24).");
       return;
     }
 
-    if (!networkId) {
-      setError("A network is required.");
+    if (!/^[\da-fA-F:./]+\/\d+$/.test(trimmedCidr)) {
+      setError(
+        "CIDR block must be in valid notation (e.g. 192.168.1.0/24 or 10.0.0.0/8).",
+      );
       return;
     }
-
-    const body = {
-      name: trimmedName,
-      cron_expr: trimmedCron,
-      type,
-      network_id: networkId,
-      enabled,
-    };
 
     try {
-      if (mode === "create") {
-        await createSchedule(body);
-      } else {
-        await updateSchedule({ id: initial?.id ?? "", body });
-      }
-      toast.success(
-        mode === "create" ? "Schedule created" : "Schedule updated",
-      );
+      await updateNetwork({
+        networkId: network.id ?? "",
+        body: {
+          name: trimmedName,
+          cidr: trimmedCidr,
+          description: description.trim() || undefined,
+          discovery_method: discoveryMethod,
+          scan_enabled: scanEnabled,
+          is_active: network.is_active ?? true,
+        },
+      });
+      toast.success("Network updated");
       onSaved?.();
       onClose();
     } catch (err) {
       const apiErr = err as { message?: string; error?: string };
-      const msg =
-        apiErr.message ??
-        apiErr.error ??
-        (mode === "create"
-          ? "Failed to create schedule."
-          : "Failed to update schedule.");
-      setError(msg);
-      toast.error(msg);
+      const message =
+        apiErr.message ?? apiErr.error ?? "Failed to update network.";
+      toast.error(err instanceof Error ? err.message : message);
+      setError(message);
     }
   }
 
@@ -131,7 +122,7 @@ export function ScheduleFormModal({
             id={`${id}-title`}
             className="text-sm font-semibold text-text-primary"
           >
-            {mode === "create" ? "Create Schedule" : "Edit Schedule"}
+            Edit Network
           </h2>
           <button
             type="button"
@@ -158,7 +149,7 @@ export function ScheduleFormModal({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Daily Security Scan"
+              placeholder="Office LAN"
               autoFocus
               className={cn(
                 "w-full px-3 py-1.5 text-xs rounded border border-border",
@@ -168,98 +159,97 @@ export function ScheduleFormModal({
             />
           </div>
 
-          {/* Cron expression */}
+          {/* CIDR */}
           <div className="space-y-1.5">
             <label
-              htmlFor={`${id}-cron`}
+              htmlFor={`${id}-cidr`}
               className="block text-xs font-medium text-text-primary"
             >
-              Cron expression
+              CIDR block
             </label>
             <input
-              id={`${id}-cron`}
+              id={`${id}-cidr`}
               type="text"
-              value={cronExpr}
-              onChange={(e) => setCronExpr(e.target.value)}
-              placeholder="0 2 * * *"
+              value={cidr}
+              onChange={(e) => setCidr(e.target.value)}
+              placeholder="192.168.1.0/24"
               className={cn(
                 "w-full px-3 py-1.5 text-xs rounded border border-border font-mono",
                 "bg-surface text-text-primary placeholder:text-text-muted",
                 "focus:outline-none focus:ring-1 focus:ring-border",
               )}
             />
-            <p className="text-xs text-text-muted">{describeCron(cronExpr)}</p>
+            <p className="text-xs text-text-muted">
+              IPv4 or IPv6 CIDR notation (e.g. 10.0.0.0/8).
+            </p>
           </div>
 
-          {/* Type */}
+          {/* Description */}
           <div className="space-y-1.5">
             <label
-              htmlFor={`${id}-type`}
+              htmlFor={`${id}-description`}
               className="block text-xs font-medium text-text-primary"
             >
-              Type
+              Description{" "}
+              <span className="text-text-muted font-normal">(optional)</span>
+            </label>
+            <input
+              id={`${id}-description`}
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Main office network"
+              className={cn(
+                "w-full px-3 py-1.5 text-xs rounded border border-border",
+                "bg-surface text-text-primary placeholder:text-text-muted",
+                "focus:outline-none focus:ring-1 focus:ring-border",
+              )}
+            />
+          </div>
+
+          {/* Discovery method */}
+          <div className="space-y-1.5">
+            <label
+              htmlFor={`${id}-discovery`}
+              className="block text-xs font-medium text-text-primary"
+            >
+              Discovery method
             </label>
             <select
-              id={`${id}-type`}
-              value={type}
-              onChange={(e) => setType(e.target.value as "scan" | "discovery")}
+              id={`${id}-discovery`}
+              value={discoveryMethod}
+              onChange={(e) =>
+                setDiscoveryMethod(e.target.value as DiscoveryMethod)
+              }
+              aria-label="Select discovery method"
               className={cn(
                 "w-full px-3 py-1.5 text-xs rounded border border-border",
                 "bg-surface text-text-primary",
                 "focus:outline-none focus:ring-1 focus:ring-border",
               )}
             >
-              <option value="scan">Scan</option>
-              <option value="discovery">Discovery</option>
-            </select>
-          </div>
-
-          {/* Network */}
-          <div className="space-y-1.5">
-            <label
-              htmlFor={`${id}-network`}
-              className="block text-xs font-medium text-text-primary"
-            >
-              Network
-            </label>
-            <select
-              id={`${id}-network`}
-              value={networkId}
-              onChange={(e) => setNetworkId(e.target.value)}
-              className={cn(
-                "w-full px-3 py-1.5 text-xs rounded border border-border",
-                "bg-surface text-text-primary",
-                "focus:outline-none focus:ring-1 focus:ring-border",
-              )}
-            >
-              <option value="">— Select a network —</option>
-              {networks.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.name} ({n.cidr})
+              {DISCOVERY_METHODS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
                 </option>
               ))}
             </select>
-            {networks.length === 0 && (
-              <p className="text-xs text-text-muted">
-                No networks configured yet. Add a network first.
-              </p>
-            )}
           </div>
 
-          {/* Enabled */}
+          {/* Scan enabled */}
           <div className="flex items-center gap-2">
             <input
-              id={`${id}-enabled`}
+              id={`${id}-scan-enabled`}
               type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
+              checked={scanEnabled}
+              onChange={(e) => setScanEnabled(e.target.checked)}
               className="h-3.5 w-3.5 rounded border-border accent-accent"
             />
             <label
-              htmlFor={`${id}-enabled`}
+              htmlFor={`${id}-scan-enabled`}
               className="text-xs text-text-primary"
             >
-              Enable this schedule
+              Enable scanning for this network
             </label>
           </div>
 
@@ -276,7 +266,14 @@ export function ScheduleFormModal({
               Cancel
             </Button>
             <Button type="submit" loading={isPending}>
-              {mode === "create" ? "Create schedule" : "Save changes"}
+              {isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                "Save changes"
+              )}
             </Button>
           </div>
         </form>
@@ -284,6 +281,3 @@ export function ScheduleFormModal({
     </>
   );
 }
-
-// Backward-compat alias
-export { ScheduleFormModal as CreateScheduleModal };

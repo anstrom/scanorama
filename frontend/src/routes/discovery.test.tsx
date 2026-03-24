@@ -33,7 +33,7 @@ const mockJobs = [
   {
     id: "job-1",
     name: "Office LAN Discovery",
-    network: "192.168.1.0/24",
+    networks: "192.168.1.0/24",
     method: "tcp" as const,
     status: "completed" as const,
     progress: 100,
@@ -43,7 +43,7 @@ const mockJobs = [
   {
     id: "job-2",
     name: "DMZ Discovery",
-    network: "10.0.0.0/8",
+    networks: "10.0.0.0/8",
     method: "icmp" as const,
     status: "pending" as const,
     progress: 0,
@@ -53,7 +53,7 @@ const mockJobs = [
   {
     id: "job-3",
     name: undefined,
-    network: "172.16.0.0/12",
+    networks: "172.16.0.0/12",
     method: "arp" as const,
     status: "running" as const,
     progress: 50,
@@ -158,9 +158,19 @@ describe("DiscoveryPage", () => {
 
   it("renders all expected column headers", () => {
     render(<DiscoveryPage />);
-    const headers = ["Name", "Network", "Method", "Status", "Progress", "Started", "Created"];
+    const headers = [
+      "Name",
+      "Network",
+      "Method",
+      "Status",
+      "Progress",
+      "Started",
+      "Created",
+    ];
     for (const header of headers) {
-      expect(screen.getByRole("columnheader", { name: header })).toBeInTheDocument();
+      expect(
+        screen.getByRole("columnheader", { name: header }),
+      ).toBeInTheDocument();
     }
   });
 
@@ -317,24 +327,34 @@ describe("DiscoveryPage", () => {
     render(<DiscoveryPage />);
     const rows = screen.getAllByRole("row");
     await userEvent.click(rows[1]);
-    const dialog = screen.getByRole("dialog", { name: /discovery job details/i });
-    expect(within(dialog).getByText("Office LAN Discovery")).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", {
+      name: /discovery job details/i,
+    });
+    expect(
+      within(dialog).getByText("Office LAN Discovery"),
+    ).toBeInTheDocument();
   });
 
   it("shows the network CIDR in the detail panel header", async () => {
     render(<DiscoveryPage />);
     const rows = screen.getAllByRole("row");
     await userEvent.click(rows[1]);
-    const dialog = screen.getByRole("dialog", { name: /discovery job details/i });
+    const dialog = screen.getByRole("dialog", {
+      name: /discovery job details/i,
+    });
     // CIDR appears in the panel header
-    expect(within(dialog).getAllByText("192.168.1.0/24").length).toBeGreaterThanOrEqual(1);
+    expect(
+      within(dialog).getAllByText("192.168.1.0/24").length,
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it("shows the status badge in the detail panel", async () => {
     render(<DiscoveryPage />);
     const rows = screen.getAllByRole("row");
     await userEvent.click(rows[1]);
-    const dialog = screen.getByRole("dialog", { name: /discovery job details/i });
+    const dialog = screen.getByRole("dialog", {
+      name: /discovery job details/i,
+    });
     const badges = within(dialog).getAllByText("completed");
     expect(badges.length).toBeGreaterThanOrEqual(1);
   });
@@ -343,7 +363,9 @@ describe("DiscoveryPage", () => {
     render(<DiscoveryPage />);
     const rows = screen.getAllByRole("row");
     await userEvent.click(rows[1]);
-    const dialog = screen.getByRole("dialog", { name: /discovery job details/i });
+    const dialog = screen.getByRole("dialog", {
+      name: /discovery job details/i,
+    });
     expect(within(dialog).getByText("job-1")).toBeInTheDocument();
   });
 
@@ -352,7 +374,9 @@ describe("DiscoveryPage", () => {
     const rows = screen.getAllByRole("row");
     // job-3 has no name
     await userEvent.click(rows[3]);
-    const dialog = screen.getByRole("dialog", { name: /discovery job details/i });
+    const dialog = screen.getByRole("dialog", {
+      name: /discovery job details/i,
+    });
     expect(within(dialog).getByText("Discovery #job-3")).toBeInTheDocument();
   });
 
@@ -404,8 +428,12 @@ describe("DiscoveryPage", () => {
       }),
     );
     render(<DiscoveryPage />);
-    expect(screen.getByRole("button", { name: /previous page/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /next page/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /previous page/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /next page/i }),
+    ).toBeInTheDocument();
   });
 
   it("does not show pagination when there is only one page", () => {

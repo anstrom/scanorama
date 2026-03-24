@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../client";
 import { ApiError } from "../errors";
@@ -110,6 +111,37 @@ export function useStartScan() {
   });
 }
 
+export function useStopScan() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (scanId: string) => {
+      const { data, error, response } = await api.POST("/scans/{scanId}/stop", {
+        params: { path: { scanId } },
+      });
+      if (error) throw new ApiError(response.status, error);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scans"] });
+    },
+  });
+}
+
+export function useDeleteScan() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (scanId: string) => {
+      const { error, response } = await api.DELETE("/scans/{scanId}", {
+        params: { path: { scanId } },
+      });
+      if (error) throw new ApiError(response.status, error);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scans"] });
+    },
+  });
+}
+
 export type ScanType =
   | "connect"
   | "syn"
@@ -170,4 +202,60 @@ export function useRecentScans(limit = 5) {
     },
     refetchInterval: 30_000,
   });
+}
+
+export interface ScanActivityDay {
+  date: string;
+  completed: number;
+  failed: number;
+  running: number;
+}
+
+export function useScanActivity(): {
+  data: ScanActivityDay[];
+  isLoading: boolean;
+} {
+  const { data, isLoading } = useQuery({
+    queryKey: ["scans", "activity"],
+    queryFn: async () => {
+      const { data, error, response } = await api.GET("/scans", {
+        params: { query: { page: 1, page_size: 200 } },
+      });
+      if (error) throw new ApiError(response.status, error);
+      return data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const activity: ScanActivityDay[] = useMemo(() => {
+    const scans = data?.data ?? [];
+    const days: ScanActivityDay[] = [];
+    const now = new Date();
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dayStr = d.toISOString().slice(0, 10); // YYYY-MM-DD
+
+      const label =
+        i === 0 ? "Today" : d.toLocaleDateString("en-US", { weekday: "short" });
+
+      const dayScans = scans.filter((s) => {
+        const ts = s.started_at ?? s.created_at ?? "";
+        return ts.slice(0, 10) === dayStr;
+      });
+
+      days.push({
+        date: label,
+        completed: dayScans.filter((s) => s.status === "completed").length,
+        failed: dayScans.filter((s) => s.status === "failed").length,
+        running: dayScans.filter(
+          (s) => s.status === "running" || s.status === "pending",
+        ).length,
+      });
+    }
+    return days;
+  }, [data]);
+
+  return { data: activity, isLoading };
 }

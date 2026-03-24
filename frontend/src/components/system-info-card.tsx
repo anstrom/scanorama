@@ -1,8 +1,8 @@
 import { GitCommit, Clock, Package } from "lucide-react";
 import { cn } from "../lib/utils";
-import type { components } from "../api/types";
+import type { VersionInfo } from "../api/hooks/use-system";
 
-type VersionResponse = components["schemas"]["docs.VersionResponse"];
+type VersionResponse = VersionInfo;
 
 interface SystemInfoCardProps {
   version?: VersionResponse;

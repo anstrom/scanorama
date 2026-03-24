@@ -1,17 +1,28 @@
 import { waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHookWithQuery } from "../../test/utils";
-import { useHosts, useHost, useActiveHostCount } from "./use-hosts";
+import {
+  useHosts,
+  useHost,
+  useActiveHostCount,
+  useHostScans,
+  useUpdateHost,
+  useDeleteHost,
+} from "./use-hosts";
 
 vi.mock("../client", () => ({
   api: {
     GET: vi.fn(),
     POST: vi.fn(),
+    PUT: vi.fn(),
+    DELETE: vi.fn(),
   },
 }));
 
 import { api } from "../client";
 const mockGet = vi.mocked(api.GET);
+const mockPut = vi.mocked(api.PUT);
+const mockDelete = vi.mocked(api.DELETE);
 
 const ok = (data: unknown): ReturnType<typeof mockGet> =>
   Promise.resolve({
@@ -26,6 +37,38 @@ const fail = (message = "something went wrong"): ReturnType<typeof mockGet> =>
     error: { message },
     response: new Response(),
   }) as ReturnType<typeof mockGet>;
+
+const okPut = (data: unknown): ReturnType<typeof mockPut> =>
+  Promise.resolve({
+    data,
+    error: undefined,
+    response: new Response(),
+  }) as ReturnType<typeof mockPut>;
+
+const failPut = (
+  message = "something went wrong",
+): ReturnType<typeof mockPut> =>
+  Promise.resolve({
+    data: undefined,
+    error: { message },
+    response: new Response(),
+  }) as ReturnType<typeof mockPut>;
+
+const okDelete = (): ReturnType<typeof mockDelete> =>
+  Promise.resolve({
+    data: undefined,
+    error: undefined,
+    response: new Response(),
+  }) as ReturnType<typeof mockDelete>;
+
+const failDelete = (
+  message = "something went wrong",
+): ReturnType<typeof mockDelete> =>
+  Promise.resolve({
+    data: undefined,
+    error: { message },
+    response: new Response(),
+  }) as ReturnType<typeof mockDelete>;
 
 const mockHost = {
   id: "host-1",
@@ -293,5 +336,153 @@ describe("useActiveHostCount", () => {
 
     const cached = queryClient.getQueryData(["hosts", "active-count"]);
     expect(cached).toBe(7);
+  });
+});
+
+// ── useHostScans ──────────────────────────────────────────────────────────────
+
+describe("useHostScans", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls GET /hosts/{hostId}/scans with the correct hostId", async () => {
+    mockGet.mockResolvedValue(
+      ok({ data: [], pagination: mockPagination }),
+    );
+
+    const { result } = renderHookWithQuery(() => useHostScans("host-1"));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockGet).toHaveBeenCalledWith(
+      "/hosts/{hostId}/scans",
+      expect.objectContaining({
+        params: { path: { hostId: "host-1" }, query: {} },
+      }),
+    );
+  });
+
+  it("forwards page and page_size as query params", async () => {
+    mockGet.mockResolvedValue(
+      ok({ data: [], pagination: mockPagination }),
+    );
+
+    const { result } = renderHookWithQuery(() =>
+      useHostScans("host-1", { page: 2, page_size: 10 }),
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockGet).toHaveBeenCalledWith(
+      "/hosts/{hostId}/scans",
+      expect.objectContaining({
+        params: { path: { hostId: "host-1" }, query: { page: 2, page_size: 10 } },
+      }),
+    );
+  });
+
+  it("is disabled and does not fetch when hostId is empty", () => {
+    const { result } = renderHookWithQuery(() => useHostScans(""));
+    expect(result.current.isPending).toBe(true);
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+});
+
+// ── useUpdateHost ─────────────────────────────────────────────────────────────
+
+describe("useUpdateHost", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHookWithQuery(() => useUpdateHost());
+    expect(result.current.isPending).toBe(false);
+  });
+
+  it("calls PUT /hosts/{hostId} with the correct params and body", async () => {
+    mockPut.mockResolvedValue(okPut(mockHost));
+
+    const { result, actHook } = renderHookWithQuery(() => useUpdateHost());
+
+    await actHook(async () => {
+      await result.current.mutateAsync({
+        hostId: "host-1",
+        body: { hostname: "newname.local" },
+      });
+    });
+
+    expect(mockPut).toHaveBeenCalledWith(
+      "/hosts/{hostId}",
+      expect.objectContaining({
+        params: { path: { hostId: "host-1" } },
+        body: { hostname: "newname.local" },
+      }),
+    );
+  });
+
+  it("invalidates ['hosts'] queries on success", async () => {
+    mockPut.mockResolvedValue(okPut(mockHost));
+
+    const { result, actHook, queryClient } = renderHookWithQuery(() =>
+      useUpdateHost(),
+    );
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await actHook(async () => {
+      await result.current.mutateAsync({
+        hostId: "host-1",
+        body: { hostname: "updated.local" },
+      });
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["hosts"] }),
+    );
+  });
+});
+
+// ── useDeleteHost ─────────────────────────────────────────────────────────────
+
+describe("useDeleteHost", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHookWithQuery(() => useDeleteHost());
+    expect(result.current.isPending).toBe(false);
+  });
+
+  it("calls DELETE /hosts/{hostId} with the correct hostId", async () => {
+    mockDelete.mockResolvedValue(okDelete());
+
+    const { result, actHook } = renderHookWithQuery(() => useDeleteHost());
+
+    await actHook(async () => {
+      await result.current.mutateAsync("host-1");
+    });
+
+    expect(mockDelete).toHaveBeenCalledWith(
+      "/hosts/{hostId}",
+      expect.objectContaining({ params: { path: { hostId: "host-1" } } }),
+    );
+  });
+
+  it("invalidates ['hosts'] queries on success", async () => {
+    mockDelete.mockResolvedValue(okDelete());
+
+    const { result, actHook, queryClient } = renderHookWithQuery(() =>
+      useDeleteHost(),
+    );
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await actHook(async () => {
+      await result.current.mutateAsync("host-1");
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["hosts"] }),
+    );
   });
 });

@@ -2,6 +2,7 @@ import { useState, useId } from "react";
 import { X } from "lucide-react";
 import { Button } from "./button";
 import { useCreateProfile, useUpdateProfile } from "../api/hooks/use-profiles";
+import { useToast } from "./toast-provider";
 import { cn } from "../lib/utils";
 import type { components } from "../api/types";
 
@@ -42,6 +43,7 @@ export function ProfileFormModal({
   const [description, setDescription] = useState(initial?.description ?? "");
   const [error, setError] = useState<string | null>(null);
 
+  const { toast } = useToast();
   const { mutateAsync: createProfile, isPending: isCreating } =
     useCreateProfile();
   const { mutateAsync: updateProfile, isPending: isUpdating } =
@@ -60,7 +62,7 @@ export function ProfileFormModal({
 
     const body: CreateProfileRequest = {
       name: trimmedName,
-      scan_type: scanType,
+      scan_type: scanType as CreateProfileRequest["scan_type"],
       ports: ports.trim() || undefined,
       description: description.trim() || undefined,
     };
@@ -68,20 +70,23 @@ export function ProfileFormModal({
     try {
       if (mode === "create") {
         await createProfile(body);
+        toast.success("Profile created");
       } else {
         await updateProfile({ id: initial?.id ?? "", body });
+        toast.success("Profile updated");
       }
       onSaved?.();
       onClose();
     } catch (err) {
       const apiErr = err as { message?: string; error?: string };
-      setError(
+      const msg =
         apiErr.message ??
-          apiErr.error ??
-          (mode === "create"
-            ? "Failed to create profile."
-            : "Failed to update profile."),
-      );
+        apiErr.error ??
+        (mode === "create"
+          ? "Failed to create profile."
+          : "Failed to update profile.");
+      setError(msg);
+      toast.error(msg);
     }
   }
 

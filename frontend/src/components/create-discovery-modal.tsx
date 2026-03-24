@@ -5,6 +5,7 @@ import {
   useCreateDiscoveryJob,
   useStartDiscovery,
 } from "../api/hooks/use-discovery";
+import { useToast } from "./toast-provider";
 import { cn } from "../lib/utils";
 
 const METHODS = [
@@ -29,9 +30,11 @@ export function CreateDiscoveryModal({
 
   const [name, setName] = useState("");
   const [network, setNetwork] = useState("");
-  const [method, setMethod] = useState<Method>("tcp");
+  const [method, setMethod] = useState<Method>("tcp_connect");
   const [startImmediately, setStartImmediately] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { toast } = useToast();
 
   const { mutateAsync: createDiscoveryJob, isPending: isCreating } =
     useCreateDiscoveryJob();
@@ -60,12 +63,14 @@ export function CreateDiscoveryModal({
         await startDiscovery(result.id);
       }
 
+      toast.success("Discovery job created");
       onCreated?.();
       onClose();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to create discovery job.",
-      );
+      const msg =
+        err instanceof Error ? err.message : "Failed to create discovery job.";
+      setError(msg);
+      toast.error(msg);
     }
   }
 

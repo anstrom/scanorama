@@ -92,7 +92,7 @@ const mockSchedules = [
   {
     id: "sched-1",
     name: "Daily Security Scan",
-    cron_expression: "0 2 * * *",
+    cron_expr: "0 2 * * *",
     enabled: true,
     targets: ["192.168.1.0/24"],
     next_run: "2024-06-02T02:00:00Z",
@@ -104,7 +104,7 @@ const mockSchedules = [
   {
     id: "sched-2",
     name: "Weekly Recon",
-    cron_expression: "0 0 * * 1",
+    cron_expr: "0 0 * * 1",
     enabled: false,
     targets: ["10.0.0.0/8"],
     next_run: undefined,
@@ -271,8 +271,7 @@ describe("useCreateSchedule", () => {
     await actHook(async () => {
       await result.current.mutateAsync({
         name: "Daily Security Scan",
-        cron_expression: "0 2 * * *",
-        targets: ["192.168.1.0/24"],
+        cron_expr: "0 2 * * *",
         enabled: true,
       });
     });
@@ -306,7 +305,7 @@ describe("useCreateSchedule", () => {
     await actHook(async () => {
       await result.current.mutateAsync({
         name: "New Schedule",
-        cron_expression: "0 2 * * *",
+        cron_expr: "0 2 * * *",
       });
     });
     expect(invalidateSpy).toHaveBeenCalledWith(

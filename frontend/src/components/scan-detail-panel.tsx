@@ -1,10 +1,16 @@
-import React from "react";
-import { X } from "lucide-react";
+import React, { useState } from "react";
+import { X, Square, Trash2 } from "lucide-react";
 import { useProfile } from "../api/hooks/use-profiles";
-import { useScanResults } from "../api/hooks/use-scans";
+import {
+  useScanResults,
+  useStopScan,
+  useDeleteScan,
+} from "../api/hooks/use-scans";
 import { isNotFound } from "../api/errors";
 import { StatusBadge } from "./status-badge";
 import { Skeleton } from "./skeleton";
+import { Button } from "./button";
+import { useToast } from "./toast-provider";
 import { formatRelativeTime, cn } from "../lib/utils";
 import type { components } from "../api/types";
 
@@ -62,6 +68,36 @@ export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
     isLoading: resultsLoading,
     isError: resultsError,
   } = useScanResults(scan.id ?? "", scan.status);
+
+  const { toast } = useToast();
+  const { mutateAsync: stopScan, isPending: isStopping } = useStopScan();
+  const { mutateAsync: deleteScan, isPending: isDeleting } = useDeleteScan();
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  const isActive = scan.status === "pending" || scan.status === "running";
+  const isTerminal = scan.status === "completed" || scan.status === "failed";
+
+  async function handleStop() {
+    try {
+      await stopScan(scan.id ?? "");
+      toast.success("Scan stopped");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to stop scan.");
+    }
+  }
+
+  async function handleDelete() {
+    try {
+      await deleteScan(scan.id ?? "");
+      toast.success("Scan deleted");
+      onClose();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to delete scan.",
+      );
+      setDeleteConfirm(false);
+    }
+  }
 
   const allResults = resultsData?.results ?? [];
 
@@ -132,6 +168,57 @@ export function ScanDetailPanel({ scan, onClose }: DetailPanelProps) {
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {/* Action bar */}
+        {(isActive || isTerminal) && (
+          <div className="flex items-center gap-2 px-5 py-2.5 border-b border-border shrink-0 bg-surface-raised/30">
+            {isActive && (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Square className="h-3 w-3" />}
+                loading={isStopping}
+                onClick={handleStop}
+              >
+                Stop scan
+              </Button>
+            )}
+            {isTerminal &&
+              (deleteConfirm ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted">
+                    Delete this scan?
+                  </span>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    loading={isDeleting}
+                    onClick={handleDelete}
+                  >
+                    Confirm
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isDeleting}
+                    onClick={() => setDeleteConfirm(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<Trash2 className="h-3 w-3 text-danger" />}
+                  className="text-danger hover:text-danger hover:bg-danger/10"
+                  onClick={() => setDeleteConfirm(true)}
+                >
+                  Delete
+                </Button>
+              ))}
+          </div>
+        )}
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">

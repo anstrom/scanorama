@@ -8,18 +8,22 @@ import {
   useCreateScan,
   useStartScan,
   useScanResults,
+  useStopScan,
+  useDeleteScan,
 } from "./use-scans";
 
 vi.mock("../client", () => ({
   api: {
     GET: vi.fn(),
     POST: vi.fn(),
+    DELETE: vi.fn(),
   },
 }));
 
 import { api } from "../client";
 const mockGet = vi.mocked(api.GET);
 const mockPost = vi.mocked(api.POST);
+const mockDelete = vi.mocked(api.DELETE);
 
 const ok = (data: unknown): ReturnType<typeof mockGet> =>
   Promise.resolve({
@@ -34,6 +38,13 @@ const fail = (message = "something went wrong"): ReturnType<typeof mockGet> =>
     error: { message },
     response: new Response(),
   }) as ReturnType<typeof mockGet>;
+
+const okDelete = (): ReturnType<typeof mockDelete> =>
+  Promise.resolve({
+    data: undefined,
+    error: undefined,
+    response: new Response(),
+  }) as ReturnType<typeof mockDelete>;
 
 const mockPagination = {
   page: 1,
@@ -542,6 +553,62 @@ describe("useStartScan", () => {
     expect(mockPost).toHaveBeenCalledWith(
       "/scans/{scanId}/start",
       expect.objectContaining({ params: { path: { scanId: "scan-2" } } }),
+    );
+  });
+});
+
+// ── useStopScan ────────────────────────────────────────────────────────────────
+
+describe("useStopScan", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHookWithQuery(() => useStopScan());
+    expect(result.current.isIdle).toBe(true);
+  });
+
+  it("calls POST /scans/{scanId}/stop with the correct scanId", async () => {
+    mockPost.mockResolvedValue(ok({ id: "scan-123", status: "stopped" }));
+
+    const { result, actHook } = renderHookWithQuery(() => useStopScan());
+
+    await actHook(async () => {
+      await result.current.mutateAsync("scan-123");
+    });
+
+    expect(mockPost).toHaveBeenCalledWith(
+      "/scans/{scanId}/stop",
+      expect.objectContaining({ params: { path: { scanId: "scan-123" } } }),
+    );
+  });
+});
+
+// ── useDeleteScan ──────────────────────────────────────────────────────────────
+
+describe("useDeleteScan", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHookWithQuery(() => useDeleteScan());
+    expect(result.current.isIdle).toBe(true);
+  });
+
+  it("calls DELETE /scans/{scanId} with the correct scanId", async () => {
+    mockDelete.mockResolvedValue(okDelete());
+
+    const { result, actHook } = renderHookWithQuery(() => useDeleteScan());
+
+    await actHook(async () => {
+      await result.current.mutateAsync("scan-456");
+    });
+
+    expect(mockDelete).toHaveBeenCalledWith(
+      "/scans/{scanId}",
+      expect.objectContaining({ params: { path: { scanId: "scan-456" } } }),
     );
   });
 });

@@ -245,6 +245,34 @@ export function useCreateGlobalExclusion() {
   });
 }
 
+export function useUpdateNetwork() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      networkId,
+      body,
+    }: {
+      networkId: string;
+      body: CreateNetworkRequest;
+    }) => {
+      const { data, error } = await api.PUT("/networks/{networkId}", {
+        params: { path: { networkId } },
+        body,
+      });
+      if (error) {
+        const apiError = error as { message?: string; error?: string };
+        throw new Error(
+          apiError.message ?? apiError.error ?? "Failed to update network.",
+        );
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["networks"] });
+    },
+  });
+}
+
 export function useDeleteExclusion() {
   const queryClient = useQueryClient();
   return useMutation({

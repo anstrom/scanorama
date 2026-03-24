@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { Plus, Pencil, Trash2, X, SlidersHorizontal } from "lucide-react";
 import { Button } from "../components/button";
 import { useProfiles, useDeleteProfile } from "../api/hooks/use-profiles";
+import { useToast } from "../components/toast-provider";
 import { Skeleton, PaginationBar } from "../components";
 import { ProfileFormModal } from "../components/profile-form-modal";
 import { formatRelativeTime, formatAbsoluteTime, cn } from "../lib/utils";
@@ -88,16 +89,20 @@ function ProfileDetailPanel({
   const { mutateAsync: deleteProfile, isPending: isDeleting } =
     useDeleteProfile();
 
+  const { toast } = useToast();
   const p = initialProfile;
 
   async function handleDelete() {
     setActionError(null);
     try {
       await deleteProfile(p.id ?? "");
+      toast.success("Profile deleted");
       onClose();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Delete failed.");
+      const msg = err instanceof Error ? err.message : "Delete failed.";
+      setActionError(msg);
       setShowDeleteConfirm(false);
+      toast.error(msg);
     }
   }
 
@@ -278,7 +283,9 @@ export function ProfilesPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   // Debounce name search
-  const debounceRef = { current: 0 as unknown as ReturnType<typeof setTimeout> };
+  const debounceRef = {
+    current: 0 as unknown as ReturnType<typeof setTimeout>,
+  };
   const handleSearchInput = useCallback(
     (value: string) => {
       setSearch(value);
