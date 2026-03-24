@@ -664,3 +664,95 @@ func TestDatabaseQueriesOnly(t *testing.T) {
 	require.NotNil(t, scanJobRepo)
 	_ = fmt.Sprintf("scan job repo: %T", scanJobRepo)
 }
+
+// TestRecoverStaleJobs verifies the end-to-end startup recovery path against a
+// real PostgreSQL instance.  It inserts rows directly into scan_jobs and
+// discovery_jobs with status='running', calls RecoverStaleJobs, and confirms
+// every affected row is transitioned to 'failed' with the expected fields set.
+func TestRecoverStaleJobs(t *testing.T) {
+	t.Parallel()
+	database := requireDB(t)
+	ctx := context.Background()
+
+	// ── seed stale scan_jobs ──────────────────────────────────────────────
+	scanID1 := uuid.New()
+	scanID2 := uuid.New()
+	for _, id := range []uuid.UUID{scanID1, scanID2} {
+		_, err := database.ExecContext(ctx, `
+			INSERT INTO scan_jobs (id, status, created_at, execution_details)
+			VALUES ($1, 'running', NOW(), '{}')
+		`, id)
+		require.NoError(t, err, "seed stale scan_job")
+	}
+
+	// ── seed a stale discovery_job ────────────────────────────────────────
+	discID := uuid.New()
+	_, err := database.ExecContext(ctx, `
+		INSERT INTO discovery_jobs (id, network, method, status, created_at, hosts_discovered, hosts_responsive)
+		VALUES ($1, '10.99.0.0/16', 'tcp', 'running', NOW(), 0, 0)
+	`, discID)
+	require.NoError(t, err, "seed stale discovery_job")
+
+	// ── seed a non-running job that must NOT be touched ───────────────────
+	pendingID := uuid.New()
+	_, err = database.ExecContext(ctx, `
+		INSERT INTO scan_jobs (id, status, created_at, execution_details)
+		VALUES ($1, 'pending', NOW(), '{}')
+	`, pendingID)
+	require.NoError(t, err, "seed pending scan_job")
+
+	// ── run recovery ─────────────────────────────────────────────────────
+	result, err := db.RecoverStaleJobs(ctx, database)
+	require.NoError(t, err)
+
+	assert.GreaterOrEqual(t, result.ScanJobsRecovered, 2,
+		"at least the two seeded running scan_jobs must be recovered")
+	assert.GreaterOrEqual(t, result.DiscoveryJobsRecovered, 1,
+		"at least the seeded running discovery_job must be recovered")
+	assert.GreaterOrEqual(t, result.Total(), 3)
+
+	// ── verify scan_jobs rows ─────────────────────────────────────────────
+	for _, id := range []uuid.UUID{scanID1, scanID2} {
+		var status, errMsg string
+		var completedAt *time.Time
+		err := database.QueryRowContext(ctx,
+			`SELECT status, error_message, completed_at FROM scan_jobs WHERE id = $1`, id,
+		).Scan(&status, &errMsg, &completedAt)
+		require.NoError(t, err)
+		assert.Equal(t, "failed", status, "scan_job %s must be failed", id)
+		assert.Equal(t, "interrupted by server restart", errMsg)
+		assert.NotNil(t, completedAt, "completed_at must be set")
+	}
+
+	// ── verify discovery_job row ──────────────────────────────────────────
+	var discStatus string
+	var discCompletedAt *time.Time
+	err = database.QueryRowContext(ctx,
+		`SELECT status, completed_at FROM discovery_jobs WHERE id = $1`, discID,
+	).Scan(&discStatus, &discCompletedAt)
+	require.NoError(t, err)
+	assert.Equal(t, "failed", discStatus, "discovery_job must be failed")
+	assert.NotNil(t, discCompletedAt, "completed_at must be set")
+
+	// ── verify pending job was not touched ────────────────────────────────
+	var pendingStatus string
+	err = database.QueryRowContext(ctx,
+		`SELECT status FROM scan_jobs WHERE id = $1`, pendingID,
+	).Scan(&pendingStatus)
+	require.NoError(t, err)
+	assert.Equal(t, "pending", pendingStatus, "pending job must remain untouched")
+
+	// ── idempotency: a second call must recover zero rows ─────────────────
+	result2, err := db.RecoverStaleJobs(ctx, database)
+	require.NoError(t, err)
+	assert.Equal(t, 0, result2.ScanJobsRecovered,
+		"second recovery call must find no stale scan_jobs")
+	assert.Equal(t, 0, result2.DiscoveryJobsRecovered,
+		"second recovery call must find no stale discovery_jobs")
+
+	// ── cleanup ───────────────────────────────────────────────────────────
+	for _, id := range []uuid.UUID{scanID1, scanID2, pendingID} {
+		_, _ = database.ExecContext(ctx, `DELETE FROM scan_jobs WHERE id = $1`, id)
+	}
+	_, _ = database.ExecContext(ctx, `DELETE FROM discovery_jobs WHERE id = $1`, discID)
+}

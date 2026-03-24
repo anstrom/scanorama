@@ -129,6 +129,19 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 		MaxHeaderBytes: apiConfig.MaxHeaderBytes,
 	}
 
+	// Recover any jobs left in 'running' by a previous crash or restart.
+	// This runs before the HTTP listener opens so no client ever sees a job
+	// that is permanently 'running' with no live goroutine behind it.
+	// Errors are non-fatal: a warn-log is emitted and startup continues.
+	if result, err := db.RecoverStaleJobs(context.Background(), database); err != nil {
+		logger.Warn("Failed to recover stale jobs on startup", "error", err)
+	} else if result.Total() > 0 {
+		logger.Info("Startup recovery complete",
+			"scan_jobs_recovered", result.ScanJobsRecovered,
+			"discovery_jobs_recovered", result.DiscoveryJobsRecovered,
+		)
+	}
+
 	return server, nil
 }
 
