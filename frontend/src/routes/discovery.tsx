@@ -17,7 +17,9 @@ type DiscoveryJobResponse = components["schemas"]["docs.DiscoveryJobResponse"];
 const PAGE_SIZE = 20;
 
 const METHOD_LABELS: Record<string, string> = {
+  ping: "Ping",
   tcp: "TCP",
+  tcp_connect: "TCP Connect",
   icmp: "ICMP",
   arp: "ARP",
 };
@@ -75,7 +77,7 @@ function MetaRow({ label, value }: { label: string; value?: React.ReactNode }) {
 }
 
 function DiscoveryDetailPanel({ job, onClose }: DetailPanelProps) {
-  const title = job.name ?? `Discovery #${job.id}`;
+  const title = job.name || `Discovery #${job.id}`;
 
   return (
     <>
@@ -105,7 +107,7 @@ function DiscoveryDetailPanel({ job, onClose }: DetailPanelProps) {
               {title}
             </p>
             <p className="text-xs font-mono text-text-secondary">
-              {job.networks ?? "—"}
+              {job.networks?.join(", ") ?? "—"}
             </p>
             <StatusBadge status={job.status ?? "unknown"} />
           </div>
@@ -146,7 +148,7 @@ function DiscoveryDetailPanel({ job, onClose }: DetailPanelProps) {
             </h3>
             <div className="space-y-2">
               <MetaRow label="ID" value={job.id} />
-              <MetaRow label="Network" value={job.networks} />
+              <MetaRow label="Network" value={job.networks?.join(", ")} />
               <MetaRow
                 label="Method"
                 value={
@@ -279,7 +281,7 @@ export function DiscoveryPage() {
                         {job.name ?? "—"}
                       </td>
                       <td className="py-3 pr-4 font-mono text-text-secondary">
-                        {job.networks ?? "—"}
+                        {job.networks?.join(", ") ?? "—"}
                       </td>
                       <td className="py-3 pr-4 text-text-secondary">
                         {job.method
