@@ -11,8 +11,19 @@ vi.mock("../api/hooks/use-networks", () => ({
   useEnableNetwork: vi.fn(),
   useDisableNetwork: vi.fn(),
   useRenameNetwork: vi.fn(),
+  useUpdateNetwork: vi.fn(),
   useDeleteNetwork: vi.fn(),
   useDeleteExclusion: vi.fn(),
+}));
+
+vi.mock("../components/edit-network-modal", () => ({
+  EditNetworkModal: ({ onClose }: { onClose: () => void }) => (
+    <div role="dialog" aria-label="Edit Network">
+      <button type="button" onClick={onClose}>
+        Close edit modal
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("../components/add-exclusion-modal", () => ({
@@ -37,6 +48,7 @@ import {
   useEnableNetwork,
   useDisableNetwork,
   useRenameNetwork,
+  useUpdateNetwork,
   useDeleteNetwork,
   useDeleteExclusion,
 } from "../api/hooks/use-networks";
@@ -46,6 +58,7 @@ const mockUseNetworkExclusions = vi.mocked(useNetworkExclusions);
 const mockUseEnableNetwork = vi.mocked(useEnableNetwork);
 const mockUseDisableNetwork = vi.mocked(useDisableNetwork);
 const mockUseRenameNetwork = vi.mocked(useRenameNetwork);
+const mockUseUpdateNetwork = vi.mocked(useUpdateNetwork);
 const mockUseDeleteNetwork = vi.mocked(useDeleteNetwork);
 const mockUseDeleteExclusion = vi.mocked(useDeleteExclusion);
 
@@ -152,6 +165,10 @@ beforeEach(() => {
   mockUseDeleteNetwork.mockReturnValue(
     idleMutation as unknown as ReturnType<typeof useDeleteNetwork>,
   );
+  mockUseUpdateNetwork.mockReturnValue({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  } as unknown as ReturnType<typeof useUpdateNetwork>);
   mockUseDeleteExclusion.mockReturnValue(
     idleMutation as unknown as ReturnType<typeof useDeleteExclusion>,
   );
@@ -465,23 +482,23 @@ describe("NetworksPage — detail panel", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the rename button (pencil icon) in the detail panel header", async () => {
+  it("shows the Edit button in the detail panel", async () => {
     render(<NetworksPage />);
     await userEvent.click(screen.getByText("Office LAN").closest("tr")!);
     const panel = screen.getByRole("dialog", { name: /network details/i });
     expect(
-      within(panel).getByRole("button", { name: /rename network/i }),
+      within(panel).getByRole("button", { name: /edit/i }),
     ).toBeInTheDocument();
   });
 
-  it("shows a text input when the rename button is clicked", async () => {
+  it("opens EditNetworkModal when Edit is clicked", async () => {
     render(<NetworksPage />);
     await userEvent.click(screen.getByText("Office LAN").closest("tr")!);
     const panel = screen.getByRole("dialog", { name: /network details/i });
-    await userEvent.click(
-      within(panel).getByRole("button", { name: /rename network/i }),
-    );
-    expect(within(panel).getByRole("textbox")).toBeInTheDocument();
+    await userEvent.click(within(panel).getByRole("button", { name: /edit/i }));
+    expect(
+      screen.getByRole("dialog", { name: /edit network/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows Delete link and then confirm prompt on click", async () => {

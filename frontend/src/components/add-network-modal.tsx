@@ -2,6 +2,7 @@ import { useState, useId } from "react";
 import { X, Loader2 } from "lucide-react";
 import { Button } from "./button";
 import { useCreateNetwork } from "../api/hooks/use-networks";
+import { useToast } from "./toast-provider";
 import { cn } from "../lib/utils";
 
 const DISCOVERY_METHODS = [
@@ -20,6 +21,7 @@ export interface AddNetworkModalProps {
 
 export function AddNetworkModal({ onClose, onCreated }: AddNetworkModalProps) {
   const id = useId();
+  const { toast } = useToast();
 
   const [name, setName] = useState("");
   const [cidr, setCidr] = useState("");
@@ -65,13 +67,15 @@ export function AddNetworkModal({ onClose, onCreated }: AddNetworkModalProps) {
         scan_enabled: scanEnabled,
         is_active: true,
       });
+      toast.success("Network created");
       onCreated?.();
       onClose();
     } catch (err) {
       const apiErr = err as { message?: string; error?: string };
-      setError(
-        apiErr.message ?? apiErr.error ?? "Failed to create network.",
-      );
+      const message =
+        apiErr.message ?? apiErr.error ?? "Failed to create network.";
+      toast.error(message);
+      setError(message);
     }
   }
 

@@ -1,4 +1,5 @@
 import { render, act, type RenderOptions } from "@testing-library/react";
+import { ToastProvider } from "../components/toast-provider";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -75,7 +76,12 @@ export async function renderWithRouter(
   let result!: ReturnType<typeof render>;
 
   await act(async () => {
-    result = render(<RouterProvider router={router} />, options);
+    result = render(
+      <ToastProvider>
+        <RouterProvider router={router} />
+      </ToastProvider>,
+      options,
+    );
   });
 
   return result;

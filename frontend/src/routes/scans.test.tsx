@@ -6,17 +6,26 @@ import { ScansPage } from "./scans";
 vi.mock("../api/hooks/use-scans", () => ({
   useScans: vi.fn(),
   useScanResults: vi.fn(),
+  useStopScan: vi.fn(),
+  useDeleteScan: vi.fn(),
 }));
 
 vi.mock("../api/hooks/use-profiles", () => ({
   useProfile: vi.fn(),
 }));
 
-import { useScans, useScanResults } from "../api/hooks/use-scans";
+import {
+  useScans,
+  useScanResults,
+  useStopScan,
+  useDeleteScan,
+} from "../api/hooks/use-scans";
 import { useProfile } from "../api/hooks/use-profiles";
 
 const mockUseScans = vi.mocked(useScans);
 const mockUseScanResults = vi.mocked(useScanResults);
+const mockUseStopScan = vi.mocked(useStopScan);
+const mockUseDeleteScan = vi.mocked(useDeleteScan);
 const mockUseProfile = vi.mocked(useProfile);
 
 const mockScans = [
@@ -139,6 +148,14 @@ beforeEach(() => {
   mockUseScans.mockReturnValue(makeUseScansResult());
   mockUseScanResults.mockReturnValue(makeUseScanResultsResult());
   mockUseProfile.mockReturnValue(makeUseProfileResult());
+  mockUseStopScan.mockReturnValue({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  } as any);
+  mockUseDeleteScan.mockReturnValue({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  } as any);
 });
 
 describe("ScansPage", () => {
@@ -161,8 +178,6 @@ describe("ScansPage", () => {
       "running",
       "completed",
       "failed",
-      "cancelled",
-      "stopped",
     ]);
   });
 

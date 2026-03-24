@@ -1,8 +1,23 @@
 import { useState, useEffect, useCallback } from "react";
 import { isNotFound } from "../api/errors";
-import { Search, ScanLine, X, Monitor } from "lucide-react";
+import {
+  Search,
+  ScanLine,
+  X,
+  Monitor,
+  Pencil,
+  Check,
+  Trash2,
+} from "lucide-react";
 import { Button } from "../components/button";
-import { useHosts, useHost } from "../api/hooks/use-hosts";
+import {
+  useHosts,
+  useHost,
+  useHostScans,
+  useUpdateHost,
+  useDeleteHost,
+} from "../api/hooks/use-hosts";
+import { useToast } from "../components/toast-provider";
 import {
   StatusBadge,
   Skeleton,
@@ -15,7 +30,22 @@ import type { components } from "../api/types";
 
 type HostResponse = components["schemas"]["docs.HostResponse"];
 
-type PortInfo = NonNullable<HostResponse["ports"]>[number];
+interface PortInfo {
+  port?: number;
+  protocol?: string;
+  state?: string;
+  service?: string;
+  last_seen?: string;
+}
+
+/** Extended host shape — includes fields the API returns but the generated schema omits */
+type HostWithDetails = HostResponse & {
+  ports?: PortInfo[];
+  os_family?: string;
+  os_name?: string;
+  os_version_detail?: string;
+  os_confidence?: number;
+};
 
 const PAGE_SIZE = 25;
 
@@ -42,7 +72,63 @@ function HostDetailPanel({
   onScan: (ip: string) => void;
 }) {
   const { data: full, isLoading, isError, error } = useHost(host.id ?? "");
-  const h = full ?? host;
+  const h = (full ?? host) as HostWithDetails;
+
+  // Hostname editing
+  const [isEditingHostname, setIsEditingHostname] = useState(false);
+  const [hostnameInput, setHostnameInput] = useState("");
+  const [hostnameError, setHostnameError] = useState<string | null>(null);
+
+  // Delete
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Scan history pagination
+  const [scanHistoryPage, setScanHistoryPage] = useState(1);
+  const SCAN_HISTORY_PAGE_SIZE = 5;
+
+  const { toast } = useToast();
+  const { mutateAsync: updateHost, isPending: isUpdatingHost } =
+    useUpdateHost();
+  const { mutateAsync: deleteHost, isPending: isDeletingHost } =
+    useDeleteHost();
+  const { data: hostScansData, isLoading: hostScansLoading } = useHostScans(
+    host.id ?? "",
+    { page: scanHistoryPage, page_size: SCAN_HISTORY_PAGE_SIZE },
+  );
+
+  async function handleSaveHostname() {
+    setHostnameError(null);
+    const trimmed = hostnameInput.trim();
+    try {
+      await updateHost({
+        hostId: h.id ?? "",
+        body: { hostname: trimmed || undefined },
+      });
+      setIsEditingHostname(false);
+      toast.success("Hostname updated");
+    } catch (err) {
+      setHostnameError(err instanceof Error ? err.message : "Update failed.");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update hostname.",
+      );
+    }
+  }
+
+  async function handleDeleteHost() {
+    setDeleteError(null);
+    try {
+      await deleteHost(h.id ?? "");
+      toast.success("Host deleted");
+      onClose();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Delete failed.");
+      setShowDeleteConfirm(false);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to delete host.",
+      );
+    }
+  }
 
   return (
     <>
@@ -93,6 +179,7 @@ function HostDetailPanel({
                 : "Failed to load host details."}
             </p>
           )}
+
           {/* OS Detection */}
           {(isLoading || h.os_family || h.os_name || h.os_version_detail) && (
             <section>
@@ -158,7 +245,68 @@ function HostDetailPanel({
                   label="IP Address"
                   value={<span className="font-mono">{h.ip_address}</span>}
                 />
-                <MetaRow label="Hostname" value={h.hostname} />
+
+                {/* Inline hostname editing */}
+                <div className="flex gap-2 text-xs">
+                  <span className="text-text-muted w-28 shrink-0">
+                    Hostname
+                  </span>
+                  {isEditingHostname ? (
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <input
+                        type="text"
+                        value={hostnameInput}
+                        onChange={(e) => setHostnameInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void handleSaveHostname();
+                          if (e.key === "Escape") setIsEditingHostname(false);
+                        }}
+                        autoFocus
+                        className="flex-1 px-2 py-0.5 text-xs rounded border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-border min-w-0"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveHostname()}
+                        disabled={isUpdatingHost}
+                        aria-label="Save hostname"
+                        className="p-0.5 rounded text-success hover:bg-surface-raised"
+                      >
+                        <Check className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingHostname(false)}
+                        aria-label="Cancel"
+                        className="p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-surface-raised"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-text-secondary break-all">
+                        {h.hostname ?? "—"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingHostname(true);
+                          setHostnameInput(h.hostname ?? "");
+                        }}
+                        aria-label="Edit hostname"
+                        className="p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-surface-raised shrink-0"
+                      >
+                        <Pencil className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {hostnameError && (
+                  <p className="text-[11px] text-danger ml-30">
+                    {hostnameError}
+                  </p>
+                )}
+
                 <MetaRow
                   label="MAC Address"
                   value={
@@ -211,8 +359,7 @@ function HostDetailPanel({
           {/* Ports */}
           <section>
             {(() => {
-              const allPorts =
-                (h as unknown as { ports?: PortInfo[] }).ports ?? [];
+              const allPorts = h.ports ?? [];
               const openPorts = allPorts.filter((p) => p.state === "open");
               const otherPorts = allPorts.filter((p) => p.state !== "open");
               return (
@@ -253,7 +400,9 @@ function HostDetailPanel({
                             )}
                           </div>
                           <span className="text-xs text-text-muted whitespace-nowrap shrink-0">
-                            {formatRelativeTime(p.last_seen)}
+                            {p.last_seen
+                              ? formatRelativeTime(p.last_seen)
+                              : "—"}
                           </span>
                         </div>
                       ))}
@@ -269,7 +418,7 @@ function HostDetailPanel({
                         {otherPorts.map((p) => (
                           <span
                             key={`${p.port}-${p.protocol}`}
-                            title={`${p.protocol} · ${p.state} · last seen ${formatRelativeTime(p.last_seen)}`}
+                            title={`${p.protocol} · ${p.state} · last seen ${p.last_seen ? formatRelativeTime(p.last_seen) : "unknown"}`}
                             className="inline-block px-2 py-0.5 rounded bg-surface-raised text-xs font-mono text-text-muted border border-border"
                           >
                             {p.port}
@@ -282,10 +431,85 @@ function HostDetailPanel({
               );
             })()}
           </section>
+
+          {/* Scan History */}
+          <section>
+            <h3 className="text-xs font-medium text-text-primary mb-3">
+              Scan History
+            </h3>
+            {hostScansLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex gap-2">
+                    <Skeleton className="h-3 w-20 shrink-0" />
+                    <Skeleton className="h-3 w-full" />
+                  </div>
+                ))}
+              </div>
+            ) : (hostScansData?.data ?? []).length === 0 ? (
+              <p className="text-xs text-text-muted">
+                No scan history for this host.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {(hostScansData?.data ?? []).map((scan) => (
+                  <div
+                    key={scan.id}
+                    className="flex items-center justify-between gap-2 py-1 border-b border-border/40 last:border-0"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <StatusBadge status={scan.status ?? "unknown"} />
+                      <span className="text-xs font-mono text-text-muted truncate">
+                        {(scan.targets as string[] | undefined)?.join(", ") ??
+                          "—"}
+                      </span>
+                    </div>
+                    <span className="text-xs text-text-muted whitespace-nowrap shrink-0">
+                      {scan.started_at
+                        ? formatRelativeTime(scan.started_at)
+                        : "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Pagination */}
+            {!hostScansLoading &&
+              (hostScansData?.pagination?.total_pages ?? 0) > 1 && (
+                <div className="flex justify-between items-center mt-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={scanHistoryPage <= 1}
+                    onClick={() =>
+                      setScanHistoryPage((p) => Math.max(1, p - 1))
+                    }
+                    className="text-xs text-text-muted hover:text-text-primary disabled:opacity-40"
+                  >
+                    ← Prev
+                  </button>
+                  <span className="text-xs text-text-muted">
+                    {scanHistoryPage} /{" "}
+                    {hostScansData?.pagination?.total_pages ?? 1}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={
+                      scanHistoryPage >=
+                      (hostScansData?.pagination?.total_pages ?? 1)
+                    }
+                    onClick={() => setScanHistoryPage((p) => p + 1)}
+                    className="text-xs text-text-muted hover:text-text-primary disabled:opacity-40"
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
+          </section>
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-border shrink-0">
+        <div className="px-5 py-3 border-t border-border shrink-0 space-y-2">
           <Button
             icon={<ScanLine className="h-3.5 w-3.5" />}
             onClick={() => {
@@ -296,6 +520,42 @@ function HostDetailPanel({
           >
             Scan this host
           </Button>
+
+          {deleteError && (
+            <p className="text-[11px] text-danger">{deleteError}</p>
+          )}
+
+          {!showDeleteConfirm ? (
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="w-full flex items-center justify-center gap-1.5 text-xs text-text-muted hover:text-danger transition-colors py-1"
+            >
+              <Trash2 className="h-3 w-3" />
+              Delete host
+            </button>
+          ) : (
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-xs text-text-muted">
+                Permanently delete?
+              </span>
+              <Button
+                variant="danger"
+                onClick={() => void handleDeleteHost()}
+                loading={isDeletingHost}
+                className="text-xs h-6 px-2"
+              >
+                Confirm
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="text-xs h-6 px-2"
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -524,7 +784,7 @@ export function HostsPage() {
                         {host.mac_address ?? "—"}
                       </td>
                       <td className="py-3 pr-4">
-                        <PortTags ports={host.ports} />
+                        <PortTags ports={(host as HostWithDetails).ports} />
                       </td>
                       <td className="py-3 pr-4 text-text-muted whitespace-nowrap">
                         {host.last_seen

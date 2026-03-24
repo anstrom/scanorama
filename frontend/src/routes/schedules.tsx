@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Pencil } from "lucide-react";
 import { Button } from "../components/button";
 import {
   useSchedules,
@@ -8,8 +8,14 @@ import {
   useDeleteSchedule,
 } from "../api/hooks/use-schedules";
 import { Skeleton, PaginationBar } from "../components";
-import { CreateScheduleModal } from "../components/create-schedule-modal";
-import { formatRelativeTime, formatAbsoluteTime, cn, describeCron } from "../lib/utils";
+import { ScheduleFormModal } from "../components/create-schedule-modal";
+import { useToast } from "../components/toast-provider";
+import {
+  formatRelativeTime,
+  formatAbsoluteTime,
+  cn,
+  describeCron,
+} from "../lib/utils";
 import type { components } from "../api/types";
 
 type ScheduleResponse = components["schemas"]["docs.ScheduleResponse"];
@@ -90,6 +96,9 @@ function ScheduleDetailPanel({
 }: ScheduleDetailPanelProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+
+  const { toast } = useToast();
 
   const { mutateAsync: enableSchedule, isPending: isEnabling } =
     useEnableSchedule();
@@ -99,18 +108,22 @@ function ScheduleDetailPanel({
     useDeleteSchedule();
 
   const isToggling = isEnabling || isDisabling;
-  const targetList = s.targets ?? [];
+  const targetList = (s as unknown as { targets?: string[] }).targets ?? [];
 
   async function handleToggleEnabled() {
     setActionError(null);
     try {
       if (s.enabled) {
         await disableSchedule(s.id ?? "");
+        toast.success("Schedule disabled");
       } else {
         await enableSchedule(s.id ?? "");
+        toast.success("Schedule enabled");
       }
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Action failed.");
+      const msg = err instanceof Error ? err.message : "Action failed.";
+      setActionError(msg);
+      toast.error(msg);
     }
   }
 
@@ -118,10 +131,13 @@ function ScheduleDetailPanel({
     setActionError(null);
     try {
       await deleteSchedule(s.id ?? "");
+      toast.success("Schedule deleted");
       onClose();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Delete failed.");
+      const msg = err instanceof Error ? err.message : "Delete failed.";
+      setActionError(msg);
       setShowDeleteConfirm(false);
+      toast.error(msg);
     }
   }
 
@@ -178,6 +194,15 @@ function ScheduleDetailPanel({
             {s.enabled ? "Disable" : "Enable"}
           </Button>
 
+          <Button
+            variant="secondary"
+            onClick={() => setShowEditModal(true)}
+            className="text-xs h-7 px-3"
+          >
+            <Pencil className="h-3 w-3 mr-1" />
+            Edit
+          </Button>
+
           {!showDeleteConfirm ? (
             <Button
               variant="danger"
@@ -227,9 +252,9 @@ function ScheduleDetailPanel({
             <MetaRow
               label="Expression"
               value={
-                s.cron_expression ? (
-                  <span title={s.cron_expression} className="font-mono">
-                    {describeCron(s.cron_expression)}
+                s.cron_expr ? (
+                  <span title={s.cron_expr} className="font-mono">
+                    {describeCron(s.cron_expr)}
                   </span>
                 ) : (
                   "—"
@@ -239,8 +264,8 @@ function ScheduleDetailPanel({
             <MetaRow
               label="Raw"
               value={
-                s.cron_expression ? (
-                  <span className="font-mono">{s.cron_expression}</span>
+                s.cron_expr ? (
+                  <span className="font-mono">{s.cron_expr}</span>
                 ) : (
                   "—"
                 )
@@ -284,7 +309,12 @@ function ScheduleDetailPanel({
             <h3 className="text-xs font-semibold text-text-primary uppercase tracking-wide">
               Profile
             </h3>
-            <MetaRow label="Profile ID" value={s.profile_id ?? "None"} />
+            <MetaRow
+              label="Profile ID"
+              value={
+                (s as unknown as { profile_id?: string }).profile_id ?? "None"
+              }
+            />
           </section>
 
           {/* Timestamps */}
@@ -303,6 +333,23 @@ function ScheduleDetailPanel({
           </section>
         </div>
       </div>
+
+      {/* Edit modal */}
+      {showEditModal && (
+        <ScheduleFormModal
+          mode="edit"
+          initial={{
+            id: s.id,
+            name: s.name,
+            cron_expr: s.cron_expr,
+            network_id: s.network_id,
+            type: s.type as "scan" | "discovery",
+            enabled: s.enabled,
+          }}
+          onClose={() => setShowEditModal(false)}
+          onSaved={() => setShowEditModal(false)}
+        />
+      )}
     </>
   );
 }
@@ -403,14 +450,16 @@ export function SchedulesPage() {
               </tr>
             ) : (
               schedules.map((schedule) => {
-                const targets = schedule.targets ?? [];
+                const targets =
+                  (schedule as unknown as { targets?: string[] }).targets ?? [];
                 let targetDisplay: string;
                 if (targets.length === 0) {
                   targetDisplay = "—";
                 } else if (targets.length === 1) {
                   targetDisplay = targets[0];
                 } else {
-                  targetDisplay = targets[0] + " +" + (targets.length - 1) + " more";
+                  targetDisplay =
+                    targets[0] + " +" + (targets.length - 1) + " more";
                 }
 
                 return (
@@ -428,10 +477,10 @@ export function SchedulesPage() {
                     </td>
                     <td
                       className="px-4 py-2.5 text-text-secondary font-mono whitespace-nowrap"
-                      title={schedule.cron_expression}
+                      title={schedule.cron_expr}
                     >
-                      {schedule.cron_expression
-                        ? describeCron(schedule.cron_expression)
+                      {schedule.cron_expr
+                        ? describeCron(schedule.cron_expr)
                         : "—"}
                     </td>
                     <td className="px-4 py-2.5 text-text-muted whitespace-nowrap">
@@ -445,7 +494,9 @@ export function SchedulesPage() {
                         : "—"}
                     </td>
                     <td className="px-4 py-2.5">
-                      <ScheduleEnabledBadge enabled={schedule.enabled ?? false} />
+                      <ScheduleEnabledBadge
+                        enabled={schedule.enabled ?? false}
+                      />
                     </td>
                     <td className="px-4 py-2.5 text-text-secondary font-mono whitespace-nowrap">
                       {targetDisplay}
@@ -478,7 +529,8 @@ export function SchedulesPage() {
 
       {/* Create schedule modal */}
       {showCreateModal && (
-        <CreateScheduleModal
+        <ScheduleFormModal
+          mode="create"
           onClose={() => setShowCreateModal(false)}
         />
       )}

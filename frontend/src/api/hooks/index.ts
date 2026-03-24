@@ -1,5 +1,18 @@
-export { useHealth, useStatus, useVersion } from "./use-system";
-export { useHosts, useHost, useActiveHostCount } from "./use-hosts";
+export {
+  useHealth,
+  useStatus,
+  useVersion,
+  useAdminStatus,
+  useWorkers,
+} from "./use-system";
+export {
+  useHosts,
+  useHost,
+  useActiveHostCount,
+  useHostScans,
+  useUpdateHost,
+  useDeleteHost,
+} from "./use-hosts";
 export {
   useNetworks,
   useNetwork,
@@ -7,6 +20,7 @@ export {
   useNetworkExclusions,
   useGlobalExclusions,
   useCreateNetwork,
+  useUpdateNetwork,
   useDeleteNetwork,
   useEnableNetwork,
   useDisableNetwork,
@@ -45,4 +59,7 @@ export {
   useStartScan,
   useRecentScans,
   useScanResults,
+  useStopScan,
+  useDeleteScan,
+  useScanActivity,
 } from "./use-scans";

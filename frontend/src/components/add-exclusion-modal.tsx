@@ -5,6 +5,7 @@ import {
   useCreateNetworkExclusion,
   useCreateGlobalExclusion,
 } from "../api/hooks/use-networks";
+import { useToast } from "./toast-provider";
 import { cn } from "../lib/utils";
 
 export interface AddExclusionModalProps {
@@ -23,6 +24,7 @@ export function AddExclusionModal({
   onCreated,
 }: AddExclusionModalProps) {
   const id = useId();
+  const { toast } = useToast();
 
   const [cidr, setCidr] = useState("");
   const [reason, setReason] = useState("");
@@ -64,11 +66,15 @@ export function AddExclusionModal({
       } else {
         await createGlobalExclusion(body);
       }
+      toast.success("Exclusion added");
       onCreated?.();
       onClose();
     } catch (err) {
       const apiErr = err as { message?: string; error?: string };
-      setError(apiErr.message ?? apiErr.error ?? "Failed to add exclusion.");
+      const message =
+        apiErr.message ?? apiErr.error ?? "Failed to add exclusion.";
+      toast.error(message);
+      setError(message);
     }
   }
 

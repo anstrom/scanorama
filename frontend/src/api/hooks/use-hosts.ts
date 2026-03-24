@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../client";
 import { ApiError } from "../errors";
 
@@ -47,5 +47,62 @@ export function useActiveHostCount() {
       return data?.pagination?.total_items ?? 0;
     },
     refetchInterval: 30_000,
+  });
+}
+
+interface HostScanParams {
+  page?: number;
+  page_size?: number;
+}
+
+export function useHostScans(hostId: string, params: HostScanParams = {}) {
+  return useQuery({
+    queryKey: ["hosts", hostId, "scans", params],
+    queryFn: async () => {
+      const { data, error, response } = await api.GET("/hosts/{hostId}/scans", {
+        params: { path: { hostId }, query: params },
+      });
+      if (error) throw new ApiError(response.status, error);
+      return data;
+    },
+    enabled: !!hostId,
+  });
+}
+
+export function useUpdateHost() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      hostId,
+      body,
+    }: {
+      hostId: string;
+      body: { hostname?: string; tags?: string[]; notes?: string };
+    }) => {
+      const { data, error, response } = await api.PUT("/hosts/{hostId}", {
+        params: { path: { hostId } },
+        body,
+      });
+      if (error) throw new ApiError(response.status, error);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["hosts"] });
+    },
+  });
+}
+
+export function useDeleteHost() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (hostId: string) => {
+      const { error, response } = await api.DELETE("/hosts/{hostId}", {
+        params: { path: { hostId } },
+      });
+      if (error) throw new ApiError(response.status, error);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["hosts"] });
+    },
   });
 }

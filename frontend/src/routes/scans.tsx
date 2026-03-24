@@ -14,14 +14,7 @@ import { cn } from "../lib/utils";
 
 const PAGE_SIZE = 25;
 
-type ScanStatus =
-  | "all"
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "stopped";
+type ScanStatus = "all" | "pending" | "running" | "completed" | "failed";
 
 function SkeletonRows({ count }: { count: number }) {
   return (
@@ -101,8 +94,6 @@ export function ScansPage() {
             <option value="running">Running</option>
             <option value="completed">Completed</option>
             <option value="failed">Failed</option>
-            <option value="cancelled">Cancelled</option>
-            <option value="stopped">Stopped</option>
           </select>
 
           <Button

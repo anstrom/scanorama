@@ -105,7 +105,7 @@ function DiscoveryDetailPanel({ job, onClose }: DetailPanelProps) {
               {title}
             </p>
             <p className="text-xs font-mono text-text-secondary">
-              {job.network ?? "—"}
+              {job.networks ?? "—"}
             </p>
             <StatusBadge status={job.status ?? "unknown"} />
           </div>
@@ -146,7 +146,7 @@ function DiscoveryDetailPanel({ job, onClose }: DetailPanelProps) {
             </h3>
             <div className="space-y-2">
               <MetaRow label="ID" value={job.id} />
-              <MetaRow label="Network" value={job.network} />
+              <MetaRow label="Network" value={job.networks} />
               <MetaRow
                 label="Method"
                 value={
@@ -279,7 +279,7 @@ export function DiscoveryPage() {
                         {job.name ?? "—"}
                       </td>
                       <td className="py-3 pr-4 font-mono text-text-secondary">
-                        {job.network ?? "—"}
+                        {job.networks ?? "—"}
                       </td>
                       <td className="py-3 pr-4 text-text-secondary">
                         {job.method

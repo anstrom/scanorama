@@ -1,9 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { SystemInfoCard } from "./system-info-card";
-import type { components } from "../api/types";
+import type { VersionInfo } from "../api/hooks/use-system";
 
-type VersionResponse = components["schemas"]["docs.VersionResponse"];
+type VersionResponse = VersionInfo;
 
 const releaseVersion: VersionResponse = {
   version: "v1.2.3",

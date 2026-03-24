@@ -14,6 +14,7 @@ vi.mock("../api/hooks/use-networks", () => ({
 
 vi.mock("../api/hooks/use-scans", () => ({
   useRecentScans: vi.fn(),
+  useScanActivity: vi.fn(),
 }));
 
 vi.mock("../api/hooks/use-hosts", () => ({
@@ -22,12 +23,13 @@ vi.mock("../api/hooks/use-hosts", () => ({
 
 import { useVersion } from "../api/hooks/use-system";
 import { useNetworkStats } from "../api/hooks/use-networks";
-import { useRecentScans } from "../api/hooks/use-scans";
+import { useRecentScans, useScanActivity } from "../api/hooks/use-scans";
 import { useActiveHostCount } from "../api/hooks/use-hosts";
 
 const mockUseVersion = vi.mocked(useVersion);
 const mockUseNetworkStats = vi.mocked(useNetworkStats);
 const mockUseRecentScans = vi.mocked(useRecentScans);
+const mockUseScanActivity = vi.mocked(useScanActivity);
 const mockUseActiveHostCount = vi.mocked(useActiveHostCount);
 
 function setupDefaultMocks() {
@@ -71,6 +73,11 @@ function setupDefaultMocks() {
     data: 30,
     isLoading: false,
   } as unknown as ReturnType<typeof useActiveHostCount>);
+
+  mockUseScanActivity.mockReturnValue({
+    data: [],
+    isLoading: false,
+  } as unknown as ReturnType<typeof useScanActivity>);
 }
 
 beforeEach(() => {

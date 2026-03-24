@@ -6,13 +6,14 @@ import {
   useNetworkExclusions,
   useEnableNetwork,
   useDisableNetwork,
-  useRenameNetwork,
   useDeleteNetwork,
   useDeleteExclusion,
 } from "../api/hooks/use-networks";
 import { Skeleton, PaginationBar } from "../components";
 import { AddNetworkModal } from "../components/add-network-modal";
 import { AddExclusionModal } from "../components/add-exclusion-modal";
+import { EditNetworkModal } from "../components/edit-network-modal";
+import { useToast } from "../components/toast-provider";
 import { formatRelativeTime, formatAbsoluteTime, cn } from "../lib/utils";
 import type { components } from "../api/types";
 
@@ -96,6 +97,7 @@ function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
 function ExclusionsSection({ networkId }: { networkId: string }) {
   const [showAdd, setShowAdd] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const { data: exclusions, isLoading } = useNetworkExclusions(networkId);
   const { mutate: deleteExclusion, isPending: isDeleting } =
@@ -109,6 +111,9 @@ function ExclusionsSection({ networkId }: { networkId: string }) {
       return;
     }
     deleteExclusion(id, {
+      onSuccess: () => toast.success("Exclusion removed"),
+      onError: (err) =>
+        toast.error(err instanceof Error ? err.message : "Action failed."),
       onSettled: () => setConfirmDeleteId(null),
     });
   }
@@ -207,18 +212,16 @@ function NetworkDetailPanel({
   network: initialNetwork,
   onClose,
 }: DetailPanelProps) {
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [newName, setNewName] = useState(initialNetwork.name ?? "");
-  const [renameError, setRenameError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+
+  const { toast } = useToast();
 
   const { mutateAsync: enableNetwork, isPending: isEnabling } =
     useEnableNetwork();
   const { mutateAsync: disableNetwork, isPending: isDisabling } =
     useDisableNetwork();
-  const { mutateAsync: renameNetwork, isPending: isRenaming_ } =
-    useRenameNetwork();
   const { mutateAsync: deleteNetwork, isPending: isDeleting } =
     useDeleteNetwork();
 
@@ -232,30 +235,14 @@ function NetworkDetailPanel({
     try {
       if (n.is_active) {
         await disableNetwork(n.id ?? "");
+        toast.success("Network disabled");
       } else {
         await enableNetwork(n.id ?? "");
+        toast.success("Network enabled");
       }
     } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Action failed.");
       setActionError(err instanceof Error ? err.message : "Action failed.");
-    }
-  }
-
-  async function handleRename() {
-    setRenameError(null);
-    const trimmed = newName.trim();
-    if (!trimmed) {
-      setRenameError("Name cannot be empty.");
-      return;
-    }
-    if (trimmed === n.name) {
-      setIsRenaming(false);
-      return;
-    }
-    try {
-      await renameNetwork({ networkId: n.id ?? "", newName: trimmed });
-      setIsRenaming(false);
-    } catch (err) {
-      setRenameError(err instanceof Error ? err.message : "Rename failed.");
     }
   }
 
@@ -263,17 +250,13 @@ function NetworkDetailPanel({
     setActionError(null);
     try {
       await deleteNetwork(n.id ?? "");
+      toast.success("Network deleted");
       onClose();
     } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Action failed.");
       setActionError(err instanceof Error ? err.message : "Delete failed.");
       setShowDeleteConfirm(false);
     }
-  }
-
-  function startRename() {
-    setNewName(n.name ?? "");
-    setRenameError(null);
-    setIsRenaming(true);
   }
 
   return (
@@ -301,59 +284,9 @@ function NetworkDetailPanel({
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border shrink-0">
           <div className="flex flex-col gap-1.5 min-w-0">
             <p className="text-xs text-text-muted">Network</p>
-            {isRenaming ? (
-              <div className="flex items-center gap-1.5 min-w-0">
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void handleRename();
-                    if (e.key === "Escape") setIsRenaming(false);
-                  }}
-                  autoFocus
-                  className={cn(
-                    "px-2 py-1 text-sm rounded border border-border min-w-0 flex-1",
-                    "bg-surface text-text-primary",
-                    "focus:outline-none focus:ring-1 focus:ring-border",
-                  )}
-                />
-                <button
-                  type="button"
-                  onClick={() => void handleRename()}
-                  disabled={isRenaming_}
-                  aria-label="Save name"
-                  className="p-1 rounded text-success hover:bg-surface-raised transition-colors shrink-0"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsRenaming(false)}
-                  aria-label="Cancel rename"
-                  className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-surface-raised transition-colors shrink-0"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 min-w-0">
-                <p className="text-sm font-medium text-text-primary truncate">
-                  {n.name ?? "—"}
-                </p>
-                <button
-                  type="button"
-                  onClick={startRename}
-                  aria-label="Rename network"
-                  className="p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-surface-raised transition-colors shrink-0"
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-            {renameError && (
-              <p className="text-[11px] text-danger">{renameError}</p>
-            )}
+            <p className="text-sm font-medium text-text-primary truncate">
+              {n.name ?? "—"}
+            </p>
             <p className="text-xs font-mono text-text-secondary">
               {n.cidr ?? "—"}
             </p>
@@ -386,6 +319,15 @@ function NetworkDetailPanel({
                 <Check className="h-3 w-3 mr-1" /> Enable
               </>
             )}
+          </Button>
+
+          <Button
+            variant="secondary"
+            onClick={() => setShowEditModal(true)}
+            className="text-xs h-7 px-3"
+          >
+            <Pencil className="h-3 w-3 mr-1" />
+            Edit
           </Button>
 
           {showDeleteConfirm ? (
@@ -503,6 +445,14 @@ function NetworkDetailPanel({
           {n.id && <ExclusionsSection networkId={n.id} />}
         </div>
       </div>
+
+      {showEditModal && (
+        <EditNetworkModal
+          network={n}
+          onClose={() => setShowEditModal(false)}
+          onSaved={() => setShowEditModal(false)}
+        />
+      )}
     </>
   );
 }
@@ -519,7 +469,9 @@ export function NetworksPage() {
   const [showAddNetwork, setShowAddNetwork] = useState(false);
 
   // Debounce name search
-  const debounceRef = { current: 0 as unknown as ReturnType<typeof setTimeout> };
+  const debounceRef = {
+    current: 0 as unknown as ReturnType<typeof setTimeout>,
+  };
   const handleNameInput = useCallback(
     (value: string) => {
       setNameSearch(value);

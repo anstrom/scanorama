@@ -6,6 +6,7 @@ import { useActiveHostCount } from "../api/hooks/use-hosts";
 import { StatCard } from "../components/stat-card";
 import { SystemInfoCard } from "../components/system-info-card";
 import { RecentScansTable } from "../components/recent-scans-table";
+import { ScanActivityChart } from "../components/scan-activity-chart";
 import { ScanDetailPanel } from "../components";
 import { Network, Server, MonitorCheck, ShieldOff } from "lucide-react";
 import type { components } from "../api/types";
@@ -58,6 +59,11 @@ export function DashboardPage() {
             loading={statsLoading}
           />
         </div>
+      </div>
+
+      {/* Scan activity chart */}
+      <div className="mb-6">
+        <ScanActivityChart />
       </div>
 
       {/* Recent scans */}

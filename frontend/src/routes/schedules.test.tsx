@@ -10,6 +10,7 @@ vi.mock("../api/hooks/use-schedules", () => ({
   useEnableSchedule: vi.fn(),
   useDisableSchedule: vi.fn(),
   useDeleteSchedule: vi.fn(),
+  useUpdateSchedule: vi.fn(),
 }));
 
 vi.mock("../components/create-schedule-modal", () => ({
@@ -25,6 +26,13 @@ vi.mock("../components/create-schedule-modal", () => ({
       </button>
     </div>
   ),
+  ScheduleFormModal: ({ onClose }: { onClose: () => void; mode?: string }) => (
+    <div role="dialog" aria-label="Schedule Form">
+      <button type="button" onClick={onClose}>
+        Close modal
+      </button>
+    </div>
+  ),
 }));
 
 import {
@@ -32,12 +40,14 @@ import {
   useEnableSchedule,
   useDisableSchedule,
   useDeleteSchedule,
+  useUpdateSchedule,
 } from "../api/hooks/use-schedules";
 
 const mockUseSchedules = vi.mocked(useSchedules);
 const mockUseEnableSchedule = vi.mocked(useEnableSchedule);
 const mockUseDisableSchedule = vi.mocked(useDisableSchedule);
 const mockUseDeleteSchedule = vi.mocked(useDeleteSchedule);
+const mockUseUpdateSchedule = vi.mocked(useUpdateSchedule);
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -45,7 +55,7 @@ const mockSchedules = [
   {
     id: "sched-1",
     name: "Daily Scan",
-    cron_expression: "0 2 * * *",
+    cron_expr: "0 2 * * *",
     enabled: true,
     targets: ["192.168.1.0/24", "10.0.0.0/8"],
     next_run: new Date(Date.now() + 3_600_000).toISOString(),
@@ -57,7 +67,7 @@ const mockSchedules = [
   {
     id: "sched-2",
     name: "Weekly Recon",
-    cron_expression: "0 0 * * 1",
+    cron_expr: "0 0 * * 1",
     enabled: false,
     targets: ["172.16.0.0/16"],
     next_run: undefined,
@@ -69,7 +79,7 @@ const mockSchedules = [
   {
     id: "sched-3",
     name: "Hourly Check",
-    cron_expression: "0 * * * *",
+    cron_expr: "0 * * * *",
     enabled: true,
     targets: [],
     next_run: undefined,
@@ -117,6 +127,9 @@ beforeEach(() => {
   );
   mockUseDeleteSchedule.mockReturnValue(
     idleMutation as unknown as ReturnType<typeof useDeleteSchedule>,
+  );
+  mockUseUpdateSchedule.mockReturnValue(
+    idleMutation as unknown as ReturnType<typeof useUpdateSchedule>,
   );
 });
 
@@ -398,25 +411,27 @@ describe("SchedulesPage — detail panel", () => {
 // ── Add modal ─────────────────────────────────────────────────────────────────
 
 describe("SchedulesPage — add modal", () => {
-  it("opens CreateScheduleModal when Create schedule is clicked", async () => {
+  it("opens ScheduleFormModal when Create schedule is clicked", async () => {
     render(<SchedulesPage />);
     await userEvent.click(
       screen.getByRole("button", { name: /create schedule/i }),
     );
     expect(
-      screen.getByRole("dialog", { name: /create schedule/i }),
+      screen.getByRole("dialog", { name: /schedule form/i }),
     ).toBeInTheDocument();
   });
 
-  it("closes CreateScheduleModal when its close button is clicked", async () => {
+  it("closes ScheduleFormModal when its close button is clicked", async () => {
     render(<SchedulesPage />);
     await userEvent.click(
       screen.getByRole("button", { name: /create schedule/i }),
     );
-    const modal = screen.getByRole("dialog", { name: /create schedule/i });
-    await userEvent.click(within(modal).getByRole("button", { name: /close modal/i }));
+    const modal = screen.getByRole("dialog", { name: /schedule form/i });
+    await userEvent.click(
+      within(modal).getByRole("button", { name: /close modal/i }),
+    );
     expect(
-      screen.queryByRole("dialog", { name: /create schedule/i }),
+      screen.queryByRole("dialog", { name: /schedule form/i }),
     ).not.toBeInTheDocument();
   });
 });
