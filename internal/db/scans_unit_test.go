@@ -16,6 +16,225 @@ import (
 	"github.com/anstrom/scanorama/internal/errors"
 )
 
+// ── updateScanJob (direct) ────────────────────────────────────────────────────
+
+func TestUpdateScanJob_Unit(t *testing.T) {
+	ctx := context.Background()
+	id := uuid.New()
+
+	t.Run("no fields — no-op returns nil", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		// No SQL should fire.
+		err := updateScanJob(ctx, db.DB, id, UpdateScanInput{})
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("status only", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		status := "completed"
+		mock.ExpectExec(`UPDATE scan_jobs`).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		err := updateScanJob(ctx, db.DB, id, UpdateScanInput{Status: &status})
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("profile_id only", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		profile := "linux-server"
+		mock.ExpectExec(`UPDATE scan_jobs`).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		err := updateScanJob(ctx, db.DB, id, UpdateScanInput{ProfileID: &profile})
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("status and profile_id together", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		status := "failed"
+		profile := "windows-server"
+		mock.ExpectExec(`UPDATE scan_jobs`).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		err := updateScanJob(ctx, db.DB, id, UpdateScanInput{
+			Status: &status, ProfileID: &profile,
+		})
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("db error is wrapped", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		status := "completed"
+		mock.ExpectExec(`UPDATE scan_jobs`).
+			WillReturnError(fmt.Errorf("connection lost"))
+
+		err := updateScanJob(ctx, db.DB, id, UpdateScanInput{Status: &status})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update scan job")
+	})
+}
+
+// ── GetScanResults ────────────────────────────────────────────────────────────
+
+var scanResultColumns = []string{
+	"id", "job_id", "host_id", "host_ip",
+	"port", "protocol", "state", "service_name",
+	"scanned_at", "os_name", "os_family", "os_version", "os_confidence",
+}
+
+func TestGetScanResults_Unit(t *testing.T) {
+	ctx := context.Background()
+	scanID := uuid.New()
+	now := time.Now().UTC()
+
+	t.Run("count query error propagates", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnError(fmt.Errorf("count failed"))
+
+		_, _, err := NewScanRepository(db).GetScanResults(ctx, scanID, 0, 10)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get scan results count")
+	})
+
+	t.Run("list query error propagates", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+		mock.ExpectQuery(`SELECT`).
+			WillReturnError(fmt.Errorf("query failed"))
+
+		_, _, err := NewScanRepository(db).GetScanResults(ctx, scanID, 0, 10)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "query scan results")
+	})
+
+	t.Run("empty result returns zero total and nil slice", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`SELECT`).
+			WillReturnRows(sqlmock.NewRows(scanResultColumns))
+
+		results, total, err := NewScanRepository(db).GetScanResults(ctx, scanID, 0, 10)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), total)
+		assert.Empty(t, results)
+	})
+
+	t.Run("returns rows correctly — service_name nil becomes empty string", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		resultID := uuid.New()
+		hostID := uuid.New()
+
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+		mock.ExpectQuery(`SELECT`).WillReturnRows(
+			sqlmock.NewRows(scanResultColumns).AddRow(
+				resultID, scanID, hostID, "10.0.0.1",
+				80, "tcp", "open", nil,
+				now, "Linux", "linux", "5.15", 90,
+			))
+
+		results, total, err := NewScanRepository(db).GetScanResults(ctx, scanID, 0, 10)
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), total)
+		require.Len(t, results, 1)
+		assert.Equal(t, resultID, results[0].ID)
+		assert.Equal(t, scanID, results[0].ScanID)
+		assert.Equal(t, "10.0.0.1", results[0].HostIP)
+		assert.Equal(t, 80, results[0].Port)
+		assert.Equal(t, "tcp", results[0].Protocol)
+		assert.Equal(t, "open", results[0].State)
+		assert.Equal(t, "", results[0].Service) // nil → ""
+		assert.Equal(t, "Linux", results[0].OSName)
+		assert.Equal(t, 90, *results[0].OSConfidence)
+	})
+
+	t.Run("returns rows correctly — service_name populated", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		svc := "http"
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+		mock.ExpectQuery(`SELECT`).WillReturnRows(
+			sqlmock.NewRows(scanResultColumns).AddRow(
+				uuid.New(), scanID, uuid.New(), "192.168.1.1",
+				443, "tcp", "open", &svc,
+				now, "", "", "", nil,
+			))
+
+		results, _, err := NewScanRepository(db).GetScanResults(ctx, scanID, 0, 10)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		assert.Equal(t, "http", results[0].Service)
+		assert.Nil(t, results[0].OSConfidence)
+	})
+}
+
+// ── GetScanSummary ────────────────────────────────────────────────────────────
+
+func TestGetScanSummary_Unit(t *testing.T) {
+	ctx := context.Background()
+	scanID := uuid.New()
+
+	t.Run("no port_scans rows returns zero-value summary without error", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT`).
+			WillReturnError(sql.ErrNoRows)
+
+		summary, err := NewScanRepository(db).GetScanSummary(ctx, scanID)
+		require.NoError(t, err)
+		require.NotNil(t, summary)
+		assert.Equal(t, scanID, summary.ScanID)
+		assert.Equal(t, 0, summary.TotalHosts)
+		assert.Equal(t, 0, summary.OpenPorts)
+		assert.Equal(t, int64(0), summary.Duration)
+	})
+
+	t.Run("db error propagates", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT`).
+			WillReturnError(fmt.Errorf("connection reset"))
+
+		_, err := NewScanRepository(db).GetScanSummary(ctx, scanID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "get scan summary")
+	})
+
+	t.Run("returns aggregated stats — nil duration_seconds stays zero", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT`).WillReturnRows(
+			sqlmock.NewRows([]string{
+				"total_hosts", "total_ports", "open_ports", "closed_ports", "duration_seconds",
+			}).AddRow(3, 12, 5, 7, nil))
+
+		summary, err := NewScanRepository(db).GetScanSummary(ctx, scanID)
+		require.NoError(t, err)
+		assert.Equal(t, 3, summary.TotalHosts)
+		assert.Equal(t, 12, summary.TotalPorts)
+		assert.Equal(t, 5, summary.OpenPorts)
+		assert.Equal(t, 7, summary.ClosedPorts)
+		assert.Equal(t, int64(0), summary.Duration)
+	})
+
+	t.Run("returns aggregated stats — duration_seconds populated", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		dur := 42
+		mock.ExpectQuery(`SELECT`).WillReturnRows(
+			sqlmock.NewRows([]string{
+				"total_hosts", "total_ports", "open_ports", "closed_ports", "duration_seconds",
+			}).AddRow(1, 4, 2, 2, &dur))
+
+		summary, err := NewScanRepository(db).GetScanSummary(ctx, scanID)
+		require.NoError(t, err)
+		assert.Equal(t, int64(42), summary.Duration)
+	})
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 // scanColumns are the columns returned by the ListScans / processScanRow query.
