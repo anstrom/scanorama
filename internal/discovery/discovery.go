@@ -394,14 +394,14 @@ func (e *Engine) buildNmapLibraryOptions(targets []string, config *Config, timeo
 
 	// Add method-specific options
 	switch config.Method {
-	case "tcp":
-		// TCP SYN ping (includes CI service ports)
+	case "tcp", "tcp_connect":
+		// TCP SYN ping on common ports
 		options = append(options, nmap.WithSYNDiscovery("22", "80", "443", "8080", "8022", "8379"))
-	case "ping":
+	case "ping", "icmp":
 		// ICMP echo ping
 		options = append(options, nmap.WithICMPEchoDiscovery())
 	case "arp":
-		// ARP ping for local networks - no direct library equivalent available
+		// ARP ping for local networks
 		options = append(options, nmap.WithCustomArguments("-PR")) //nolint:staticcheck
 	}
 
