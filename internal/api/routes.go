@@ -29,7 +29,8 @@ func (s *Server) setupRoutes() {
 		services.NewProfileService(db.NewProfileRepository(s.database), s.logger), s.logger, s.metrics)
 	scheduleHandler := apihandlers.NewScheduleHandler(
 		services.NewScheduleService(db.NewScheduleRepository(s.database), s.logger), s.logger, s.metrics)
-	networkHandler := apihandlers.NewNetworkHandler(services.NewNetworkService(s.database), s.logger, s.metrics)
+	networkHandler := apihandlers.NewNetworkHandler(services.NewNetworkService(s.database), s.logger, s.metrics).
+		WithDiscovery(db.NewDiscoveryRepository(s.database), s.discoveryEngine)
 	handlerManager := apihandlers.New(s.database, s.logger, s.metrics)
 
 	s.setupScanRoutes(api, scanHandler)
@@ -123,6 +124,8 @@ func (s *Server) setupNetworkRoutes(api *mux.Router, h *apihandlers.NetworkHandl
 	api.HandleFunc("/networks/{id}/rename", h.RenameNetwork).Methods("PUT")
 	api.HandleFunc("/networks/{id}/exclusions", h.ListNetworkExclusions).Methods("GET")
 	api.HandleFunc("/networks/{id}/exclusions", h.CreateNetworkExclusion).Methods("POST")
+	api.HandleFunc("/networks/{id}/discover", h.StartNetworkDiscovery).Methods("POST")
+	api.HandleFunc("/networks/{id}/discovery", h.ListNetworkDiscoveryJobs).Methods("GET")
 	api.HandleFunc("/exclusions", h.ListGlobalExclusions).Methods("GET")
 	api.HandleFunc("/exclusions", h.CreateGlobalExclusion).Methods("POST")
 	api.HandleFunc("/exclusions/{id}", h.DeleteExclusion).Methods("DELETE")

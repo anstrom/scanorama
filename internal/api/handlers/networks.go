@@ -1,21 +1,27 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/discovery"
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/anstrom/scanorama/internal/services"
+	"github.com/google/uuid"
 )
 
 // NetworkHandler handles network-related API requests.
 type NetworkHandler struct {
 	*BaseHandler
-	service NetworkServicer
+	service        NetworkServicer
+	discoveryStore DiscoveryStore
+	engine         *discovery.Engine
 }
 
 // NewNetworkHandler creates a new network handler.
@@ -26,6 +32,14 @@ func NewNetworkHandler(
 		BaseHandler: NewBaseHandler(logger, metricsRegistry),
 		service:     service,
 	}
+}
+
+// WithDiscovery injects the discovery store and engine so that
+// POST /networks/{id}/discover can create and immediately run a discovery job.
+func (h *NetworkHandler) WithDiscovery(store DiscoveryStore, engine *discovery.Engine) *NetworkHandler {
+	h.discoveryStore = store
+	h.engine = engine
+	return h
 }
 
 // CreateNetworkRequest represents the request body for creating a network.
@@ -568,7 +582,220 @@ func (h *NetworkHandler) CreateGlobalExclusion(w http.ResponseWriter, r *http.Re
 	recordCRUDMetric(h.metrics, "global_exclusions_created", nil)
 }
 
-// DeleteExclusion handles DELETE /api/v1/exclusions/{id}.
+// StartNetworkDiscovery handles POST /api/v1/networks/{id}/discover.
+// It creates a discovery job from the network's own CIDR and discovery_method,
+// immediately starts it, and returns the running job.
+//
+//	@Summary		Start a discovery run for a network
+//	@Description	Creates a discovery job linked to the network, immediately transitions it to running,
+//	@Description	and returns the job. If a discovery engine is configured the scan executes asynchronously.
+//	@Tags			networks
+//	@Produce		json
+//	@Param			id	path		string	true	"Network UUID"
+//	@Success		202	{object}	DiscoveryResponse
+//	@Failure		400	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Failure		503	{object}	ErrorResponse
+//	@Router			/networks/{id}/discover [post]
+func (h *NetworkHandler) StartNetworkDiscovery(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
+
+	if h.discoveryStore == nil {
+		writeError(w, r, http.StatusServiceUnavailable,
+			fmt.Errorf("discovery is not configured on this server"))
+		return
+	}
+
+	networkID, err := extractUUIDFromPath(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	// Look up the registered network to get its CIDR and preferred method.
+	nwe, err := h.service.GetNetworkByID(r.Context(), networkID)
+	if err != nil {
+		handleDatabaseError(w, r, err, "get", "network", h.logger)
+		return
+	}
+	network := nwe.Network
+
+	cidr := network.CIDR.String()
+	method := network.DiscoveryMethod
+	if method == "" {
+		method = "tcp"
+	}
+
+	// Create the discovery job.
+	job, err := h.discoveryStore.CreateDiscoveryJob(r.Context(), db.CreateDiscoveryJobInput{
+		Networks: []string{cidr},
+		Method:   method,
+	})
+	if err != nil {
+		h.logger.Error("Failed to create discovery job for network",
+			"request_id", requestID, "network_id", networkID, "error", err)
+		writeError(w, r, http.StatusInternalServerError,
+			fmt.Errorf("failed to create discovery job: %w", err))
+		return
+	}
+
+	// Transition the job to running.
+	if err := h.discoveryStore.StartDiscoveryJob(r.Context(), job.ID); err != nil {
+		h.logger.Error("Failed to start discovery job",
+			"request_id", requestID, "job_id", job.ID, "error", err)
+		writeError(w, r, http.StatusInternalServerError,
+			fmt.Errorf("failed to start discovery job: %w", err))
+		return
+	}
+
+	// If an engine is wired up, run the actual nmap scan in the background.
+	h.executeNetworkDiscoveryAsync(requestID, job.ID, cidr, method)
+
+	// Return the freshly-started job.
+	updated, err := h.discoveryStore.GetDiscoveryJob(r.Context(), job.ID)
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError,
+			fmt.Errorf("failed to retrieve started discovery job: %w", err))
+		return
+	}
+
+	h.logger.Info("Network discovery started",
+		"request_id", requestID,
+		"network_id", networkID,
+		"job_id", job.ID,
+		"cidr", cidr,
+		"method", method)
+
+	writeJSON(w, r, http.StatusAccepted, discoveryJobToResponse(updated))
+
+	if h.metrics != nil {
+		h.metrics.Counter("api_network_discovery_started_total", nil)
+	}
+}
+
+// executeNetworkDiscoveryAsync fires off the nmap scan for a network discovery
+// job in a background goroutine, mirroring DiscoveryHandler.executeDiscoveryAsync.
+// When no engine is configured the job stays "running" but no scan executes.
+func (h *NetworkHandler) executeNetworkDiscoveryAsync(requestID string, jobID uuid.UUID, cidr, method string) {
+	if h.engine == nil {
+		h.logger.Warn("No discovery engine configured — job marked running but no scan will execute",
+			"request_id", requestID, "job_id", jobID)
+		return
+	}
+
+	engine := h.engine
+	store := h.discoveryStore
+	go func() {
+		bgCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		cfg := &discovery.Config{
+			Network:  cidr,
+			Method:   method,
+			MaxHosts: 10000,
+		}
+		engineJob, err := engine.Discover(bgCtx, cfg)
+		if err != nil {
+			_ = store.StopDiscoveryJob(context.Background(), jobID)
+			return
+		}
+		if engineJob != nil {
+			_ = engine.WaitForCompletion(context.Background(), engineJob.ID, 10*time.Minute)
+		}
+		completed := db.DiscoveryJobStatusCompleted
+		now := time.Now().UTC()
+		_, _ = store.UpdateDiscoveryJob(context.Background(), jobID, db.UpdateDiscoveryJobInput{
+			Status:      &completed,
+			CompletedAt: &now,
+		})
+	}()
+}
+
+// discoveryJobToResponse converts a db.DiscoveryJob to a DiscoveryResponse.
+// This is a package-level helper shared between DiscoveryHandler and NetworkHandler.
+func discoveryJobToResponse(job *db.DiscoveryJob) DiscoveryResponse {
+	resp := DiscoveryResponse{
+		ID:         job.ID,
+		Networks:   []string{job.Network.String()},
+		Method:     job.Method,
+		Enabled:    job.Status != db.DiscoveryJobStatusFailed,
+		Status:     job.Status,
+		HostsFound: job.HostsDiscovered,
+		CreatedAt:  job.CreatedAt,
+		UpdatedAt:  job.CreatedAt,
+	}
+	switch job.Status {
+	case db.DiscoveryJobStatusCompleted:
+		resp.Progress = 100.0
+	case db.DiscoveryJobStatusRunning:
+		resp.Progress = 5.0 // minimal progress indicator; real progress is in DiscoveryHandler
+	}
+	if job.StartedAt != nil {
+		resp.LastRun = job.StartedAt
+	}
+	return resp
+}
+
+// ListNetworkDiscoveryJobs handles GET /api/v1/networks/{id}/discovery.
+// Returns a paginated list of discovery jobs linked to the specified network,
+// ordered most-recent first.
+//
+//	@Summary		List discovery jobs for a network
+//	@Description	Returns paginated history of discovery runs linked to the network.
+//	@Tags			networks
+//	@Produce		json
+//	@Param			id		path		string	true	"Network UUID"
+//	@Param			page		query		int		false	"Page number (default 1)"
+//	@Param			page_size	query		int		false	"Page size (default 50, max 100)"
+//	@Success		200		{object}	PaginatedResponse
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		503		{object}	ErrorResponse
+//	@Router			/networks/{id}/discovery [get]
+func (h *NetworkHandler) ListNetworkDiscoveryJobs(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
+
+	if h.discoveryStore == nil {
+		writeError(w, r, http.StatusServiceUnavailable,
+			fmt.Errorf("discovery is not configured on this server"))
+		return
+	}
+
+	networkID, err := extractUUIDFromPath(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	params, err := getPaginationParams(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	jobs, total, err := h.discoveryStore.ListDiscoveryJobsByNetwork(
+		r.Context(), networkID, params.Offset, params.PageSize)
+	if err != nil {
+		h.logger.Error("Failed to list discovery jobs for network",
+			"request_id", requestID, "network_id", networkID, "error", err)
+		handleDatabaseError(w, r, err, "list", "discovery jobs", h.logger)
+		return
+	}
+
+	items := make([]interface{}, len(jobs))
+	for i, job := range jobs {
+		resp := discoveryJobToResponse(job)
+		items[i] = resp
+	}
+
+	h.logger.Info("Listed network discovery jobs",
+		"request_id", requestID,
+		"network_id", networkID,
+		"count", len(jobs),
+		"total", total)
+
+	writePaginatedResponse(w, r, items, params, total)
+}
+
 func (h *NetworkHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 	id, err := extractUUIDFromPath(r)
 	if err != nil {

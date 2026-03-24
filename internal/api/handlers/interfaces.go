@@ -57,6 +57,8 @@ type ScheduleServicer interface {
 type DiscoveryStore interface {
 	ListDiscoveryJobs(ctx context.Context, filters db.DiscoveryFilters, offset, limit int) (
 		[]*db.DiscoveryJob, int64, error)
+	ListDiscoveryJobsByNetwork(ctx context.Context, networkID uuid.UUID, offset, limit int) (
+		[]*db.DiscoveryJob, int64, error)
 	CreateDiscoveryJob(ctx context.Context, input db.CreateDiscoveryJobInput) (*db.DiscoveryJob, error)
 	GetDiscoveryJob(ctx context.Context, id uuid.UUID) (*db.DiscoveryJob, error)
 	UpdateDiscoveryJob(ctx context.Context, id uuid.UUID, input db.UpdateDiscoveryJobInput) (*db.DiscoveryJob, error)

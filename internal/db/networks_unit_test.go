@@ -18,7 +18,7 @@ import (
 
 // discoveryJobColumns are the columns returned by ListDiscoveryJobs / GetDiscoveryJob queries.
 var discoveryJobColumns = []string{
-	"id", "network", "method", "started_at", "completed_at",
+	"id", "network_id", "network", "method", "started_at", "completed_at",
 	"hosts_discovered", "hosts_responsive", "status", "created_at",
 }
 
@@ -67,7 +67,7 @@ func TestListDiscoveryJobs(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 		mock.ExpectQuery(`SELECT`).WillReturnRows(
 			sqlmock.NewRows(discoveryJobColumns).AddRow(
-				id, nil, "tcp", nil, nil, 0, 0, "pending", now,
+				id, nil, nil, "tcp", nil, nil, 0, 0, "pending", now,
 			))
 
 		jobs, total, err := NewDiscoveryRepository(db).ListDiscoveryJobs(
@@ -98,7 +98,7 @@ func TestCreateDiscoveryJob(t *testing.T) {
 
 	t.Run("db error propagates", func(t *testing.T) {
 		db, mock := newMockDB(t)
-		mock.ExpectExec(`INSERT INTO discovery_jobs`).
+		mock.ExpectQuery(`INSERT INTO discovery_jobs`).
 			WillReturnError(fmt.Errorf("insert failed"))
 
 		_, err := NewDiscoveryRepository(db).CreateDiscoveryJob(context.Background(), validInput)
@@ -107,8 +107,12 @@ func TestCreateDiscoveryJob(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		db, mock := newMockDB(t)
-		mock.ExpectExec(`INSERT INTO discovery_jobs`).
-			WillReturnResult(sqlmock.NewResult(1, 1))
+		jobID := uuid.New()
+		now := time.Now().UTC()
+		mock.ExpectQuery(`INSERT INTO discovery_jobs`).
+			WillReturnRows(sqlmock.NewRows(discoveryJobColumns).AddRow(
+				jobID, nil, "10.0.0.0/8", "tcp", nil, nil, 0, 0, "pending", now,
+			))
 
 		job, err := NewDiscoveryRepository(db).CreateDiscoveryJob(context.Background(), validInput)
 		require.NoError(t, err)
@@ -147,7 +151,7 @@ func TestGetDiscoveryJob(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectQuery(`SELECT`).WillReturnRows(
 			sqlmock.NewRows(discoveryJobColumns).AddRow(
-				id, "10.0.0.0/8", "tcp", nil, nil, 0, 0, "pending", now,
+				id, nil, "10.0.0.0/8", "tcp", nil, nil, 0, 0, "pending", now,
 			))
 
 		job, err := NewDiscoveryRepository(db).GetDiscoveryJob(context.Background(), id)

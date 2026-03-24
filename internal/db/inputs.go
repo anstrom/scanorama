@@ -3,7 +3,11 @@
 // giving callers compile-time safety and making the available fields explicit.
 package db
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // ── Scan inputs ───────────────────────────────────────────────────────────────
 
@@ -108,10 +112,13 @@ type UpdateScheduleInput struct {
 
 // CreateDiscoveryJobInput holds the data required to create a new discovery
 // job.  Networks must contain at least one CIDR; only the first is used when
-// creating the underlying DB row.
+// creating the underlying DB row.  NetworkID, when set, links the job to a
+// registered network in the networks table so discovery history and stats can
+// be surfaced from the network detail view.
 type CreateDiscoveryJobInput struct {
-	Networks []string
-	Method   string
+	Networks  []string
+	Method    string
+	NetworkID *uuid.UUID // optional FK to registered network
 }
 
 // UpdateDiscoveryJobInput holds the optional fields that may be changed on an

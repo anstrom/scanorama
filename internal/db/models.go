@@ -223,6 +223,7 @@ func (j *JSONB) UnmarshalJSON(data []byte) error {
 // DiscoveryJob represents a network discovery job.
 type DiscoveryJob struct {
 	ID              uuid.UUID   `db:"id" json:"id"`
+	NetworkID       *uuid.UUID  `db:"network_id" json:"network_id,omitempty"`
 	Network         NetworkAddr `db:"network" json:"network"`
 	Method          string      `db:"method" json:"method"`
 	StartedAt       *time.Time  `db:"started_at" json:"started_at,omitempty"`
