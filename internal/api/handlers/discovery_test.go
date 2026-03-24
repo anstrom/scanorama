@@ -763,7 +763,7 @@ func TestDiscoveryHandler_DiscoveryToResponse_Completed(t *testing.T) {
 	assert.Equal(t, 25, response.HostsFound)
 	assert.True(t, response.Enabled)
 	assert.Equal(t, now, response.CreatedAt)
-	assert.Equal(t, &startedAt, response.LastRun)
+	assert.Equal(t, &startedAt, response.StartedAt)
 }
 
 func TestDiscoveryHandler_DiscoveryToResponse_Running(t *testing.T) {
@@ -794,7 +794,7 @@ func TestDiscoveryHandler_DiscoveryToResponse_Running(t *testing.T) {
 	assert.Less(t, response.Progress, 99.0, "progress should be capped below 99 while running")
 	assert.Equal(t, 5, response.HostsFound)
 	assert.True(t, response.Enabled)
-	assert.Equal(t, &startedAt, response.LastRun)
+	assert.Equal(t, &startedAt, response.StartedAt)
 }
 
 func TestDiscoveryHandler_DiscoveryToResponse_Running_ProgressAdvances(t *testing.T) {
@@ -859,7 +859,7 @@ func TestDiscoveryHandler_DiscoveryToResponse_Pending(t *testing.T) {
 	assert.Equal(t, 0.0, response.Progress)
 	assert.Equal(t, 0, response.HostsFound)
 	assert.True(t, response.Enabled)
-	assert.Nil(t, response.LastRun)
+	assert.Nil(t, response.StartedAt)
 }
 
 func TestDiscoveryHandler_DiscoveryToResponse_Failed(t *testing.T) {
