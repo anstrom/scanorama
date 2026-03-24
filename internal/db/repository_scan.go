@@ -518,6 +518,45 @@ func (r *ScanRepository) GetScan(ctx context.Context, id uuid.UUID) (*Scan, erro
 }
 
 // updateScanNetwork updates the networks row linked to a scan job within a transaction.
+// updateHostOnlyScanDetails patches the execution_details JSON column of a
+// scan_job that has no linked network row (network_id IS NULL).  It is
+// automatically a no-op for network-backed scans because of the WHERE clause.
+// When none of the editable metadata fields are present in input it returns
+// immediately without touching the database.
+func updateHostOnlyScanDetails(ctx context.Context, tx interface {
+	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+}, id uuid.UUID, input UpdateScanInput) error {
+	if input.Name == nil && input.Description == nil && input.Ports == nil && input.ScanType == nil {
+		return nil
+	}
+
+	// Convert *string to interface{}: a nil pointer becomes nil which
+	// jsonb_build_object encodes as JSON null; jsonb_strip_nulls then drops
+	// those keys so we never overwrite an existing value with null.
+	val := func(s *string) interface{} {
+		if s == nil {
+			return nil
+		}
+		return *s
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		UPDATE scan_jobs
+		SET execution_details = execution_details || jsonb_strip_nulls(jsonb_build_object(
+			'name',        $1::text,
+			'description', $2::text,
+			'ports',       $3::text,
+			'scan_type',   $4::text
+		))
+		WHERE id = $5
+		  AND network_id IS NULL
+	`, val(input.Name), val(input.Description), val(input.Ports), val(input.ScanType), id)
+	if err != nil {
+		return sanitizeDBError("update host-only scan details", err)
+	}
+	return nil
+}
+
 func updateScanNetwork(ctx context.Context, tx interface {
 	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
 }, id uuid.UUID, input UpdateScanInput) error {
@@ -624,6 +663,9 @@ func (r *ScanRepository) UpdateScan(ctx context.Context, id uuid.UUID, input Upd
 	}
 
 	if err := updateScanNetwork(ctx, tx, id, input); err != nil {
+		return nil, err
+	}
+	if err := updateHostOnlyScanDetails(ctx, tx, id, input); err != nil {
 		return nil, err
 	}
 	if err := updateScanJob(ctx, tx, id, input); err != nil {
