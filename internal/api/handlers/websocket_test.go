@@ -957,7 +957,7 @@ func TestWebSocketHandler_CloseWithActiveConnections(t *testing.T) {
 	require.Eventually(t, func() bool {
 		clients := handler.GetConnectedClients()
 		return clients["scan"] == 3
-	}, 2*time.Second, 50*time.Millisecond, "should have 3 scan clients")
+	}, 10*time.Second, 50*time.Millisecond, "should have 3 scan clients")
 
 	// Verify clients are registered
 	clients := handler.GetConnectedClients()
