@@ -733,7 +733,7 @@ func discoveryJobToResponse(job *db.DiscoveryJob) DiscoveryResponse {
 		resp.Progress = 5.0 // minimal progress indicator; real progress is in DiscoveryHandler
 	}
 	if job.StartedAt != nil {
-		resp.LastRun = job.StartedAt
+		resp.StartedAt = job.StartedAt
 	}
 	return resp
 }

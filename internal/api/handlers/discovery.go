@@ -118,7 +118,7 @@ type DiscoveryResponse struct {
 	Status      string            `json:"status"`
 	Progress    float64           `json:"progress"`
 	HostsFound  int               `json:"hosts_found"`
-	LastRun     *time.Time        `json:"last_run,omitempty"`
+	StartedAt   *time.Time        `json:"started_at,omitempty"`
 	NextRun     *time.Time        `json:"next_run,omitempty"`
 	RunCount    int               `json:"run_count"`
 	ErrorCount  int               `json:"error_count"`
@@ -450,9 +450,6 @@ func (h *DiscoveryHandler) validateDiscoveryRequest(req *DiscoveryRequest) error
 }
 
 func (h *DiscoveryHandler) validateBasicFields(req *DiscoveryRequest) error {
-	if req.Name == "" {
-		return fmt.Errorf("discovery job name is required")
-	}
 	if len(req.Name) > maxDiscoveryNameLength {
 		return fmt.Errorf("discovery job name too long (max %d characters)", maxDiscoveryNameLength)
 	}
@@ -576,9 +573,8 @@ func (h *DiscoveryHandler) discoveryToResponse(job *db.DiscoveryJob) DiscoveryRe
 		resp.Progress = 0.0
 	}
 
-	// Map started_at as last_run
 	if job.StartedAt != nil {
-		resp.LastRun = job.StartedAt
+		resp.StartedAt = job.StartedAt
 	}
 
 	return resp
