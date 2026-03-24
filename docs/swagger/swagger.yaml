@@ -1679,6 +1679,95 @@ paths:
       summary: Disable network
       tags:
       - Networks
+  /networks/{networkId}/discover:
+    post:
+      description: Creates a discovery job linked to the network, immediately transitions
+        it to running, and returns the job. If a discovery engine is configured the
+        actual nmap scan executes asynchronously.
+      operationId: startNetworkDiscovery
+      parameters:
+      - description: Network ID
+        format: uuid
+        in: path
+        name: networkId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/docs.DiscoveryJobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Start a discovery run for a network
+      tags:
+      - Networks
+  /networks/{networkId}/discovery:
+    get:
+      description: Returns paginated history of discovery runs linked to the network,
+        ordered most-recent first.
+      operationId: listNetworkDiscoveryJobs
+      parameters:
+      - description: Network ID
+        format: uuid
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Page size (default 50, max 100)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.PaginatedDiscoveryJobsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List discovery jobs for a network
+      tags:
+      - Networks
   /networks/{networkId}/enable:
     post:
       description: Enable a network for scanning and discovery

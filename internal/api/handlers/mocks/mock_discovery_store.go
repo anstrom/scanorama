@@ -198,6 +198,46 @@ func (c *MockDiscoveryStoreListDiscoveryJobsCall) DoAndReturn(f func(context.Con
 	return c
 }
 
+// ListDiscoveryJobsByNetwork mocks base method.
+func (m *MockDiscoveryStore) ListDiscoveryJobsByNetwork(ctx context.Context, networkID uuid.UUID, offset, limit int) ([]*db.DiscoveryJob, int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListDiscoveryJobsByNetwork", ctx, networkID, offset, limit)
+	ret0, _ := ret[0].([]*db.DiscoveryJob)
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListDiscoveryJobsByNetwork indicates an expected call of ListDiscoveryJobsByNetwork.
+func (mr *MockDiscoveryStoreMockRecorder) ListDiscoveryJobsByNetwork(ctx, networkID, offset, limit any) *MockDiscoveryStoreListDiscoveryJobsByNetworkCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListDiscoveryJobsByNetwork", reflect.TypeOf((*MockDiscoveryStore)(nil).ListDiscoveryJobsByNetwork), ctx, networkID, offset, limit)
+	return &MockDiscoveryStoreListDiscoveryJobsByNetworkCall{Call: call}
+}
+
+// MockDiscoveryStoreListDiscoveryJobsByNetworkCall wrap *gomock.Call
+type MockDiscoveryStoreListDiscoveryJobsByNetworkCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockDiscoveryStoreListDiscoveryJobsByNetworkCall) Return(arg0 []*db.DiscoveryJob, arg1 int64, arg2 error) *MockDiscoveryStoreListDiscoveryJobsByNetworkCall {
+	c.Call = c.Call.Return(arg0, arg1, arg2)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockDiscoveryStoreListDiscoveryJobsByNetworkCall) Do(f func(context.Context, uuid.UUID, int, int) ([]*db.DiscoveryJob, int64, error)) *MockDiscoveryStoreListDiscoveryJobsByNetworkCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockDiscoveryStoreListDiscoveryJobsByNetworkCall) DoAndReturn(f func(context.Context, uuid.UUID, int, int) ([]*db.DiscoveryJob, int64, error)) *MockDiscoveryStoreListDiscoveryJobsByNetworkCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // StartDiscoveryJob mocks base method.
 func (m *MockDiscoveryStore) StartDiscoveryJob(ctx context.Context, id uuid.UUID) error {
 	m.ctrl.T.Helper()

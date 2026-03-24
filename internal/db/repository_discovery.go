@@ -44,7 +44,7 @@ func (r *DiscoveryRepository) ListDiscoveryJobs(
 	}
 
 	listQuery := `
-		SELECT id, network, method, started_at, completed_at,
+		SELECT id, network_id, network, method, started_at, completed_at,
 		       hosts_discovered, hosts_responsive, status, created_at
 		FROM discovery_jobs
 		WHERE ($1 = '' OR status = $1)
@@ -67,6 +67,7 @@ func (r *DiscoveryRepository) ListDiscoveryJobs(
 		job := &DiscoveryJob{}
 		if err := rows.Scan(
 			&job.ID,
+			&job.NetworkID,
 			&job.Network,
 			&job.Method,
 			&job.StartedAt,
@@ -101,31 +102,34 @@ func (r *DiscoveryRepository) CreateDiscoveryJob(
 		method = DiscoveryMethodTCP
 	}
 
-	// For simplicity, create one discovery job for the first network.
-	// In a production system, you might create multiple jobs or handle multiple networks differently.
 	network := input.Networks[0]
 
 	jobID := uuid.New()
 	now := time.Now().UTC()
 
 	query := `
-		INSERT INTO discovery_jobs (id, network, method, status, created_at, hosts_discovered, hosts_responsive)
-		VALUES ($1, $2, $3, 'pending', $4, 0, 0)
+		INSERT INTO discovery_jobs
+		    (id, network_id, network, method, status, created_at, hosts_discovered, hosts_responsive)
+		VALUES ($1, $2, $3, $4, 'pending', $5, 0, 0)
+		RETURNING id, network_id, network, method, started_at, completed_at,
+		          hosts_discovered, hosts_responsive, status, created_at
 	`
 
-	_, err := r.db.ExecContext(ctx, query, jobID, network, method, now)
+	job := &DiscoveryJob{}
+	err := r.db.QueryRowContext(ctx, query, jobID, input.NetworkID, network, method, now).Scan(
+		&job.ID,
+		&job.NetworkID,
+		&job.Network,
+		&job.Method,
+		&job.StartedAt,
+		&job.CompletedAt,
+		&job.HostsDiscovered,
+		&job.HostsResponsive,
+		&job.Status,
+		&job.CreatedAt,
+	)
 	if err != nil {
 		return nil, sanitizeDBError("create discovery job", err)
-	}
-
-	job := &DiscoveryJob{
-		ID:              jobID,
-		Network:         NetworkAddr{}, // Would need proper parsing.
-		Method:          method,
-		Status:          "pending",
-		CreatedAt:       now,
-		HostsDiscovered: 0,
-		HostsResponsive: 0,
 	}
 
 	return job, nil
@@ -134,7 +138,7 @@ func (r *DiscoveryRepository) CreateDiscoveryJob(
 // GetDiscoveryJob retrieves a discovery job by ID.
 func (r *DiscoveryRepository) GetDiscoveryJob(ctx context.Context, id uuid.UUID) (*DiscoveryJob, error) {
 	query := `
-		SELECT id, network, method, started_at, completed_at,
+		SELECT id, network_id, network, method, started_at, completed_at,
 		       hosts_discovered, hosts_responsive, status, created_at
 		FROM discovery_jobs
 		WHERE id = $1`
@@ -142,6 +146,7 @@ func (r *DiscoveryRepository) GetDiscoveryJob(ctx context.Context, id uuid.UUID)
 	job := &DiscoveryJob{}
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&job.ID,
+		&job.NetworkID,
 		&job.Network,
 		&job.Method,
 		&job.StartedAt,
@@ -223,12 +228,13 @@ func (r *DiscoveryRepository) UpdateDiscoveryJob(
 	queryBuilder.WriteString(strings.Join(setParts, ", "))
 	queryBuilder.WriteString(" WHERE id = $")
 	queryBuilder.WriteString(strconv.Itoa(argIndex))
-	queryBuilder.WriteString(` RETURNING id, network, method, started_at, completed_at,
+	queryBuilder.WriteString(` RETURNING id, network_id, network, method, started_at, completed_at,
 		hosts_discovered, hosts_responsive, status, created_at`)
 
 	job := &DiscoveryJob{}
 	err := r.db.QueryRowContext(ctx, queryBuilder.String(), args...).Scan(
 		&job.ID,
+		&job.NetworkID,
 		&job.Network,
 		&job.Method,
 		&job.StartedAt,
@@ -286,6 +292,61 @@ func (r *DiscoveryRepository) StartDiscoveryJob(ctx context.Context, id uuid.UUI
 	}
 
 	return nil
+}
+
+// ListDiscoveryJobsByNetwork retrieves discovery jobs linked to a specific network,
+// ordered most-recent first, with pagination.
+func (r *DiscoveryRepository) ListDiscoveryJobsByNetwork(
+	ctx context.Context, networkID uuid.UUID, offset, limit int,
+) ([]*DiscoveryJob, int64, error) {
+	var total int64
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM discovery_jobs WHERE network_id = $1`, networkID,
+	).Scan(&total); err != nil {
+		return nil, 0, sanitizeDBError("count discovery jobs by network", err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, network_id, network, method, started_at, completed_at,
+		       hosts_discovered, hosts_responsive, status, created_at
+		FROM discovery_jobs
+		WHERE network_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3`,
+		networkID, limit, offset,
+	)
+	if err != nil {
+		return nil, 0, sanitizeDBError("list discovery jobs by network", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Warn("failed to close rows", "error", err)
+		}
+	}()
+
+	jobs := []*DiscoveryJob{}
+	for rows.Next() {
+		job := &DiscoveryJob{}
+		if err := rows.Scan(
+			&job.ID,
+			&job.NetworkID,
+			&job.Network,
+			&job.Method,
+			&job.StartedAt,
+			&job.CompletedAt,
+			&job.HostsDiscovered,
+			&job.HostsResponsive,
+			&job.Status,
+			&job.CreatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan discovery job row: %w", err)
+		}
+		jobs = append(jobs, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate discovery job rows: %w", err)
+	}
+	return jobs, total, nil
 }
 
 // StopDiscoveryJob stops discovery job execution.

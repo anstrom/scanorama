@@ -1190,3 +1190,37 @@ func CreateGlobalExclusion(_ http.ResponseWriter, _ *http.Request) {}
 // @Router /exclusions/{exclusionId} [delete]
 // @ID deleteExclusion
 func DeleteExclusion(_ http.ResponseWriter, _ *http.Request) {}
+
+// StartNetworkDiscovery godoc
+// @Summary Start a discovery run for a network
+// @Description Creates a discovery job linked to the network, immediately transitions it to running, and returns the job. If a discovery engine is configured the actual nmap scan executes asynchronously.
+// @Tags Networks
+// @Produce json
+// @Param networkId path string true "Network ID" format(uuid)
+// @Success 202 {object} DiscoveryJobResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks/{networkId}/discover [post]
+// @ID startNetworkDiscovery
+func StartNetworkDiscovery(_ http.ResponseWriter, _ *http.Request) {}
+
+// ListNetworkDiscoveryJobs godoc
+// @Summary List discovery jobs for a network
+// @Description Returns paginated history of discovery runs linked to the network, ordered most-recent first.
+// @Tags Networks
+// @Produce json
+// @Param networkId path string true "Network ID" format(uuid)
+// @Param page query int false "Page number (default 1)"
+// @Param page_size query int false "Page size (default 50, max 100)"
+// @Success 200 {object} PaginatedDiscoveryJobsResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /networks/{networkId}/discovery [get]
+// @ID listNetworkDiscoveryJobs
+func ListNetworkDiscoveryJobs(_ http.ResponseWriter, _ *http.Request) {}
