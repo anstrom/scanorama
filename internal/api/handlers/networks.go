@@ -689,24 +689,26 @@ func (h *NetworkHandler) executeNetworkDiscoveryAsync(requestID string, jobID uu
 	go func() {
 		bgCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
+
 		cfg := &discovery.Config{
 			Network:  cidr,
 			Method:   method,
 			MaxHosts: 10000,
 		}
-		engineJob, err := engine.Discover(bgCtx, cfg)
+
+		hostsFound, err := engine.ScanNetwork(bgCtx, cfg)
 		if err != nil {
 			_ = store.StopDiscoveryJob(context.Background(), jobID)
 			return
 		}
-		if engineJob != nil {
-			_ = engine.WaitForCompletion(context.Background(), engineJob.ID, 10*time.Minute)
-		}
+
 		completed := db.DiscoveryJobStatusCompleted
 		now := time.Now().UTC()
 		_, _ = store.UpdateDiscoveryJob(context.Background(), jobID, db.UpdateDiscoveryJobInput{
-			Status:      &completed,
-			CompletedAt: &now,
+			Status:          &completed,
+			CompletedAt:     &now,
+			HostsDiscovered: &hostsFound,
+			HostsResponsive: &hostsFound,
 		})
 	}()
 }

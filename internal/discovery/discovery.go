@@ -128,6 +128,64 @@ func (e *Engine) Discover(ctx context.Context, config *Config) (*db.DiscoveryJob
 	return job, nil
 }
 
+// ScanNetwork performs host discovery for the given config without creating or
+// managing any discovery_jobs DB rows. It validates the config, runs the nmap
+// scan, persists discovered hosts, and returns the number of hosts found.
+// Callers are responsible for updating the job status and counts in the DB.
+func (e *Engine) ScanNetwork(ctx context.Context, cfg *Config) (int, error) {
+	network := cfg.Network
+	if network == "" && len(cfg.Networks) > 0 {
+		network = cfg.Networks[0]
+	}
+	if network == "" {
+		return 0, fmt.Errorf("no network specified for discovery")
+	}
+
+	_, ipnet, err := net.ParseCIDR(network)
+	if err != nil {
+		return 0, fmt.Errorf("invalid network CIDR: %w", err)
+	}
+
+	if err := e.validateNetworkSize(*ipnet); err != nil {
+		return 0, err
+	}
+
+	maxHosts := cfg.MaxHosts
+	if maxHosts <= 0 {
+		maxHosts = 10000
+	}
+
+	targets, err := e.generateTargetsFromCIDR(*ipnet, maxHosts)
+	if err != nil {
+		return 0, fmt.Errorf("failed to generate targets: %w", err)
+	}
+
+	if len(targets) == 0 {
+		slog.Info("no targets to discover")
+		return 0, nil
+	}
+
+	dynamicTimeout := e.calculateDynamicTimeout(len(targets), cfg.Timeout)
+	slog.Info("starting nmap discovery",
+		"targets", len(targets), "method", cfg.Method, "timeout", dynamicTimeout)
+
+	discovered, err := e.nmapDiscoveryWithTargets(ctx, targets, cfg, dynamicTimeout)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(discovered) > 0 {
+		if saveErr := e.saveDiscoveredHosts(ctx, discovered); saveErr != nil {
+			slog.Warn("failed to save some discovered hosts", "error", saveErr)
+		} else {
+			slog.Info("saved discovered hosts to database", "count", len(discovered))
+		}
+	}
+
+	slog.Info("discovery completed", "hosts_discovered", len(discovered))
+	return len(discovered), nil
+}
+
 // validateNetworkSize checks if the network is within acceptable size limits.
 func (e *Engine) validateNetworkSize(ipnet net.IPNet) error {
 	ones, bits := ipnet.Mask.Size()
