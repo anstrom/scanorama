@@ -1,5 +1,14 @@
 import { useState, useCallback } from "react";
-import { Network, Plus, Trash2, X, Pencil, Check, Ban } from "lucide-react";
+import {
+  Network,
+  Plus,
+  Trash2,
+  X,
+  Pencil,
+  Check,
+  Ban,
+  Play,
+} from "lucide-react";
 import { Button } from "../components/button";
 import {
   useNetworks,
@@ -8,6 +17,7 @@ import {
   useDisableNetwork,
   useDeleteNetwork,
   useDeleteExclusion,
+  useStartNetworkDiscovery,
 } from "../api/hooks/use-networks";
 import { Skeleton, PaginationBar } from "../components";
 import { AddNetworkModal } from "../components/add-network-modal";
@@ -224,6 +234,8 @@ function NetworkDetailPanel({
     useDisableNetwork();
   const { mutateAsync: deleteNetwork, isPending: isDeleting } =
     useDeleteNetwork();
+  const { mutateAsync: discoverNetwork, isPending: isDiscovering } =
+    useStartNetworkDiscovery();
 
   const isTogglingActive = isEnabling || isDisabling;
 
@@ -256,6 +268,19 @@ function NetworkDetailPanel({
       toast.error(err instanceof Error ? err.message : "Action failed.");
       setActionError(err instanceof Error ? err.message : "Delete failed.");
       setShowDeleteConfirm(false);
+    }
+  }
+
+  async function handleDiscover() {
+    setActionError(null);
+    try {
+      await discoverNetwork(n.id ?? "");
+      toast.success("Discovery job started");
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Failed to start discovery.";
+      toast.error(msg);
+      setActionError(msg);
     }
   }
 
@@ -328,6 +353,16 @@ function NetworkDetailPanel({
           >
             <Pencil className="h-3 w-3 mr-1" />
             Edit
+          </Button>
+
+          <Button
+            variant="secondary"
+            onClick={() => void handleDiscover()}
+            loading={isDiscovering}
+            className="text-xs h-7 px-3"
+          >
+            <Play className="h-3 w-3 mr-1" />
+            Discover
           </Button>
 
           {showDeleteConfirm ? (

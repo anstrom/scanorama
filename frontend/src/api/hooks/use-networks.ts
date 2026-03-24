@@ -293,3 +293,27 @@ export function useDeleteExclusion() {
     },
   });
 }
+
+export function useStartNetworkDiscovery() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (networkId: string) => {
+      const { data, error } = await api.POST("/networks/{networkId}/discover", {
+        params: { path: { networkId } },
+      });
+      if (error) {
+        const apiError = error as { message?: string; error?: string };
+        throw new Error(
+          apiError.message ??
+            apiError.error ??
+            "Failed to start network discovery.",
+        );
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["discovery"] });
+      queryClient.invalidateQueries({ queryKey: ["networks"] });
+    },
+  });
+}
