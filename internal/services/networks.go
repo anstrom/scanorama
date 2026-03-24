@@ -647,8 +647,13 @@ func (s *NetworkService) CreateNetwork(
 	isActive, scanEnabled bool,
 ) (*db.Network, error) {
 	// Validate CIDR
-	if _, _, err := net.ParseCIDR(cidr); err != nil {
+	_, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
 		return nil, fmt.Errorf("invalid CIDR %s: %w", cidr, err)
+	}
+	ones, bits := ipNet.Mask.Size()
+	if ones == bits {
+		return nil, fmt.Errorf("a /%d address is a single host, not a network — use a broader prefix", ones)
 	}
 
 	// Validate method
@@ -679,7 +684,7 @@ func (s *NetworkService) CreateNetwork(
 			host_count, active_host_count, created_at, updated_at, created_by`
 
 	network := &db.Network{}
-	err := s.database.QueryRowContext(ctx, query, name, cidr, description, method, isActive, scanEnabled).Scan(
+	err = s.database.QueryRowContext(ctx, query, name, cidr, description, method, isActive, scanEnabled).Scan(
 		&network.ID,
 		&network.Name,
 		&network.CIDR,

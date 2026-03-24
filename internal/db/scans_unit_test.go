@@ -20,13 +20,18 @@ import (
 
 // scanColumns are the columns returned by the ListScans / processScanRow query.
 var scanColumns = []string{
-	"id", "name", "description", "targets", "scan_type", "ports",
+	"id", "name", "description", "network_cidr", "scan_type", "ports",
 	"profile_id", "status", "created_at", "started_at", "completed_at",
-	"error_message",
+	"error_message", "execution_details",
 }
 
-// getScanColumns are the columns returned by the GetScan query (two extra: os_detection, execution_details).
-var getScanColumns = append(scanColumns, "os_detection", "execution_details")
+// getScanColumns are the columns returned by GetScan: same as scanColumns but
+// with os_detection inserted before execution_details.
+var getScanColumns = []string{
+	"id", "name", "description", "network_cidr", "scan_type", "ports",
+	"profile_id", "status", "created_at", "started_at", "completed_at",
+	"error_message", "os_detection", "execution_details",
+}
 
 // driverValues converts []interface{} to []driver.Value so it can be spread
 // into sqlmock's AddRow(...driver.Value) variadic parameter.
@@ -52,6 +57,7 @@ func scanRow(id uuid.UUID, name, cidr, scanType, ports, status string, now time.
 		nil, // started_at
 		nil, // completed_at
 		nil, // error_message
+		nil, // execution_details
 	})
 }
 
@@ -90,6 +96,53 @@ func TestBuildScanResponse(t *testing.T) {
 			"connect", "", nil, now)
 		// buildScanResponse does not set PortsScanned; that is done by GetScan.
 		assert.Nil(t, scan.PortsScanned)
+	})
+}
+
+// ── isHostTarget / allHostTargets ────────────────────────────────────────────
+
+func TestIsHostTarget(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{"10.0.0.1", true},        // bare IPv4
+		{"192.168.1.100", true},   // bare IPv4
+		{"10.0.0.1/32", true},     // explicit /32
+		{"::1", true},             // bare IPv6 loopback
+		{"2001:db8::1/128", true}, // explicit /128
+		{"10.0.0.0/8", false},     // network CIDR /8
+		{"192.168.1.0/24", false}, // /24 network
+		{"172.16.0.0/12", false},  // /12 network
+		{"10.0.0.0/31", false},    // /31 point-to-point (two hosts, not one)
+		{"notanip", false},        // garbage — not a valid IP or CIDR
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			assert.Equal(t, tc.want, isHostTarget(tc.input))
+		})
+	}
+}
+
+func TestAllHostTargets(t *testing.T) {
+	t.Run("all bare IPs returns true", func(t *testing.T) {
+		assert.True(t, allHostTargets([]string{"10.0.0.1", "192.168.1.5"}))
+	})
+	t.Run("all /32 CIDRs returns true", func(t *testing.T) {
+		assert.True(t, allHostTargets([]string{"10.0.0.1/32", "10.0.0.2/32"}))
+	})
+	t.Run("mixed bare IP and /32 returns true", func(t *testing.T) {
+		assert.True(t, allHostTargets([]string{"10.0.0.1", "10.0.0.2/32"}))
+	})
+	t.Run("any network CIDR makes it false", func(t *testing.T) {
+		assert.False(t, allHostTargets([]string{"10.0.0.1", "10.0.0.0/24"}))
+	})
+	t.Run("single network CIDR returns false", func(t *testing.T) {
+		assert.False(t, allHostTargets([]string{"10.0.0.0/8"}))
+	})
+	t.Run("empty slice is vacuously true", func(t *testing.T) {
+		assert.True(t, allHostTargets([]string{}))
 	})
 }
 
@@ -164,6 +217,7 @@ func TestProcessScanRow(t *testing.T) {
 			id, "Scan", sql.NullString{String: "my desc", Valid: true},
 			"192.168.1.0/24", "syn", "22", nil, "pending",
 			now, nil, nil, nil,
+			nil, // execution_details
 		})
 		mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows(scanColumns).AddRow(row...))
 
@@ -183,6 +237,7 @@ func TestProcessScanRow(t *testing.T) {
 			id, "Scan", sql.NullString{Valid: false},
 			"10.0.0.0/8", "connect", "22,80,443", nil, "pending",
 			now, nil, nil, nil,
+			nil, // execution_details
 		})
 		mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows(scanColumns).AddRow(row...))
 
@@ -205,6 +260,7 @@ func TestProcessScanRow(t *testing.T) {
 			id, "Scan", sql.NullString{Valid: false},
 			"10.0.0.0/8", "connect", "", nil, "completed",
 			now, started, completed, nil,
+			nil, // execution_details
 		})
 		mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows(scanColumns).AddRow(row...))
 
@@ -227,6 +283,7 @@ func TestProcessScanRow(t *testing.T) {
 			id, "Scan", sql.NullString{Valid: false},
 			"10.0.0.0/8", "connect", "", nil, "running",
 			now, started, nil, nil,
+			nil, // execution_details
 		})
 		mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows(scanColumns).AddRow(row...))
 
@@ -248,6 +305,7 @@ func TestProcessScanRow(t *testing.T) {
 			id, "Scan", sql.NullString{Valid: false},
 			"10.0.0.0/8", "connect", "", &profile, "pending",
 			now, nil, nil, nil,
+			nil, // execution_details
 		})
 		mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows(scanColumns).AddRow(row...))
 
@@ -514,21 +572,17 @@ func TestCreateScan_Unit(t *testing.T) {
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("multiple targets create exactly one job", func(t *testing.T) {
+	t.Run("bare-IP targets create one job with no network row", func(t *testing.T) {
 		db, mock := newMockDB(t)
-		networkID := uuid.New()
 
 		mock.ExpectBegin()
-		// Only ONE network lookup — for the first target only.
-		mock.ExpectQuery(`SELECT id FROM networks`).
-			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(networkID))
-		// Only ONE scan_jobs INSERT — not one per target.
+		// Bare IPs are host targets — no network lookup or INSERT into networks.
 		mock.ExpectExec(`INSERT INTO scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 
 		scan, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{
-			Name:     "Multi-target",
+			Name:     "Host-target Scan",
 			Targets:  []string{"10.0.0.1", "10.0.0.2"},
 			ScanType: "connect",
 			Ports:    "80,443",
@@ -536,6 +590,26 @@ func TestCreateScan_Unit(t *testing.T) {
 		require.NoError(t, err)
 		// The response must carry the full original target list.
 		assert.Equal(t, []string{"10.0.0.1", "10.0.0.2"}, scan.Targets)
+		assert.Equal(t, "pending", scan.Status)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("/32 CIDR target creates one job with no network row", func(t *testing.T) {
+		db, mock := newMockDB(t)
+
+		mock.ExpectBegin()
+		// A /32 CIDR denotes a single host — no network row should be created.
+		mock.ExpectExec(`INSERT INTO scan_jobs`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		scan, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{
+			Name:     "Single-host CIDR Scan",
+			Targets:  []string{"192.168.1.100/32"},
+			ScanType: "connect",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"192.168.1.100/32"}, scan.Targets)
 		assert.Equal(t, "pending", scan.Status)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})

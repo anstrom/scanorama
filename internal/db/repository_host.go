@@ -530,8 +530,8 @@ func (r *HostRepository) getHostScansCount(ctx context.Context, hostID uuid.UUID
 	countQuery := `
 		SELECT COUNT(DISTINCT sj.id)
 		FROM scan_jobs sj
-		JOIN networks n ON sj.network_id = n.id
-		WHERE n.cidr >>= (SELECT ip_address FROM hosts WHERE id = $1)
+		LEFT JOIN networks n ON sj.network_id = n.id
+		WHERE (n.cidr IS NOT NULL AND n.cidr >>= (SELECT ip_address FROM hosts WHERE id = $1))
 		   OR sj.id IN (
 			   SELECT DISTINCT ps.job_id
 			   FROM port_scans ps
@@ -628,24 +628,24 @@ func (r *HostRepository) GetHostScans(
 	query := `
 		SELECT DISTINCT
 			sj.id,
-			n.name,
-			n.description,
-			n.cidr::text as targets,
-			COALESCE(sp.scan_type, n.scan_type, 'connect') as scan_type,
-			n.scan_ports as ports,
+			COALESCE(sj.execution_details->>'name', n.name, '')           AS name,
+			COALESCE(sj.execution_details->>'description', n.description) AS description,
+			COALESCE(n.cidr::text, sj.execution_details->'scan_targets'->>0, '') AS targets,
+			COALESCE(sp.scan_type, sj.execution_details->>'scan_type', n.scan_type, 'connect') AS scan_type,
+			COALESCE(sj.execution_details->>'ports', n.scan_ports, '')    AS ports,
 			sj.profile_id,
 			sj.status,
 			sj.started_at,
 			sj.completed_at,
 			sj.created_at,
-			COALESCE(sch.id, NULL) as schedule_id,
-			'[]'::jsonb as tags,
-			'{}' as options
+			COALESCE(sch.id, NULL) AS schedule_id,
+			'[]'::jsonb AS tags,
+			'{}' AS options
 		FROM scan_jobs sj
-		JOIN networks n ON sj.network_id = n.id
+		LEFT JOIN networks n ON sj.network_id = n.id
 		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id
 		LEFT JOIN scheduled_jobs sch ON n.id::text = sch.config->>'network_id'
-		WHERE n.cidr >>= (SELECT ip_address FROM hosts WHERE id = $1)
+		WHERE (n.cidr IS NOT NULL AND n.cidr >>= (SELECT ip_address FROM hosts WHERE id = $1))
 		   OR sj.id IN (
 			   SELECT DISTINCT ps.job_id
 			   FROM port_scans ps

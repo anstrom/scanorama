@@ -8,6 +8,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,31 @@ import (
 
 	"github.com/anstrom/scanorama/internal/errors"
 )
+
+// isHostTarget reports whether target represents a single host: a bare IP
+// address or a /32 (IPv4) / /128 (IPv6) CIDR.  Such targets must not be
+// stored as rows in the networks table.
+func isHostTarget(target string) bool {
+	if net.ParseIP(target) != nil {
+		return true // bare IP — always maps to /32 or /128
+	}
+	_, ipNet, err := net.ParseCIDR(target)
+	if err != nil {
+		return false
+	}
+	ones, bits := ipNet.Mask.Size()
+	return ones == bits // /32 for IPv4, /128 for IPv6
+}
+
+// allHostTargets reports whether every entry in targets is a single host.
+func allHostTargets(targets []string) bool {
+	for _, t := range targets {
+		if !isHostTarget(t) {
+			return false
+		}
+	}
+	return true
+}
 
 // ScanRepository implements ScanStore against a *DB connection.
 type ScanRepository struct {
@@ -46,7 +72,8 @@ func buildScanFilters(filters ScanFilters) (whereClause string, args []interface
 		conditions = append(conditions, filterCondition{"sj.status", filters.Status})
 	}
 	if filters.ScanType != "" {
-		conditions = append(conditions, filterCondition{"COALESCE(sp.scan_type, n.scan_type)", filters.ScanType})
+		scanTypeExpr := "COALESCE(sp.scan_type, sj.execution_details->>'scan_type', n.scan_type)"
+		conditions = append(conditions, filterCondition{scanTypeExpr, filters.ScanType})
 	}
 	if filters.ProfileID != nil {
 		conditions = append(conditions, filterCondition{"sj.profile_id", *filters.ProfileID})
@@ -58,7 +85,7 @@ func buildScanFilters(filters ScanFilters) (whereClause string, args []interface
 // getScanCount gets total count of scans matching filters.
 func (r *ScanRepository) getScanCount(ctx context.Context, whereClause string, args []interface{}) (int64, error) {
 	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM scan_jobs sj
-		JOIN networks n ON sj.network_id = n.id
+		LEFT JOIN networks n ON sj.network_id = n.id
 		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id %s`, whereClause)
 
 	var total int64
@@ -71,23 +98,28 @@ func (r *ScanRepository) getScanCount(ctx context.Context, whereClause string, a
 // processScanRow processes a single scan row from query results.
 func processScanRow(rows *sql.Rows) (*Scan, error) {
 	scan := &Scan{}
-	var targetsStr string
+	var name sql.NullString
+	var networkCIDR sql.NullString
+	var scanType sql.NullString
+	var ports sql.NullString
 	var profileID *string
 	var description sql.NullString
+	var execDetailsStr sql.NullString
 
 	err := rows.Scan(
 		&scan.ID,
-		&scan.Name,
+		&name,
 		&description,
-		&targetsStr,
-		&scan.ScanType,
-		&scan.Ports,
+		&networkCIDR,
+		&scanType,
+		&ports,
 		&profileID,
 		&scan.Status,
 		&scan.CreatedAt,
 		&scan.StartedAt,
 		&scan.CompletedAt,
 		&scan.ErrorMessage,
+		&execDetailsStr,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan row: %w", err)
@@ -95,11 +127,12 @@ func processScanRow(rows *sql.Rows) (*Scan, error) {
 
 	if description.Valid {
 		scan.Description = description.String
-	} else {
-		scan.Description = ""
 	}
 
-	scan.Targets = []string{targetsStr}
+	scan.Name = name.String
+	scan.ScanType = scanType.String
+	scan.Ports = ports.String
+	scan.Targets = scanTargetsFromExecDetails(execDetailsStr.String, networkCIDR.String)
 
 	if profileID != nil {
 		scan.ProfileID = profileID
@@ -133,19 +166,20 @@ func (r *ScanRepository) ListScans(
 	baseQuery := `
 		SELECT
 			sj.id,
-			n.name,
-			n.description,
-			n.cidr::text as targets,
-			COALESCE(sp.scan_type, n.scan_type) as scan_type,
-			n.scan_ports as ports,
+			COALESCE(sj.execution_details->>'name', n.name, '')           AS name,
+			COALESCE(sj.execution_details->>'description', n.description) AS description,
+			n.cidr::text                                                   AS network_cidr,
+			COALESCE(sp.scan_type, sj.execution_details->>'scan_type', n.scan_type, '') AS scan_type,
+			COALESCE(sj.execution_details->>'ports', n.scan_ports, '')    AS ports,
 			sj.profile_id,
 			sj.status,
 			sj.created_at,
 			sj.started_at,
 			sj.completed_at,
-			sj.error_message
+			sj.error_message,
+			sj.execution_details::text                                     AS execution_details
 		FROM scan_jobs sj
-		JOIN networks n ON sj.network_id = n.id
+		LEFT JOIN networks n ON sj.network_id = n.id
 		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id
 	`
 
@@ -234,27 +268,55 @@ func findOrCreateNetwork(ctx context.Context, tx *sql.Tx,
 	return id, nil
 }
 
-// createScanJob creates a scan job in the database.
-// createScanJob inserts a single scan_jobs row. When allTargets contains more
-// than one entry the full list is stored in execution_details["scan_targets"]
-// so that GetScan can reconstruct the complete target set for the scanner,
-// which only sees the single network CIDR stored in the networks FK.
-func createScanJob(ctx context.Context, tx *sql.Tx, jobID, networkID uuid.UUID,
-	profileID *string, now time.Time, osDetection bool, allTargets []string) error {
-	var execDetails string
-	if len(allTargets) > 1 {
-		targetsJSON, err := json.Marshal(allTargets)
-		if err != nil {
-			return fmt.Errorf("marshal scan targets: %w", err)
-		}
-		execDetails = fmt.Sprintf(`{"os_detection": %t, "scan_targets": %s}`, osDetection, targetsJSON)
-	} else {
-		execDetails = fmt.Sprintf(`{"os_detection": %t}`, osDetection)
+// createScanJob inserts a single scan_jobs row.
+//
+// networkID may be nil for host-targeted scans (all targets are /32 or /128).
+// When networkID is nil, the full scan metadata (name, description, ports,
+// scan_type) is stored in execution_details so GetScan can reconstruct the
+// complete record without a networks JOIN.
+//
+// When networkID is non-nil and allTargets contains more than one entry, the
+// full list is stored in execution_details["scan_targets"] so that GetScan
+// returns every target instead of only the primary network CIDR.
+func createScanJob(ctx context.Context, tx *sql.Tx, jobID uuid.UUID, networkID *uuid.UUID,
+	profileID *string, now time.Time, osDetection bool, allTargets []string,
+	name, description, ports, scanType string) error {
+	details := map[string]interface{}{
+		"os_detection": osDetection,
 	}
-	_, err := tx.ExecContext(ctx, `
+
+	// Always persist the target list for host-only scans; also persist when
+	// there are multiple network targets (single-network scans don't need it
+	// because GetScan can read the CIDR directly from the networks JOIN).
+	if networkID == nil || len(allTargets) > 1 {
+		details["scan_targets"] = allTargets
+	}
+
+	// For host-only scans there is no networks row, so embed all scan metadata
+	// in execution_details so it is available to GetScan and ListScans.
+	if networkID == nil {
+		details["name"] = name
+		details["description"] = description
+		details["ports"] = ports
+		details["scan_type"] = scanType
+	}
+
+	execDetailsJSON, err := json.Marshal(details)
+	if err != nil {
+		return fmt.Errorf("marshal execution details: %w", err)
+	}
+
+	// Pass nil as the network_id argument when there is no linked network so
+	// the driver sends a proper SQL NULL (uuid.Nil would insert a zero UUID).
+	var networkIDArg interface{}
+	if networkID != nil {
+		networkIDArg = *networkID
+	}
+
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO scan_jobs (id, network_id, profile_id, status, created_at, execution_details)
 		VALUES ($1, $2, $3, 'pending', $4, $5)
-	`, jobID, networkID, profileID, now, execDetails)
+	`, jobID, networkIDArg, profileID, now, string(execDetailsJSON))
 	if err != nil {
 		return sanitizeDBError("create scan job", err)
 	}
@@ -306,26 +368,29 @@ func (r *ScanRepository) CreateScan(ctx context.Context, input CreateScanInput) 
 	}()
 
 	now := time.Now().UTC()
-
-	// Always create exactly one scan_job, regardless of how many targets were
-	// supplied. The first target's network provides the required network_id FK.
-	// When there are multiple targets the full list is persisted inside
-	// execution_details["scan_targets"] and read back by GetScan, ensuring the
-	// scanner receives every target rather than only the primary network CIDR.
 	jobID := uuid.New()
 
-	networkID, err := findOrCreateNetwork(ctx, tx, input.Name, input.Targets[0],
-		input.Description, input.Ports, input.ScanType)
-	if err != nil {
-		return nil, err
+	// Networks are CIDR ranges with a prefix length < 32 (IPv4) or < 128 (IPv6).
+	// When every target is a single host (/32 / /128 or a bare IP) we must not
+	// create a networks row — instead we store all metadata in execution_details
+	// and leave network_id NULL.
+	var networkID *uuid.UUID
+	if !allHostTargets(input.Targets) {
+		nid, err := findOrCreateNetwork(ctx, tx, input.Name, input.Targets[0],
+			input.Description, input.Ports, input.ScanType)
+		if err != nil {
+			return nil, err
+		}
+		networkID = &nid
 	}
 
 	if err := createScanJob(ctx, tx, jobID, networkID, input.ProfileID, now,
-		input.OSDetection, input.Targets); err != nil {
+		input.OSDetection, input.Targets,
+		input.Name, input.Description, input.Ports, input.ScanType); err != nil {
 		return nil, err
 	}
 
-	var firstJobID = jobID
+	firstJobID := jobID
 
 	if err = tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
@@ -363,27 +428,30 @@ func (r *ScanRepository) GetScan(ctx context.Context, id uuid.UUID) (*Scan, erro
 	query := `
 		SELECT
 			sj.id,
-			n.name,
-			n.description,
-			n.cidr::text as targets,
-			COALESCE(sp.scan_type, n.scan_type) as scan_type,
-			n.scan_ports as ports,
+			COALESCE(sj.execution_details->>'name', n.name, '')                           AS name,
+			COALESCE(sj.execution_details->>'description', n.description)                 AS description,
+			n.cidr::text                                                                   AS network_cidr,
+			COALESCE(sp.scan_type, sj.execution_details->>'scan_type', n.scan_type, '')   AS scan_type,
+			COALESCE(sj.execution_details->>'ports', n.scan_ports, '')                    AS ports,
 			sj.profile_id,
 			sj.status,
 			sj.created_at,
 			sj.started_at,
 			sj.completed_at,
 			sj.error_message,
-			COALESCE((sj.execution_details->>'os_detection')::boolean, false) as os_detection,
-			sj.execution_details::text as execution_details
+			COALESCE((sj.execution_details->>'os_detection')::boolean, false)              AS os_detection,
+			sj.execution_details::text                                                     AS execution_details
 		FROM scan_jobs sj
-			JOIN networks n ON sj.network_id = n.id
+		LEFT JOIN networks n ON sj.network_id = n.id
 		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id
 		WHERE sj.id = $1
 	`
 
 	scan := &Scan{}
-	var targetsStr string
+	var name sql.NullString
+	var networkCIDR sql.NullString
+	var scanType sql.NullString
+	var ports sql.NullString
 	var profileID *string
 	var description sql.NullString
 	var osDetection bool
@@ -391,11 +459,11 @@ func (r *ScanRepository) GetScan(ctx context.Context, id uuid.UUID) (*Scan, erro
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&scan.ID,
-		&scan.Name,
+		&name,
 		&description,
-		&targetsStr,
-		&scan.ScanType,
-		&scan.Ports,
+		&networkCIDR,
+		&scanType,
+		&ports,
 		&profileID,
 		&scan.Status,
 		&scan.CreatedAt,
@@ -418,7 +486,10 @@ func (r *ScanRepository) GetScan(ctx context.Context, id uuid.UUID) (*Scan, erro
 
 	// Prefer the full target list stored in execution_details over the single
 	// network CIDR. This is set by CreateScan when len(targets) > 1.
-	scan.Targets = scanTargetsFromExecDetails(execDetailsStr.String, targetsStr)
+	scan.Name = name.String
+	scan.ScanType = scanType.String
+	scan.Ports = ports.String
+	scan.Targets = scanTargetsFromExecDetails(execDetailsStr.String, networkCIDR.String)
 	scan.Options = map[string]interface{}{"os_detection": osDetection}
 
 	if profileID != nil {

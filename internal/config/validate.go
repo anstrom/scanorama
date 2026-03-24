@@ -1140,21 +1140,20 @@ func validateDiscoveryNetworks(
 		}
 
 		if network.CIDR == "" {
+			result.addError(section, prefix+".cidr", "network CIDR is required")
+		} else if _, ipNet, err := net.ParseCIDR(network.CIDR); err != nil {
 			result.addError(
 				section, prefix+".cidr",
-				"network CIDR is required",
+				fmt.Sprintf("invalid CIDR: %q (%v)", network.CIDR, err),
 			)
-		} else {
-			_, _, err := net.ParseCIDR(network.CIDR)
-			if err != nil {
-				result.addError(
-					section, prefix+".cidr",
-					fmt.Sprintf(
-						"invalid CIDR: %q (%v)",
-						network.CIDR, err,
-					),
-				)
-			}
+		} else if ones, bits := ipNet.Mask.Size(); ones == bits {
+			result.addError(
+				section, prefix+".cidr",
+				fmt.Sprintf(
+					"/%d address is a single host, not a network — use a broader prefix",
+					ones,
+				),
+			)
 		}
 
 		netMethod := strings.ToLower(
