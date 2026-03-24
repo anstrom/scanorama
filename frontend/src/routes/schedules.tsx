@@ -432,7 +432,7 @@ export function SchedulesPage() {
                 Status
               </th>
               <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Targets
+                Network
               </th>
             </tr>
           </thead>
@@ -450,17 +450,7 @@ export function SchedulesPage() {
               </tr>
             ) : (
               schedules.map((schedule) => {
-                const targets =
-                  (schedule as unknown as { targets?: string[] }).targets ?? [];
-                let targetDisplay: string;
-                if (targets.length === 0) {
-                  targetDisplay = "—";
-                } else if (targets.length === 1) {
-                  targetDisplay = targets[0];
-                } else {
-                  targetDisplay =
-                    targets[0] + " +" + (targets.length - 1) + " more";
-                }
+                const targetDisplay = schedule.network_name ?? "—";
 
                 return (
                   <tr
