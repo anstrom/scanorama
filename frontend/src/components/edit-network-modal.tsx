@@ -7,9 +7,8 @@ import { cn } from "../lib/utils";
 
 const DISCOVERY_METHODS = [
   { value: "ping", label: "Ping (ICMP echo)" },
-  { value: "tcp", label: "TCP connect" },
+  { value: "tcp", label: "TCP" },
   { value: "arp", label: "ARP broadcast" },
-  { value: "icmp", label: "ICMP" },
 ] as const;
 
 type DiscoveryMethod = (typeof DISCOVERY_METHODS)[number]["value"];
