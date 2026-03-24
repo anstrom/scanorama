@@ -679,8 +679,8 @@ func TestRecoverStaleJobs(t *testing.T) {
 	scanID2 := uuid.New()
 	for _, id := range []uuid.UUID{scanID1, scanID2} {
 		_, err := database.ExecContext(ctx, `
-			INSERT INTO scan_jobs (id, status, created_at, execution_details)
-			VALUES ($1, 'running', NOW(), '{}')
+			INSERT INTO scan_jobs (id, status, created_at, started_at, execution_details)
+			VALUES ($1, 'running', NOW(), NOW(), '{}')
 		`, id)
 		require.NoError(t, err, "seed stale scan_job")
 	}
