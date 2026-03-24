@@ -184,7 +184,7 @@ export function ScansPage() {
           </div>
 
           {/* Pagination */}
-          {!isLoading && scans.length > 0 && (
+          {!isLoading && scans.length > 0 && totalPages > 1 && (
             <div className="px-4 pb-3">
               <PaginationBar
                 page={page}
