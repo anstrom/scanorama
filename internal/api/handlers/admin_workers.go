@@ -10,6 +10,12 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// Worker status constants.
+const (
+	workerStatusActive = "active"
+	workerStatusIdle   = "idle"
+)
+
 // GetWorkerStatus handles GET /api/v1/admin/workers - get worker pool status.
 func (h *AdminHandler) GetWorkerStatus(w http.ResponseWriter, r *http.Request) {
 	requestID := getRequestIDFromContext(r.Context())
@@ -52,7 +58,7 @@ func (h *AdminHandler) GetWorkerStatus(w http.ResponseWriter, r *http.Request) {
 				info.LastJobTime = &snap.LastJobAt
 			}
 
-			if snap.Status == "active" && snap.JobStartedAt != nil {
+			if snap.Status == workerStatusActive && snap.JobStartedAt != nil {
 				info.CurrentJob = &JobInfo{
 					ID:        snap.JobID,
 					Type:      snap.JobType,
@@ -72,9 +78,9 @@ func (h *AdminHandler) GetWorkerStatus(w http.ResponseWriter, r *http.Request) {
 	idleCount := 0
 	for i := range workers {
 		switch workers[i].Status {
-		case "active":
+		case workerStatusActive:
 			activeCount++
-		case "idle":
+		case workerStatusIdle:
 			idleCount++
 		}
 	}
