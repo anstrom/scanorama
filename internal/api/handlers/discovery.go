@@ -18,6 +18,7 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/discovery"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/scanning"
 )
 
 // Validation constants.
@@ -56,12 +57,12 @@ const (
 
 // DiscoveryHandler handles discovery-related API endpoints.
 type DiscoveryHandler struct {
-	database DiscoveryStore
-	logger   *slog.Logger
-	metrics  *metrics.Registry
-	engine   *discovery.Engine
+	database  DiscoveryStore
+	logger    *slog.Logger
+	metrics   *metrics.Registry
+	engine    *discovery.Engine
+	scanQueue *scanning.ScanQueue
 
-	// cancelsMu guards the in-memory map of running job cancels.
 	cancelsMu sync.Mutex
 	cancels   map[uuid.UUID]context.CancelFunc
 }
@@ -84,6 +85,87 @@ func NewDiscoveryHandler(
 func (h *DiscoveryHandler) WithEngine(e *discovery.Engine) *DiscoveryHandler {
 	h.engine = e
 	return h
+}
+
+// WithScanQueue sets the worker pool used to execute discovery jobs.
+// When set, StartDiscovery submits a discoveryJob to the queue instead of
+// spawning an unbounded goroutine.
+func (h *DiscoveryHandler) WithScanQueue(q *scanning.ScanQueue) *DiscoveryHandler {
+	h.scanQueue = q
+	return h
+}
+
+// discoveryJob implements scanning.Job for nmap host-discovery operations.
+// It is created by StartDiscovery and submitted to the shared ScanQueue so
+// that discovery work appears alongside scan work in the admin worker view.
+type discoveryJob struct {
+	id        string
+	jobID     uuid.UUID
+	network   string
+	method    string
+	engine    *discovery.Engine
+	database  DiscoveryStore
+	logger    *slog.Logger
+	cancelCtx context.Context // cancelled by StopDiscovery for per-job stop
+	cleanup   func()          // removes the cancel func from the handler's map
+}
+
+// ID implements scanning.Job.
+func (j *discoveryJob) ID() string { return j.id }
+
+// Type implements scanning.Job.
+func (j *discoveryJob) Type() string { return "discovery" }
+
+// Target implements scanning.Job.
+func (j *discoveryJob) Target() string { return j.network }
+
+// Execute implements scanning.Job. It runs the nmap discovery scan, updates
+// the DB on completion or failure, and calls cleanup when done.
+func (j *discoveryJob) Execute(workerCtx context.Context) error {
+	defer j.cleanup()
+
+	// Derive a context that honors both worker shutdown and per-job stop.
+	ctx, cancel := context.WithCancel(workerCtx)
+	defer cancel()
+	stop := context.AfterFunc(j.cancelCtx, cancel)
+	defer stop()
+
+	cfg := &discovery.Config{
+		Network:  j.network,
+		Method:   j.method,
+		MaxHosts: 10000,
+	}
+
+	j.logger.Info("Executing discovery",
+		"job_id", j.jobID, "network", cfg.Network, "method", cfg.Method)
+
+	hostsFound, err := j.engine.ScanNetwork(ctx, cfg)
+
+	dbCtx := context.Background()
+	if err != nil {
+		j.logger.Error("Discovery execution failed", "job_id", j.jobID, "error", err)
+		if stopErr := j.database.StopDiscoveryJob(dbCtx, j.jobID); stopErr != nil {
+			j.logger.Error("Failed to mark discovery job as failed",
+				"job_id", j.jobID, "error", stopErr)
+		}
+		return err
+	}
+
+	completed := db.DiscoveryJobStatusCompleted
+	now := time.Now().UTC()
+	if _, updateErr := j.database.UpdateDiscoveryJob(dbCtx, j.jobID, db.UpdateDiscoveryJobInput{
+		Status:          &completed,
+		CompletedAt:     &now,
+		HostsDiscovered: &hostsFound,
+		HostsResponsive: &hostsFound,
+	}); updateErr != nil {
+		j.logger.Error("Failed to mark discovery job as completed",
+			"job_id", j.jobID, "error", updateErr)
+		return updateErr
+	}
+
+	j.logger.Info("Discovery job finished", "job_id", j.jobID, "hosts_found", hostsFound)
+	return nil
 }
 
 // DiscoveryRequest represents a discovery job creation/update request.
@@ -310,7 +392,29 @@ func (h *DiscoveryHandler) StartDiscovery(w http.ResponseWriter, r *http.Request
 		h.cancels[jobID] = cancel
 		h.cancelsMu.Unlock()
 
-		go h.executeDiscoveryAsync(ctx, jobID, job)
+		djob := &discoveryJob{
+			id:        jobID.String(),
+			jobID:     jobID,
+			network:   job.Network.String(),
+			method:    job.Method,
+			engine:    h.engine,
+			database:  h.database,
+			logger:    h.logger,
+			cancelCtx: ctx,
+			cleanup: func() {
+				h.cancelsMu.Lock()
+				delete(h.cancels, jobID)
+				h.cancelsMu.Unlock()
+			},
+		}
+
+		if err := h.submitDiscoveryJob(r.Context(), djob); err != nil {
+			h.logger.Error("Failed to submit discovery job to queue",
+				"request_id", requestID, "job_id", jobID, "error", err)
+			cancel()
+			writeError(w, r, http.StatusServiceUnavailable, err)
+			return
+		}
 	} else {
 		h.logger.Warn("No discovery engine configured — job status set to running but no scan will execute",
 			"request_id", requestID, "job_id", jobID)
@@ -334,55 +438,27 @@ func (h *DiscoveryHandler) StartDiscovery(w http.ResponseWriter, r *http.Request
 	h.logger.Info("Discovery job started", "request_id", requestID, "job_id", jobID)
 }
 
-// executeDiscoveryAsync runs the nmap discovery for jobID in the background,
-// then marks the job completed or failed in the database.
-func (h *DiscoveryHandler) executeDiscoveryAsync(ctx context.Context, jobID uuid.UUID, job *db.DiscoveryJob) {
-	defer func() {
-		h.cancelsMu.Lock()
-		delete(h.cancels, jobID)
-		h.cancelsMu.Unlock()
-	}()
-
-	cfg := &discovery.Config{
-		Network:  job.Network.String(),
-		Method:   job.Method,
-		MaxHosts: 10000,
+// submitDiscoveryJob routes djob to the scan queue if one is configured, or
+// falls back to a bare goroutine. On queue-submission failure it reverts the
+// DB row and returns an error; the caller is responsible for canceling the
+// per-job context and writing the HTTP response.
+func (h *DiscoveryHandler) submitDiscoveryJob(ctx context.Context, djob *discoveryJob) error {
+	if h.scanQueue == nil {
+		// Fallback: no queue configured, run in an unbounded goroutine.
+		go func() {
+			if err := djob.Execute(djob.cancelCtx); err != nil {
+				h.logger.Error("Discovery goroutine failed", "job_id", djob.jobID, "error", err)
+			}
+		}()
+		return nil
 	}
-
-	h.logger.Info("Executing discovery", "job_id", jobID, "network", cfg.Network, "method", cfg.Method)
-
-	hostsFound, err := h.engine.ScanNetwork(ctx, cfg)
-
-	dbCtx := context.Background()
-
-	if err != nil {
-		h.logger.Error("Discovery execution failed", "job_id", jobID, "error", err)
-		if stopErr := h.database.StopDiscoveryJob(dbCtx, jobID); stopErr != nil {
-			h.logger.Error("Failed to mark discovery job as failed",
-				"job_id", jobID, "error", stopErr)
+	if err := h.scanQueue.Submit(djob); err != nil {
+		if stopErr := h.database.StopDiscoveryJob(ctx, djob.jobID); stopErr != nil {
+			h.logger.Error("Failed to revert discovery job status", "job_id", djob.jobID, "error", stopErr)
 		}
-		return
+		return fmt.Errorf("job queue unavailable, please try again later")
 	}
-
-	if err := h.completeDiscoveryJobWithCount(dbCtx, jobID, hostsFound); err != nil {
-		h.logger.Error("Failed to mark discovery job as completed",
-			"job_id", jobID, "error", err)
-	}
-
-	h.logger.Info("Discovery job finished", "job_id", jobID, "hosts_found", hostsFound)
-}
-
-// completeDiscoveryJobWithCount flips the job's status to completed and records host counts.
-func (h *DiscoveryHandler) completeDiscoveryJobWithCount(ctx context.Context, jobID uuid.UUID, hostsFound int) error {
-	completed := db.DiscoveryJobStatusCompleted
-	now := time.Now().UTC()
-	_, err := h.database.UpdateDiscoveryJob(ctx, jobID, db.UpdateDiscoveryJobInput{
-		Status:          &completed,
-		CompletedAt:     &now,
-		HostsDiscovered: &hostsFound,
-		HostsResponsive: &hostsFound,
-	})
-	return err
+	return nil
 }
 
 // StopDiscovery handles POST /api/v1/discovery/{id}/stop - stop a running discovery job.

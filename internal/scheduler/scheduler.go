@@ -48,8 +48,9 @@ type Scheduler struct {
 	running            bool
 	ctx                context.Context
 	cancel             context.CancelFunc
-	maxConcurrentScans int                 // bounded parallelism for per-host scans
-	scanQueue          *scanning.ScanQueue // optional queue-based scan execution
+	maxConcurrentScans int                      // bounded parallelism for per-host scans
+	scanQueue          *scanning.ScanQueue      // optional queue-based scan execution
+	scanRunner         scanning.ScanJobExecutor // injectable for tests; defaults to RunScanWithContext
 }
 
 // ScheduledJob represents a scheduled job wrapper.
@@ -621,15 +622,25 @@ hostLoop:
 	wg.Wait()
 }
 
-// processHostsViaQueue submits scan requests to the ScanQueue and waits for
-// all results before returning. This allows the scheduler to leverage the
-// queue's bounded worker pool instead of managing its own goroutines.
+// processHostsViaQueue submits scan jobs to the ScanQueue and waits for all
+// results before returning. This allows the scheduler to leverage the queue's
+// bounded worker pool instead of managing its own goroutines.
 func (s *Scheduler) processHostsViaQueue(ctx context.Context, hosts []*db.Host, config *ScanJobConfig) {
-	resultCh := make(chan *scanning.ScanQueueResult, len(hosts))
-	submitted := 0
+	runner := s.scanRunner
+	if runner == nil {
+		runner = scanning.RunScanWithContext
+	}
+
+	var (
+		wg           sync.WaitGroup
+		mu           sync.Mutex
+		successCount int
+		failCount    int
+		submitted    int
+	)
 
 	for i, host := range hosts {
-		// Check for context cancellation before submitting the next request.
+		// Check for context cancellation before submitting the next job.
 		if ctx.Err() != nil {
 			log.Printf("Scan job context canceled after submitting %d/%d hosts to queue", i, len(hosts))
 			break
@@ -656,24 +667,45 @@ func (s *Scheduler) processHostsViaQueue(ctx context.Context, hosts []*db.Host, 
 			Concurrency: 1,
 		}
 
-		req := &scanning.ScanQueueRequest{
-			ID:       fmt.Sprintf("sched-%s-%s", host.ID, host.IPAddress),
-			Config:   scanConfig,
-			Database: s.db,
-			ResultCh: resultCh,
-		}
+		jobID := fmt.Sprintf("sched-%s-%s", host.ID, host.IPAddress)
+		hostIP := host.IPAddress.String()
 
-		if err := s.scanQueue.Submit(req); err != nil {
+		wg.Add(1)
+		job := scanning.NewScanJob(
+			jobID,
+			scanConfig,
+			s.db,
+			runner,
+			func(result *scanning.ScanResult, err error) {
+				defer wg.Done()
+				mu.Lock()
+				defer mu.Unlock()
+				if err != nil {
+					failCount++
+					log.Printf("Queued scan %s failed: %v", jobID, err)
+				} else {
+					successCount++
+					hostCount := 0
+					if result != nil {
+						hostCount = len(result.Hosts)
+					}
+					log.Printf("Queued scan %s completed: %d hosts found", jobID, hostCount)
+				}
+			},
+		)
+
+		if err := s.scanQueue.Submit(job); err != nil {
+			wg.Done() // onDone won't be called since Submit failed
 			if err == scanning.ErrQueueFull {
-				log.Printf("Scan queue full, skipping host %s", host.IPAddress)
+				log.Printf("Scan queue full, skipping host %s", hostIP)
 			} else {
-				log.Printf("Failed to submit scan for host %s to queue: %v", host.IPAddress, err)
+				log.Printf("Failed to submit scan for host %s to queue: %v", hostIP, err)
 			}
 			continue
 		}
 
 		submitted++
-		log.Printf("Submitted scan for host %s to queue (profile %s)", host.IPAddress, profileID)
+		log.Printf("Submitted scan for host %s to queue (profile %s)", hostIP, profileID)
 	}
 
 	if submitted == 0 {
@@ -681,33 +713,30 @@ func (s *Scheduler) processHostsViaQueue(ctx context.Context, hosts []*db.Host, 
 		return
 	}
 
-	// Wait for all submitted scans to complete.
+	// Wait for all submitted scans to complete, respecting context cancellation.
 	log.Printf("Waiting for %d queued scan(s) to complete", submitted)
-	successCount := 0
-	failCount := 0
+	waitWithCancel(ctx, &wg, func() {
+		mu.Lock()
+		log.Printf("All queued scans finished: %d succeeded, %d failed out of %d submitted",
+			successCount, failCount, submitted)
+		mu.Unlock()
+	})
+}
 
-	for i := 0; i < submitted; i++ {
-		select {
-		case result := <-resultCh:
-			if result.Error != nil {
-				failCount++
-				log.Printf("Queued scan %s failed (%s): %v", result.ID, result.Duration, result.Error)
-			} else {
-				successCount++
-				hostCount := 0
-				if result.Result != nil {
-					hostCount = len(result.Result.Hosts)
-				}
-				log.Printf("Queued scan %s completed (%s): %d hosts found", result.ID, result.Duration, hostCount)
-			}
-		case <-ctx.Done():
-			log.Printf("Scan job context canceled while waiting for queued results (%d/%d received)", i, submitted)
-			return
-		}
+// waitWithCancel runs wg.Wait() in a background goroutine and calls onDone
+// when all work finishes, or returns early if ctx is cancelled first.
+func waitWithCancel(ctx context.Context, wg *sync.WaitGroup, onDone func()) {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		onDone()
+	case <-ctx.Done():
+		log.Printf("Scan job context canceled while waiting for queued results")
 	}
-
-	log.Printf("All queued scans finished: %d succeeded, %d failed out of %d submitted",
-		successCount, failCount, submitted)
 }
 
 // timingToScanTimeout converts a profile timing string to a scan timeout in seconds.

@@ -21,6 +21,9 @@ func (s *Server) setupRoutes() {
 	scanHandler := apihandlers.NewScanHandler(
 		services.NewScanService(db.NewScanRepository(s.database), s.logger), s.logger, s.metrics).
 		WithScanMode(s.config.Scanning.ScanMode)
+	if s.scanQueue != nil {
+		scanHandler.SetScanQueue(s.scanQueue)
+	}
 	hostHandler := apihandlers.NewHostHandler(
 		services.NewHostService(db.NewHostRepository(s.database), s.logger), s.logger, s.metrics)
 	discoveryHandler := apihandlers.NewDiscoveryHandler(db.NewDiscoveryRepository(s.database), s.logger, s.metrics).
@@ -33,6 +36,11 @@ func (s *Server) setupRoutes() {
 		WithDiscovery(db.NewDiscoveryRepository(s.database), s.discoveryEngine)
 	handlerManager := apihandlers.New(s.database, s.logger, s.metrics).
 		WithRingBuffer(s.ringBuffer)
+	if s.scanQueue != nil {
+		handlerManager.SetScanQueue(s.scanQueue)
+		discoveryHandler = discoveryHandler.WithScanQueue(s.scanQueue)
+		networkHandler = networkHandler.WithScanQueue(s.scanQueue)
+	}
 
 	s.setupScanRoutes(api, scanHandler)
 	s.setupHostRoutes(api, hostHandler)

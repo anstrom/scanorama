@@ -1,7 +1,7 @@
 // Package scanning provides core scanning functionality and shared types for scanorama.
-// This file implements a bounded scan execution queue that prevents resource
-// exhaustion when many scans are requested concurrently. Scan requests are
-// enqueued into a FIFO buffer and executed by a fixed-size worker pool.
+// This file implements a bounded job execution queue that prevents resource
+// exhaustion when many scans or discovery jobs are requested concurrently.
+// Jobs are enqueued into a FIFO buffer and executed by a fixed-size worker pool.
 package scanning
 
 import (
@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
@@ -28,31 +27,6 @@ var (
 	ErrQueueFull   = errors.New("scan queue is full")
 	ErrQueueClosed = errors.New("scan queue is closed")
 )
-
-// ScanQueueRequest represents a scan job to be enqueued for execution.
-type ScanQueueRequest struct {
-	// ID is a unique identifier for this scan request.
-	ID string
-	// Config is the scan configuration to execute.
-	Config *ScanConfig
-	// Database is the database connection for storing results.
-	Database *db.DB
-	// ResultCh is an optional channel where the caller receives the result.
-	// If nil, the result is discarded after logging.
-	ResultCh chan<- *ScanQueueResult
-}
-
-// ScanQueueResult contains the outcome of a queued scan execution.
-type ScanQueueResult struct {
-	// ID is the scan request identifier.
-	ID string
-	// Result is the scan result, nil if an error occurred.
-	Result *ScanResult
-	// Error is any error that occurred during scan execution.
-	Error error
-	// Duration is how long the scan took to execute.
-	Duration time.Duration
-}
 
 // QueueStats provides a snapshot of the current queue state.
 type QueueStats struct {
@@ -74,14 +48,54 @@ type QueueStats struct {
 	TotalFailed int64
 }
 
-// ScanQueue manages a bounded worker pool for scan execution.
+// workerState tracks the live state of a single worker goroutine.
+// All fields except workerStartedAt are guarded by the embedded mutex.
+type workerState struct {
+	mu              sync.RWMutex
+	status          string // "idle" or "active"
+	jobID           string
+	jobType         string
+	jobTarget       string
+	jobStartedAt    time.Time
+	workerStartedAt time.Time
+	lastJobAt       time.Time
+	jobsDone        int64
+	jobsFailed      int64
+}
+
+// WorkerSnapshot is a point-in-time, read-only view of a single worker's state.
+type WorkerSnapshot struct {
+	// ID is the worker identifier (e.g. "worker-0").
+	ID string
+	// Status is "idle" or "active".
+	Status string
+	// JobID is the ID of the job currently being processed; empty when idle.
+	JobID string
+	// JobType is the type of the current job (e.g. "scan"); empty when idle.
+	JobType string
+	// JobTarget is the scan target of the current job; empty when idle.
+	JobTarget string
+	// JobStartedAt is when the current job started; nil when idle.
+	JobStartedAt *time.Time
+	// WorkerStartedAt is when this worker goroutine was started.
+	WorkerStartedAt time.Time
+	// LastJobAt is when this worker last completed a job; zero if never.
+	LastJobAt time.Time
+	// JobsDone is the number of jobs this worker has completed successfully.
+	JobsDone int64
+	// JobsFailed is the number of jobs this worker has failed.
+	JobsFailed int64
+}
+
+// ScanQueue manages a bounded worker pool for job execution.
 // It uses a buffered channel as a FIFO queue and spawns a configurable
-// number of worker goroutines to process scan requests concurrently.
+// number of worker goroutines to process jobs concurrently.
+// Both scan and discovery jobs implement the Job interface and can be submitted.
 type ScanQueue struct {
 	maxConcurrent int
 	maxQueueSize  int
 
-	queue  chan *ScanQueueRequest
+	queue  chan Job
 	cancel context.CancelFunc
 
 	// wg tracks active worker goroutines for graceful shutdown.
@@ -90,9 +104,10 @@ type ScanQueue struct {
 	// closed indicates whether the queue has been shut down.
 	closed atomic.Bool
 
-	// scanFunc is the function workers call to execute a scan.
-	// When nil (the default), defaultScanFunc is used.
-	scanFunc func(context.Context, *ScanQueueRequest) *ScanQueueResult
+	// cancelMu guards the cancel field against concurrent Start/Stop calls.
+	cancelMu sync.Mutex
+	// workerStates holds per-worker live state for admin introspection.
+	workerStates []*workerState
 
 	// Atomic counters for thread-safe statistics.
 	activeScans    atomic.Int64
@@ -113,19 +128,17 @@ func NewScanQueue(maxConcurrent, maxQueueSize int) *ScanQueue {
 		maxQueueSize = DefaultMaxQueueSize
 	}
 
+	states := make([]*workerState, maxConcurrent)
+	for i := range states {
+		states[i] = &workerState{status: "idle"}
+	}
+
 	return &ScanQueue{
 		maxConcurrent: maxConcurrent,
 		maxQueueSize:  maxQueueSize,
-		queue:         make(chan *ScanQueueRequest, maxQueueSize),
+		queue:         make(chan Job, maxQueueSize),
+		workerStates:  states,
 	}
-}
-
-// SetScanFunc overrides the function that workers use to execute scans.
-// This is primarily intended for testing so that unit tests can substitute
-// a lightweight implementation that does not invoke nmap.
-// It must be called before Start.
-func (q *ScanQueue) SetScanFunc(fn func(context.Context, *ScanQueueRequest) *ScanQueueResult) {
-	q.scanFunc = fn
 }
 
 // Start launches the worker goroutines that process scan requests from the queue.
@@ -134,7 +147,9 @@ func (q *ScanQueue) SetScanFunc(fn func(context.Context, *ScanQueueRequest) *Sca
 // Start must only be called once.
 func (q *ScanQueue) Start(ctx context.Context) {
 	workerCtx, cancel := context.WithCancel(ctx)
+	q.cancelMu.Lock()
 	q.cancel = cancel
+	q.cancelMu.Unlock()
 
 	logging.Info("Starting scan queue",
 		"max_concurrent", q.maxConcurrent,
@@ -146,7 +161,9 @@ func (q *ScanQueue) Start(ctx context.Context) {
 		m.SetScanQueueCapacity(float64(q.maxQueueSize))
 	}
 
+	startedAt := time.Now()
 	for i := 0; i < q.maxConcurrent; i++ {
+		q.workerStates[i].workerStartedAt = startedAt
 		q.wg.Add(1)
 		go q.worker(workerCtx, i)
 	}
@@ -166,8 +183,11 @@ func (q *ScanQueue) Stop() {
 
 	// Cancel the worker context so workers stop picking up new items
 	// after finishing their current scan.
-	if q.cancel != nil {
-		q.cancel()
+	q.cancelMu.Lock()
+	cancelFn := q.cancel
+	q.cancelMu.Unlock()
+	if cancelFn != nil {
+		cancelFn()
 	}
 
 	// Close the channel so workers drain remaining items and exit.
@@ -189,30 +209,35 @@ func (q *ScanQueue) Stop() {
 // Submit enqueues a scan request for execution by the worker pool.
 // It returns ErrQueueClosed if the queue has been shut down, or ErrQueueFull
 // if the queue is at capacity. Submit is non-blocking.
-func (q *ScanQueue) Submit(req *ScanQueueRequest) error {
+// Submit enqueues a job for execution by the worker pool.
+// It returns ErrQueueClosed if the queue has been shut down, or ErrQueueFull
+// if the queue is at capacity. Submit is non-blocking.
+func (q *ScanQueue) Submit(job Job) error {
 	if q.closed.Load() {
 		q.totalRejected.Add(1)
 		metrics.IncrementScansRejectedPrometheus("queue_closed")
 		return ErrQueueClosed
 	}
 
-	if req == nil {
-		return fmt.Errorf("scan request must not be nil")
+	if job == nil {
+		return fmt.Errorf("job must not be nil")
 	}
 
 	select {
-	case q.queue <- req:
+	case q.queue <- job:
 		q.totalSubmitted.Add(1)
 		q.updateQueueDepthMetric()
-		logging.Debug("Scan request submitted to queue",
-			"request_id", req.ID,
+		logging.Debug("Job submitted to queue",
+			"job_id", job.ID(),
+			"job_type", job.Type(),
 			"queue_depth", len(q.queue))
 		return nil
 	default:
 		q.totalRejected.Add(1)
 		metrics.IncrementScansRejectedPrometheus("queue_full")
-		logging.Warn("Scan queue is full, rejecting request",
-			"request_id", req.ID,
+		logging.Warn("Job queue is full, rejecting request",
+			"job_id", job.ID(),
+			"job_type", job.Type(),
 			"queue_depth", len(q.queue),
 			"max_queue_size", q.maxQueueSize)
 		return ErrQueueFull
@@ -234,120 +259,124 @@ func (q *ScanQueue) Stats() QueueStats {
 	}
 }
 
+// Snapshot returns a point-in-time view of all worker states.
+// It is safe to call concurrently with ongoing scan execution.
+func (q *ScanQueue) Snapshot() []WorkerSnapshot {
+	snaps := make([]WorkerSnapshot, len(q.workerStates))
+	for i, ws := range q.workerStates {
+		ws.mu.RLock()
+		snap := WorkerSnapshot{
+			ID:              fmt.Sprintf("worker-%d", i),
+			Status:          ws.status,
+			JobID:           ws.jobID,
+			JobType:         ws.jobType,
+			JobTarget:       ws.jobTarget,
+			WorkerStartedAt: ws.workerStartedAt,
+			LastJobAt:       ws.lastJobAt,
+			JobsDone:        ws.jobsDone,
+			JobsFailed:      ws.jobsFailed,
+		}
+		if !ws.jobStartedAt.IsZero() {
+			t := ws.jobStartedAt
+			snap.JobStartedAt = &t
+		}
+		ws.mu.RUnlock()
+		snaps[i] = snap
+	}
+	return snaps
+}
+
 // worker is the main loop for a single worker goroutine.
-// It pulls scan requests from the queue channel and executes them.
+// It pulls jobs from the queue channel and executes them.
 func (q *ScanQueue) worker(ctx context.Context, workerID int) {
 	defer q.wg.Done()
 
-	logging.Debug("Scan queue worker started", "worker_id", workerID)
+	logging.Debug("Queue worker started", "worker_id", workerID)
 
-	for req := range q.queue {
+	for job := range q.queue {
 		q.updateQueueDepthMetric()
 
-		// Check if context is cancelled before starting a new scan.
+		// Check if context is cancelled before starting a new job.
 		select {
 		case <-ctx.Done():
-			// Context cancelled but we still have a request we pulled from the channel.
-			// Send back an error result so the caller isn't left hanging.
-			q.sendResult(req, &ScanQueueResult{
-				ID:    req.ID,
-				Error: fmt.Errorf("scan queue shutting down: %w", ctx.Err()),
-			})
-			logging.Debug("Worker context cancelled, discarding request",
+			logging.Debug("Worker context cancelled, discarding job",
 				"worker_id", workerID,
-				"request_id", req.ID)
+				"job_id", job.ID(),
+				"job_type", job.Type())
 			continue
 		default:
 		}
 
-		q.executeScan(ctx, workerID, req)
+		q.executeJob(ctx, workerID, job)
 	}
 
-	logging.Debug("Scan queue worker stopped", "worker_id", workerID)
+	logging.Debug("Queue worker stopped", "worker_id", workerID)
 }
 
-// executeScan runs a single scan request and handles metrics, logging, and result delivery.
-func (q *ScanQueue) executeScan(ctx context.Context, workerID int, req *ScanQueueRequest) {
+// executeJob runs a single job and handles metrics, logging, and worker state.
+func (q *ScanQueue) executeJob(ctx context.Context, workerID int, job Job) {
+	// Mark worker as active with current job details before touching metrics.
+	jobStartedAt := time.Now()
+	ws := q.workerStates[workerID]
+	ws.mu.Lock()
+	ws.status = "active"
+	ws.jobID = job.ID()
+	ws.jobType = job.Type()
+	ws.jobTarget = job.Target()
+	ws.jobStartedAt = jobStartedAt
+	ws.mu.Unlock()
+
 	q.activeScans.Add(1)
 	q.updateMetrics()
 
-	logging.Info("Scan starting",
+	logging.Info("Job starting",
 		"worker_id", workerID,
-		"request_id", req.ID,
-		"active_scans", q.activeScans.Load(),
+		"job_id", job.ID(),
+		"job_type", job.Type(),
+		"job_target", job.Target(),
+		"active_jobs", q.activeScans.Load(),
 		"queue_depth", len(q.queue))
 
 	start := time.Now()
-
-	// Use the injected scan function if available; otherwise fall back to
-	// the real RunScanWithContext implementation.
-	var queueResult *ScanQueueResult
-	if q.scanFunc != nil {
-		queueResult = q.scanFunc(ctx, req)
-		if queueResult.Duration == 0 {
-			queueResult.Duration = time.Since(start)
-		}
-	} else {
-		queueResult = defaultScanFunc(ctx, req)
-	}
-
+	err := job.Execute(ctx)
 	duration := time.Since(start)
-	if queueResult.Duration == 0 {
-		queueResult.Duration = duration
-	}
 
 	q.activeScans.Add(-1)
 
-	if queueResult.Error != nil {
+	// Return worker to idle and update per-worker counters.
+	completedAt := time.Now()
+	ws.mu.Lock()
+	ws.status = "idle"
+	ws.jobID = ""
+	ws.jobType = ""
+	ws.jobTarget = ""
+	ws.jobStartedAt = time.Time{}
+	ws.lastJobAt = completedAt
+	if err != nil {
+		ws.jobsFailed++
+	} else {
+		ws.jobsDone++
+	}
+	ws.mu.Unlock()
+
+	if err != nil {
 		q.totalFailed.Add(1)
-		logging.Error("Scan failed",
+		logging.Error("Job failed",
 			"worker_id", workerID,
-			"request_id", req.ID,
-			"duration", queueResult.Duration,
-			"error", queueResult.Error)
+			"job_id", job.ID(),
+			"job_type", job.Type(),
+			"duration", duration,
+			"error", err)
 	} else {
 		q.totalCompleted.Add(1)
-		hostCount := 0
-		if queueResult.Result != nil {
-			hostCount = len(queueResult.Result.Hosts)
-		}
-		logging.Info("Scan completed",
+		logging.Info("Job completed",
 			"worker_id", workerID,
-			"request_id", req.ID,
-			"duration", queueResult.Duration,
-			"hosts_found", hostCount)
+			"job_id", job.ID(),
+			"job_type", job.Type(),
+			"duration", duration)
 	}
 
 	q.updateMetrics()
-	q.sendResult(req, queueResult)
-}
-
-// defaultScanFunc is the production scan function that delegates to RunScanWithContext.
-func defaultScanFunc(ctx context.Context, req *ScanQueueRequest) *ScanQueueResult {
-	start := time.Now()
-	result, err := RunScanWithContext(ctx, req.Config, req.Database)
-	return &ScanQueueResult{
-		ID:       req.ID,
-		Result:   result,
-		Error:    err,
-		Duration: time.Since(start),
-	}
-}
-
-// sendResult delivers a scan result back to the caller via the ResultCh channel.
-// If ResultCh is nil, the result is silently discarded.
-func (q *ScanQueue) sendResult(req *ScanQueueRequest, result *ScanQueueResult) {
-	if req.ResultCh == nil {
-		return
-	}
-
-	// Non-blocking send to avoid worker deadlock if the caller isn't reading.
-	select {
-	case req.ResultCh <- result:
-	default:
-		logging.Warn("Failed to deliver scan result, channel full or not ready",
-			"request_id", req.ID)
-	}
 }
 
 // updateMetrics pushes current active-scan count to Prometheus metrics.

@@ -31,19 +31,13 @@ const (
 	maxTargetCount    = 100
 )
 
-// scanRunnerFunc is the signature for the function that executes a scan.
-// It matches scanning.RunScanWithContext and can be replaced in tests.
-type scanRunnerFunc func(
-	ctx context.Context, config *scanning.ScanConfig, database *db.DB,
-) (*scanning.ScanResult, error)
-
 // ScanHandler handles scan-related API endpoints.
 type ScanHandler struct {
 	service    ScanServicer
 	logger     *slog.Logger
 	metrics    *metrics.Registry
 	scanQueue  *scanning.ScanQueue
-	scanRunner scanRunnerFunc
+	scanRunner scanning.ScanJobExecutor
 	scanMode   string
 }
 
@@ -53,7 +47,7 @@ func NewScanHandler(service ScanServicer, logger *slog.Logger, metricsManager *m
 		service:    service,
 		logger:     logger.With("handler", "scan"),
 		metrics:    metricsManager,
-		scanRunner: scanning.RunScanWithContext,
+		scanRunner: scanning.ScanJobExecutor(scanning.RunScanWithContext),
 	}
 }
 
@@ -419,10 +413,6 @@ func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 // submitToQueue enqueues the scan for execution via the bounded scan queue.
 // It returns the HTTP status code and error to write back, or 0/nil on success.
 func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error) {
-	// Type-assert to *services.ScanService so the runner can persist hosts and
-	// ports via the underlying DB connection. If the service is a test double
-	// the cast yields nil, which RunScanWithContext handles gracefully (it skips
-	// persistence when database is nil).
 	var concreteDB *db.DB
 	if svc, ok := h.service.(*services.ScanService); ok {
 		concreteDB = svc.DB()
@@ -437,15 +427,31 @@ func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error
 		ScanID:      &scanID,
 	}
 
-	resultCh := make(chan *scanning.ScanQueueResult, 1)
-	req := &scanning.ScanQueueRequest{
-		ID:       scanID.String(),
-		Config:   scanConfig,
-		Database: concreteDB,
-		ResultCh: resultCh,
-	}
+	job := scanning.NewScanJob(
+		scanID.String(),
+		scanConfig,
+		concreteDB,
+		h.scanRunner,
+		func(_ *scanning.ScanResult, err error) {
+			ctx := context.Background()
+			if err != nil {
+				h.logger.Error("Queued scan execution failed",
+					"scan_id", scanID, "error", err)
+				if stopErr := h.service.StopScan(ctx, scanID, err.Error()); stopErr != nil {
+					h.logger.Error("Failed to mark scan as stopped after queue execution",
+						"scan_id", scanID, "error", stopErr)
+				}
+			} else {
+				h.logger.Info("Queued scan execution completed", "scan_id", scanID)
+				if completeErr := h.service.CompleteScan(ctx, scanID); completeErr != nil {
+					h.logger.Error("Failed to mark scan as completed after queue execution",
+						"scan_id", scanID, "error", completeErr)
+				}
+			}
+		},
+	)
 
-	if err := h.scanQueue.Submit(req); err != nil {
+	if err := h.scanQueue.Submit(job); err != nil {
 		if stderrors.Is(err, scanning.ErrQueueFull) {
 			h.logger.Warn("Scan queue is full, rejecting request", "scan_id", scanID)
 			return http.StatusTooManyRequests, fmt.Errorf("scan queue is full, please try again later")
@@ -457,27 +463,6 @@ func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error
 		h.logger.Error("Failed to submit scan to queue", "scan_id", scanID, "error", err)
 		return http.StatusInternalServerError, fmt.Errorf("failed to submit scan: %w", err)
 	}
-
-	// Listen for the result and update scan status when done.
-	go func() {
-		result := <-resultCh
-		ctx := context.Background()
-		if result.Error != nil {
-			h.logger.Error("Queued scan execution failed",
-				"scan_id", scanID, "error", result.Error)
-			if stopErr := h.service.StopScan(ctx, scanID, result.Error.Error()); stopErr != nil {
-				h.logger.Error("Failed to mark scan as stopped after queue execution",
-					"scan_id", scanID, "error", stopErr)
-			}
-		} else {
-			h.logger.Info("Queued scan execution completed",
-				"scan_id", scanID, "duration", result.Duration)
-			if completeErr := h.service.CompleteScan(ctx, scanID); completeErr != nil {
-				h.logger.Error("Failed to mark scan as completed after queue execution",
-					"scan_id", scanID, "error", completeErr)
-			}
-		}
-	}()
 
 	return 0, nil
 }

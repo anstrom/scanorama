@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,8 +16,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/scanning"
 )
 
 // Test helper functions
@@ -94,95 +97,313 @@ func TestNewAdminHandler(t *testing.T) {
 	})
 }
 
-// TestGetWorkerStatus tests worker status retrieval endpoint
-func TestGetWorkerStatus(t *testing.T) {
-	t.Run("returns worker status successfully", func(t *testing.T) {
+// newTestScanQueue creates a started ScanQueue backed by a no-op scan
+// runner. t.Cleanup registers Stop so callers never need to defer it.
+func newTestScanQueue(t *testing.T, workers, queueSize int) *scanning.ScanQueue {
+	t.Helper()
+	q := scanning.NewScanQueue(workers, queueSize)
+	q.Start(context.Background())
+	t.Cleanup(q.Stop)
+	return q
+}
+
+// waitForWorkerStatus polls until fn returns true or the deadline is exceeded.
+func waitForWorkerStatus(t *testing.T, h *AdminHandler, fn func(WorkerStatusResponse) bool) WorkerStatusResponse {
+	t.Helper()
+	deadline := time.After(3 * time.Second)
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/workers", nil)
+		rr := executeRequest(t, h.GetWorkerStatus, req)
+		var resp WorkerStatusResponse
+		if err := json.NewDecoder(rr.Body).Decode(&resp); err == nil && fn(resp) {
+			return resp
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for expected worker status")
+			return WorkerStatusResponse{}
+		case <-ticker.C:
+		}
+	}
+}
+
+// TestGetWorkerStatus_NoQueue tests behavior when no scan queue is wired.
+func TestGetWorkerStatus_NoQueue(t *testing.T) {
+	t.Run("returns valid empty response", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
-		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/workers/status", nil)
+		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/workers", nil)
 
 		rr := executeRequest(t, handler.GetWorkerStatus, req)
 
 		var response WorkerStatusResponse
 		assertJSONResponse(t, rr, &response)
 
-		// Verify response structure
-		assert.GreaterOrEqual(t, response.TotalWorkers, 0)
-		assert.GreaterOrEqual(t, response.ActiveWorkers, 0)
-		assert.GreaterOrEqual(t, response.IdleWorkers, 0)
-		assert.GreaterOrEqual(t, response.QueueSize, 0)
-		assert.GreaterOrEqual(t, response.ProcessedJobs, int64(0))
-		assert.GreaterOrEqual(t, response.FailedJobs, int64(0))
-		assert.NotNil(t, response.Workers)
-		assert.NotNil(t, response.Summary)
+		assert.Equal(t, 0, response.TotalWorkers)
+		assert.Equal(t, 0, response.ActiveWorkers)
+		assert.Equal(t, 0, response.IdleWorkers)
+		assert.NotNil(t, response.Workers, "Workers slice should be non-nil")
+		assert.Empty(t, response.Workers)
 		assert.False(t, response.Timestamp.IsZero())
 	})
 
-	t.Run("includes worker details in response", func(t *testing.T) {
+	t.Run("summary keys always present", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
-		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/workers/status", nil)
+		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/workers", nil)
 
 		rr := executeRequest(t, handler.GetWorkerStatus, req)
 
 		var response WorkerStatusResponse
 		assertJSONResponse(t, rr, &response)
 
-		// Verify each worker has required fields
-		for _, worker := range response.Workers {
-			assert.NotEmpty(t, worker.ID)
-			assert.NotEmpty(t, worker.Status)
-			assert.GreaterOrEqual(t, worker.JobsProcessed, int64(0))
-			assert.GreaterOrEqual(t, worker.JobsFailed, int64(0))
-			assert.False(t, worker.StartTime.IsZero())
-			assert.GreaterOrEqual(t, worker.Uptime, time.Duration(0))
-			assert.GreaterOrEqual(t, worker.MemoryUsage, int64(0))
-			assert.GreaterOrEqual(t, worker.CPUUsage, float64(0))
-			assert.GreaterOrEqual(t, worker.ErrorRate, float64(0))
-			assert.NotNil(t, worker.Metrics)
-		}
-	})
-
-	t.Run("worker count consistency", func(t *testing.T) {
-		handler := createTestAdminHandler(t)
-		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/workers/status", nil)
-
-		rr := executeRequest(t, handler.GetWorkerStatus, req)
-
-		var response WorkerStatusResponse
-		assertJSONResponse(t, rr, &response)
-
-		// Total workers should match sum of active and idle
-		assert.Equal(t, response.TotalWorkers, len(response.Workers))
-
-		// Count active and idle workers
-		activeCount := 0
-		idleCount := 0
-		for _, worker := range response.Workers {
-			switch worker.Status {
-			case "active":
-				activeCount++
-			case "idle":
-				idleCount++
-			}
-		}
-
-		assert.Equal(t, response.ActiveWorkers, activeCount)
-		assert.Equal(t, response.IdleWorkers, idleCount)
-	})
-
-	t.Run("includes summary statistics", func(t *testing.T) {
-		handler := createTestAdminHandler(t)
-		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/workers/status", nil)
-
-		rr := executeRequest(t, handler.GetWorkerStatus, req)
-
-		var response WorkerStatusResponse
-		assertJSONResponse(t, rr, &response)
-
-		// Verify summary contains expected metrics
-		assert.NotEmpty(t, response.Summary)
 		assert.Contains(t, response.Summary, "total_scans_completed")
 		assert.Contains(t, response.Summary, "total_discovery_completed")
 		assert.Contains(t, response.Summary, "overall_error_rate")
+	})
+}
+
+// TestGetWorkerStatus tests behavior when a real scan queue is wired.
+func TestGetWorkerStatus(t *testing.T) {
+	t.Run("worker count matches queue size", func(t *testing.T) {
+		q := newTestScanQueue(t, 3, 20)
+		handler := createTestAdminHandler(t).WithScanQueue(q)
+
+		resp := waitForWorkerStatus(t, handler, func(r WorkerStatusResponse) bool {
+			return r.TotalWorkers == 3
+		})
+
+		assert.Equal(t, 3, resp.TotalWorkers)
+		assert.Equal(t, len(resp.Workers), resp.TotalWorkers)
+	})
+
+	t.Run("all workers idle at startup", func(t *testing.T) {
+		q := newTestScanQueue(t, 2, 10)
+		handler := createTestAdminHandler(t).WithScanQueue(q)
+
+		resp := waitForWorkerStatus(t, handler, func(r WorkerStatusResponse) bool {
+			return r.TotalWorkers == 2
+		})
+
+		assert.Equal(t, 2, resp.IdleWorkers)
+		assert.Equal(t, 0, resp.ActiveWorkers)
+		for _, w := range resp.Workers {
+			assert.Equal(t, "idle", w.Status)
+			assert.Nil(t, w.CurrentJob)
+		}
+	})
+
+	t.Run("worker shows active with current job while scan runs", func(t *testing.T) {
+		started := make(chan struct{})
+		unblock := make(chan struct{})
+
+		q := scanning.NewScanQueue(1, 10)
+		q.Start(context.Background())
+		t.Cleanup(q.Stop)
+
+		handler := createTestAdminHandler(t).WithScanQueue(q)
+
+		done := make(chan struct{})
+		job := scanning.NewScanJob(
+			"admin-test-active-1",
+			&scanning.ScanConfig{Targets: []string{"10.0.0.1"}, Ports: "80", ScanType: "connect"},
+			nil,
+			func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+				close(started)
+				<-unblock
+				return &scanning.ScanResult{}, nil
+			},
+			func(_ *scanning.ScanResult, _ error) { close(done) },
+		)
+		require.NoError(t, q.Submit(job))
+
+		select {
+		case <-started:
+		case <-time.After(3 * time.Second):
+			t.Fatal("worker did not start the job in time")
+		}
+
+		resp := waitForWorkerStatus(t, handler, func(r WorkerStatusResponse) bool {
+			return r.ActiveWorkers == 1
+		})
+
+		assert.Equal(t, 1, resp.ActiveWorkers)
+		assert.Equal(t, 0, resp.IdleWorkers)
+		require.Len(t, resp.Workers, 1)
+
+		w := resp.Workers[0]
+		assert.Equal(t, "active", w.Status)
+		require.NotNil(t, w.CurrentJob)
+		assert.Equal(t, "scan", w.CurrentJob.Type)
+		assert.Equal(t, "10.0.0.1", w.CurrentJob.Target)
+
+		close(unblock)
+		<-done
+	})
+
+	t.Run("worker returns to idle after job completes", func(t *testing.T) {
+		q := newTestScanQueue(t, 1, 10)
+		handler := createTestAdminHandler(t).WithScanQueue(q)
+
+		done := make(chan struct{})
+		job := scanning.NewScanJob(
+			"admin-test-idle-after-1",
+			&scanning.ScanConfig{Targets: []string{"10.0.0.2"}, Ports: "80", ScanType: "connect"},
+			nil,
+			func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+				return &scanning.ScanResult{}, nil
+			},
+			func(_ *scanning.ScanResult, _ error) { close(done) },
+		)
+		require.NoError(t, q.Submit(job))
+		<-done
+
+		resp := waitForWorkerStatus(t, handler, func(r WorkerStatusResponse) bool {
+			return r.IdleWorkers == 1
+		})
+
+		assert.Equal(t, 1, resp.IdleWorkers)
+		assert.Equal(t, 0, resp.ActiveWorkers)
+		assert.Nil(t, resp.Workers[0].CurrentJob)
+	})
+
+	t.Run("processed jobs counter increments", func(t *testing.T) {
+		q := newTestScanQueue(t, 1, 10)
+		handler := createTestAdminHandler(t).WithScanQueue(q)
+
+		const jobs = 3
+		var wg sync.WaitGroup
+		for i := range jobs {
+			wg.Add(1)
+			job := scanning.NewScanJob(
+				fmt.Sprintf("admin-test-count-%d", i),
+				&scanning.ScanConfig{Targets: []string{"127.0.0.1"}, Ports: "80", ScanType: "connect"},
+				nil,
+				func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+					return &scanning.ScanResult{}, nil
+				},
+				func(_ *scanning.ScanResult, _ error) { wg.Done() },
+			)
+			require.NoError(t, q.Submit(job))
+		}
+		doneCh := make(chan struct{})
+		go func() { wg.Wait(); close(doneCh) }()
+		select {
+		case <-doneCh:
+		case <-time.After(5 * time.Second):
+			t.Fatal("jobs did not complete in time")
+		}
+
+		resp := waitForWorkerStatus(t, handler, func(r WorkerStatusResponse) bool {
+			return r.ProcessedJobs == jobs
+		})
+
+		assert.Equal(t, int64(jobs), resp.ProcessedJobs)
+		assert.Equal(t, int64(0), resp.FailedJobs)
+	})
+
+	t.Run("worker count consistency", func(t *testing.T) {
+		q := newTestScanQueue(t, 4, 20)
+		handler := createTestAdminHandler(t).WithScanQueue(q)
+
+		resp := waitForWorkerStatus(t, handler, func(r WorkerStatusResponse) bool {
+			return r.TotalWorkers == 4
+		})
+
+		assert.Equal(t, resp.TotalWorkers, len(resp.Workers))
+
+		active, idle := 0, 0
+		for _, w := range resp.Workers {
+			switch w.Status {
+			case "active":
+				active++
+			case "idle":
+				idle++
+			}
+		}
+		assert.Equal(t, resp.ActiveWorkers, active)
+		assert.Equal(t, resp.IdleWorkers, idle)
+	})
+
+	t.Run("summary keys always present", func(t *testing.T) {
+		q := newTestScanQueue(t, 2, 10)
+		handler := createTestAdminHandler(t).WithScanQueue(q)
+
+		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/workers", nil)
+		rr := executeRequest(t, handler.GetWorkerStatus, req)
+
+		var resp WorkerStatusResponse
+		assertJSONResponse(t, rr, &resp)
+
+		assert.Contains(t, resp.Summary, "total_scans_completed")
+		assert.Contains(t, resp.Summary, "total_discovery_completed")
+		assert.Contains(t, resp.Summary, "overall_error_rate")
+	})
+
+	t.Run("worker start times are set", func(t *testing.T) {
+		q := newTestScanQueue(t, 2, 10)
+		handler := createTestAdminHandler(t).WithScanQueue(q)
+
+		resp := waitForWorkerStatus(t, handler, func(r WorkerStatusResponse) bool {
+			return r.TotalWorkers == 2
+		})
+
+		for _, w := range resp.Workers {
+			assert.False(t, w.StartTime.IsZero(), "StartTime should be set for worker %s", w.ID)
+		}
+	})
+
+	t.Run("concurrent jobs across multiple workers", func(t *testing.T) {
+		const numWorkers = 3
+		var mu sync.Mutex
+		started := make([]bool, numWorkers)
+		unblock := make(chan struct{})
+
+		q := scanning.NewScanQueue(numWorkers, 20)
+		q.Start(context.Background())
+		t.Cleanup(q.Stop)
+
+		handler := createTestAdminHandler(t).WithScanQueue(q)
+
+		var wg sync.WaitGroup
+		for i := range numWorkers {
+			wg.Add(1)
+			job := scanning.NewScanJob(
+				fmt.Sprintf("admin-concurrent-%d", i),
+				&scanning.ScanConfig{Targets: []string{"10.0.0.1"}, Ports: "80", ScanType: "connect"},
+				nil,
+				func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+					mu.Lock()
+					for i := range started {
+						if !started[i] {
+							started[i] = true
+							break
+						}
+					}
+					mu.Unlock()
+					<-unblock
+					return &scanning.ScanResult{}, nil
+				},
+				func(_ *scanning.ScanResult, _ error) { wg.Done() },
+			)
+			require.NoError(t, q.Submit(job))
+		}
+
+		resp := waitForWorkerStatus(t, handler, func(r WorkerStatusResponse) bool {
+			return r.ActiveWorkers == numWorkers
+		})
+
+		assert.Equal(t, numWorkers, resp.ActiveWorkers)
+		assert.Equal(t, 0, resp.IdleWorkers)
+
+		close(unblock)
+		doneCh := make(chan struct{})
+		go func() { wg.Wait(); close(doneCh) }()
+		select {
+		case <-doneCh:
+		case <-time.After(5 * time.Second):
+			t.Fatal("concurrent jobs did not complete in time")
+		}
 	})
 }
 

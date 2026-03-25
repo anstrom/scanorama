@@ -619,19 +619,15 @@ func TestProcessHostsViaQueue_AllSubmitted_SuccessResult(t *testing.T) {
 		))
 
 	q := scanning.NewScanQueue(4, 20)
-	// Inject a scan function that immediately sends a success result.
-	q.SetScanFunc(func(ctx context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
-		return &scanning.ScanQueueResult{
-			ID:     req.ID,
-			Result: &scanning.ScanResult{},
-		}
-	})
 	ctx, cancel := context.WithCancel(context.Background())
 	q.Start(ctx)
 	defer cancel()
 
 	s := NewScheduler(nil, nil, mgr)
 	s.WithScanQueue(q)
+	s.scanRunner = func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+		return &scanning.ScanResult{}, nil
+	}
 
 	host := hostWithIP("10.4.0.1")
 	config := &ScanJobConfig{ProfileID: "queue-profile"}
@@ -667,18 +663,15 @@ func TestProcessHostsViaQueue_ErrorResult(t *testing.T) {
 		))
 
 	q := scanning.NewScanQueue(4, 20)
-	q.SetScanFunc(func(ctx context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
-		return &scanning.ScanQueueResult{
-			ID:    req.ID,
-			Error: errors.New("scan failed"),
-		}
-	})
 	ctx, cancel := context.WithCancel(context.Background())
 	q.Start(ctx)
 	defer cancel()
 
 	s := NewScheduler(nil, nil, mgr)
 	s.WithScanQueue(q)
+	s.scanRunner = func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+		return nil, errors.New("scan failed")
+	}
 
 	host := hostWithIP("10.4.0.2")
 	config := &ScanJobConfig{ProfileID: "err-profile"}
@@ -716,18 +709,17 @@ func TestProcessHostsViaQueue_ContextCancelledWhileWaiting(t *testing.T) {
 
 	started := make(chan struct{})
 	q := scanning.NewScanQueue(4, 20)
-	q.SetScanFunc(func(ctx context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
-		close(started)
-		// Block until context is cancelled.
-		<-ctx.Done()
-		return &scanning.ScanQueueResult{ID: req.ID, Error: ctx.Err()}
-	})
 	queueCtx, queueCancel := context.WithCancel(context.Background())
 	q.Start(queueCtx)
 	defer queueCancel()
 
 	s := NewScheduler(nil, nil, mgr)
 	s.WithScanQueue(q)
+	s.scanRunner = func(ctx context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 
 	host := hostWithIP("10.4.0.3")
 	config := &ScanJobConfig{ProfileID: "slow-profile"}
@@ -790,12 +782,16 @@ func TestProcessHostsViaQueue_QueueFull(t *testing.T) {
 	q := scanning.NewScanQueue(1, 1)
 	// Do NOT call q.Start — no workers drain the queue.
 
-	// Pre-fill the sole queue slot with a dummy request so it is full.
-	dummy := &scanning.ScanQueueRequest{
-		ID:       "dummy",
-		Config:   &scanning.ScanConfig{},
-		ResultCh: make(chan *scanning.ScanQueueResult, 1),
-	}
+	// Pre-fill the sole queue slot with a dummy job so it is full.
+	dummy := scanning.NewScanJob(
+		"dummy",
+		&scanning.ScanConfig{},
+		nil,
+		func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+			return &scanning.ScanResult{}, nil
+		},
+		nil,
+	)
 	require.NoError(t, q.Submit(dummy), "pre-fill must succeed")
 
 	s := NewScheduler(nil, nil, mgr)
@@ -884,16 +880,15 @@ func TestProcessHostsViaQueue_ResultWithNilResult(t *testing.T) {
 		))
 
 	q := scanning.NewScanQueue(4, 20)
-	q.SetScanFunc(func(ctx context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
-		// Return success but with nil Result field.
-		return &scanning.ScanQueueResult{ID: req.ID, Result: nil}
-	})
 	ctx, cancel := context.WithCancel(context.Background())
 	q.Start(ctx)
 	defer cancel()
 
 	s := NewScheduler(nil, nil, mgr)
 	s.WithScanQueue(q)
+	s.scanRunner = func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+		return nil, nil // success but nil result
+	}
 
 	host := hostWithIP("10.8.0.1")
 	config := &ScanJobConfig{ProfileID: "nil-result-profile"}
