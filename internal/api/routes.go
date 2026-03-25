@@ -31,7 +31,8 @@ func (s *Server) setupRoutes() {
 		services.NewScheduleService(db.NewScheduleRepository(s.database), s.logger), s.logger, s.metrics)
 	networkHandler := apihandlers.NewNetworkHandler(services.NewNetworkService(s.database), s.logger, s.metrics).
 		WithDiscovery(db.NewDiscoveryRepository(s.database), s.discoveryEngine)
-	handlerManager := apihandlers.New(s.database, s.logger, s.metrics)
+	handlerManager := apihandlers.New(s.database, s.logger, s.metrics).
+		WithRingBuffer(s.ringBuffer)
 
 	s.setupScanRoutes(api, scanHandler)
 	s.setupHostRoutes(api, hostHandler)
@@ -42,6 +43,8 @@ func (s *Server) setupRoutes() {
 
 	api.HandleFunc("/ws", handlerManager.GeneralWebSocket).Methods("GET")
 	api.HandleFunc("/ws/scans", handlerManager.ScanWebSocket).Methods("GET")
+	api.HandleFunc("/ws/logs", handlerManager.LogsWebSocket).Methods("GET")
+	api.HandleFunc("/admin/logs", handlerManager.GetLogs).Methods("GET")
 	api.HandleFunc("/admin/status", s.adminStatusHandler).Methods("GET")
 
 	s.setupDocRoutes()

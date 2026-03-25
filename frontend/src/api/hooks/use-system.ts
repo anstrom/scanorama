@@ -71,3 +71,53 @@ export function useWorkers() {
     refetchInterval: 10_000,
   });
 }
+
+// ── Logs ───────────────────────────────────────────────────────────────────────
+
+export interface LogEntry {
+  time: string;
+  level: string;
+  message: string;
+  component?: string;
+  attrs?: Record<string, string>;
+}
+
+export interface LogsResponse {
+  data: LogEntry[];
+  pagination: {
+    page: number;
+    page_size: number;
+    total_items: number;
+    total_pages: number;
+  };
+}
+
+export interface LogsParams {
+  level?: string;
+  component?: string;
+  search?: string;
+  since?: string;
+  until?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export function useLogs(params: LogsParams = {}) {
+  return useQuery({
+    queryKey: ["admin", "logs", params],
+    queryFn: async () => {
+      // /admin/logs is not yet in the generated OpenAPI types; cast to bypass.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const queryParams = Object.fromEntries(
+        Object.entries(params).filter(([, v]) => v !== undefined && v !== ""),
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (api as any).GET("/admin/logs", {
+        params: { query: queryParams },
+      });
+      if (error) throw error;
+      return data as LogsResponse;
+    },
+    staleTime: 5_000,
+  });
+}

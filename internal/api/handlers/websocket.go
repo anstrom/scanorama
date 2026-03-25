@@ -13,17 +13,19 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
 const (
 	// WebSocket configuration constants.
-	writeWait       = 10 * time.Second                                   // Time allowed to write a message to the peer
-	pongWait        = 60 * time.Second                                   // Time to read next pong message from peer
-	pingPeriodRatio = 0.9                                                // Ratio of pongWait for pingPeriod
-	pingPeriod      = time.Duration(float64(pongWait) * pingPeriodRatio) // Send pings to peer (must be < pongWait)
-	maxMessageSize  = 512                                                // Maximum message size allowed from peer
-	bufferSize      = 256                                                // Size of the broadcast channel buffer
+	writeWait        = 10 * time.Second                                   // Time allowed to write a message to the peer
+	pongWait         = 60 * time.Second                                   // Time to read next pong message from peer
+	pingPeriodRatio  = 0.9                                                // Ratio of pongWait for pingPeriod
+	pingPeriod       = time.Duration(float64(pongWait) * pingPeriodRatio) // Send pings to peer (must be < pongWait)
+	maxMessageSize   = 512                                                // Maximum message size allowed from peer
+	bufferSize       = 256                                                // Size of the broadcast channel buffer
+	logsHistoryBurst = 100                                                // Recent log entries sent on connect
 )
 
 // WebSocketHandler handles WebSocket connections for real-time updates.
@@ -31,6 +33,9 @@ type WebSocketHandler struct {
 	logger   *slog.Logger
 	metrics  *metrics.Registry
 	upgrader websocket.Upgrader
+
+	// Ring buffer for log streaming
+	ringBuffer *logging.RingBuffer
 
 	// Connection management
 	scanClients        map[*websocket.Conn]bool
@@ -468,6 +473,134 @@ func (h *WebSocketHandler) Close() error {
 
 	h.logger.Info("WebSocket handler closed")
 	return nil
+}
+
+// WithRingBuffer sets the ring buffer used for log streaming and returns the
+// handler for method chaining.
+func (h *WebSocketHandler) WithRingBuffer(rb *logging.RingBuffer) *WebSocketHandler {
+	h.ringBuffer = rb
+	return h
+}
+
+// LogsWebSocket handles WebSocket connections at /api/v1/ws/logs.
+//
+// On connect it immediately sends a "log_history" burst of the 100 most recent
+// log entries, then streams every future entry as individual "log_entry"
+// messages until the client disconnects.
+// sendLogsHistory sends the recent log history burst to the client on connect.
+func (h *WebSocketHandler) sendLogsHistory(conn *websocket.Conn) {
+	if h.ringBuffer == nil {
+		return
+	}
+	recent := h.ringBuffer.Recent(logsHistoryBurst)
+	msg := WebSocketMessage{
+		Type:      "log_history",
+		Timestamp: time.Now().UTC(),
+		Data:      map[string]interface{}{"entries": recent, "total": len(recent)},
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+	_ = conn.WriteMessage(websocket.TextMessage, data)
+}
+
+// runLogsWriteLoop runs the ping/write select loop until the client
+// disconnects or the subscription channel closes.
+func (h *WebSocketHandler) runLogsWriteLoop(
+	conn *websocket.Conn,
+	done <-chan struct{},
+	subCh <-chan logging.LogEntry,
+	requestID string,
+) {
+	pingTicker := time.NewTicker(pingPeriod)
+	defer pingTicker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return
+		case <-pingTicker.C:
+			if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				return
+			}
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				h.logger.Debug("Logs WebSocket ping failed", "request_id", requestID, "error", err)
+				return
+			}
+		case entry, ok := <-subCh:
+			if !ok {
+				return
+			}
+			msg := WebSocketMessage{
+				Type:      "log_entry",
+				Timestamp: time.Now().UTC(),
+				Data:      entry,
+			}
+			data, marshalErr := json.Marshal(msg)
+			if marshalErr != nil {
+				continue
+			}
+			if writeErr := conn.SetWriteDeadline(time.Now().Add(writeWait)); writeErr != nil {
+				return
+			}
+			if writeErr := conn.WriteMessage(websocket.TextMessage, data); writeErr != nil {
+				h.logger.Debug("Logs WebSocket write failed", "request_id", requestID, "error", writeErr)
+				return
+			}
+		}
+	}
+}
+
+func (h *WebSocketHandler) LogsWebSocket(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
+	h.logger.Info("New logs WebSocket connection", "request_id", requestID, "remote_addr", r.RemoteAddr)
+
+	conn, err := h.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		h.logger.Error("Failed to upgrade logs WebSocket connection", "request_id", requestID, "error", err)
+		return
+	}
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			h.logger.Debug("Error closing logs WebSocket connection", "error", closeErr)
+		}
+	}()
+
+	conn.SetReadLimit(maxMessageSize)
+	if err := conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+		h.logger.Error("Failed to set read deadline", "request_id", requestID, "error", err)
+		return
+	}
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(pongWait))
+	})
+
+	h.sendLogsHistory(conn)
+
+	var sub chan logging.LogEntry
+	if h.ringBuffer != nil {
+		sub = h.ringBuffer.Subscribe()
+		defer h.ringBuffer.Unsubscribe(sub)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, readErr := conn.ReadMessage(); readErr != nil {
+				return
+			}
+		}
+	}()
+
+	var subCh <-chan logging.LogEntry
+	if sub != nil {
+		subCh = sub
+	}
+
+	h.runLogsWriteLoop(conn, done, subCh, requestID)
 }
 
 // Utility function shared with other handlers

@@ -38,6 +38,7 @@ type Server struct {
 	metrics         *metrics.Registry
 	prom            *metrics.PrometheusMetrics
 	startTime       time.Time
+	ringBuffer      *logging.RingBuffer
 
 	// State management
 	mu      sync.RWMutex
@@ -85,7 +86,9 @@ func DefaultConfig() Config {
 
 // New creates a new API server instance.
 func New(cfg *config.Config, database *db.DB) (*Server, error) {
-	logger := logging.Default().With("component", "api")
+	rb := logging.NewRingBuffer(0)
+	wrappedLogger := slog.New(logging.TeeHandler(logging.Default().Handler(), rb.Handler()))
+	logger := wrappedLogger.With("component", "api")
 
 	// Create metrics registry
 	metricsManager := metrics.NewRegistry()
@@ -111,6 +114,7 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 		metrics:         metricsManager,
 		prom:            promMetrics,
 		startTime:       time.Now(),
+		ringBuffer:      rb,
 	}
 
 	// Setup routes

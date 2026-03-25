@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
@@ -545,58 +546,52 @@ func TestUpdateConfig(t *testing.T) {
 	})
 }
 
-// TestGetLogs tests log retrieval endpoint — currently returns 501 Not Implemented.
+// TestGetLogs tests log retrieval endpoint.
 func TestGetLogs(t *testing.T) {
-	t.Run("returns 501 without filters (not yet implemented)", func(t *testing.T) {
+	t.Run("returns 200 with empty data when ring buffer not wired", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs", nil)
 
 		rr := executeRequest(t, handler.GetLogs, req)
 
-		assertNotImplementedResponse(t, rr)
+		assert.Equal(t, http.StatusOK, rr.Code)
 	})
 
-	t.Run("returns 501 when filtering by level", func(t *testing.T) {
+	t.Run("returns 200 with all filter combinations", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
-		levels := []string{"debug", "info", "warn", "error"}
-
-		for _, level := range levels {
-			t.Run(level, func(t *testing.T) {
-				req := createTestRequest(t, http.MethodGet, fmt.Sprintf("/api/v1/admin/logs?level=%s", level), nil)
-
-				rr := executeRequest(t, handler.GetLogs, req)
-
-				assertNotImplementedResponse(t, rr)
-			})
+		paths := []string{
+			"/api/v1/admin/logs?level=error",
+			"/api/v1/admin/logs?component=scanner",
+			"/api/v1/admin/logs?search=timeout",
+			"/api/v1/admin/logs?page=1&page_size=50",
+			"/api/v1/admin/logs?level=error&component=scanner&search=timeout",
+		}
+		for _, path := range paths {
+			req := createTestRequest(t, http.MethodGet, path, nil)
+			rr := executeRequest(t, handler.GetLogs, req)
+			assert.Equal(t, http.StatusOK, rr.Code, "path: %s", path)
 		}
 	})
 
-	t.Run("returns 501 when filtering by component", func(t *testing.T) {
+	t.Run("returns 400 on bad pagination", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
-		components := []string{"api", "scanner", "discovery", "scheduler"}
-
-		for _, component := range components {
-			t.Run(component, func(t *testing.T) {
-				path := fmt.Sprintf("/api/v1/admin/logs?component=%s", component)
-				req := createTestRequest(t, http.MethodGet, path, nil)
-
-				rr := executeRequest(t, handler.GetLogs, req)
-
-				assert.Equal(t, http.StatusNotImplemented, rr.Code)
-			})
-		}
-	})
-
-	t.Run("returns 501 with search parameter", func(t *testing.T) {
-		handler := createTestAdminHandler(t)
-		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?search=error", nil)
+		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?page=invalid", nil)
 
 		rr := executeRequest(t, handler.GetLogs, req)
 
-		assertNotImplementedResponse(t, rr)
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
 	})
 
-	t.Run("returns 501 with time range filters", func(t *testing.T) {
+	t.Run("ignores invalid time format in since/until", func(t *testing.T) {
+		handler := createTestAdminHandler(t)
+		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?since=invalid-time", nil)
+
+		rr := executeRequest(t, handler.GetLogs, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+	})
+
+	t.Run("returns 200 with time range filters", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
 
 		since := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
@@ -607,36 +602,74 @@ func TestGetLogs(t *testing.T) {
 
 		rr := executeRequest(t, handler.GetLogs, req)
 
-		assertNotImplementedResponse(t, rr)
+		assert.Equal(t, http.StatusOK, rr.Code)
 	})
 
-	t.Run("returns 501 with valid pagination params", func(t *testing.T) {
+	t.Run("returns log entries from ring buffer", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
-		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?page=1&page_size=50", nil)
+		rb := logging.NewRingBuffer(10)
+		rb.Append(logging.LogEntry{
+			Time:    time.Now(),
+			Level:   "info",
+			Message: "test message",
+		})
+		handler = handler.WithRingBuffer(rb)
 
+		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs", nil)
 		rr := executeRequest(t, handler.GetLogs, req)
 
-		assertNotImplementedResponse(t, rr)
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var resp struct {
+			Data []logging.LogEntry `json:"data"`
+		}
+		err := json.Unmarshal(rr.Body.Bytes(), &resp)
+		assert.NoError(t, err)
+		assert.Len(t, resp.Data, 1)
+		assert.Equal(t, "test message", resp.Data[0].Message)
 	})
 
-	t.Run("returns 501 with combined filters", func(t *testing.T) {
+	t.Run("level filter hides entries below minimum level", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
-		path := "/api/v1/admin/logs?level=error&component=scanner&search=timeout"
-		req := createTestRequest(t, http.MethodGet, path, nil)
+		rb := logging.NewRingBuffer(10)
+		rb.Append(logging.LogEntry{Time: time.Now(), Level: "debug", Message: "debug msg"})
+		rb.Append(logging.LogEntry{Time: time.Now(), Level: "info", Message: "info msg"})
+		rb.Append(logging.LogEntry{Time: time.Now(), Level: "error", Message: "error msg"})
+		handler = handler.WithRingBuffer(rb)
 
+		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?level=error", nil)
 		rr := executeRequest(t, handler.GetLogs, req)
 
-		assertNotImplementedResponse(t, rr)
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var resp struct {
+			Data []logging.LogEntry `json:"data"`
+		}
+		err := json.Unmarshal(rr.Body.Bytes(), &resp)
+		assert.NoError(t, err)
+		assert.Len(t, resp.Data, 1)
+		assert.Equal(t, "error msg", resp.Data[0].Message)
 	})
 
-	t.Run("returns 501 even with invalid time format (ignored, not a 400)", func(t *testing.T) {
+	t.Run("pagination metadata is correct", func(t *testing.T) {
 		handler := createTestAdminHandler(t)
-		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?since=invalid-time", nil)
+		rb := logging.NewRingBuffer(10)
+		for i := 0; i < 5; i++ {
+			rb.Append(logging.LogEntry{Time: time.Now(), Level: "info", Message: "msg"})
+		}
+		handler = handler.WithRingBuffer(rb)
 
+		req := createTestRequest(t, http.MethodGet, "/api/v1/admin/logs?page=1&page_size=2", nil)
 		rr := executeRequest(t, handler.GetLogs, req)
 
-		// Invalid time is not a pagination error; endpoint returns 501 regardless.
-		assert.Equal(t, http.StatusNotImplemented, rr.Code)
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var resp LogsResponse
+		err := json.Unmarshal(rr.Body.Bytes(), &resp)
+		assert.NoError(t, err)
+		assert.Len(t, resp.Data, 2)
+		assert.Equal(t, 5, resp.Pagination.TotalItems)
+		assert.Equal(t, 3, resp.Pagination.TotalPages)
 	})
 }
 

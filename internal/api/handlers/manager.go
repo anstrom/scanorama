@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/anstrom/scanorama/internal/scanning"
 	"github.com/anstrom/scanorama/internal/services"
@@ -273,6 +274,14 @@ func (hm *HandlerManager) GetLogs(w http.ResponseWriter, r *http.Request) {
 	hm.admin.GetLogs(w, r)
 }
 
+// WithRingBuffer sets the ring buffer for log access on both the admin and
+// websocket handlers and returns the HandlerManager for method chaining.
+func (hm *HandlerManager) WithRingBuffer(rb *logging.RingBuffer) *HandlerManager {
+	hm.admin = hm.admin.WithRingBuffer(rb)
+	hm.websocket = hm.websocket.WithRingBuffer(rb)
+	return hm
+}
+
 // ScanWebSocket handles WebSocket connections for scan updates.
 func (hm *HandlerManager) ScanWebSocket(w http.ResponseWriter, r *http.Request) {
 	hm.websocket.ScanWebSocket(w, r)
@@ -286,6 +295,11 @@ func (hm *HandlerManager) DiscoveryWebSocket(w http.ResponseWriter, r *http.Requ
 // GeneralWebSocket handles general WebSocket connections for all updates.
 func (hm *HandlerManager) GeneralWebSocket(w http.ResponseWriter, r *http.Request) {
 	hm.websocket.GeneralWebSocket(w, r)
+}
+
+// LogsWebSocket handles WebSocket connections for real-time log streaming.
+func (hm *HandlerManager) LogsWebSocket(w http.ResponseWriter, r *http.Request) {
+	hm.websocket.LogsWebSocket(w, r)
 }
 
 // GetDatabase returns the database instance.

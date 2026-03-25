@@ -129,23 +129,3 @@ type DaemonConfigUpdate struct {
 	Daemonize       *bool   `json:"daemonize,omitempty"`
 	ShutdownTimeout *string `json:"shutdown_timeout,omitempty"`
 }
-
-// LogsResponse represents log retrieval response.
-type LogsResponse struct {
-	Lines       []LogEntry `json:"lines"`
-	TotalLines  int        `json:"total_lines"`
-	StartLine   int        `json:"start_line"`
-	EndLine     int        `json:"end_line"`
-	HasMore     bool       `json:"has_more"`
-	GeneratedAt time.Time  `json:"generated_at"`
-}
-
-// LogEntry represents a single log entry.
-type LogEntry struct {
-	Timestamp time.Time              `json:"timestamp"`
-	Level     string                 `json:"level"`
-	Message   string                 `json:"message"`
-	Component string                 `json:"component,omitempty"`
-	Fields    map[string]interface{} `json:"fields,omitempty"`
-	Error     string                 `json:"error,omitempty"`
-}
