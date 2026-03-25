@@ -7,14 +7,11 @@ import type { LogEntry, LogsParams } from "../api/hooks/use-system";
 import { cn, formatRelativeTime, formatAbsoluteTime } from "../lib/utils";
 import { Skeleton } from "./skeleton";
 
-// ── Constants ──────────────────────────────────────────────────────────────────
-
-const LEVELS = ["all", "debug", "info", "warn", "error"] as const;
-type LevelFilter = (typeof LEVELS)[number];
+// ── Constants ──────────────────────────────────────────────────────────────────────────────
 
 const MAX_WS_ENTRIES = 500;
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────────────────
 
 function levelBadgeClass(level: string): string {
   switch (level.toLowerCase()) {
@@ -36,7 +33,7 @@ function entryRowKey(entry: LogEntry, idx: number): string {
   return `${entry.time}|${idx}|${entry.message.slice(0, 32)}`;
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
+// ── Sub-components ─────────────────────────────────────────────────────────────────────────────
 
 interface LogEntryRowProps {
   entry: LogEntry;
@@ -60,7 +57,7 @@ function LogEntryRow({ entry, rowKey, expanded, onToggle }: LogEntryRowProps) {
             levelBadgeClass(entry.level),
           )}
         >
-          {entry.level.slice(0, 4)}
+          {entry.level.slice(0, 5)}
         </span>
 
         {/* Timestamp — absolute time on hover */}
@@ -114,10 +111,10 @@ function LogEntryRow({ entry, rowKey, expanded, onToggle }: LogEntryRowProps) {
   );
 }
 
-// ── Main component ─────────────────────────────────────────────────────────────
+// ── Main component ─────────────────────────────────────────────────────────────────────────────
 
 export function LogViewer() {
-  const [levelFilter, setLevelFilter] = useState<LevelFilter>("all");
+  const [selectedLevels, setSelectedLevels] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -151,7 +148,7 @@ export function LogViewer() {
     };
   }, []);
 
-  // ── Debounce search ──────────────────────────────────────────────────────────
+  // ── Debounce search ──────────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -161,28 +158,37 @@ export function LogViewer() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // ── Level filter change — reset page ─────────────────────────────────────────
+  // ── Level filter handlers ─────────────────────────────────────────────────────────────────────────────
 
-  const handleLevelChange = useCallback((level: LevelFilter) => {
-    setLevelFilter(level);
+  const toggleLevel = useCallback((level: string) => {
+    setSelectedLevels((prev) => {
+      const next = new Set(prev);
+      if (next.has(level)) next.delete(level);
+      else next.add(level);
+      return next;
+    });
     setPage(1);
   }, []);
 
-  // ── REST query ────────────────────────────────────────────────────────────────
+  const clearLevels = useCallback(() => {
+    setSelectedLevels(new Set());
+    setPage(1);
+  }, []);
+
+  // ── REST query ────────────────────────────────────────────────────────────────────────────────
 
   const params = useMemo<LogsParams>(
     () => ({
       page,
       page_size: 50,
-      ...(levelFilter !== "all" && { level: levelFilter }),
       ...(debouncedSearch !== "" && { search: debouncedSearch }),
     }),
-    [page, levelFilter, debouncedSearch],
+    [page, debouncedSearch],
   );
 
   const { data: restData, isLoading } = useLogs(params);
 
-  // ── WS subscriptions ─────────────────────────────────────────────────────────
+  // ── WS subscriptions ─────────────────────────────────────────────────────────────────────────────
   //
   // Subscribes to log_history (history burst on connect) and log_entry (stream).
   // Note: the backend serves these on /api/v1/ws/logs. They will appear here if
@@ -215,7 +221,7 @@ export function LogViewer() {
     };
   }, [manager]);
 
-  // ── Auto-scroll ───────────────────────────────────────────────────────────────
+  // ── Auto-scroll ────────────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (autoScroll && listRef.current) {
@@ -223,20 +229,22 @@ export function LogViewer() {
     }
   }, [wsEntries, autoScroll]);
 
-  // ── Displayed entries ─────────────────────────────────────────────────────────
+  // ── Displayed entries ──────────────────────────────────────────────────────────────────────────────
 
   const isLive = status === "connected";
+
+  const levelMatches = useCallback(
+    (entry: LogEntry) =>
+      selectedLevels.size === 0 ||
+      selectedLevels.has(entry.level.toLowerCase()),
+    [selectedLevels],
+  );
 
   const displayEntries = useMemo<LogEntry[]>(() => {
     if (isLive && wsEntries.length > 0) {
       // Client-side filter when WS is providing data
       return wsEntries.filter((entry) => {
-        if (
-          levelFilter !== "all" &&
-          entry.level.toLowerCase() !== levelFilter
-        ) {
-          return false;
-        }
+        if (!levelMatches(entry)) return false;
         if (
           debouncedSearch !== "" &&
           !entry.message.toLowerCase().includes(debouncedSearch.toLowerCase())
@@ -246,15 +254,22 @@ export function LogViewer() {
         return true;
       });
     }
-    // Fall back to REST
-    return restData?.data ?? [];
-  }, [isLive, wsEntries, restData, levelFilter, debouncedSearch]);
+    // Fall back to REST — apply client-side level filter
+    return (restData?.data ?? []).filter(levelMatches);
+  }, [
+    isLive,
+    wsEntries,
+    restData,
+    levelMatches,
+    debouncedSearch,
+    selectedLevels,
+  ]);
 
   const pagination = restData?.pagination;
   const hasMore =
     !isLive && pagination !== undefined && page < pagination.total_pages;
 
-  // ── Expand/collapse attrs ─────────────────────────────────────────────────────
+  // ── Expand/collapse attrs ─────────────────────────────────────────────────────────────────────────────
 
   const toggleExpand = useCallback((key: string) => {
     setExpandedKeys((prev) => {
@@ -268,7 +283,7 @@ export function LogViewer() {
     });
   }, []);
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-3">
@@ -276,20 +291,32 @@ export function LogViewer() {
       <div className="flex flex-wrap items-center gap-2">
         {/* Level filter pills */}
         <div className="flex items-center gap-1">
-          {LEVELS.map((level) => (
+          {/* All pill */}
+          <button
+            onClick={clearLevels}
+            className={cn(
+              "px-2 py-0.5 text-xs rounded transition-colors",
+              selectedLevels.size === 0
+                ? "bg-accent/20 text-accent font-medium"
+                : "text-text-secondary hover:text-text-primary hover:bg-surface-raised",
+            )}
+          >
+            All
+          </button>
+
+          {/* Individual level pills */}
+          {(["debug", "info", "warn", "error"] as const).map((level) => (
             <button
               key={level}
-              onClick={() => handleLevelChange(level)}
+              onClick={() => toggleLevel(level)}
               className={cn(
                 "px-2 py-0.5 text-xs rounded transition-colors",
-                levelFilter === level
+                selectedLevels.has(level)
                   ? "bg-accent/20 text-accent font-medium"
                   : "text-text-secondary hover:text-text-primary hover:bg-surface-raised",
               )}
             >
-              {level === "all"
-                ? "All"
-                : level.charAt(0).toUpperCase() + level.slice(1)}
+              {level.charAt(0).toUpperCase() + level.slice(1)}
             </button>
           ))}
         </div>
