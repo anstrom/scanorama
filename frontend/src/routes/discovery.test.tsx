@@ -33,7 +33,7 @@ const mockJobs = [
   {
     id: "job-1",
     name: "Office LAN Discovery",
-    networks: "192.168.1.0/24",
+    networks: ["192.168.1.0/24"],
     method: "tcp" as const,
     status: "completed" as const,
     progress: 100,
@@ -43,7 +43,7 @@ const mockJobs = [
   {
     id: "job-2",
     name: "DMZ Discovery",
-    networks: "10.0.0.0/8",
+    networks: ["10.0.0.0/8"],
     method: "icmp" as const,
     status: "pending" as const,
     progress: 0,
@@ -53,7 +53,7 @@ const mockJobs = [
   {
     id: "job-3",
     name: undefined,
-    networks: "172.16.0.0/12",
+    networks: ["172.16.0.0/12"],
     method: "arp" as const,
     status: "running" as const,
     progress: 50,
