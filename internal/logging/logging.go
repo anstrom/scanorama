@@ -65,13 +65,13 @@ func New(cfg Config) (*Logger, error) {
 	// Parse log level
 	var level slog.Level
 	switch strings.ToLower(string(cfg.Level)) {
-	case "debug":
+	case string(LevelDebug):
 		level = slog.LevelDebug
-	case "info":
+	case string(LevelInfo):
 		level = slog.LevelInfo
-	case "warn":
+	case string(LevelWarn):
 		level = slog.LevelWarn
-	case "error":
+	case string(LevelError):
 		level = slog.LevelError
 	default:
 		level = slog.LevelInfo

@@ -45,28 +45,10 @@ const okPut = (data: unknown): ReturnType<typeof mockPut> =>
     response: new Response(),
   }) as ReturnType<typeof mockPut>;
 
-const failPut = (
-  message = "something went wrong",
-): ReturnType<typeof mockPut> =>
-  Promise.resolve({
-    data: undefined,
-    error: { message },
-    response: new Response(),
-  }) as ReturnType<typeof mockPut>;
-
 const okDelete = (): ReturnType<typeof mockDelete> =>
   Promise.resolve({
     data: undefined,
     error: undefined,
-    response: new Response(),
-  }) as ReturnType<typeof mockDelete>;
-
-const failDelete = (
-  message = "something went wrong",
-): ReturnType<typeof mockDelete> =>
-  Promise.resolve({
-    data: undefined,
-    error: { message },
     response: new Response(),
   }) as ReturnType<typeof mockDelete>;
 
@@ -347,9 +329,7 @@ describe("useHostScans", () => {
   });
 
   it("calls GET /hosts/{hostId}/scans with the correct hostId", async () => {
-    mockGet.mockResolvedValue(
-      ok({ data: [], pagination: mockPagination }),
-    );
+    mockGet.mockResolvedValue(ok({ data: [], pagination: mockPagination }));
 
     const { result } = renderHookWithQuery(() => useHostScans("host-1"));
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -363,9 +343,7 @@ describe("useHostScans", () => {
   });
 
   it("forwards page and page_size as query params", async () => {
-    mockGet.mockResolvedValue(
-      ok({ data: [], pagination: mockPagination }),
-    );
+    mockGet.mockResolvedValue(ok({ data: [], pagination: mockPagination }));
 
     const { result } = renderHookWithQuery(() =>
       useHostScans("host-1", { page: 2, page_size: 10 }),
@@ -375,7 +353,10 @@ describe("useHostScans", () => {
     expect(mockGet).toHaveBeenCalledWith(
       "/hosts/{hostId}/scans",
       expect.objectContaining({
-        params: { path: { hostId: "host-1" }, query: { page: 2, page_size: 10 } },
+        params: {
+          path: { hostId: "host-1" },
+          query: { page: 2, page_size: 10 },
+        },
       }),
     );
   });

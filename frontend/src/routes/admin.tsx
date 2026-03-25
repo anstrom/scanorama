@@ -16,6 +16,7 @@ import {
 } from "../api/hooks/use-system";
 import { StatusBadge, Skeleton } from "../components";
 import { cn, formatRelativeTime } from "../lib/utils";
+import { LogViewer } from "../components/log-viewer";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -405,10 +406,20 @@ export function AdminPage() {
       {/* Section 2 — Workers */}
       <WorkersCard />
 
-      {/* Section 3 — Stubs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <StubCard icon={Settings} title="Configuration" />
-        <StubCard icon={FileText} title="Log Viewer" />
+      {/* Section 3 — Configuration (stub) */}
+      <StubCard icon={Settings} title="Configuration" />
+
+      {/* Section 4 — Log Viewer */}
+      <div className="bg-surface rounded-lg border border-border overflow-hidden">
+        <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+          <FileText className="h-4 w-4 text-text-muted" />
+          <span className="text-xs font-medium text-text-primary">
+            Log Viewer
+          </span>
+        </div>
+        <div className="p-4">
+          <LogViewer />
+        </div>
       </div>
     </div>
   );

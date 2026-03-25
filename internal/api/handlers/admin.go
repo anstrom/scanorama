@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/go-playground/validator/v10"
 )
@@ -34,9 +35,10 @@ const (
 
 // AdminHandler handles administrative API endpoints.
 type AdminHandler struct {
-	logger    *slog.Logger
-	metrics   *metrics.Registry
-	validator *validator.Validate
+	logger     *slog.Logger
+	metrics    *metrics.Registry
+	validator  *validator.Validate
+	ringBuffer *logging.RingBuffer
 }
 
 // NewAdminHandler creates a new admin handler.
@@ -46,6 +48,13 @@ func NewAdminHandler(logger *slog.Logger, metricsManager *metrics.Registry) *Adm
 		metrics:   metricsManager,
 		validator: validator.New(),
 	}
+}
+
+// WithRingBuffer sets the ring buffer used by log-related endpoints and
+// returns the handler for method chaining.
+func (h *AdminHandler) WithRingBuffer(rb *logging.RingBuffer) *AdminHandler {
+	h.ringBuffer = rb
+	return h
 }
 
 // GetConfig handles GET /api/v1/admin/config - get current configuration.
