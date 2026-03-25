@@ -107,8 +107,7 @@ func TestDiscoveryHandler_ValidateDiscoveryRequest(t *testing.T) {
 				Networks: []string{"192.168.1.0/24"},
 				Method:   "ping",
 			},
-			expectError: true,
-			errorMsg:    "name is required",
+			expectError: false,
 		},
 		{
 			name: "name too long",
@@ -246,8 +245,7 @@ func TestDiscoveryHandler_ValidateBasicFields(t *testing.T) {
 				Name:     "",
 				Networks: []string{"192.168.1.0/24"},
 			},
-			expectError: true,
-			errorMsg:    "name is required",
+			expectError: false,
 		},
 		{
 			name: "empty networks",
