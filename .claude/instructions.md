@@ -127,6 +127,34 @@ make ci            # Full pipeline check
 # This runs: quality + test + build
 ```
 
+### Before Every Push — Mandatory Test Gate
+
+**Run the full test suite locally before every `git push`. No exceptions.**
+
+CI is slow (2–3 min round-trip) and noisy. A local run catches failures in seconds.
+
+```bash
+# Go — all internal packages (~30s, no DB needed)
+go test -race ./internal/...
+
+# Frontend (~10s)
+cd frontend && npx vitest run
+
+# Both must be fully green before pushing.
+# If either has failures, fix them first.
+```
+
+When making changes that touch test files or mocks, also check:
+```bash
+# Full Go suite including cmd/ and test/
+go test -race ./...
+```
+
+Common causes of test failures after code changes:
+- A mock in a test file doesn't export a new hook/function you added
+- A test case asserts behaviour that your change intentionally removed (e.g. a validation you deleted) — update the test to reflect the new contract, don't just delete it
+- Mock data uses a wrong type (e.g. `string` where the real type is `string[]`) — fix the mock, not the production code
+
 ### Fixing Code Quality Issues (Sequential Workflow)
 ```bash
 # Step 1: Auto-fix what can be automated (saves 60-80% of manual work)
@@ -449,11 +477,15 @@ git commit -m "refactor: extract response writing to helper function"
 
 ### Quality Gate Integration
 ```bash
-# Before any push
-make ci            # Validate all checks pass
-git rebase -i --autosquash origin/main  # Clean history
+# Before any push — run this sequence in full, in order
+go test -race ./internal/...              # Go unit tests (~30s)
+cd frontend && npx vitest run             # Frontend tests (~10s)
+make ci                                   # Lint + build validation
+git rebase -i --autosquash origin/main   # Clean history
 git push origin feature-branch
 ```
+
+Do not push if any step above is red. Fix locally, then re-run from the top.
 
 ### Emergency Fixes
 ```bash
