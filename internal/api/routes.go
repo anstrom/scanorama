@@ -46,6 +46,7 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/ws/logs", handlerManager.LogsWebSocket).Methods("GET")
 	api.HandleFunc("/admin/logs", handlerManager.GetLogs).Methods("GET")
 	api.HandleFunc("/admin/status", s.adminStatusHandler).Methods("GET")
+	api.HandleFunc("/admin/workers", handlerManager.GetWorkerStatus).Methods("GET")
 
 	s.setupDocRoutes()
 	s.router.HandleFunc("/", s.redirectToAPI).Methods("GET")

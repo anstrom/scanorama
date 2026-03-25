@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
@@ -1421,4 +1422,220 @@ func TestWebSocketHandler_MixedBroadcastTypes(t *testing.T) {
 	}
 
 	assert.GreaterOrEqual(t, messagesReceived, 1, "should receive at least one message")
+}
+
+// ---------------------------------------------------------------------------
+// LogsWebSocket tests
+// ---------------------------------------------------------------------------
+
+func TestWebSocketHandler_WithRingBuffer(t *testing.T) {
+	logger := createTestLogger()
+	handler := NewWebSocketHandler(logger, nil)
+
+	rb := logging.NewRingBuffer(10)
+	result := handler.WithRingBuffer(rb)
+
+	// Should return the handler for method chaining
+	assert.Equal(t, handler, result)
+	// Should store the ring buffer
+	assert.Equal(t, rb, handler.ringBuffer)
+
+	// Setting nil should not panic and should clear the field
+	handler.WithRingBuffer(nil)
+	assert.Nil(t, handler.ringBuffer)
+}
+
+func TestWebSocketHandler_sendLogsHistory(t *testing.T) {
+	t.Run("no ring buffer — returns without writing", func(t *testing.T) {
+		logger := createTestLogger()
+		handler := NewWebSocketHandler(logger, nil)
+		// ringBuffer is nil by default
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			handler.sendLogsHistory(conn)
+			// Nothing written; handler returns immediately
+		}))
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		// Short deadline — no message should arrive, expect a timeout or close error
+		conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+		_, _, readErr := conn.ReadMessage()
+		assert.Error(t, readErr, "expected no message to be written when ring buffer is nil")
+	})
+
+	t.Run("with ring buffer — sends log_history message", func(t *testing.T) {
+		rb := logging.NewRingBuffer(10)
+		rb.Append(logging.LogEntry{Time: time.Now(), Level: "info", Message: "msg1"})
+		rb.Append(logging.LogEntry{Time: time.Now(), Level: "error", Message: "msg2"})
+
+		logger := createTestLogger()
+		handler := NewWebSocketHandler(logger, nil)
+		handler.WithRingBuffer(rb)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			handler.sendLogsHistory(conn)
+		}))
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, msg, err := conn.ReadMessage()
+		require.NoError(t, err)
+
+		var wsMsg WebSocketMessage
+		require.NoError(t, json.Unmarshal(msg, &wsMsg))
+		assert.Equal(t, "log_history", wsMsg.Type)
+
+		payload, err := json.Marshal(wsMsg.Data)
+		require.NoError(t, err)
+
+		var histPayload struct {
+			Entries []logging.LogEntry `json:"entries"`
+			Total   int                `json:"total"`
+		}
+		require.NoError(t, json.Unmarshal(payload, &histPayload))
+		assert.Equal(t, 2, histPayload.Total)
+		assert.Len(t, histPayload.Entries, 2)
+	})
+}
+
+func TestWebSocketHandler_LogsWebSocket(t *testing.T) {
+	t.Run("connects and receives log_history burst", func(t *testing.T) {
+		rb := logging.NewRingBuffer(10)
+		rb.Append(logging.LogEntry{Time: time.Now(), Level: "info", Message: "startup"})
+
+		logger := createTestLogger()
+		handler := NewWebSocketHandler(logger, nil)
+		handler.WithRingBuffer(rb)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler.LogsWebSocket(w, r)
+		}))
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, msg, err := conn.ReadMessage()
+		require.NoError(t, err)
+
+		var wsMsg WebSocketMessage
+		require.NoError(t, json.Unmarshal(msg, &wsMsg))
+		assert.Equal(t, "log_history", wsMsg.Type)
+	})
+
+	t.Run("no ring buffer — connects cleanly", func(t *testing.T) {
+		logger := createTestLogger()
+		handler := NewWebSocketHandler(logger, nil)
+		// No ring buffer — sendLogsHistory is a no-op
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler.LogsWebSocket(w, r)
+		}))
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		// Short deadline: no message expected, just verify there is no server-side panic
+		conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+		_, _, _ = conn.ReadMessage()
+		// Reaching here without panic is the success condition
+	})
+
+	t.Run("streams new log entries after connect", func(t *testing.T) {
+		rb := logging.NewRingBuffer(10)
+		// Start with an empty ring buffer so the history burst carries 0 entries
+
+		logger := createTestLogger()
+		handler := NewWebSocketHandler(logger, nil)
+		handler.WithRingBuffer(rb)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler.LogsWebSocket(w, r)
+		}))
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		// Drain the initial log_history burst (sent even when the buffer is empty)
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, histMsg, err := conn.ReadMessage()
+		require.NoError(t, err)
+		var histWsMsg WebSocketMessage
+		require.NoError(t, json.Unmarshal(histMsg, &histWsMsg))
+		assert.Equal(t, "log_history", histWsMsg.Type)
+
+		// Append a new entry after the subscription is active
+		rb.Append(logging.LogEntry{Time: time.Now(), Level: "warn", Message: "live-entry"})
+
+		// The subscription channel should deliver the entry to runLogsWriteLoop
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, entryMsg, err := conn.ReadMessage()
+		require.NoError(t, err)
+
+		var entryWsMsg WebSocketMessage
+		require.NoError(t, json.Unmarshal(entryMsg, &entryWsMsg))
+		assert.Equal(t, "log_entry", entryWsMsg.Type)
+
+		entryPayload, err := json.Marshal(entryWsMsg.Data)
+		require.NoError(t, err)
+		var logEntry logging.LogEntry
+		require.NoError(t, json.Unmarshal(entryPayload, &logEntry))
+		assert.Equal(t, "live-entry", logEntry.Message)
+	})
+}
+
+func TestWebSocketHandler_LogsWebSocket_CloseWithActiveConnection(t *testing.T) {
+	rb := logging.NewRingBuffer(10)
+
+	logger := createTestLogger()
+	handler := NewWebSocketHandler(logger, nil)
+	handler.WithRingBuffer(rb)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler.LogsWebSocket(w, r)
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	require.NoError(t, err)
+
+	// Close the client immediately; the server goroutine should detect the
+	// closure, clean up the subscription, and exit without panicking.
+	conn.Close()
+
+	// Give the server goroutine enough time to detect the close and unwind.
+	time.Sleep(300 * time.Millisecond)
+	// Reaching here without a panic is the success condition.
 }
