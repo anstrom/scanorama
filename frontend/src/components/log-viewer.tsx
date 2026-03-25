@@ -256,14 +256,7 @@ export function LogViewer() {
     }
     // Fall back to REST — apply client-side level filter
     return (restData?.data ?? []).filter(levelMatches);
-  }, [
-    isLive,
-    wsEntries,
-    restData,
-    levelMatches,
-    debouncedSearch,
-    selectedLevels,
-  ]);
+  }, [isLive, wsEntries, restData, levelMatches, debouncedSearch]);
 
   const pagination = restData?.pagination;
   const hasMore =
