@@ -19,6 +19,7 @@ import (
 	"github.com/anstrom/scanorama/internal/discovery"
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/scanning"
 )
 
 // Server timeout constants.
@@ -39,6 +40,9 @@ type Server struct {
 	prom            *metrics.PrometheusMetrics
 	startTime       time.Time
 	ringBuffer      *logging.RingBuffer
+
+	// scanQueue manages the bounded worker pool for scan execution.
+	scanQueue *scanning.ScanQueue
 
 	// State management
 	mu      sync.RWMutex
@@ -105,6 +109,12 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 	// Create the discovery engine so API-triggered jobs actually run nmap.
 	discoveryEngine := discovery.NewEngine(database)
 
+	// Create the scan queue using pool size and queue depth from config.
+	scanQueue := scanning.NewScanQueue(
+		cfg.Scanning.WorkerPoolSize,
+		cfg.Scanning.MaxConcurrentTargets,
+	)
+
 	server := &Server{
 		router:          router,
 		config:          cfg,
@@ -115,6 +125,7 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 		prom:            promMetrics,
 		startTime:       time.Now(),
 		ringBuffer:      rb,
+		scanQueue:       scanQueue,
 	}
 
 	// Setup routes
@@ -156,6 +167,19 @@ func (s *Server) Start(ctx context.Context) error {
 		s.mu.Unlock()
 		return fmt.Errorf("server is already running")
 	}
+	s.mu.Unlock()
+
+	// Start the scan queue worker pool before marking the server as running.
+	// This ensures all workers have called wg.Add(1) before any concurrent
+	// Stop() call reaches wg.Wait(), avoiding a wg.Add/wg.Wait data race.
+	if s.scanQueue != nil {
+		s.scanQueue.Start(ctx)
+		s.logger.Info("Scan queue started",
+			"workers", s.config.Scanning.WorkerPoolSize,
+			"queue_depth", s.config.Scanning.MaxConcurrentTargets)
+	}
+
+	s.mu.Lock()
 	s.running = true
 	s.mu.Unlock()
 
@@ -213,6 +237,13 @@ func (s *Server) Stop() error {
 	s.mu.Unlock()
 
 	s.logger.Info("Stopping API server")
+
+	// Stop the scan queue first so in-flight scans can finish before the
+	// HTTP server stops accepting new requests.
+	if s.scanQueue != nil {
+		s.scanQueue.Stop()
+		s.logger.Info("Scan queue stopped")
+	}
 
 	// Stop background metrics updates if running (guarded by mutex)
 	s.mu.Lock()

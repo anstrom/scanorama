@@ -323,4 +323,6 @@ func (hm *HandlerManager) GetMetrics() *metrics.Registry {
 func (hm *HandlerManager) SetScanQueue(q *scanning.ScanQueue) {
 	hm.scan.SetScanQueue(q)
 	hm.health.SetScanQueue(q)
+	hm.admin = hm.admin.WithScanQueue(q)
+	hm.discovery = hm.discovery.WithScanQueue(q)
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/scanning"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -39,6 +40,7 @@ type AdminHandler struct {
 	metrics    *metrics.Registry
 	validator  *validator.Validate
 	ringBuffer *logging.RingBuffer
+	scanQueue  *scanning.ScanQueue
 }
 
 // NewAdminHandler creates a new admin handler.
@@ -54,6 +56,13 @@ func NewAdminHandler(logger *slog.Logger, metricsManager *metrics.Registry) *Adm
 // returns the handler for method chaining.
 func (h *AdminHandler) WithRingBuffer(rb *logging.RingBuffer) *AdminHandler {
 	h.ringBuffer = rb
+	return h
+}
+
+// WithScanQueue sets the scan queue used by worker-status endpoints and
+// returns the handler for method chaining.
+func (h *AdminHandler) WithScanQueue(q *scanning.ScanQueue) *AdminHandler {
+	h.scanQueue = q
 	return h
 }
 

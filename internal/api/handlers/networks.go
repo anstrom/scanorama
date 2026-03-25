@@ -7,13 +7,12 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/discovery"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/scanning"
 	"github.com/anstrom/scanorama/internal/services"
-	"github.com/google/uuid"
 )
 
 // NetworkHandler handles network-related API requests.
@@ -22,6 +21,7 @@ type NetworkHandler struct {
 	service        NetworkServicer
 	discoveryStore DiscoveryStore
 	engine         *discovery.Engine
+	scanQueue      *scanning.ScanQueue
 }
 
 // NewNetworkHandler creates a new network handler.
@@ -39,6 +39,14 @@ func NewNetworkHandler(
 func (h *NetworkHandler) WithDiscovery(store DiscoveryStore, engine *discovery.Engine) *NetworkHandler {
 	h.discoveryStore = store
 	h.engine = engine
+	return h
+}
+
+// WithScanQueue sets the worker pool used to execute network discovery jobs.
+// When set, StartNetworkDiscovery submits a discoveryJob to the queue instead
+// of spawning an unbounded goroutine.
+func (h *NetworkHandler) WithScanQueue(q *scanning.ScanQueue) *NetworkHandler {
+	h.scanQueue = q
 	return h
 }
 
@@ -650,7 +658,29 @@ func (h *NetworkHandler) StartNetworkDiscovery(w http.ResponseWriter, r *http.Re
 	}
 
 	// If an engine is wired up, run the actual nmap scan in the background.
-	h.executeNetworkDiscoveryAsync(requestID, job.ID, cidr, method)
+	if h.engine != nil {
+		djob := &discoveryJob{
+			id:        job.ID.String(),
+			jobID:     job.ID,
+			network:   cidr,
+			method:    method,
+			engine:    h.engine,
+			database:  h.discoveryStore,
+			logger:    h.logger,
+			cancelCtx: context.Background(),
+			cleanup:   func() {},
+		}
+
+		if err := h.submitDiscoveryJob(r.Context(), djob); err != nil {
+			h.logger.Error("Failed to submit network discovery job to queue",
+				"request_id", requestID, "job_id", job.ID, "error", err)
+			writeError(w, r, http.StatusServiceUnavailable, err)
+			return
+		}
+	} else {
+		h.logger.Warn("No discovery engine configured — job marked running but no scan will execute",
+			"request_id", requestID, "job_id", job.ID)
+	}
 
 	// Return the freshly-started job.
 	updated, err := h.discoveryStore.GetDiscoveryJob(r.Context(), job.ID)
@@ -674,43 +704,23 @@ func (h *NetworkHandler) StartNetworkDiscovery(w http.ResponseWriter, r *http.Re
 	}
 }
 
-// executeNetworkDiscoveryAsync fires off the nmap scan for a network discovery
-// job in a background goroutine, mirroring DiscoveryHandler.executeDiscoveryAsync.
-// When no engine is configured the job stays "running" but no scan executes.
-func (h *NetworkHandler) executeNetworkDiscoveryAsync(requestID string, jobID uuid.UUID, cidr, method string) {
-	if h.engine == nil {
-		h.logger.Warn("No discovery engine configured — job marked running but no scan will execute",
-			"request_id", requestID, "job_id", jobID)
-		return
+// submitDiscoveryJob routes djob to the scan queue if one is configured, or
+// falls back to a bare goroutine. On queue-submission failure it reverts the
+// DB row and returns an error; the caller writes the HTTP response.
+func (h *NetworkHandler) submitDiscoveryJob(ctx context.Context, djob *discoveryJob) error {
+	if h.scanQueue == nil {
+		go func() {
+			if err := djob.Execute(context.Background()); err != nil {
+				h.logger.Error("Network discovery goroutine failed", "job_id", djob.jobID, "error", err)
+			}
+		}()
+		return nil
 	}
-
-	engine := h.engine
-	store := h.discoveryStore
-	go func() {
-		bgCtx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		cfg := &discovery.Config{
-			Network:  cidr,
-			Method:   method,
-			MaxHosts: 10000,
-		}
-
-		hostsFound, err := engine.ScanNetwork(bgCtx, cfg)
-		if err != nil {
-			_ = store.StopDiscoveryJob(context.Background(), jobID)
-			return
-		}
-
-		completed := db.DiscoveryJobStatusCompleted
-		now := time.Now().UTC()
-		_, _ = store.UpdateDiscoveryJob(context.Background(), jobID, db.UpdateDiscoveryJobInput{
-			Status:          &completed,
-			CompletedAt:     &now,
-			HostsDiscovered: &hostsFound,
-			HostsResponsive: &hostsFound,
-		})
-	}()
+	if err := h.scanQueue.Submit(djob); err != nil {
+		_ = h.discoveryStore.StopDiscoveryJob(ctx, djob.jobID)
+		return fmt.Errorf("job queue unavailable, please try again later")
+	}
+	return nil
 }
 
 // discoveryJobToResponse converts a db.DiscoveryJob to a DiscoveryResponse.

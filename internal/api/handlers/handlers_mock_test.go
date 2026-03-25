@@ -2128,38 +2128,30 @@ var _ = context.Background
 // ──────────────────────────────────────────────────────────────────────────────
 
 func TestScanHandler_SubmitToQueue_ScanIDPropagatedToConfig(t *testing.T) {
-	// Arrange: a queue whose scanFunc captures the request it receives.
-	q := scanning.NewScanQueue(1, 10)
-	// Use atomic pointer to avoid a data race between the worker goroutine
-	// (writer) and the assert.Eventually polling goroutine (reader).
+	// Arrange: inject a scanRunner that captures the ScanConfig it receives.
 	var capturedConfig atomic.Pointer[scanning.ScanConfig]
-	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
-		capturedConfig.Store(req.Config)
-		return &scanning.ScanQueueResult{ID: req.ID, Result: &scanning.ScanResult{}}
-	})
+
+	q := scanning.NewScanQueue(1, 10)
 	q.Start(context.Background())
 	defer q.Stop()
 
 	h, store, ctrl := newScanHandlerWithMock(t)
 	defer ctrl.Finish()
 	h.SetScanQueue(q)
+	h.scanRunner = func(_ context.Context, cfg *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+		capturedConfig.Store(cfg)
+		return &scanning.ScanResult{}, nil
+	}
 
 	scanID := uuid.New()
 	scan := makeScan(scanID, "Queue Test", "pending", "connect")
 
-	// The background goroutine spawned by submitToQueue will call CompleteScan
-	// once the queued scan finishes.  Allow it any number of times so the mock
-	// controller does not fail when the goroutine races past the test's cleanup.
 	store.EXPECT().CompleteScan(gomock.Any(), scanID).AnyTimes().Return(nil)
 
-	// Act
 	code, err := h.submitToQueue(scanID, scan)
-
-	// Assert: submitToQueue itself succeeds.
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)
 
-	// Wait for the queue worker to pick up and execute the job.
 	assert.Eventually(t, func() bool {
 		return capturedConfig.Load() != nil
 	}, 2*time.Second, 10*time.Millisecond, "queue worker did not execute the scan in time")
@@ -2172,64 +2164,57 @@ func TestScanHandler_SubmitToQueue_ScanIDPropagatedToConfig(t *testing.T) {
 }
 
 func TestScanHandler_SubmitToQueue_DatabasePropagatedToRequest(t *testing.T) {
-	// Arrange: a queue whose scanFunc captures the full request so we can
-	// inspect the Database field.
+	// Arrange: inject a scanRunner that captures the config and db it receives.
+	type captured struct {
+		cfg *scanning.ScanConfig
+		db  *db.DB
+	}
+	var capPtr atomic.Pointer[captured]
+
 	q := scanning.NewScanQueue(1, 10)
-	// Use atomic pointer to avoid a data race between the worker goroutine
-	// (writer) and the assert.Eventually polling goroutine (reader).
-	var capturedReq atomic.Pointer[scanning.ScanQueueRequest]
-	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
-		capturedReq.Store(req)
-		return &scanning.ScanQueueResult{ID: req.ID, Result: &scanning.ScanResult{}}
-	})
 	q.Start(context.Background())
 	defer q.Stop()
 
 	h, store, ctrl := newScanHandlerWithMock(t)
 	defer ctrl.Finish()
 	h.SetScanQueue(q)
+	h.scanRunner = func(_ context.Context, cfg *scanning.ScanConfig, database *db.DB) (*scanning.ScanResult, error) {
+		capPtr.Store(&captured{cfg: cfg, db: database})
+		return &scanning.ScanResult{}, nil
+	}
 
 	scanID := uuid.New()
 	scan := makeScan(scanID, "DB Propagation Test", "pending", "connect")
 
-	// Allow the background CompleteScan call that arrives after the scan
-	// worker finishes — it races against the test's gomock controller cleanup.
 	store.EXPECT().CompleteScan(gomock.Any(), scanID).AnyTimes().Return(nil)
 
-	// Act
 	code, err := h.submitToQueue(scanID, scan)
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)
 
 	assert.Eventually(t, func() bool {
-		return capturedReq.Load() != nil
+		return capPtr.Load() != nil
 	}, 2*time.Second, 10*time.Millisecond, "queue worker did not execute the scan in time")
 
-	// The handler's store is a *mocks.MockScanServicer, not a *db.DB, so the
-	// type assertion yields nil — but it must NOT be the unset zero value from
-	// a missing assignment.  The key invariant is that the field was explicitly
-	// set (even if it ends up nil after the assertion) rather than left as the
-	// default nil from a forgotten line.  We verify the request itself was
-	// populated by checking that Config and ID are correct.
-	req := capturedReq.Load()
-	require.NotNil(t, req, "request must reach the worker")
-	assert.Equal(t, scanID.String(), req.ID)
-	assert.NotNil(t, req.Config)
+	c := capPtr.Load()
+	require.NotNil(t, c)
+	require.NotNil(t, c.cfg, "ScanConfig must reach the worker")
+	assert.Equal(t, scanID.String(), c.cfg.ScanID.String(),
+		"ScanID must be propagated to the config")
 }
 
 func TestScanHandler_SubmitToQueue_CompleteScanCalledOnSuccess(t *testing.T) {
-	// After a successful queued scan the goroutine that listens on ResultCh
-	// must call CompleteScan so the scan status is updated to "completed".
+	// After a successful queued scan the onDone callback must call CompleteScan.
 	q := scanning.NewScanQueue(1, 10)
-	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
-		return &scanning.ScanQueueResult{ID: req.ID, Result: &scanning.ScanResult{}}
-	})
 	q.Start(context.Background())
 	defer q.Stop()
 
 	h, store, ctrl := newScanHandlerWithMock(t)
 	defer ctrl.Finish()
 	h.SetScanQueue(q)
+	h.scanRunner = func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+		return &scanning.ScanResult{}, nil
+	}
 
 	scanID := uuid.New()
 	scan := makeScan(scanID, "Complete Test", "pending", "connect")
@@ -2258,18 +2243,15 @@ func TestScanHandler_SubmitToQueue_StopScanCalledOnFailure(t *testing.T) {
 	// When the queued scan runner returns an error, StopScan must be called
 	// (and CompleteScan must NOT be called).
 	q := scanning.NewScanQueue(1, 10)
-	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
-		return &scanning.ScanQueueResult{
-			ID:    req.ID,
-			Error: fmt.Errorf("nmap: binary not found"),
-		}
-	})
 	q.Start(context.Background())
 	defer q.Stop()
 
 	h, store, ctrl := newScanHandlerWithMock(t)
 	defer ctrl.Finish()
 	h.SetScanQueue(q)
+	h.scanRunner = func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+		return nil, fmt.Errorf("nmap: binary not found")
+	}
 
 	scanID := uuid.New()
 	scan := makeScan(scanID, "Failure Test", "pending", "connect")
@@ -2303,11 +2285,6 @@ func TestScanHandler_SubmitToQueue_QueueFull_Returns429(t *testing.T) {
 	started := make(chan struct{})
 	block := make(chan struct{})
 	var startOnce sync.Once
-	q.SetScanFunc(func(_ context.Context, req *scanning.ScanQueueRequest) *scanning.ScanQueueResult {
-		startOnce.Do(func() { close(started) })
-		<-block
-		return &scanning.ScanQueueResult{ID: req.ID, Result: &scanning.ScanResult{}}
-	})
 	q.Start(context.Background())
 	defer func() {
 		close(block)
@@ -2317,6 +2294,11 @@ func TestScanHandler_SubmitToQueue_QueueFull_Returns429(t *testing.T) {
 	h, store, ctrl := newScanHandlerWithMock(t)
 	defer ctrl.Finish()
 	h.SetScanQueue(q)
+	h.scanRunner = func(_ context.Context, _ *scanning.ScanConfig, _ *db.DB) (*scanning.ScanResult, error) {
+		startOnce.Do(func() { close(started) })
+		<-block
+		return &scanning.ScanResult{}, nil
+	}
 
 	// The two scans that do get queued will each call CompleteScan once the
 	// worker unblocks (during defer q.Stop()).  Allow those calls so the mock

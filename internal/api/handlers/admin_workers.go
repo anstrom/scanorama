@@ -15,64 +15,93 @@ func (h *AdminHandler) GetWorkerStatus(w http.ResponseWriter, r *http.Request) {
 	requestID := getRequestIDFromContext(r.Context())
 	h.logger.Info("Getting worker status", "request_id", requestID)
 
-	// Get worker status from database/worker manager
-	// For now, return mock data until worker management is implemented
-	workers := []WorkerInfo{
-		{
-			ID:            "worker-001",
-			Status:        "active",
-			JobsProcessed: 42,
-			JobsFailed:    2,
-			StartTime:     time.Now().Add(-2 * time.Hour),
-			Uptime:        2 * time.Hour,
-			MemoryUsage:   1024 * 1024 * 50, // 50MB
-			CPUUsage:      15.5,
-			ErrorRate:     0.047,
-			Metrics: map[string]int{
-				"scans_completed":     35,
-				"discovery_completed": 7,
-				"errors":              2,
-			},
-		},
-		{
-			ID:            "worker-002",
-			Status:        "idle",
-			JobsProcessed: 28,
-			JobsFailed:    1,
-			StartTime:     time.Now().Add(-1 * time.Hour),
-			Uptime:        1 * time.Hour,
-			MemoryUsage:   1024 * 1024 * 32, // 32MB
-			CPUUsage:      5.2,
-			ErrorRate:     0.036,
-			Metrics: map[string]int{
-				"scans_completed":     25,
-				"discovery_completed": 3,
-				"errors":              1,
-			},
-		},
+	var workers []WorkerInfo
+	var totalProcessed int64
+	var totalFailed int64
+	var queueSize int
+
+	if h.scanQueue != nil {
+		stats := h.scanQueue.Stats()
+		queueSize = stats.QueueDepth
+		totalProcessed = stats.TotalCompleted
+		totalFailed = stats.TotalFailed
+
+		snaps := h.scanQueue.Snapshot()
+		workers = make([]WorkerInfo, len(snaps))
+		for i := range snaps {
+			snap := &snaps[i]
+			info := WorkerInfo{
+				ID:            snap.ID,
+				Status:        snap.Status,
+				JobsProcessed: snap.JobsDone,
+				JobsFailed:    snap.JobsFailed,
+				StartTime:     snap.WorkerStartedAt,
+				Uptime:        time.Since(snap.WorkerStartedAt),
+				Metrics: map[string]int{
+					"scans_completed": int(snap.JobsDone),
+					"errors":          int(snap.JobsFailed),
+				},
+			}
+
+			total := snap.JobsDone + snap.JobsFailed
+			if total > 0 {
+				info.ErrorRate = float64(snap.JobsFailed) / float64(total)
+			}
+
+			if !snap.LastJobAt.IsZero() {
+				info.LastJobTime = &snap.LastJobAt
+			}
+
+			if snap.Status == "active" && snap.JobStartedAt != nil {
+				info.CurrentJob = &JobInfo{
+					ID:        snap.JobID,
+					Type:      snap.JobType,
+					Target:    snap.JobTarget,
+					StartTime: *snap.JobStartedAt,
+					Duration:  time.Since(*snap.JobStartedAt),
+				}
+			}
+
+			workers[i] = info
+		}
+	} else {
+		workers = []WorkerInfo{}
+	}
+
+	activeCount := 0
+	idleCount := 0
+	for i := range workers {
+		switch workers[i].Status {
+		case "active":
+			activeCount++
+		case "idle":
+			idleCount++
+		}
+	}
+
+	var overallErrorRate float64
+	if total := totalProcessed + totalFailed; total > 0 {
+		overallErrorRate = float64(totalFailed) / float64(total)
 	}
 
 	response := WorkerStatusResponse{
-		TotalWorkers:   len(workers),
-		ActiveWorkers:  1,
-		IdleWorkers:    1,
-		QueueSize:      0,
-		ProcessedJobs:  70,
-		FailedJobs:     3,
-		AvgJobDuration: 5 * time.Minute,
-		Workers:        workers,
+		TotalWorkers:  len(workers),
+		ActiveWorkers: activeCount,
+		IdleWorkers:   idleCount,
+		QueueSize:     queueSize,
+		ProcessedJobs: totalProcessed,
+		FailedJobs:    totalFailed,
+		Workers:       workers,
 		Summary: map[string]interface{}{
-			"total_scans_completed":     60,
-			"total_discovery_completed": 10,
-			"overall_error_rate":        0.043,
-			"queue_throughput_per_hour": 35,
+			"total_scans_completed":     totalProcessed,
+			"total_discovery_completed": 0,
+			"overall_error_rate":        overallErrorRate,
 		},
 		Timestamp: time.Now().UTC(),
 	}
 
 	writeJSON(w, r, http.StatusOK, response)
 
-	// Record metrics
 	if h.metrics != nil {
 		h.metrics.Counter("api_admin_worker_status_total", nil)
 	}

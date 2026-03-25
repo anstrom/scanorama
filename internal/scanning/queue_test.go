@@ -2,39 +2,69 @@ package scanning
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/anstrom/scanorama/internal/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // --- helpers ----------------------------------------------------------------
 
-// newTestConfig returns a minimal valid ScanConfig for use in queue tests.
-func newTestConfig() *ScanConfig {
-	return &ScanConfig{
-		Targets:    []string{"127.0.0.1"},
-		Ports:      "80",
-		ScanType:   "connect",
-		TimeoutSec: 5,
+// mockJob is a minimal Job implementation used throughout queue tests.
+// The execute function controls what happens when the job runs; onDone is
+// called (if non-nil) after execution so tests can synchronize on completion.
+type mockJob struct {
+	id      string
+	jobType string
+	target  string
+	execute func(context.Context) error
+	onDone  func(err error)
+}
+
+func (m *mockJob) ID() string     { return m.id }
+func (m *mockJob) Type() string   { return m.jobType }
+func (m *mockJob) Target() string { return m.target }
+func (m *mockJob) Execute(ctx context.Context) error {
+	err := m.execute(ctx)
+	if m.onDone != nil {
+		m.onDone(err)
+	}
+	return err
+}
+
+// newSuccessJob builds a mockJob that completes immediately without error.
+func newSuccessJob(id string) *mockJob {
+	return &mockJob{
+		id:      id,
+		jobType: "scan",
+		target:  "127.0.0.1",
+		execute: func(_ context.Context) error {
+			return nil
+		},
 	}
 }
 
-// newTestRequest builds a ScanQueueRequest with a unique ID and an optional
-// result channel. If resultCh is nil one is created automatically.
-func newTestRequest(id string, resultCh chan<- *ScanQueueResult) *ScanQueueRequest {
-	if resultCh == nil {
-		ch := make(chan *ScanQueueResult, 1)
-		resultCh = ch
-	}
-	return &ScanQueueRequest{
-		ID:       id,
-		Config:   newTestConfig(),
-		Database: nil,
-		ResultCh: resultCh,
+// newBlockingJob builds a mockJob that signals started then blocks on unblock.
+func newBlockingJob(id string, started, unblock chan struct{}) *mockJob {
+	var once sync.Once
+	return &mockJob{
+		id:      id,
+		jobType: "scan",
+		target:  "127.0.0.1",
+		execute: func(ctx context.Context) error {
+			once.Do(func() { close(started) })
+			select {
+			case <-unblock:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
 	}
 }
 
@@ -68,10 +98,10 @@ func TestNewScanQueue(t *testing.T) {
 		assert.Equal(t, 100, stats.MaxQueueSize, "MaxQueueSize should match constructor arg")
 		assert.Equal(t, 0, stats.QueueDepth, "QueueDepth should start at zero")
 		assert.Equal(t, 0, stats.ActiveScans, "ActiveScans should start at zero")
-		assert.Equal(t, int64(0), stats.TotalSubmitted, "TotalSubmitted should start at zero")
-		assert.Equal(t, int64(0), stats.TotalCompleted, "TotalCompleted should start at zero")
-		assert.Equal(t, int64(0), stats.TotalRejected, "TotalRejected should start at zero")
-		assert.Equal(t, int64(0), stats.TotalFailed, "TotalFailed should start at zero")
+		assert.Equal(t, int64(0), stats.TotalSubmitted)
+		assert.Equal(t, int64(0), stats.TotalCompleted)
+		assert.Equal(t, int64(0), stats.TotalRejected)
+		assert.Equal(t, int64(0), stats.TotalFailed)
 	})
 
 	t.Run("minimum / default values", func(t *testing.T) {
@@ -103,16 +133,13 @@ func TestScanQueue_SubmitBeforeStart(t *testing.T) {
 
 	// Submit before calling Start – items should either be buffered or we get
 	// a defined error. Both are acceptable; a panic or deadlock is not.
-	req := newTestRequest("before-start-1", nil)
-	err := q.Submit(req)
+	job := newSuccessJob("before-start-1")
+	err := q.Submit(job)
 
 	if err != nil {
-		// If the implementation requires Start first, it must return a
-		// well-defined error (not a panic).
 		assert.Error(t, err, "Submit before Start should return a meaningful error if not buffered")
 		t.Logf("Submit before Start returned error (acceptable): %v", err)
 	} else {
-		// Items were buffered – verify stats reflect the submission.
 		stats := q.Stats()
 		assert.Equal(t, int64(1), stats.TotalSubmitted,
 			"Buffered submit should increment TotalSubmitted")
@@ -136,7 +163,7 @@ func TestScanQueue_SubmitAfterStop(t *testing.T) {
 	q.Stop()
 
 	// After Stop, submitting should return ErrQueueClosed.
-	err := q.Submit(newTestRequest("after-stop-1", nil))
+	err := q.Submit(newSuccessJob("after-stop-1"))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrQueueClosed, "Submit after Stop must return ErrQueueClosed")
 
@@ -146,7 +173,7 @@ func TestScanQueue_SubmitAfterStop(t *testing.T) {
 		"Rejected submission should increment TotalRejected")
 }
 
-func TestScanQueue_QueueFull(t *testing.T) {
+func TestScanQueue_QueueFull(t *testing.T) { //nolint:cyclop
 	const maxQueue = 2
 	const maxConcurrent = 1
 
@@ -161,95 +188,55 @@ func TestScanQueue_QueueFull(t *testing.T) {
 	// Strategy: try without Start first. If Submit fails with a non-full
 	// error, start the queue with a blocking scanFunc override.
 
-	firstErr := q.Submit(newTestRequest("full-1", nil))
-	if firstErr != nil {
-		// Implementation needs Start – use a blocking approach instead.
-		// Re-create the queue and start with a context we control.
-		q = NewScanQueue(maxConcurrent, maxQueue)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	// Submit a blocking job first and wait until the worker picks it up,
+	// so the worker slot is provably occupied before we fill the buffer.
+	workerStarted := make(chan struct{})
+	blockCh := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-		// Override the internal scan function to block so items stay queued.
-		// If scanFunc is exported or settable, set it; otherwise we rely on
-		// the fact that with maxConcurrent=1 and a blocking first scan, the
-		// remaining items sit in the queue buffer.
-		blockCh := make(chan struct{})
-		if setter, ok := interface{}(q).(interface {
-			SetScanFunc(func(context.Context, *ScanQueueRequest) *ScanQueueResult)
-		}); ok {
-			setter.SetScanFunc(func(_ context.Context, req *ScanQueueRequest) *ScanQueueResult {
-				<-blockCh // block until test is done
-				return &ScanQueueResult{ID: req.ID}
-			})
-		}
+	q.Start(ctx)
 
-		q.Start(ctx)
+	firstJob := newBlockingJob("full-blocking-first", workerStarted, blockCh)
+	require.NoError(t, q.Submit(firstJob), "first job must be accepted")
 
-		// Fill: one item will be picked up by the worker (blocking), the
-		// rest should land in the queue buffer.
-		for i := 0; i < maxQueue+maxConcurrent; i++ {
-			err := q.Submit(newTestRequest("full-blocking-"+string(rune('A'+i)), nil))
-			require.NoError(t, err, "submit %d should succeed while queue has room", i)
-		}
-
-		// Give workers a moment to pick up items.
-		time.Sleep(50 * time.Millisecond)
-
-		// This submit should exceed the capacity.
-		err := q.Submit(newTestRequest("overflow", nil))
-		require.Error(t, err, "Submit should fail when queue is full")
-		assert.ErrorIs(t, err, ErrQueueFull, "Error should be ErrQueueFull")
-
-		stats := q.Stats()
-		assert.GreaterOrEqual(t, stats.TotalRejected, int64(1),
-			"Rejected count should reflect the overflow")
-
-		close(blockCh) // unblock workers
-		cancel()
-		q.Stop()
-		return
+	// Wait until the worker goroutine has actually picked up the first job.
+	select {
+	case <-workerStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker did not start the first job in time")
 	}
 
-	// If we get here, Submit works without Start (buffered channel approach).
-	err := q.Submit(newTestRequest("full-2", nil))
-	require.NoError(t, err, "second submit should succeed – queue size is %d", maxQueue)
+	// Now fill the queue buffer (maxQueue slots).
+	for i := 0; i < maxQueue; i++ {
+		job := newBlockingJob("full-blocking-"+string(rune('A'+i)), make(chan struct{}), blockCh)
+		err := q.Submit(job)
+		require.NoError(t, err, "submit %d should succeed while buffer has room", i)
+	}
 
-	// Queue is now at capacity.
-	err = q.Submit(newTestRequest("full-overflow", nil))
+	// This submit should exceed the buffer capacity.
+	err := q.Submit(newSuccessJob("overflow"))
 	require.Error(t, err, "Submit should fail when queue is full")
 	assert.ErrorIs(t, err, ErrQueueFull, "Error should be ErrQueueFull")
 
 	stats := q.Stats()
-	assert.GreaterOrEqual(t, stats.TotalRejected, int64(1))
+	assert.GreaterOrEqual(t, stats.TotalRejected, int64(1),
+		"Rejected count should reflect the overflow")
+
+	close(blockCh) // unblock workers
 }
 
 func TestScanQueue_Stats(t *testing.T) {
 	q := NewScanQueue(2, 10)
 	require.NotNil(t, q)
 
-	resultCh := make(chan *ScanQueueResult, 10)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	// Wire up a fast no-op scan function if the queue supports it.
-	if setter, ok := interface{}(q).(interface {
-		SetScanFunc(func(context.Context, *ScanQueueRequest) *ScanQueueResult)
-	}); ok {
-		setter.SetScanFunc(func(_ context.Context, req *ScanQueueRequest) *ScanQueueResult {
-			return &ScanQueueResult{
-				ID:       req.ID,
-				Result:   &ScanResult{},
-				Duration: time.Millisecond,
-			}
-		})
-	}
-
 	q.Start(ctx)
 
 	const numJobs = 5
 	for i := 0; i < numJobs; i++ {
-		req := newTestRequest("stats-"+string(rune('A'+i)), chan<- *ScanQueueResult(resultCh))
-		err := q.Submit(req)
+		err := q.Submit(newSuccessJob("stats-" + string(rune('A'+i))))
 		require.NoError(t, err)
 	}
 
@@ -283,27 +270,22 @@ func TestScanQueue_GracefulShutdown(t *testing.T) {
 
 	var completed int64
 
-	// Scan function that takes a bit of time to simulate work.
-	if setter, ok := interface{}(q).(interface {
-		SetScanFunc(func(context.Context, *ScanQueueRequest) *ScanQueueResult)
-	}); ok {
-		setter.SetScanFunc(func(ctx context.Context, req *ScanQueueRequest) *ScanQueueResult {
-			select {
-			case <-time.After(50 * time.Millisecond):
-			case <-ctx.Done():
-			}
-			atomic.AddInt64(&completed, 1)
-			return &ScanQueueResult{ID: req.ID, Result: &ScanResult{}, Duration: 50 * time.Millisecond}
-		})
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	q.Start(ctx)
 
-	resultCh := make(chan *ScanQueueResult, numJobs)
 	for i := 0; i < numJobs; i++ {
-		req := newTestRequest("shutdown-"+string(rune('A'+i)), chan<- *ScanQueueResult(resultCh))
-		err := q.Submit(req)
+		job := &mockJob{
+			id: "shutdown-" + string(rune('A'+i)), jobType: "scan", target: "127.0.0.1",
+			execute: func(ctx context.Context) error {
+				select {
+				case <-time.After(50 * time.Millisecond):
+				case <-ctx.Done():
+				}
+				atomic.AddInt64(&completed, 1)
+				return nil
+			},
+		}
+		err := q.Submit(job)
 		require.NoError(t, err)
 	}
 
@@ -349,39 +331,30 @@ func TestScanQueue_ConcurrencyLimit(t *testing.T) {
 		completed int64
 	)
 
-	// Scan function that tracks concurrency.
-	if setter, ok := interface{}(q).(interface {
-		SetScanFunc(func(context.Context, *ScanQueueRequest) *ScanQueueResult)
-	}); ok {
-		setter.SetScanFunc(func(ctx context.Context, req *ScanQueueRequest) *ScanQueueResult {
-			cur := atomic.AddInt64(&active, 1)
-
-			peakMu.Lock()
-			if cur > peakSeen {
-				peakSeen = cur
-			}
-			peakMu.Unlock()
-
-			// Hold the slot for a bit so concurrency can build up.
-			select {
-			case <-time.After(30 * time.Millisecond):
-			case <-ctx.Done():
-			}
-
-			atomic.AddInt64(&active, -1)
-			atomic.AddInt64(&completed, 1)
-			return &ScanQueueResult{ID: req.ID, Result: &ScanResult{}, Duration: 30 * time.Millisecond}
-		})
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	q.Start(ctx)
 
-	resultCh := make(chan *ScanQueueResult, numJobs)
 	for i := 0; i < numJobs; i++ {
-		req := newTestRequest("conc-"+string(rune('A'+i)), chan<- *ScanQueueResult(resultCh))
-		err := q.Submit(req)
+		job := &mockJob{
+			id: "conc-" + string(rune('A'+i)), jobType: "scan", target: "127.0.0.1",
+			execute: func(ctx context.Context) error {
+				cur := atomic.AddInt64(&active, 1)
+				peakMu.Lock()
+				if cur > peakSeen {
+					peakSeen = cur
+				}
+				peakMu.Unlock()
+				select {
+				case <-time.After(30 * time.Millisecond):
+				case <-ctx.Done():
+				}
+				atomic.AddInt64(&active, -1)
+				atomic.AddInt64(&completed, 1)
+				return nil
+			},
+		}
+		err := q.Submit(job)
 		require.NoError(t, err)
 	}
 
@@ -418,36 +391,32 @@ func TestScanQueue_ContextCancellation(t *testing.T) {
 	scanStarted := make(chan struct{}, 1)
 	scanBlocked := make(chan struct{})
 
-	// Scan function that signals it started and then blocks until context is
-	// cancelled.
-	if setter, ok := interface{}(q).(interface {
-		SetScanFunc(func(context.Context, *ScanQueueRequest) *ScanQueueResult)
-	}); ok {
-		setter.SetScanFunc(func(ctx context.Context, req *ScanQueueRequest) *ScanQueueResult {
+	ctx, cancel := context.WithCancel(context.Background())
+	q.Start(ctx)
+
+	job := &mockJob{
+		id: "ctx-cancel-1", jobType: "scan", target: "127.0.0.1",
+		execute: func(ctx context.Context) error {
 			select {
 			case scanStarted <- struct{}{}:
 			default:
 			}
 			select {
 			case <-ctx.Done():
+				return ctx.Err()
 			case <-scanBlocked:
+				return nil
 			}
-			return &ScanQueueResult{ID: req.ID, Result: &ScanResult{}, Error: ctx.Err()}
-		})
+		},
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	q.Start(ctx)
-
-	err := q.Submit(newTestRequest("ctx-cancel-1", nil))
+	err := q.Submit(job)
 	require.NoError(t, err)
 
-	// Wait until the scan function has actually started.
+	// Wait until the job has actually started.
 	select {
 	case <-scanStarted:
 	case <-time.After(2 * time.Second):
-		// If scanFunc is not overridden the scan may finish (or fail) before
-		// we get here – that's acceptable.
+		// Job may finish quickly without the mock — that's acceptable.
 	}
 
 	// Cancel the parent context.
@@ -469,7 +438,7 @@ func TestScanQueue_ContextCancellation(t *testing.T) {
 	}
 
 	// After cancellation + Stop, further submits should be rejected.
-	err = q.Submit(newTestRequest("ctx-cancel-2", nil))
+	err = q.Submit(newSuccessJob("ctx-cancel-2"))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrQueueClosed,
 		"Submit after context cancellation + Stop should return ErrQueueClosed")
@@ -484,23 +453,19 @@ func TestScanQueue_StatsIntegrity(t *testing.T) {
 	q := NewScanQueue(maxConcurrent, numJobs+5)
 	require.NotNil(t, q)
 
-	if setter, ok := interface{}(q).(interface {
-		SetScanFunc(func(context.Context, *ScanQueueRequest) *ScanQueueResult)
-	}); ok {
-		setter.SetScanFunc(func(_ context.Context, req *ScanQueueRequest) *ScanQueueResult {
-			time.Sleep(5 * time.Millisecond) // tiny delay
-			return &ScanQueueResult{ID: req.ID, Result: &ScanResult{}, Duration: 5 * time.Millisecond}
-		})
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	q.Start(ctx)
 
-	resultCh := make(chan *ScanQueueResult, numJobs)
 	for i := 0; i < numJobs; i++ {
-		req := newTestRequest("integrity-"+string(rune('A'+(i%26))), chan<- *ScanQueueResult(resultCh))
-		err := q.Submit(req)
+		job := &mockJob{
+			id: "integrity-" + string(rune('A'+(i%26))), jobType: "scan", target: "127.0.0.1",
+			execute: func(_ context.Context) error {
+				time.Sleep(5 * time.Millisecond)
+				return nil
+			},
+		}
+		err := q.Submit(job)
 		require.NoError(t, err)
 	}
 
@@ -557,4 +522,271 @@ func TestScanQueue_MultipleStopCalls(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Second Stop() call did not return in time")
 	}
+}
+
+// ─── Snapshot tests ──────────────────────────────────────────────────────────
+
+func TestScanQueue_Snapshot_BeforeStart(t *testing.T) {
+	q := NewScanQueue(3, 20)
+
+	snaps := q.Snapshot()
+
+	assert.Len(t, snaps, 3, "Snapshot should return one entry per worker")
+	for i, snap := range snaps {
+		assert.Equal(t, fmt.Sprintf("worker-%d", i), snap.ID)
+		assert.Equal(t, "idle", snap.Status)
+		assert.Empty(t, snap.JobID)
+		assert.Empty(t, snap.JobType)
+		assert.Empty(t, snap.JobTarget)
+		assert.Nil(t, snap.JobStartedAt)
+		assert.Zero(t, snap.JobsDone)
+		assert.Zero(t, snap.JobsFailed)
+	}
+}
+
+func TestScanQueue_Snapshot_WorkerStartedAt(t *testing.T) {
+	q := NewScanQueue(2, 10)
+
+	before := time.Now()
+	q.Start(context.Background())
+	defer q.Stop()
+	after := time.Now()
+
+	snaps := q.Snapshot()
+
+	require.Len(t, snaps, 2)
+	for _, snap := range snaps {
+		assert.False(t, snap.WorkerStartedAt.IsZero(), "WorkerStartedAt should be set after Start")
+		assert.True(t, !snap.WorkerStartedAt.Before(before) && !snap.WorkerStartedAt.After(after),
+			"WorkerStartedAt should be within the window around Start()")
+	}
+}
+
+func TestScanQueue_Snapshot_ActiveWorker(t *testing.T) {
+	q := NewScanQueue(1, 10)
+
+	started := make(chan struct{})
+	unblock := make(chan struct{})
+	done := make(chan struct{})
+
+	q.Start(context.Background())
+	defer q.Stop()
+
+	job := &mockJob{
+		id: "snap-active-1", jobType: "scan", target: "192.168.1.1",
+		execute: func(ctx context.Context) error {
+			close(started)
+			select {
+			case <-unblock:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+		onDone: func(_ error) { close(done) },
+	}
+	require.NoError(t, q.Submit(job))
+
+	// Wait until the worker has picked up the job.
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker did not start the job in time")
+	}
+
+	snaps := q.Snapshot()
+	require.Len(t, snaps, 1)
+	snap := snaps[0]
+
+	assert.Equal(t, "active", snap.Status)
+	assert.Equal(t, "snap-active-1", snap.JobID)
+	assert.Equal(t, "scan", snap.JobType)
+	assert.Equal(t, "192.168.1.1", snap.JobTarget)
+	assert.NotNil(t, snap.JobStartedAt)
+
+	close(unblock)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("job did not complete in time")
+	}
+
+	// Worker should be idle again.
+	ok := waitForCondition(3*time.Second, 20*time.Millisecond, func() bool {
+		return q.Snapshot()[0].Status == "idle"
+	})
+	assert.True(t, ok, "worker should return to idle after job completes")
+}
+
+func TestScanQueue_Snapshot_IdleAfterCompletion(t *testing.T) {
+	q := NewScanQueue(2, 10)
+	q.Start(context.Background())
+	defer q.Stop()
+
+	var wg sync.WaitGroup
+	for i := range 2 {
+		wg.Add(1)
+		job := &mockJob{
+			id: fmt.Sprintf("snap-idle-%d", i), jobType: "scan", target: "127.0.0.1",
+			execute: func(_ context.Context) error { return nil },
+			onDone:  func(_ error) { wg.Done() },
+		}
+		require.NoError(t, q.Submit(job))
+	}
+
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("jobs did not complete in time")
+	}
+
+	ok := waitForCondition(3*time.Second, 20*time.Millisecond, func() bool {
+		for _, s := range q.Snapshot() {
+			if s.Status != "idle" {
+				return false
+			}
+		}
+		return true
+	})
+	assert.True(t, ok, "all workers should be idle after jobs complete")
+}
+
+func TestScanQueue_Snapshot_CountersIncrementOnSuccess(t *testing.T) {
+	q := NewScanQueue(1, 10)
+	q.Start(context.Background())
+	defer q.Stop()
+
+	const jobs = 3
+	var wg sync.WaitGroup
+	for i := range jobs {
+		wg.Add(1)
+		job := &mockJob{
+			id: fmt.Sprintf("snap-ok-%d", i), jobType: "scan", target: "127.0.0.1",
+			execute: func(_ context.Context) error { return nil },
+			onDone:  func(_ error) { wg.Done() },
+		}
+		require.NoError(t, q.Submit(job))
+	}
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("jobs did not complete in time")
+	}
+
+	ok := waitForCondition(3*time.Second, 20*time.Millisecond, func() bool {
+		return q.Snapshot()[0].JobsDone == jobs
+	})
+	assert.True(t, ok, "JobsDone should reflect completed jobs")
+
+	snap := q.Snapshot()[0]
+	assert.Equal(t, int64(jobs), snap.JobsDone)
+	assert.Equal(t, int64(0), snap.JobsFailed)
+}
+
+func TestScanQueue_Snapshot_CountersIncrementOnFailure(t *testing.T) {
+	q := NewScanQueue(1, 10)
+	q.Start(context.Background())
+	defer q.Stop()
+
+	done := make(chan struct{})
+	job := &mockJob{
+		id: "snap-fail-1", jobType: "scan", target: "127.0.0.1",
+		execute: func(_ context.Context) error { return fmt.Errorf("simulated failure") },
+		onDone:  func(_ error) { close(done) },
+	}
+	require.NoError(t, q.Submit(job))
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("job did not complete in time")
+	}
+
+	ok := waitForCondition(3*time.Second, 20*time.Millisecond, func() bool {
+		return q.Snapshot()[0].JobsFailed == 1
+	})
+	assert.True(t, ok, "JobsFailed should be 1 after a failed job")
+
+	snap := q.Snapshot()[0]
+	assert.Equal(t, int64(0), snap.JobsDone)
+	assert.Equal(t, int64(1), snap.JobsFailed)
+}
+
+func TestScanQueue_Snapshot_LastJobAt(t *testing.T) {
+	q := NewScanQueue(1, 10)
+	q.Start(context.Background())
+	defer q.Stop()
+
+	assert.True(t, q.Snapshot()[0].LastJobAt.IsZero(), "LastJobAt should be zero before any job")
+
+	before := time.Now()
+	done := make(chan struct{})
+	require.NoError(t, q.Submit(&mockJob{
+		id: "snap-lastjob-1", jobType: "scan", target: "127.0.0.1",
+		execute: func(_ context.Context) error { return nil },
+		onDone:  func(_ error) { close(done) },
+	}))
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("job did not complete in time")
+	}
+	after := time.Now()
+
+	ok := waitForCondition(3*time.Second, 20*time.Millisecond, func() bool {
+		return !q.Snapshot()[0].LastJobAt.IsZero()
+	})
+	require.True(t, ok, "LastJobAt should be set after a completed job")
+
+	lastJobAt := q.Snapshot()[0].LastJobAt
+	assert.True(t, !lastJobAt.Before(before) && !lastJobAt.After(after),
+		"LastJobAt should fall within the job execution window")
+}
+
+func TestScanQueue_Snapshot_MultiTargetJob(t *testing.T) {
+	// ScanJob (not mockJob) is used here to verify that Target() joins
+	// multiple targets correctly via the real ScanJob implementation.
+	q := NewScanQueue(1, 10)
+
+	started := make(chan struct{})
+	unblock := make(chan struct{})
+	done := make(chan struct{})
+
+	q.Start(context.Background())
+	defer q.Stop()
+
+	cfg := &ScanConfig{
+		Targets:  []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"},
+		Ports:    "22",
+		ScanType: "connect",
+	}
+	var startOnce sync.Once
+	job := NewScanJob(
+		"snap-multi-1",
+		cfg,
+		nil,
+		func(_ context.Context, _ *ScanConfig, _ *db.DB) (*ScanResult, error) {
+			startOnce.Do(func() { close(started) })
+			<-unblock
+			return &ScanResult{}, nil
+		},
+		func(_ *ScanResult, _ error) { close(done) },
+	)
+	require.NoError(t, q.Submit(job))
+
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker did not start in time")
+	}
+
+	snap := q.Snapshot()[0]
+	assert.Equal(t, "10.0.0.1, 10.0.0.2, 10.0.0.3", snap.JobTarget,
+		"multiple targets should be joined with ', '")
+
+	close(unblock)
+	<-done
 }

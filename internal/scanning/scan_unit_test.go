@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Ullaakut/nmap/v3"
 	"github.com/google/uuid"
@@ -622,66 +621,6 @@ func TestGetStats_AvailableSlotsConsistency(t *testing.T) {
 	assert.Equal(t, 4, stats["available_slots"])
 }
 
-// ─── sendResult ───────────────────────────────────────────────────────────────
-
-func TestSendResult_NilChannel_NoPanic(t *testing.T) {
-	q := &ScanQueue{}
-	req := &ScanQueueRequest{ID: "nil-ch", ResultCh: nil}
-	result := &ScanQueueResult{ID: "nil-ch"}
-	assert.NotPanics(t, func() { q.sendResult(req, result) })
-}
-
-func TestSendResult_BufferedChannel_DeliveredSuccessfully(t *testing.T) {
-	q := &ScanQueue{}
-	ch := make(chan *ScanQueueResult, 1)
-	req := &ScanQueueRequest{ID: "buffered", ResultCh: ch}
-	want := &ScanQueueResult{ID: "buffered"}
-
-	q.sendResult(req, want)
-
-	select {
-	case got := <-ch:
-		assert.Equal(t, want, got)
-	default:
-		t.Fatal("result was not delivered to the buffered channel")
-	}
-}
-
-func TestSendResult_UnbufferedChannel_DoesNotBlock(t *testing.T) {
-	// An unbuffered channel with no reader must not cause sendResult to block.
-	q := &ScanQueue{}
-	ch := make(chan *ScanQueueResult) // unbuffered, nobody reading
-	req := &ScanQueueRequest{ID: "full-ch", ResultCh: ch}
-	result := &ScanQueueResult{ID: "full-ch"}
-
-	done := make(chan struct{})
-	go func() {
-		q.sendResult(req, result)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// returned without blocking — correct behavior
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("sendResult blocked on an unread unbuffered channel")
-	}
-}
-
-func TestSendResult_MultipleResultsSameChannel(t *testing.T) {
-	q := &ScanQueue{}
-	const n = 5
-	ch := make(chan *ScanQueueResult, n)
-
-	for i := 0; i < n; i++ {
-		req := &ScanQueueRequest{ID: "multi", ResultCh: ch}
-		result := &ScanQueueResult{ID: "multi"}
-		q.sendResult(req, result)
-	}
-	assert.Equal(t, n, len(ch),
-		"all %d results should be queued in the buffered channel", n)
-}
-
 // ──────────────────────────────────────────────────────────────────────────────
 // convertNmapHost — OS detection
 // ──────────────────────────────────────────────────────────────────────────────
@@ -935,29 +874,6 @@ func TestScanConfig_ScanID(t *testing.T) {
 		assert.NotEqual(t, withID.ScanID == nil, withoutID.ScanID == nil,
 			"nil and non-nil ScanID must be distinguishable (create vs update path)")
 	})
-}
-
-func TestSendResult_FullBufferedChannel_DoesNotBlock(t *testing.T) {
-	// Fill the channel to capacity first, then a further send must not block.
-	q := &ScanQueue{}
-	ch := make(chan *ScanQueueResult, 1)
-	ch <- &ScanQueueResult{ID: "pre-fill"} // channel is now full
-
-	req := &ScanQueueRequest{ID: "overflow", ResultCh: ch}
-	result := &ScanQueueResult{ID: "overflow"}
-
-	done := make(chan struct{})
-	go func() {
-		q.sendResult(req, result)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// non-blocking send dropped the result silently — correct
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("sendResult blocked on a full buffered channel")
-	}
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
