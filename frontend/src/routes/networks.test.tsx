@@ -14,6 +14,7 @@ vi.mock("../api/hooks/use-networks", () => ({
   useUpdateNetwork: vi.fn(),
   useDeleteNetwork: vi.fn(),
   useDeleteExclusion: vi.fn(),
+  useStartNetworkDiscovery: vi.fn(),
 }));
 
 vi.mock("../components/edit-network-modal", () => ({
@@ -51,6 +52,7 @@ import {
   useUpdateNetwork,
   useDeleteNetwork,
   useDeleteExclusion,
+  useStartNetworkDiscovery,
 } from "../api/hooks/use-networks";
 
 const mockUseNetworks = vi.mocked(useNetworks);
@@ -61,6 +63,7 @@ const mockUseRenameNetwork = vi.mocked(useRenameNetwork);
 const mockUseUpdateNetwork = vi.mocked(useUpdateNetwork);
 const mockUseDeleteNetwork = vi.mocked(useDeleteNetwork);
 const mockUseDeleteExclusion = vi.mocked(useDeleteExclusion);
+const mockUseStartNetworkDiscovery = vi.mocked(useStartNetworkDiscovery);
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -171,6 +174,9 @@ beforeEach(() => {
   } as unknown as ReturnType<typeof useUpdateNetwork>);
   mockUseDeleteExclusion.mockReturnValue(
     idleMutation as unknown as ReturnType<typeof useDeleteExclusion>,
+  );
+  mockUseStartNetworkDiscovery.mockReturnValue(
+    idleMutation as unknown as ReturnType<typeof useStartNetworkDiscovery>,
   );
 });
 

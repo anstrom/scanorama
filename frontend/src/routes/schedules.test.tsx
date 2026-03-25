@@ -57,7 +57,7 @@ const mockSchedules = [
     name: "Daily Scan",
     cron_expr: "0 2 * * *",
     enabled: true,
-    targets: ["192.168.1.0/24", "10.0.0.0/8"],
+    network_name: "Office LAN",
     next_run: new Date(Date.now() + 3_600_000).toISOString(),
     last_run: new Date(Date.now() - 3_600_000).toISOString(),
     created_at: "2024-01-01T00:00:00Z",
@@ -69,7 +69,7 @@ const mockSchedules = [
     name: "Weekly Recon",
     cron_expr: "0 0 * * 1",
     enabled: false,
-    targets: ["172.16.0.0/16"],
+    network_name: "DMZ Network",
     next_run: undefined,
     last_run: undefined,
     created_at: "2024-02-01T00:00:00Z",
@@ -81,7 +81,7 @@ const mockSchedules = [
     name: "Hourly Check",
     cron_expr: "0 * * * *",
     enabled: true,
-    targets: [],
+    network_name: undefined,
     next_run: undefined,
     last_run: undefined,
     created_at: "2024-03-01T00:00:00Z",
@@ -223,7 +223,7 @@ describe("SchedulesPage — table structure", () => {
       screen.getByRole("columnheader", { name: "Status" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("columnheader", { name: "Targets" }),
+      screen.getByRole("columnheader", { name: "Network" }),
     ).toBeInTheDocument();
   });
 
@@ -264,25 +264,21 @@ describe("SchedulesPage — row data", () => {
     expect(screen.getByText("disabled")).toBeInTheDocument();
   });
 
-  it("shows first target + count for schedules with multiple targets", () => {
+  it("shows network_name for schedules with a linked network", () => {
     render(<SchedulesPage />);
-    expect(screen.getByText("192.168.1.0/24 +1 more")).toBeInTheDocument();
+    expect(screen.getByText("Office LAN")).toBeInTheDocument();
+    expect(screen.getByText("DMZ Network")).toBeInTheDocument();
   });
 
-  it("shows single target for schedules with one target", () => {
+  it("shows em-dash for schedules with no network_name", () => {
     render(<SchedulesPage />);
-    expect(screen.getByText("172.16.0.0/16")).toBeInTheDocument();
-  });
-
-  it("shows em-dash for schedules with no targets", () => {
-    render(<SchedulesPage />);
-    // "Hourly Check" has no targets — should show em-dash in targets column
+    // "Hourly Check" has no network_name — should show em-dash in Network column
     const rows = screen.getAllByRole("row");
     const hourlyRow = rows.find((r) => within(r).queryByText("Hourly Check"));
     expect(hourlyRow).toBeTruthy();
-    // The targets cell should contain an em-dash
+    // The network cell should contain an em-dash
     const cells = within(hourlyRow!).getAllByRole("cell");
-    // Targets is the last column (index 5)
+    // Network is the last column (index 5)
     expect(cells[5].textContent).toBe("—");
   });
 

@@ -1042,9 +1042,15 @@ func TestDiscoveryHandler_CreateDiscoveryJob_Mock(t *testing.T) {
 		assert.Equal(t, http.StatusCreated, w.Code)
 	})
 
-	t.Run("returns 400 for missing name", func(t *testing.T) {
-		h, _, ctrl := newDiscoveryHandlerWithMock(t)
+	t.Run("creates job without name and returns 201", func(t *testing.T) {
+		h, store, ctrl := newDiscoveryHandlerWithMock(t)
 		defer ctrl.Finish()
+
+		id := uuid.New()
+		job := makeDiscoveryJob(id, "ping", "pending")
+		store.EXPECT().
+			CreateDiscoveryJob(gomock.Any(), gomock.Any()).
+			Return(job, nil)
 
 		body := `{"method":"ping","networks":["192.168.1.0/24"]}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/discovery", bytes.NewBufferString(body))
@@ -1052,7 +1058,7 @@ func TestDiscoveryHandler_CreateDiscoveryJob_Mock(t *testing.T) {
 		w := httptest.NewRecorder()
 		h.CreateDiscoveryJob(w, req)
 
-		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Equal(t, http.StatusCreated, w.Code)
 	})
 
 	t.Run("returns 400 for invalid method", func(t *testing.T) {

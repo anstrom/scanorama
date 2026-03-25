@@ -676,15 +676,6 @@ func TestDiscoveryHandler_CreateDiscoveryJob_ValidationErrors(t *testing.T) {
 		expectedStatus int
 	}{
 		{
-			name: "empty name",
-			requestBody: map[string]interface{}{
-				"name":     "",
-				"networks": []string{"192.168.1.0/24"},
-				"method":   "ping",
-			},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
 			name: "invalid method",
 			requestBody: map[string]interface{}{
 				"name":     "Test",
