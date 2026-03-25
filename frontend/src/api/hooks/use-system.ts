@@ -107,7 +107,6 @@ export function useLogs(params: LogsParams = {}) {
     queryKey: ["admin", "logs", params],
     queryFn: async () => {
       // /admin/logs is not yet in the generated OpenAPI types; cast to bypass.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const queryParams = Object.fromEntries(
         Object.entries(params).filter(([, v]) => v !== undefined && v !== ""),
       );

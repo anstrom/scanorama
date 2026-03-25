@@ -64,10 +64,12 @@ export function WsProvider({
 // (WsProvider) with hook exports. This is a dev-only fast-refresh heuristic
 // and does not affect production builds or runtime behaviour.
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useWs(): WsContextValue {
   return useContext(WsContext);
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useWsStatus(): WsStatus {
   return useContext(WsContext).status;
 }
