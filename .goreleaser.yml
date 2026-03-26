@@ -3,6 +3,8 @@ version: 2
 before:
   hooks:
     - go mod tidy
+    - npm ci --prefix frontend
+    - npm run build --prefix frontend
 
 builds:
   - main: ./cmd/scanorama

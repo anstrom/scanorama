@@ -6,7 +6,8 @@ This document outlines the contribution process and standards for the Scanorama 
 
 ### Prerequisites
 
-- Go 1.21 or later
+- Go 1.22 or later (see `go.mod` for the exact version)
+- Node.js 22 or later — required to build the frontend bundle
 - PostgreSQL for database testing
 - golangci-lint for code quality checks
 
@@ -17,6 +18,22 @@ This document outlines the contribution process and standards for the Scanorama 
 3. Make your changes
 4. Run tests and linting
 5. Submit a pull request
+
+### Build targets
+
+| Command | What it does |
+|---|---|
+| `make build` | Build the frontend bundle then compile the Go binary (production) |
+| `make build-backend` | Compile the Go binary only — skips npm, faster for Go-only iteration |
+| `make frontend` | Build only the frontend bundle (`npm run build`) |
+| `make dev` | Start the Go backend + Vite dev server in the background |
+| `make test` | Run all tests (spins up a test database automatically) |
+| `make check` | Fast pre-PR check: format + vet + unit tests |
+
+The frontend is embedded into the Go binary at compile time via `//go:embed`.
+Running `go build ./...` directly (without `make build`) produces a working binary
+that serves a "frontend not built" page — useful for Go-only development but not
+suitable for release. Always use `make build` to produce a distributable binary.
 
 ## Commit Message Style Guide
 
