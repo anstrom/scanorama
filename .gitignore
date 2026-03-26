@@ -89,7 +89,12 @@ yarn-error.log*
 .yarn-integrity
 
 # Documentation generation artifacts
-dist/
+frontend/dist/
+# Keep the Go embed placeholder files in internal/frontend/dist/ tracked.
+# The nested .gitignore in that directory ignores the actual build artefacts
+# (assets/ and the built index.html) while preserving the placeholder.
+internal/frontend/dist/assets/
+internal/frontend/dist/index.html
 docs/swagger/index.html
 docs/swagger/bundled.yaml
 docs/documentation-report.md

@@ -21,6 +21,7 @@ import (
 	"github.com/anstrom/scanorama/internal/api"
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/frontend"
 	"github.com/anstrom/scanorama/internal/logging"
 )
 
@@ -49,11 +50,12 @@ const (
 
 // Server command flags.
 var (
-	serverForeground bool
-	serverPIDFile    string
-	serverLogFile    string
-	serverHost       string
-	serverPort       int
+	serverForeground  bool
+	serverPIDFile     string
+	serverLogFile     string
+	serverHost        string
+	serverPort        int
+	serverFrontendDir string
 )
 
 // serverCmd represents the server command and its subcommands.
@@ -139,6 +141,8 @@ func init() {
 	serverStartCmd.Flags().BoolVar(&serverForeground, "foreground", false, "Run server in foreground mode")
 	serverStartCmd.Flags().StringVar(&serverHost, "host", "", "Override server host")
 	serverStartCmd.Flags().IntVar(&serverPort, "port", 0, "Override server port")
+	serverCmd.PersistentFlags().StringVar(&serverFrontendDir, "frontend-dir", "",
+		"Serve frontend from this directory instead of the embedded build")
 	serverStartCmd.Flags().StringVar(&serverPIDFile, "pid-file", defaultPIDFile, "PID file path")
 	serverStartCmd.Flags().StringVar(&serverLogFile, "log-file", defaultLogFile, "Log file path")
 
@@ -422,6 +426,9 @@ func setupServerEnvironment(logger *logging.Logger) (*config.Config, *db.DB, err
 	if serverPort > 0 {
 		cfg.API.Port = serverPort
 	}
+	if serverFrontendDir != "" {
+		cfg.API.FrontendDir = serverFrontendDir
+	}
 
 	// Validate that API is enabled
 	if !cfg.API.Enabled {
@@ -475,7 +482,7 @@ func createAndStartServer(cfg *config.Config, database *db.DB, logger *logging.L
 	// Pass build info through to the API server so handlers can report it correctly.
 	api.SetBuildInfo(version, commit, buildTime)
 
-	apiServer, err := api.New(cfg, database)
+	apiServer, err := api.New(cfg, database, api.WithFrontend(frontend.FS()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API server: %w", err)
 	}

@@ -60,9 +60,23 @@ help: ## Show this help
 
 # ─── Build ───────────────────────────────────────────────────────────────────
 
+.PHONY: frontend
+frontend: frontend-deps ## Build the frontend bundle (outputs to internal/frontend/dist)
+	@echo "Building frontend..."
+	@cd frontend && npm run build
+	@touch internal/frontend/dist/.keep
+	@echo "✓ Frontend built → internal/frontend/dist"
+
 .PHONY: build
-build: ## Build the scanorama binary
+build: frontend ## Build frontend then the scanorama binary (full production build)
 	@echo "Building $(BINARY_NAME) $(VERSION)..."
+	@mkdir -p $(BUILD_DIR)
+	@$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/scanorama
+	@echo "✓ $(BUILD_DIR)/$(BINARY_NAME)"
+
+.PHONY: build-backend
+build-backend: ## Build the scanorama binary only, skipping the frontend (faster for Go-only iteration)
+	@echo "Building $(BINARY_NAME) $(VERSION) (backend only)..."
 	@mkdir -p $(BUILD_DIR)
 	@$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/scanorama
 	@echo "✓ $(BUILD_DIR)/$(BINARY_NAME)"
@@ -105,7 +119,7 @@ stop: ## Stop background backend and frontend (started by 'make dev')
 
 
 .PHONY: dev
-dev: build dev-db-up dev-config frontend-deps ## Ensure DB is up; rebuild + restart backend + frontend in the background
+dev: build-backend dev-db-up dev-config frontend-deps ## Ensure DB is up; rebuild + restart backend + frontend in the background
 	@# ── backend ────────────────────────────────────────────────────────────
 	@if [ -f $(PID_FILE) ]; then \
 		PID=$$(cat $(PID_FILE)); \

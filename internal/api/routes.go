@@ -57,7 +57,21 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/admin/workers", handlerManager.GetWorkerStatus).Methods("GET")
 
 	s.setupDocRoutes()
-	s.router.HandleFunc("/", s.redirectToAPI).Methods("GET")
+	s.setupFrontendRoutes()
+}
+
+// setupFrontendRoutes registers the frontend SPA handler or the plain API
+// index response, depending on whether a frontend FS is configured.
+// This must be called last so the catch-all does not shadow any API routes.
+func (s *Server) setupFrontendRoutes() {
+	fsys := resolveFrontendFS(s.frontendFS, s.config.API.FrontendDir)
+	if fsys != nil {
+		// Catch-all: serve the SPA for every path not matched above.
+		s.router.PathPrefix("/").Handler(newSPAHandler(fsys))
+	} else {
+		// No frontend compiled in — keep the legacy JSON index on "/".
+		s.router.HandleFunc("/", s.redirectToAPI).Methods("GET")
+	}
 }
 
 // setupSystemRoutes registers health, status, and metrics endpoints.

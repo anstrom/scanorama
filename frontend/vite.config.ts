@@ -4,6 +4,11 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    // Output into the Go embed directory so `go build` picks it up.
+    outDir: "../internal/frontend/dist",
+    emptyOutDir: true,
+  },
   server: {
     port: 5173,
     proxy: {

@@ -17,6 +17,7 @@ import (
 	"github.com/anstrom/scanorama/internal/api"
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/frontend"
 	"github.com/anstrom/scanorama/internal/logging"
 )
 
@@ -27,8 +28,9 @@ const (
 )
 
 var (
-	apiHost string
-	apiPort int
+	apiHost        string
+	apiPort        int
+	apiFrontendDir string
 )
 
 // apiCmd represents the api command.
@@ -56,6 +58,8 @@ func init() {
 	// API-specific flags
 	apiCmd.Flags().StringVar(&apiHost, "host", "", "API server host address (overrides config)")
 	apiCmd.Flags().IntVar(&apiPort, "port", 0, "API server port (overrides config)")
+	apiCmd.Flags().StringVar(&apiFrontendDir, "frontend-dir", "",
+		"Serve frontend from this directory instead of the embedded build")
 
 	// Add detailed descriptions
 	apiCmd.Flags().Lookup("host").Usage = "Host address to bind API server (empty = use config value)"
@@ -75,6 +79,9 @@ func loadAndValidateConfig() (*config.Config, error) {
 	}
 	if apiPort > 0 {
 		cfg.API.Port = apiPort
+	}
+	if apiFrontendDir != "" {
+		cfg.API.FrontendDir = apiFrontendDir
 	}
 
 	// Validate that API is enabled
@@ -219,7 +226,7 @@ func runAPIServer(_ *cobra.Command, _ []string) error {
 	api.SetBuildInfo(version, commit, buildTime)
 
 	// Create API server
-	apiServer, err := api.New(cfg, database)
+	apiServer, err := api.New(cfg, database, api.WithFrontend(frontend.FS()))
 	if err != nil {
 		return fmt.Errorf("failed to create API server: %w", err)
 	}

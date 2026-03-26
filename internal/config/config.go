@@ -199,6 +199,13 @@ type APIConfig struct {
 
 	// Maximum request size
 	MaxRequestSize int64 `yaml:"max_request_size" json:"max_request_size"`
+
+	// FrontendDir, when non-empty, serves the frontend from this directory on
+	// disk instead of the embedded build.  Useful for running a custom UI build
+	// or hot-patching assets without recompiling the binary.
+	// Corresponds to the --frontend-dir CLI flag and the
+	// SCANORAMA_FRONTEND_DIR environment variable.
+	FrontendDir string `yaml:"frontend_dir" json:"frontend_dir"`
 }
 
 // TLSConfig holds TLS settings.
@@ -401,6 +408,7 @@ func defaultAPIConfig() APIConfig {
 		RateLimitWindow:   time.Minute,
 		RequestTimeout:    defaultRequestTimeoutSec * time.Second,
 		MaxRequestSize:    defaultMaxRequestSizeMB * bytesPerMB, // 1MB
+		FrontendDir:       getEnvString("SCANORAMA_FRONTEND_DIR", ""),
 	}
 }
 

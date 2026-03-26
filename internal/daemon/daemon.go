@@ -20,6 +20,7 @@ import (
 	"github.com/anstrom/scanorama/internal/api"
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/frontend"
 )
 
 const (
@@ -321,7 +322,7 @@ func (d *Daemon) initAPIServer() error {
 	d.logger.Printf("Initializing API server on %s", d.config.GetAPIAddress())
 
 	// Create API server
-	apiServer, err := api.New(d.config, d.database)
+	apiServer, err := api.New(d.config, d.database, api.WithFrontend(frontend.FS()))
 	if err != nil {
 		return fmt.Errorf("API server creation failed: %w", err)
 	}
@@ -652,7 +653,7 @@ func (d *Daemon) restartAPIServer(newConfig *config.Config) {
 		return
 	}
 
-	apiServer, err := api.New(newConfig, d.database)
+	apiServer, err := api.New(newConfig, d.database, api.WithFrontend(frontend.FS()))
 	if err != nil {
 		d.logger.Printf("Failed to create API server with new config: %v", err)
 		return

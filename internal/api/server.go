@@ -5,6 +5,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -28,6 +29,19 @@ const (
 	prometheusUpdateInterval = 5 * time.Second
 )
 
+// Option is a functional option for configuring a Server.
+type Option func(*Server)
+
+// WithFrontend sets the fs.FS used to serve the embedded frontend SPA.
+// Pass the result of frontend.FS() from the internal/frontend package.
+// When not provided (or nil), the server falls back to the plain API index
+// response on "/" and does not serve any frontend assets.
+func WithFrontend(fsys fs.FS) Option {
+	return func(s *Server) {
+		s.frontendFS = fsys
+	}
+}
+
 // Server represents the API server.
 type Server struct {
 	httpServer      *http.Server
@@ -40,6 +54,11 @@ type Server struct {
 	prom            *metrics.PrometheusMetrics
 	startTime       time.Time
 	ringBuffer      *logging.RingBuffer
+
+	// frontendFS, when non-nil, is used to serve the embedded frontend SPA.
+	// It is set via WithFrontend and can be overridden at runtime by
+	// config.API.FrontendDir (which causes resolveFrontendFS to prefer disk).
+	frontendFS fs.FS
 
 	// scanQueue manages the bounded worker pool for scan execution.
 	scanQueue *scanning.ScanQueue
@@ -89,7 +108,8 @@ func DefaultConfig() Config {
 }
 
 // New creates a new API server instance.
-func New(cfg *config.Config, database *db.DB) (*Server, error) {
+// Pass functional options (e.g. WithFrontend) to configure optional behavior.
+func New(cfg *config.Config, database *db.DB, opts ...Option) (*Server, error) {
 	rb := logging.NewRingBuffer(0)
 	wrappedLogger := slog.New(logging.TeeHandler(logging.Default().Handler(), rb.Handler()))
 	logger := wrappedLogger.With("component", "api")
@@ -126,6 +146,12 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 		startTime:       time.Now(),
 		ringBuffer:      rb,
 		scanQueue:       scanQueue,
+	}
+
+	// Apply functional options before setting up routes so that e.g.
+	// WithFrontend is visible to setupRoutes.
+	for _, opt := range opts {
+		opt(server)
 	}
 
 	// Setup routes
