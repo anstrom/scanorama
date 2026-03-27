@@ -8,6 +8,9 @@ import {
   Pencil,
   Check,
   Trash2,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
 } from "lucide-react";
 import { Button } from "../components/button";
 import {
@@ -41,6 +44,8 @@ interface PortInfo {
 /** Extended host shape — includes fields the API returns but the generated schema omits */
 type HostWithDetails = HostResponse & {
   ports?: PortInfo[];
+  /** Open port count from the list query (not populated in detail view). */
+  total_ports?: number;
   os_family?: string;
   os_name?: string;
   os_version_detail?: string;
@@ -564,34 +569,6 @@ function HostDetailPanel({
 
 type HostStatus = "all" | "up" | "down" | "unknown";
 
-function PortTags({ ports }: { ports?: PortInfo[] }) {
-  const open = ports?.filter((p) => p.state === "open") ?? [];
-  if (open.length === 0) return <span className="text-text-muted">—</span>;
-
-  const MAX_SHOWN = 5;
-  const shown = open.slice(0, MAX_SHOWN);
-  const overflow = open.length - MAX_SHOWN;
-
-  return (
-    <div className="flex flex-wrap gap-1">
-      {shown.map((p) => (
-        <span
-          key={`${p.port}-${p.protocol}`}
-          title={`${p.protocol}${p.service ? ` · ${p.service}` : ""}`}
-          className="inline-block px-1.5 py-0.5 rounded bg-surface-raised text-xs font-mono text-text-secondary border border-border"
-        >
-          {p.port}
-        </span>
-      ))}
-      {overflow > 0 && (
-        <span className="inline-block px-1.5 py-0.5 rounded bg-surface-raised text-xs text-text-muted border border-border">
-          +{overflow} more
-        </span>
-      )}
-    </div>
-  );
-}
-
 function SkeletonRows({ count }: { count: number }) {
   return (
     <>
@@ -605,6 +582,9 @@ function SkeletonRows({ count }: { count: number }) {
           </td>
           <td className="py-3 pr-4">
             <Skeleton className="h-5 w-14" />
+          </td>
+          <td className="py-3 pr-4">
+            <Skeleton className="h-3.5 w-20" />
           </td>
           <td className="py-3 pr-4">
             <Skeleton className="h-3.5 w-32" />
@@ -624,11 +604,66 @@ function SkeletonRows({ count }: { count: number }) {
   );
 }
 
+// ── Sort column header ─────────────────────────────────────────────────────
+
+type SortOrder = "asc" | "desc";
+
+interface SortHeaderProps {
+  label: string;
+  column: string;
+  sortBy: string;
+  sortOrder: SortOrder;
+  onSort: (col: string) => void;
+  className?: string;
+}
+
+function SortHeader({
+  label,
+  column,
+  sortBy,
+  sortOrder,
+  onSort,
+  className,
+}: SortHeaderProps) {
+  const active = sortBy === column;
+  return (
+    <th
+      onClick={() => onSort(column)}
+      className={cn(
+        "text-left font-medium text-text-muted py-3 pr-4",
+        "cursor-pointer select-none hover:text-text-secondary transition-colors whitespace-nowrap",
+        active && "text-text-secondary",
+        className,
+      )}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active ? (
+          sortOrder === "asc" ? (
+            <ChevronUp className="h-3 w-3 shrink-0" />
+          ) : (
+            <ChevronDown className="h-3 w-3 shrink-0" />
+          )
+        ) : (
+          <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-30" />
+        )}
+      </span>
+    </th>
+  );
+}
+
+// ── OS family filter options ───────────────────────────────────────────────
+
+const OS_FAMILIES = ["Linux", "Windows", "macOS", "FreeBSD", "iOS", "Android"];
+
 export function HostsPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<HostStatus>("all");
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [sortBy, setSortBy] = useState("last_seen");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [osFilter, setOsFilter] = useState("");
   const [scanIP, setScanIP] = useState<string | null>(null);
   const [selectedHost, setSelectedHost] = useState<HostResponse | null>(null);
 
@@ -647,11 +682,27 @@ export function HostsPage() {
     setPage(1);
   }, []);
 
+  const handleSort = useCallback(
+    (column: string) => {
+      if (sortBy === column) {
+        setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+      } else {
+        setSortBy(column);
+        setSortOrder("desc");
+      }
+      setPage(1);
+    },
+    [sortBy],
+  );
+
   const queryParams = {
     page,
     page_size: PAGE_SIZE,
+    sort_by: sortBy,
+    sort_order: sortOrder,
     ...(statusFilter !== "all" ? { status: statusFilter } : {}),
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(osFilter ? { os: osFilter } : {}),
   };
 
   const { data, isLoading, isError } = useHosts(queryParams);
@@ -669,9 +720,9 @@ export function HostsPage() {
     <>
       <div className="space-y-4">
         {/* Filter bar */}
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
           {/* Search input */}
-          <div className="relative flex-1 max-w-sm">
+          <div className="relative flex-1 min-w-40 max-w-sm">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted pointer-events-none" />
             <input
               type="text"
@@ -704,6 +755,28 @@ export function HostsPage() {
             <option value="unknown">Unknown</option>
           </select>
 
+          {/* OS family select */}
+          <select
+            value={osFilter}
+            onChange={(e) => {
+              setOsFilter(e.target.value);
+              setPage(1);
+            }}
+            className={cn(
+              "px-3 py-1.5 text-xs rounded border border-border",
+              "bg-surface text-text-primary",
+              "focus:outline-none focus:ring-1 focus:ring-border",
+            )}
+            aria-label="Filter by OS"
+          >
+            <option value="">All OS</option>
+            {OS_FAMILIES.map((os) => (
+              <option key={os} value={os}>
+                {os}
+              </option>
+            ))}
+          </select>
+
           <Button
             onClick={() => setScanIP("")}
             icon={<ScanLine className="h-3.5 w-3.5" />}
@@ -719,27 +792,59 @@ export function HostsPage() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-border bg-surface">
-                  <th className="text-left font-medium text-text-muted px-4 py-3 pr-4">
-                    IP Address
-                  </th>
-                  <th className="text-left font-medium text-text-muted py-3 pr-4">
-                    Hostname
-                  </th>
-                  <th className="text-left font-medium text-text-muted py-3 pr-4">
-                    Status
-                  </th>
-                  <th className="text-left font-medium text-text-muted py-3 pr-4">
+                  <SortHeader
+                    label="IP Address"
+                    column="ip_address"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                    className="px-4"
+                  />
+                  <SortHeader
+                    label="Hostname"
+                    column="hostname"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="Status"
+                    column="status"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="OS"
+                    column="os_family"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <th className="text-left font-medium text-text-muted py-3 pr-4 whitespace-nowrap">
                     MAC Address
                   </th>
-                  <th className="text-left font-medium text-text-muted py-3 pr-4">
-                    Open Ports
-                  </th>
-                  <th className="text-left font-medium text-text-muted py-3 pr-4">
-                    Last Seen
-                  </th>
-                  <th className="text-left font-medium text-text-muted py-3 pr-4">
-                    Scans
-                  </th>
+                  <SortHeader
+                    label="Open Ports"
+                    column="open_ports"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="Last Seen"
+                    column="last_seen"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="Scans"
+                    column="scan_count"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
                   <th className="py-3" />
                 </tr>
               </thead>
@@ -747,7 +852,7 @@ export function HostsPage() {
                 {isError ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="py-10 text-center text-xs text-danger"
                     >
                       Failed to load hosts.
@@ -758,7 +863,7 @@ export function HostsPage() {
                 ) : hosts.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="py-10 text-center text-xs text-text-muted"
                     >
                       No hosts found.
@@ -780,11 +885,31 @@ export function HostsPage() {
                       <td className="py-3 pr-4">
                         <StatusBadge status={host.status ?? "unknown"} />
                       </td>
+                      <td className="py-3 pr-4 text-text-secondary whitespace-nowrap">
+                        {(host as HostWithDetails).os_family ? (
+                          <span
+                            title={
+                              (host as HostWithDetails).os_name ?? undefined
+                            }
+                          >
+                            {(host as HostWithDetails).os_family}
+                          </span>
+                        ) : (
+                          <span className="text-text-muted">—</span>
+                        )}
+                      </td>
                       <td className="py-3 pr-4 font-mono text-text-muted whitespace-nowrap">
                         {host.mac_address ?? "—"}
                       </td>
-                      <td className="py-3 pr-4">
-                        <PortTags ports={(host as HostWithDetails).ports} />
+                      <td className="py-3 pr-4 tabular-nums text-text-secondary">
+                        {(() => {
+                          const count = (host as HostWithDetails).total_ports;
+                          return count != null && count > 0 ? (
+                            count
+                          ) : (
+                            <span className="text-text-muted">—</span>
+                          );
+                        })()}
                       </td>
                       <td className="py-3 pr-4 text-text-muted whitespace-nowrap">
                         {host.last_seen
