@@ -7,6 +7,9 @@ interface HostListParams {
   page_size?: number;
   status?: "up" | "down" | "unknown";
   search?: string;
+  os?: string;
+  sort_by?: string;
+  sort_order?: "asc" | "desc";
 }
 
 export function useHosts(params: HostListParams = {}) {
@@ -14,7 +17,10 @@ export function useHosts(params: HostListParams = {}) {
     queryKey: ["hosts", params],
     queryFn: async () => {
       const { data, error, response } = await api.GET("/hosts", {
-        params: { query: params },
+        // Cast to any: the generated types are narrower than what the API
+        // actually accepts (sort_by, sort_order are not in the spec yet).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        params: { query: params as any },
       });
       if (error) throw new ApiError(response.status, error);
       return data;

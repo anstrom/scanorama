@@ -131,6 +131,11 @@ var validHostSortColumns = map[string]string{
 	"status":     "h.status",
 	"last_seen":  "h.last_seen",
 	"first_seen": "h.first_seen",
+	// Aggregate aliases from the SELECT clause — valid in PostgreSQL ORDER BY.
+	// These return NULL for unscanned hosts (see CASE WHEN below), so NULLS LAST
+	// naturally pushes them to the bottom without any workaround.
+	"open_ports": "open_ports",
+	"scan_count": "scan_count",
 }
 
 // ListHosts retrieves hosts with filtering and pagination.
@@ -155,9 +160,13 @@ func (r *HostRepository) ListHosts(
 			h.first_seen,
 			h.last_seen,
 			h.status,
-			COUNT(DISTINCT ps.id) FILTER (WHERE ps.state = 'open') as open_ports,
-			COUNT(DISTINCT ps.id) as total_ports_scanned,
-			COUNT(DISTINCT sj2.id) FILTER (WHERE sj2.status = 'completed') as scan_count
+			CASE WHEN COUNT(DISTINCT ps.id) = 0 THEN NULL
+			     ELSE COUNT(DISTINCT ps.id) FILTER (WHERE ps.state = 'open')
+			END AS open_ports,
+			COUNT(DISTINCT ps.id) AS total_ports_scanned,
+			CASE WHEN COUNT(DISTINCT ps.id) = 0 THEN NULL
+			     ELSE COUNT(DISTINCT sj2.id) FILTER (WHERE sj2.status = 'completed')
+			END AS scan_count
 		FROM hosts h
 		LEFT JOIN port_scans ps ON h.id = ps.host_id
 		LEFT JOIN port_scans ps2 ON h.id = ps2.host_id
@@ -786,8 +795,9 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 		var osConfidence, responseTimeMS *int
 		var discoveryMethod *string
 		var ignoreScanning *bool
-		var openPorts, totalPortsScanned int64
-		var scanCount int64
+		var openPorts sql.NullInt64
+		var totalPortsScanned int64
+		var scanCount sql.NullInt64
 
 		err := rows.Scan(
 			&host.ID,
@@ -831,8 +841,14 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 		// Wire the aggregated port counts from the list query.
 		// These are counts across all scan jobs — not latest-state — so they
 		// are only used for the list view summary numbers, not the detail panel.
-		host.TotalPorts = int(totalPortsScanned)
-		host.ScanCount = int(scanCount)
+		// NULL means the host has never been scanned (no port_scan rows exist);
+		// the zero value (0) is left in place, which the frontend renders as "—".
+		if openPorts.Valid {
+			host.TotalPorts = int(openPorts.Int64)
+		}
+		if scanCount.Valid {
+			host.ScanCount = int(scanCount.Int64)
+		}
 
 		hosts = append(hosts, host)
 	}

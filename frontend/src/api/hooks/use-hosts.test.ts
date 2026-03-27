@@ -45,6 +45,20 @@ const okPut = (data: unknown): ReturnType<typeof mockPut> =>
     response: new Response(),
   }) as ReturnType<typeof mockPut>;
 
+const failPut = (message = "update failed"): ReturnType<typeof mockPut> =>
+  Promise.resolve({
+    data: undefined,
+    error: { message },
+    response: new Response(null, { status: 400 }),
+  }) as ReturnType<typeof mockPut>;
+
+const failDelete = (message = "delete failed"): ReturnType<typeof mockDelete> =>
+  Promise.resolve({
+    data: undefined,
+    error: { message },
+    response: new Response(null, { status: 400 }),
+  }) as ReturnType<typeof mockDelete>;
+
 const okDelete = (): ReturnType<typeof mockDelete> =>
   Promise.resolve({
     data: undefined,
@@ -367,6 +381,20 @@ describe("useHostScans", () => {
     expect(result.current.fetchStatus).toBe("idle");
     expect(mockGet).not.toHaveBeenCalled();
   });
+
+  it("throws ApiError when the GET request fails", async () => {
+    mockGet.mockResolvedValue(fail("forbidden"));
+
+    const { result, actHook } = renderHookWithQuery(() =>
+      useHostScans("host-1", { page: 1, page_size: 5 }),
+    );
+
+    await actHook(async () => {
+      await waitFor(() => expect(result.current.isError).toBe(true));
+    });
+
+    expect(result.current.error).toBeTruthy();
+  });
 });
 
 // ── useUpdateHost ─────────────────────────────────────────────────────────────
@@ -421,6 +449,21 @@ describe("useUpdateHost", () => {
       expect.objectContaining({ queryKey: ["hosts"] }),
     );
   });
+
+  it("throws ApiError when the PUT request fails", async () => {
+    mockPut.mockResolvedValue(failPut("hostname already taken"));
+
+    const { result, actHook } = renderHookWithQuery(() => useUpdateHost());
+
+    await expect(
+      actHook(async () => {
+        await result.current.mutateAsync({
+          hostId: "host-1",
+          body: { hostname: "bad.local" },
+        });
+      }),
+    ).rejects.toThrow();
+  });
 });
 
 // ── useDeleteHost ─────────────────────────────────────────────────────────────
@@ -465,5 +508,17 @@ describe("useDeleteHost", () => {
     expect(invalidateSpy).toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: ["hosts"] }),
     );
+  });
+
+  it("throws ApiError when the DELETE request fails", async () => {
+    mockDelete.mockResolvedValue(failDelete("host not found"));
+
+    const { result, actHook } = renderHookWithQuery(() => useDeleteHost());
+
+    await expect(
+      actHook(async () => {
+        await result.current.mutateAsync("host-1");
+      }),
+    ).rejects.toThrow();
   });
 });
