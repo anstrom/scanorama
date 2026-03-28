@@ -279,9 +279,12 @@ func (r *ProfileRepository) UpdateProfile(
 	var exists bool
 	var builtIn bool
 	err = tx.QueryRowContext(ctx,
-		`SELECT COUNT(*) > 0,
+		`
+		    SELECT
+		        COUNT(*) > 0,
 		        COALESCE(MAX(CASE WHEN built_in THEN 1 ELSE 0 END), 0) = 1
-		 FROM scan_profiles WHERE id = $1`,
+		    FROM scan_profiles
+		    WHERE id = $1`,
 		id).Scan(&exists, &builtIn)
 	if err != nil {
 		return nil, sanitizeDBError("check profile existence", err)
@@ -392,9 +395,12 @@ func (r *ProfileRepository) DeleteProfile(ctx context.Context, id string) error 
 	var exists bool
 	var builtIn bool
 	err = tx.QueryRowContext(ctx,
-		`SELECT COUNT(*) > 0,
+		`
+		    SELECT
+		        COUNT(*) > 0,
 		        COALESCE(MAX(CASE WHEN built_in THEN 1 ELSE 0 END), 0) = 1
-		 FROM scan_profiles WHERE id = $1`,
+		    FROM scan_profiles
+		    WHERE id = $1`,
 		id).Scan(&exists, &builtIn)
 	if err != nil {
 		return sanitizeDBError("check profile existence", err)

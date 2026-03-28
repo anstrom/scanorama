@@ -65,14 +65,30 @@ func (r *ScanJobRepository) UpdateStatus(ctx context.Context, id uuid.UUID, stat
 
 	switch status {
 	case ScanJobStatusRunning:
-		query = `UPDATE scan_jobs SET status = $1, started_at = $2 WHERE id = $3`
+		query = `
+			UPDATE scan_jobs
+			SET
+			    status = $1,
+			    started_at = $2
+			WHERE id = $3`
 		args = []interface{}{status, now, id}
 	case ScanJobStatusCompleted, ScanJobStatusFailed:
 		if errorMsg != nil {
-			query = `UPDATE scan_jobs SET status = $1, completed_at = $2, error_message = $3 WHERE id = $4`
+			query = `
+				UPDATE scan_jobs
+				SET
+				    status = $1,
+				    completed_at = $2,
+				    error_message = $3
+				WHERE id = $4`
 			args = []interface{}{status, now, *errorMsg, id}
 		} else {
-			query = `UPDATE scan_jobs SET status = $1, completed_at = $2 WHERE id = $3`
+			query = `
+				UPDATE scan_jobs
+				SET
+				    status = $1,
+				    completed_at = $2
+				WHERE id = $3`
 			args = []interface{}{status, now, id}
 		}
 	default:
