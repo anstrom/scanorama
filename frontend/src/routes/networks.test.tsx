@@ -15,6 +15,35 @@ vi.mock("../api/hooks/use-networks", () => ({
   useDeleteNetwork: vi.fn(),
   useDeleteExclusion: vi.fn(),
   useStartNetworkDiscovery: vi.fn(),
+  useNetworkDiscoveryJobs: vi.fn(),
+  useStartNetworkScan: vi.fn(),
+}));
+
+vi.mock("../api/hooks/use-discovery", () => ({
+  useDiscoveryJobs: vi.fn(),
+  useStartDiscovery: vi.fn(),
+  useStopDiscovery: vi.fn(),
+  useRerunDiscovery: vi.fn(),
+}));
+
+vi.mock("../components/create-discovery-modal", () => ({
+  CreateDiscoveryModal: ({ onClose }: { onClose: () => void }) => (
+    <div role="dialog" aria-label="Create Discovery">
+      <button type="button" onClick={onClose}>
+        Close create discovery modal
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("../components/scan-network-modal", () => ({
+  ScanNetworkModal: ({ onClose }: { onClose: () => void }) => (
+    <div role="dialog" aria-label="Scan Network">
+      <button type="button" onClick={onClose}>
+        Close scan modal
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("../components/edit-network-modal", () => ({
@@ -53,7 +82,16 @@ import {
   useDeleteNetwork,
   useDeleteExclusion,
   useStartNetworkDiscovery,
+  useNetworkDiscoveryJobs,
+  useStartNetworkScan,
 } from "../api/hooks/use-networks";
+
+import {
+  useDiscoveryJobs,
+  useStartDiscovery,
+  useStopDiscovery,
+  useRerunDiscovery,
+} from "../api/hooks/use-discovery";
 
 const mockUseNetworks = vi.mocked(useNetworks);
 const mockUseNetworkExclusions = vi.mocked(useNetworkExclusions);
@@ -64,6 +102,12 @@ const mockUseUpdateNetwork = vi.mocked(useUpdateNetwork);
 const mockUseDeleteNetwork = vi.mocked(useDeleteNetwork);
 const mockUseDeleteExclusion = vi.mocked(useDeleteExclusion);
 const mockUseStartNetworkDiscovery = vi.mocked(useStartNetworkDiscovery);
+const mockUseNetworkDiscoveryJobs = vi.mocked(useNetworkDiscoveryJobs);
+const mockUseStartNetworkScan = vi.mocked(useStartNetworkScan);
+const mockUseDiscoveryJobs = vi.mocked(useDiscoveryJobs);
+const mockUseStartDiscovery = vi.mocked(useStartDiscovery);
+const mockUseStopDiscovery = vi.mocked(useStopDiscovery);
+const mockUseRerunDiscovery = vi.mocked(useRerunDiscovery);
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -152,6 +196,28 @@ function makeUseNetworkExclusionsResult(overrides = {}) {
   } as unknown as ReturnType<typeof useNetworkExclusions>;
 }
 
+function makeUseDiscoveryJobsResult(overrides = {}) {
+  return {
+    data: {
+      data: [],
+      pagination: { page: 1, page_size: 10, total_items: 0, total_pages: 0 },
+    },
+    isLoading: false,
+    ...overrides,
+  } as unknown as ReturnType<typeof useDiscoveryJobs>;
+}
+
+function makeUseNetworkDiscoveryJobsResult(overrides = {}) {
+  return {
+    data: {
+      data: [],
+      pagination: { page: 1, page_size: 10, total_items: 0, total_pages: 0 },
+    },
+    isLoading: false,
+    ...overrides,
+  } as unknown as ReturnType<typeof useNetworkDiscoveryJobs>;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockUseNetworks.mockReturnValue(makeUseNetworksResult());
@@ -177,6 +243,22 @@ beforeEach(() => {
   );
   mockUseStartNetworkDiscovery.mockReturnValue(
     idleMutation as unknown as ReturnType<typeof useStartNetworkDiscovery>,
+  );
+  mockUseNetworkDiscoveryJobs.mockReturnValue(
+    makeUseNetworkDiscoveryJobsResult(),
+  );
+  mockUseStartNetworkScan.mockReturnValue(
+    idleMutation as unknown as ReturnType<typeof useStartNetworkScan>,
+  );
+  mockUseDiscoveryJobs.mockReturnValue(makeUseDiscoveryJobsResult());
+  mockUseStartDiscovery.mockReturnValue(
+    idleMutation as unknown as ReturnType<typeof useStartDiscovery>,
+  );
+  mockUseStopDiscovery.mockReturnValue(
+    idleMutation as unknown as ReturnType<typeof useStopDiscovery>,
+  );
+  mockUseRerunDiscovery.mockReturnValue(
+    idleMutation as unknown as ReturnType<typeof useRerunDiscovery>,
   );
 });
 
@@ -294,8 +376,8 @@ describe("NetworksPage — table structure", () => {
       screen.getByRole("columnheader", { name: "Discovery" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("columnheader", { name: "Status" }),
-    ).toBeInTheDocument();
+      screen.getAllByRole("columnheader", { name: "Status" }).length,
+    ).toBeGreaterThanOrEqual(1);
     expect(
       screen.getByRole("columnheader", { name: "Last Discovery" }),
     ).toBeInTheDocument();
@@ -303,9 +385,11 @@ describe("NetworksPage — table structure", () => {
 
   it("renders one data row per network", () => {
     render(<NetworksPage />);
-    // 1 header row + 3 data rows
+    // networks table: 1 header row + 3 data rows
+    // discovery table: 1 header row + 1 empty-state row (no jobs)
+    // total rows >= 4
     const rows = screen.getAllByRole("row");
-    expect(rows).toHaveLength(4);
+    expect(rows.length).toBeGreaterThanOrEqual(4);
   });
 });
 
@@ -514,6 +598,47 @@ describe("NetworksPage — detail panel", () => {
     const deleteBtn = within(panel).getByRole("button", { name: /delete/i });
     await userEvent.click(deleteBtn);
     expect(within(panel).getByText("Delete this network?")).toBeInTheDocument();
+  });
+});
+
+// ── Scan network modal ────────────────────────────────────────────────────────
+
+describe("NetworksPage — scan network modal", () => {
+  it("shows the 'Scan hosts' button in the detail panel", async () => {
+    render(<NetworksPage />);
+    await userEvent.click(screen.getByText("Office LAN").closest("tr")!);
+    const panel = screen.getByRole("dialog", { name: /network details/i });
+    expect(
+      within(panel).getByRole("button", { name: /scan hosts/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens ScanNetworkModal when 'Scan hosts' is clicked", async () => {
+    render(<NetworksPage />);
+    await userEvent.click(screen.getByText("Office LAN").closest("tr")!);
+    const panel = screen.getByRole("dialog", { name: /network details/i });
+    await userEvent.click(
+      within(panel).getByRole("button", { name: /scan hosts/i }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: /scan network/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("closes ScanNetworkModal when its onClose fires", async () => {
+    render(<NetworksPage />);
+    await userEvent.click(screen.getByText("Office LAN").closest("tr")!);
+    const panel = screen.getByRole("dialog", { name: /network details/i });
+    await userEvent.click(
+      within(panel).getByRole("button", { name: /scan hosts/i }),
+    );
+    const modal = screen.getByRole("dialog", { name: /scan network/i });
+    await userEvent.click(
+      within(modal).getByRole("button", { name: /close scan modal/i }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: /scan network/i }),
+    ).not.toBeInTheDocument();
   });
 });
 

@@ -6,6 +6,7 @@ interface HostListParams {
   page?: number;
   page_size?: number;
   status?: "up" | "down" | "unknown";
+  network?: string;
   search?: string;
   os?: string;
   sort_by?: string;

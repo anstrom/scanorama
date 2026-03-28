@@ -7,6 +7,7 @@ import {
   useCreateDiscoveryJob,
   useStartDiscovery,
   useStopDiscovery,
+  useRerunDiscovery,
 } from "./use-discovery";
 
 vi.mock("../client", () => ({
@@ -538,6 +539,168 @@ describe("useStopDiscovery", () => {
 
     expect(invalidateSpy).toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: ["discovery"] }),
+    );
+  });
+});
+
+// ── useRerunDiscovery ─────────────────────────────────────────────────────────
+
+describe("useRerunDiscovery", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHookWithQuery(() => useRerunDiscovery());
+    expect(result.current.isPending).toBe(false);
+    expect(result.current.isSuccess).toBe(false);
+  });
+
+  it("creates a job then starts it, returning the created job", async () => {
+    const created = { ...mockJob, id: "job-new" };
+    const started = { ...created, status: "running" as const };
+    mockPost
+      .mockResolvedValueOnce(okPost(created))   // POST /discovery
+      .mockResolvedValueOnce(okPost(started));   // POST /discovery/{id}/start
+
+    const { result, actHook } = renderHookWithQuery(() => useRerunDiscovery());
+    let data: typeof created | undefined;
+    await actHook(async () => {
+      data = (await result.current.mutateAsync({
+        networks: ["192.168.1.0/24"],
+        method: "ping",
+        name: "Office LAN Discovery",
+      })) as typeof created;
+    });
+
+    expect(data?.id).toBe("job-new");
+  });
+
+  it("calls api.POST twice: once to create and once to start", async () => {
+    const created = { ...mockJob, id: "job-new" };
+    mockPost
+      .mockResolvedValueOnce(okPost(created))
+      .mockResolvedValueOnce(okPost({ ...created, status: "running" }));
+
+    const { result, actHook } = renderHookWithQuery(() => useRerunDiscovery());
+    await actHook(async () => {
+      await result.current.mutateAsync({ networks: ["192.168.1.0/24"] });
+    });
+
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    expect(mockPost).toHaveBeenNthCalledWith(
+      1,
+      "/discovery",
+      expect.anything(),
+    );
+    expect(mockPost).toHaveBeenNthCalledWith(
+      2,
+      "/discovery/{discoveryId}/start",
+      expect.objectContaining({
+        params: { path: { discoveryId: "job-new" } },
+      }),
+    );
+  });
+
+  it("appends ' (rerun)' to the job name", async () => {
+    const created = { ...mockJob, id: "job-new" };
+    mockPost
+      .mockResolvedValueOnce(okPost(created))
+      .mockResolvedValueOnce(okPost(created));
+
+    const { result, actHook } = renderHookWithQuery(() => useRerunDiscovery());
+    await actHook(async () => {
+      await result.current.mutateAsync({
+        networks: ["192.168.1.0/24"],
+        name: "My Job",
+      });
+    });
+
+    expect(mockPost).toHaveBeenNthCalledWith(
+      1,
+      "/discovery",
+      expect.objectContaining({
+        body: expect.objectContaining({ name: "My Job (rerun)" }),
+      }),
+    );
+  });
+
+  it("defaults method to 'tcp_connect' when not provided", async () => {
+    const created = { ...mockJob, id: "job-new" };
+    mockPost
+      .mockResolvedValueOnce(okPost(created))
+      .mockResolvedValueOnce(okPost(created));
+
+    const { result, actHook } = renderHookWithQuery(() => useRerunDiscovery());
+    await actHook(async () => {
+      await result.current.mutateAsync({ networks: ["192.168.1.0/24"] });
+    });
+
+    expect(mockPost).toHaveBeenNthCalledWith(
+      1,
+      "/discovery",
+      expect.objectContaining({
+        body: expect.objectContaining({ method: "tcp_connect" }),
+      }),
+    );
+  });
+
+  it("throws when the create POST returns an error", async () => {
+    mockPost.mockResolvedValueOnce(failPost("quota exceeded"));
+
+    const { result, actHook } = renderHookWithQuery(() => useRerunDiscovery());
+    await actHook(async () => {
+      await expect(
+        result.current.mutateAsync({ networks: ["192.168.1.0/24"] }),
+      ).rejects.toThrow("quota exceeded");
+    });
+  });
+
+  it("throws when the create POST returns no id", async () => {
+    mockPost.mockResolvedValueOnce(okPost({})); // no id field
+
+    const { result, actHook } = renderHookWithQuery(() => useRerunDiscovery());
+    await actHook(async () => {
+      await expect(
+        result.current.mutateAsync({ networks: ["192.168.1.0/24"] }),
+      ).rejects.toThrow("No job ID returned");
+    });
+  });
+
+  it("throws when the start POST returns an error", async () => {
+    const created = { ...mockJob, id: "job-new" };
+    mockPost
+      .mockResolvedValueOnce(okPost(created))
+      .mockResolvedValueOnce(failPost("job already running"));
+
+    const { result, actHook } = renderHookWithQuery(() => useRerunDiscovery());
+    await actHook(async () => {
+      await expect(
+        result.current.mutateAsync({ networks: ["192.168.1.0/24"] }),
+      ).rejects.toThrow("job already running");
+    });
+  });
+
+  it("invalidates ['discovery'] and ['networks'] on success", async () => {
+    const created = { ...mockJob, id: "job-new" };
+    mockPost
+      .mockResolvedValueOnce(okPost(created))
+      .mockResolvedValueOnce(okPost(created));
+
+    const { result, queryClient, actHook } = renderHookWithQuery(() =>
+      useRerunDiscovery(),
+    );
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await actHook(async () => {
+      await result.current.mutateAsync({ networks: ["192.168.1.0/24"] });
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["discovery"] }),
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["networks"] }),
     );
   });
 });

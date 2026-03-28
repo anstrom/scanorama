@@ -33,7 +33,9 @@ func (s *Server) setupRoutes() {
 	scheduleHandler := apihandlers.NewScheduleHandler(
 		services.NewScheduleService(db.NewScheduleRepository(s.database), s.logger), s.logger, s.metrics)
 	networkHandler := apihandlers.NewNetworkHandler(services.NewNetworkService(s.database), s.logger, s.metrics).
-		WithDiscovery(db.NewDiscoveryRepository(s.database), s.discoveryEngine)
+		WithDiscovery(db.NewDiscoveryRepository(s.database), s.discoveryEngine).
+		WithHostService(services.NewHostService(db.NewHostRepository(s.database), s.logger)).
+		WithScanService(services.NewScanService(db.NewScanRepository(s.database), s.logger))
 	handlerManager := apihandlers.New(s.database, s.logger, s.metrics).
 		WithRingBuffer(s.ringBuffer)
 	if s.scanQueue != nil {
@@ -138,6 +140,7 @@ func (s *Server) setupNetworkRoutes(api *mux.Router, h *apihandlers.NetworkHandl
 	api.HandleFunc("/networks/{id}/exclusions", h.CreateNetworkExclusion).Methods("POST")
 	api.HandleFunc("/networks/{id}/discover", h.StartNetworkDiscovery).Methods("POST")
 	api.HandleFunc("/networks/{id}/discovery", h.ListNetworkDiscoveryJobs).Methods("GET")
+	api.HandleFunc("/networks/{id}/scan", h.StartNetworkScan).Methods("POST")
 	api.HandleFunc("/exclusions", h.ListGlobalExclusions).Methods("GET")
 	api.HandleFunc("/exclusions", h.CreateGlobalExclusion).Methods("POST")
 	api.HandleFunc("/exclusions/{id}", h.DeleteExclusion).Methods("DELETE")

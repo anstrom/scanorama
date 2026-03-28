@@ -13,6 +13,8 @@ import {
   useDisableNetwork,
   useRenameNetwork,
   useDeleteExclusion,
+  useNetworkDiscoveryJobs,
+  useStartNetworkScan,
 } from "./use-networks";
 
 vi.mock("../client", () => ({
@@ -782,5 +784,240 @@ describe("useNetworkStats", () => {
       total: 3,
       active: 2,
     });
+  });
+});
+
+// ── useNetworkDiscoveryJobs ───────────────────────────────────────────────────
+
+const mockFetch = vi.fn();
+vi.stubGlobal("fetch", mockFetch);
+
+const mockDiscoveryJobs = [
+  {
+    id: "job-1",
+    name: "Office LAN Discovery",
+    networks: ["192.168.1.0/24"],
+    method: "ping",
+    status: "completed",
+    progress: 100,
+    created_at: "2024-01-01T09:00:00Z",
+  },
+];
+
+function okFetch(data: unknown, status = 200) {
+  return Promise.resolve({
+    ok: status >= 200 && status < 300,
+    status,
+    json: () => Promise.resolve(data),
+  } as Response);
+}
+
+function failFetch(status = 500) {
+  return Promise.resolve({
+    ok: false,
+    status,
+    json: () => Promise.resolve({ message: "server error" }),
+  } as Response);
+}
+
+describe("useNetworkDiscoveryJobs", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in a loading state when networkId is provided", () => {
+    mockFetch.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHookWithQuery(() =>
+      useNetworkDiscoveryJobs("net-1"),
+    );
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  it("is disabled (not loading) when networkId is empty", () => {
+    mockFetch.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHookWithQuery(() => useNetworkDiscoveryJobs(""));
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.fetchStatus).toBe("idle");
+  });
+
+  it("returns discovery jobs on success", async () => {
+    const payload = {
+      data: mockDiscoveryJobs,
+      pagination: { page: 1, page_size: 10, total_items: 1, total_pages: 1 },
+    };
+    mockFetch.mockResolvedValue(okFetch(payload));
+    const { result } = renderHookWithQuery(() =>
+      useNetworkDiscoveryJobs("net-1"),
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.data).toHaveLength(1);
+    expect(result.current.data?.data?.[0].id).toBe("job-1");
+  });
+
+  it("calls fetch with the correct URL for a given networkId", async () => {
+    mockFetch.mockResolvedValue(okFetch({ data: [], pagination: {} }));
+    const { result } = renderHookWithQuery(() =>
+      useNetworkDiscoveryJobs("net-42"),
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/networks/net-42/discovery"),
+    );
+  });
+
+  it("appends page and page_size query params when provided", async () => {
+    mockFetch.mockResolvedValue(okFetch({ data: [], pagination: {} }));
+    const { result } = renderHookWithQuery(() =>
+      useNetworkDiscoveryJobs("net-1", { page: 2, page_size: 5 }),
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const calledUrl = mockFetch.mock.calls[0][0] as string;
+    expect(calledUrl).toContain("page=2");
+    expect(calledUrl).toContain("page_size=5");
+  });
+
+  it("enters error state when fetch returns a non-ok response", async () => {
+    mockFetch.mockResolvedValue(failFetch(500));
+    const { result } = renderHookWithQuery(() =>
+      useNetworkDiscoveryJobs("net-1"),
+    );
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it("caches under the ['networks', id, 'discovery', params] query key", async () => {
+    const params = { page: 1, page_size: 10 };
+    mockFetch.mockResolvedValue(okFetch({ data: mockDiscoveryJobs, pagination: {} }));
+    const { result, queryClient } = renderHookWithQuery(() =>
+      useNetworkDiscoveryJobs("net-1", params),
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const cached = queryClient.getQueryData([
+      "networks",
+      "net-1",
+      "discovery",
+      params,
+    ]);
+    expect(cached).toBeDefined();
+  });
+});
+
+// ── useStartNetworkScan ───────────────────────────────────────────────────────
+
+const mockScan = {
+  id: "scan-1",
+  name: "Network Scan",
+  targets: ["192.168.1.1", "192.168.1.2"],
+  status: "pending",
+};
+
+describe("useStartNetworkScan", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHookWithQuery(() => useStartNetworkScan());
+    expect(result.current.isPending).toBe(false);
+    expect(result.current.isSuccess).toBe(false);
+  });
+
+  it("returns the created scan on success", async () => {
+    mockFetch.mockResolvedValue(okFetch(mockScan));
+    const { result, actHook } = renderHookWithQuery(() =>
+      useStartNetworkScan(),
+    );
+    let data: typeof mockScan | undefined;
+    await actHook(async () => {
+      data = (await result.current.mutateAsync({
+        networkId: "net-1",
+      })) as typeof mockScan;
+    });
+    expect(data?.id).toBe("scan-1");
+    expect(data?.targets).toHaveLength(2);
+  });
+
+  it("calls fetch with POST to /networks/{id}/scan", async () => {
+    mockFetch.mockResolvedValue(okFetch(mockScan));
+    const { result, actHook } = renderHookWithQuery(() =>
+      useStartNetworkScan(),
+    );
+    await actHook(async () => {
+      await result.current.mutateAsync({ networkId: "net-99" });
+    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/networks/net-99/scan"),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("sends os_detection: false by default", async () => {
+    mockFetch.mockResolvedValue(okFetch(mockScan));
+    const { result, actHook } = renderHookWithQuery(() =>
+      useStartNetworkScan(),
+    );
+    await actHook(async () => {
+      await result.current.mutateAsync({ networkId: "net-1" });
+    });
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ os_detection: false });
+  });
+
+  it("sends os_detection: true when requested", async () => {
+    mockFetch.mockResolvedValue(okFetch(mockScan));
+    const { result, actHook } = renderHookWithQuery(() =>
+      useStartNetworkScan(),
+    );
+    await actHook(async () => {
+      await result.current.mutateAsync({
+        networkId: "net-1",
+        osDetection: true,
+      });
+    });
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ os_detection: true });
+  });
+
+  it("throws a descriptive error when fetch returns a non-ok response", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      json: () => Promise.resolve({ message: "no active hosts" }),
+    });
+    const { result, actHook } = renderHookWithQuery(() =>
+      useStartNetworkScan(),
+    );
+    await actHook(async () => {
+      await expect(
+        result.current.mutateAsync({ networkId: "net-1" }),
+      ).rejects.toThrow("no active hosts");
+    });
+  });
+
+  it("throws a fallback error when the error body has no message", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      json: () => Promise.resolve({}),
+    });
+    const { result, actHook } = renderHookWithQuery(() =>
+      useStartNetworkScan(),
+    );
+    await actHook(async () => {
+      await expect(
+        result.current.mutateAsync({ networkId: "net-1" }),
+      ).rejects.toThrow("Failed to create network scan");
+    });
+  });
+
+  it("invalidates ['scans'] queries on success", async () => {
+    mockFetch.mockResolvedValue(okFetch(mockScan));
+    const { result, queryClient, actHook } = renderHookWithQuery(() =>
+      useStartNetworkScan(),
+    );
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    await actHook(async () => {
+      await result.current.mutateAsync({ networkId: "net-1" });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["scans"] }),
+    );
   });
 });

@@ -2114,6 +2114,130 @@ func TestNetworkHandler_CreateNetworkExclusion_Mock(t *testing.T) {
 	})
 }
 
+func TestNetworkHandler_StartNetworkScan_Mock(t *testing.T) {
+	makeNWE := func(id uuid.UUID, name, cidr string) *services.NetworkWithExclusions {
+		return &services.NetworkWithExclusions{
+			Network:    makeNetwork(id, name, cidr),
+			Exclusions: []*db.NetworkExclusion{},
+		}
+	}
+
+	t.Run("creates scan for active hosts", func(t *testing.T) {
+		h, netSvc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+		hostSvc := mocks.NewMockHostServicer(ctrl)
+		scanSvc := mocks.NewMockScanServicer(ctrl)
+		h.WithHostService(hostSvc).WithScanService(scanSvc)
+
+		netID := uuid.New()
+		scanID := uuid.New()
+		nwe := makeNWE(netID, "Office", "10.0.0.0/24")
+		host := makeHost(uuid.New(), "10.0.0.5")
+		scan := makeScan(scanID, "Network scan: Office (1 hosts)", "pending", "connect")
+
+		netSvc.EXPECT().GetNetworkByID(gomock.Any(), netID).Return(nwe, nil)
+		hostSvc.EXPECT().ListHosts(gomock.Any(), gomock.Any(), 0, 500).Return([]*db.Host{host}, int64(1), nil)
+		scanSvc.EXPECT().CreateScan(gomock.Any(), gomock.Any()).Return(scan, nil)
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/networks/{id}/scan", h.StartNetworkScan)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/networks/%s/scan", netID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+		var resp map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, scanID.String(), resp["id"])
+	})
+
+	t.Run("returns 400 for invalid UUID", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+		h.WithHostService(mocks.NewMockHostServicer(ctrl)).WithScanService(mocks.NewMockScanServicer(ctrl))
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/networks/{id}/scan", h.StartNetworkScan)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/networks/not-a-uuid/scan", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 404 when network not found", func(t *testing.T) {
+		h, netSvc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+		h.WithHostService(mocks.NewMockHostServicer(ctrl)).WithScanService(mocks.NewMockScanServicer(ctrl))
+
+		netID := uuid.New()
+		netSvc.EXPECT().GetNetworkByID(gomock.Any(), netID).Return(nil, notFoundErr("network", netID.String()))
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/networks/{id}/scan", h.StartNetworkScan)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/networks/%s/scan", netID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("returns 400 when no active hosts", func(t *testing.T) {
+		h, netSvc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+		hostSvc := mocks.NewMockHostServicer(ctrl)
+		h.WithHostService(hostSvc).WithScanService(mocks.NewMockScanServicer(ctrl))
+
+		netID := uuid.New()
+		nwe := makeNWE(netID, "Empty Net", "192.168.1.0/24")
+		netSvc.EXPECT().GetNetworkByID(gomock.Any(), netID).Return(nwe, nil)
+		hostSvc.EXPECT().ListHosts(gomock.Any(), gomock.Any(), 0, 500).Return([]*db.Host{}, int64(0), nil)
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/networks/{id}/scan", h.StartNetworkScan)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/networks/%s/scan", netID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 400 for malformed JSON body", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+		h.WithHostService(mocks.NewMockHostServicer(ctrl)).WithScanService(mocks.NewMockScanServicer(ctrl))
+
+		netID := uuid.New()
+		router, _ := routerWithID(http.MethodPost, "/api/v1/networks/{id}/scan", h.StartNetworkScan)
+		body := bytes.NewBufferString("{bad json}")
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/networks/%s/scan", netID), body)
+		req.Header.Set("Content-Type", "application/json")
+		req.ContentLength = int64(body.Len())
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 500 when CreateScan fails", func(t *testing.T) {
+		h, netSvc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+		hostSvc := mocks.NewMockHostServicer(ctrl)
+		scanSvc := mocks.NewMockScanServicer(ctrl)
+		h.WithHostService(hostSvc).WithScanService(scanSvc)
+
+		netID := uuid.New()
+		nwe := makeNWE(netID, "Net", "10.2.0.0/24")
+		host := makeHost(uuid.New(), "10.2.0.1")
+		netSvc.EXPECT().GetNetworkByID(gomock.Any(), netID).Return(nwe, nil)
+		hostSvc.EXPECT().ListHosts(gomock.Any(), gomock.Any(), 0, 500).Return([]*db.Host{host}, int64(1), nil)
+		scanSvc.EXPECT().CreateScan(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("db error"))
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/networks/{id}/scan", h.StartNetworkScan)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/networks/%s/scan", netID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
 // ── compile-time check that context import is used ───────────────────────────
 
 var _ = context.Background
