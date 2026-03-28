@@ -1,5 +1,24 @@
 #!/bin/bash
 
-# Pre-push hook — lint now runs in pre-commit, nothing extra needed here.
+# Pre-push hook — runs the mandatory test gate before every push.
+# See: .claude/instructions.md "Before Every Push"
 
-exit 0
+set -e
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "Pre-push checks..."
+
+echo "  backend tests..."
+if ! go test -short -race ./internal/...; then
+    echo "Backend tests failed."
+    exit 1
+fi
+
+echo "  frontend tests..."
+if ! (cd frontend && npx vitest run --reporter=dot 2>&1); then
+    echo "Frontend tests failed."
+    exit 1
+fi
+
+echo "Pre-push checks passed."
