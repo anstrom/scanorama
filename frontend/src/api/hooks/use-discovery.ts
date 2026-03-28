@@ -112,3 +112,57 @@ export function useStopDiscovery() {
     },
   });
 }
+
+export function useRerunDiscovery() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (job: {
+      networks?: string[];
+      method?: string;
+      name?: string;
+    }) => {
+      const { data: created, error: createError } = await api.POST(
+        "/discovery",
+        {
+          body: {
+            networks: job.networks ?? [],
+            method: (job.method ?? "tcp_connect") as
+              | "ping"
+              | "tcp_connect"
+              | "arp"
+              | "icmp",
+            name: job.name ? `${job.name} (rerun)` : undefined,
+          },
+        },
+      );
+      if (createError) {
+        const apiError = createError as { message?: string; error?: string };
+        throw new Error(
+          apiError.message ??
+            apiError.error ??
+            "Failed to create discovery job.",
+        );
+      }
+      if (!created?.id) throw new Error("No job ID returned");
+      const { error: startError } = await api.POST(
+        "/discovery/{discoveryId}/start",
+        {
+          params: { path: { discoveryId: created.id } },
+        },
+      );
+      if (startError) {
+        const apiError = startError as { message?: string; error?: string };
+        throw new Error(
+          apiError.message ??
+            apiError.error ??
+            "Failed to start discovery job.",
+        );
+      }
+      return created;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["discovery"] });
+      queryClient.invalidateQueries({ queryKey: ["networks"] });
+    },
+  });
+}

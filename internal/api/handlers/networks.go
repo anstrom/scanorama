@@ -22,6 +22,8 @@ type NetworkHandler struct {
 	discoveryStore DiscoveryStore
 	engine         *discovery.Engine
 	scanQueue      *scanning.ScanQueue
+	hostService    HostServicer
+	scanService    ScanServicer
 }
 
 // NewNetworkHandler creates a new network handler.
@@ -47,6 +49,18 @@ func (h *NetworkHandler) WithDiscovery(store DiscoveryStore, engine *discovery.E
 // of spawning an unbounded goroutine.
 func (h *NetworkHandler) WithScanQueue(q *scanning.ScanQueue) *NetworkHandler {
 	h.scanQueue = q
+	return h
+}
+
+// WithHostService wires the host service into the handler.
+func (h *NetworkHandler) WithHostService(svc HostServicer) *NetworkHandler {
+	h.hostService = svc
+	return h
+}
+
+// WithScanService wires the scan service into the handler.
+func (h *NetworkHandler) WithScanService(svc ScanServicer) *NetworkHandler {
+	h.scanService = svc
 	return h
 }
 
@@ -806,6 +820,125 @@ func (h *NetworkHandler) ListNetworkDiscoveryJobs(w http.ResponseWriter, r *http
 		"total", total)
 
 	writePaginatedResponse(w, r, items, params, total)
+}
+
+// networkScanRequest is the optional JSON body accepted by StartNetworkScan.
+type networkScanRequest struct {
+	// OSDetection enables nmap OS fingerprinting (-O) on every target.
+	// Requires the scanner to run with elevated privileges.
+	OSDetection bool `json:"os_detection"`
+}
+
+// StartNetworkScan handles POST /api/v1/networks/{id}/scan.
+// Lists all active (status=up) hosts in the network's CIDR, creates a pending
+// scan job targeting those hosts, and returns it ready to be started.
+//
+//	@Summary		Scan all active hosts in a network
+//	@Description	Creates a pending scan targeting every active host discovered in the network's CIDR.
+//	@Tags			networks
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string				true	"Network UUID"
+//	@Param			body	body		networkScanRequest	false	"Scan options"
+//	@Success		201		{object}	ScanResponse
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		404		{object}	ErrorResponse
+//	@Failure		503		{object}	ErrorResponse
+//	@Router			/networks/{id}/scan [post]
+func (h *NetworkHandler) StartNetworkScan(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
+
+	if h.hostService == nil || h.scanService == nil {
+		writeError(w, r, http.StatusServiceUnavailable,
+			fmt.Errorf("scan service is not configured on this server"))
+		return
+	}
+
+	networkID, err := extractUUIDFromPath(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	// Parse optional request body — ignore silently if the body is empty or
+	// not JSON so that callers can POST without a body for the default behavior.
+	var req networkScanRequest
+	if r.ContentLength > 0 {
+		if err := parseJSON(r, &req); err != nil {
+			writeError(w, r, http.StatusBadRequest, fmt.Errorf("invalid request body: %w", err))
+			return
+		}
+	}
+
+	nwe, err := h.service.GetNetworkByID(r.Context(), networkID)
+	if err != nil {
+		handleDatabaseError(w, r, err, "get", "network", h.logger)
+		return
+	}
+	network := nwe.Network
+	cidr := network.CIDR.String()
+
+	const maxScanTargets = 500
+	hosts, _, err := h.hostService.ListHosts(r.Context(), &db.HostFilters{
+		Status:  "up",
+		Network: cidr,
+	}, 0, maxScanTargets)
+	if err != nil {
+		h.logger.Error("Failed to list hosts for network scan",
+			"request_id", requestID, "network_id", networkID, "error", err)
+		writeError(w, r, http.StatusInternalServerError,
+			fmt.Errorf("failed to list hosts: %w", err))
+		return
+	}
+
+	if len(hosts) == 0 {
+		writeError(w, r, http.StatusBadRequest,
+			fmt.Errorf("no active hosts found in network %s", cidr))
+		return
+	}
+
+	targets := make([]string, len(hosts))
+	for i, host := range hosts {
+		targets[i] = host.IPAddress.String()
+	}
+
+	scanName := fmt.Sprintf("Network scan: %s (%d hosts)", network.Name, len(targets))
+	scan, err := h.scanService.CreateScan(r.Context(), db.CreateScanInput{
+		Name:        scanName,
+		Targets:     targets,
+		ScanType:    "connect",
+		Ports:       "1-1024",
+		OSDetection: req.OSDetection,
+	})
+	if err != nil {
+		h.logger.Error("Failed to create network scan",
+			"request_id", requestID, "network_id", networkID, "error", err)
+		writeError(w, r, http.StatusInternalServerError,
+			fmt.Errorf("failed to create scan: %w", err))
+		return
+	}
+
+	h.logger.Info("Network scan created",
+		"request_id", requestID,
+		"network_id", networkID,
+		"scan_id", scan.ID,
+		"target_count", len(targets),
+		"os_detection", req.OSDetection)
+
+	type networkScanResponse struct {
+		ID      string   `json:"id"`
+		Name    string   `json:"name"`
+		Targets []string `json:"targets"`
+		Status  string   `json:"status"`
+	}
+	writeJSON(w, r, http.StatusCreated, networkScanResponse{
+		ID:      scan.ID.String(),
+		Name:    scan.Name,
+		Targets: scan.Targets,
+		Status:  scan.Status,
+	})
+
+	recordCRUDMetric(h.metrics, "api_network_scan_created_total", nil)
 }
 
 func (h *NetworkHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {

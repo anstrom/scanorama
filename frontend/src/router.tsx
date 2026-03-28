@@ -10,7 +10,7 @@ import { ScansPage } from "./routes/scans";
 import { HostsPage } from "./routes/hosts";
 import { NetworksPage } from "./routes/networks";
 import { ExclusionsPage } from "./routes/exclusions";
-import { DiscoveryPage } from "./routes/discovery";
+import { DiscoveryRedirect } from "./routes/discovery-redirect";
 import { ProfilesPage } from "./routes/profiles";
 import { SchedulesPage } from "./routes/schedules";
 import { AdminPage } from "./routes/admin";
@@ -52,7 +52,7 @@ const exclusionsRoute = createRoute({
 const discoveryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/discovery",
-  component: DiscoveryPage,
+  component: DiscoveryRedirect,
 });
 
 const profilesRoute = createRoute({

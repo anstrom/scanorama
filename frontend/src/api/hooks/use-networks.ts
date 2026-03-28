@@ -318,3 +318,71 @@ export function useStartNetworkDiscovery() {
     },
   });
 }
+
+export function useNetworkDiscoveryJobs(
+  networkId: string,
+  params: { page?: number; page_size?: number } = {},
+) {
+  return useQuery({
+    queryKey: ["networks", networkId, "discovery", params],
+    queryFn: async () => {
+      const base =
+        (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
+      const url = new URL(
+        `${base}/networks/${networkId}/discovery`,
+        window.location.origin,
+      );
+      if (params.page != null)
+        url.searchParams.set("page", String(params.page));
+      if (params.page_size != null)
+        url.searchParams.set("page_size", String(params.page_size));
+      const resp = await fetch(url.toString());
+      if (!resp.ok) throw new Error("Failed to fetch network discovery jobs");
+      return resp.json() as Promise<{
+        data?: components["schemas"]["docs.DiscoveryJobResponse"][];
+        pagination?: components["schemas"]["docs.PaginationInfo"];
+      }>;
+    },
+    enabled: !!networkId,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useStartNetworkScan() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      networkId,
+      osDetection = false,
+    }: {
+      networkId: string;
+      osDetection?: boolean;
+    }) => {
+      const base =
+        (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
+      const resp = await fetch(`${base}/networks/${networkId}/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ os_detection: osDetection }),
+      });
+      if (!resp.ok) {
+        const body = (await resp.json().catch(() => ({}))) as {
+          message?: string;
+          error?: string;
+        };
+        throw new Error(
+          body.message ?? body.error ?? "Failed to create network scan",
+        );
+      }
+      return resp.json() as Promise<{
+        id: string;
+        name: string;
+        targets: string[];
+        status: string;
+      }>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scans"] });
+    },
+  });
+}

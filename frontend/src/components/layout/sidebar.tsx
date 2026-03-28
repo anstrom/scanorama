@@ -9,7 +9,6 @@ import {
   Clock,
   Shield,
   ShieldOff,
-  ScanSearch,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -24,7 +23,6 @@ const mainNav: NavItem[] = [
   { label: "Dashboard", href: "#/", icon: LayoutDashboard },
   { label: "Scans", href: "#/scans", icon: Radar },
   { label: "Hosts", href: "#/hosts", icon: Server },
-  { label: "Discovery", href: "#/discovery", icon: ScanSearch },
   { label: "Networks", href: "#/networks", icon: Network },
   { label: "Exclusions", href: "#/exclusions", icon: ShieldOff },
   { label: "Profiles", href: "#/profiles", icon: SlidersHorizontal },

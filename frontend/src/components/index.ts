@@ -12,6 +12,7 @@ export { AddNetworkModal } from "./add-network-modal";
 export { AddExclusionModal } from "./add-exclusion-modal";
 export { ScanActivityChart } from "./scan-activity-chart";
 export { EditNetworkModal } from "./edit-network-modal";
+export { ScanNetworkModal } from "./scan-network-modal";
 export { ToastProvider, useToast } from "./toast-provider";
 export {
   ScheduleFormModal,

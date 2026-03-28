@@ -12,12 +12,18 @@ vi.mock("../api/hooks/use-scans", () => ({
   useStartScan: vi.fn(),
 }));
 
+vi.mock("../api/hooks/use-networks", () => ({
+  useNetworks: vi.fn(),
+}));
+
 import { useProfiles } from "../api/hooks/use-profiles";
 import { useCreateScan, useStartScan } from "../api/hooks/use-scans";
+import { useNetworks } from "../api/hooks/use-networks";
 
 const mockUseProfiles = vi.mocked(useProfiles);
 const mockUseCreateScan = vi.mocked(useCreateScan);
 const mockUseStartScan = vi.mocked(useStartScan);
+const mockUseNetworks = vi.mocked(useNetworks);
 
 const mockProfiles = [
   { id: "p1", name: "Quick scan", scan_type: "connect", ports: "22,80,443" },
@@ -47,6 +53,13 @@ function setupDefaultMocks() {
 beforeEach(() => {
   vi.clearAllMocks();
   setupDefaultMocks();
+  mockUseNetworks.mockReturnValue({
+    data: {
+      data: [],
+      pagination: { page: 1, page_size: 200, total_items: 0, total_pages: 0 },
+    },
+    isLoading: false,
+  } as unknown as ReturnType<typeof useNetworks>);
 });
 
 // ── rendering ─────────────────────────────────────────────────────────────────
@@ -175,18 +188,18 @@ describe("RunScanModal", () => {
 
   it("renders the OS detection checkbox", () => {
     render(<RunScanModal onClose={vi.fn()} />);
-    expect(screen.getByLabelText(/OS detection/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/OS fingerprint/i)).toBeInTheDocument();
   });
 
   it("OS detection checkbox is unchecked by default", () => {
     render(<RunScanModal onClose={vi.fn()} />);
-    expect(screen.getByLabelText(/OS detection/)).not.toBeChecked();
+    expect(screen.getByLabelText(/OS fingerprint/i)).not.toBeChecked();
   });
 
   it("toggles OS detection on click", async () => {
     const user = userEvent.setup();
     render(<RunScanModal onClose={vi.fn()} />);
-    const checkbox = screen.getByLabelText(/OS detection/);
+    const checkbox = screen.getByLabelText(/OS fingerprint/i);
     await user.click(checkbox);
     expect(checkbox).toBeChecked();
     await user.click(checkbox);
@@ -329,7 +342,7 @@ describe("RunScanModal", () => {
     render(<RunScanModal onClose={vi.fn()} />);
     await user.type(screen.getByLabelText("Target"), "10.0.0.1");
     await user.selectOptions(screen.getByLabelText("Select profile"), "p1");
-    await user.click(screen.getByLabelText(/OS detection/));
+    await user.click(screen.getByLabelText(/OS fingerprint/i));
     await user.click(screen.getByRole("button", { name: "Run scan" }));
 
     expect(createScan).toHaveBeenCalledWith(
