@@ -110,7 +110,7 @@ jobs:
           go tool cover -func=coverage.out | tail -1
 
       - name: Upload unit test coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.out
@@ -378,7 +378,7 @@ jobs:
           fi
 
       - name: Upload complete coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./integration_coverage.out
