@@ -14,14 +14,14 @@
     "generate-types": "swagger2openapi ../docs/swagger/swagger.json -o .openapi3.json && openapi-typescript .openapi3.json -o src/api/types.ts && rm -f .openapi3.json"
   },
   "dependencies": {
-    "@tanstack/react-query": "5.91.2",
+    "@tanstack/react-query": "5.96.1",
     "@tanstack/react-router": "1.168.8",
     "clsx": "2.1.1",
     "lucide-react": "0.577.0",
     "openapi-fetch": "0.17.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "recharts": "3.8.0",
+    "recharts": "3.8.1",
     "tailwind-merge": "3.5.0",
     "zod": "4.3.6"
   },
