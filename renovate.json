@@ -21,6 +21,9 @@
   "separateMajorMinor": true,
   "separateMinorPatch": false,
   "rangeStrategy": "bump",
+  "gomod": {
+    "postUpdateOptions": ["gomodTidy"]
+  },
   "npm": {
     "enabled": true,
     "rangeStrategy": "pin",
