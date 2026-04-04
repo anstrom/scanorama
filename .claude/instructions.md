@@ -238,6 +238,24 @@ make coverage-show
 - Handle `sql.ErrNoRows` specifically
 - Use transactions for batch operations
 
+## Renovate Configuration
+
+### After Any Change to `renovate.json`
+
+Always validate before committing. Use `python3` for strict JSON first, then the config validator:
+
+```bash
+python3 -c "import json; json.load(open('renovate.json')); print('valid JSON')"
+npx renovate-config-validator
+```
+
+**Version caveat**: `npx renovate-config-validator` installs the latest Renovate, which may not match the pinned bot version running on the repo. If the validator rejects a field that the Renovate bot itself wrote (e.g. via a `chore(config): migrate` commit), trust the bot — the JSON validity check matters more. Always confirm the file passes `python3` regardless.
+
+Common mistakes:
+- Invalid escape sequences in regex strings — use `\\.` not `\.` (e.g. `"/^\\.github/"` not `"/^\.github/"`)
+- Using `fileMatch` vs `managerFilePatterns` in `customManagers` — check which the running bot version expects
+- Invalid schedule strings — use `"before 5am"` not `"every day before 5am"`
+
 ## Build and Deployment
 
 ### Build Targets
