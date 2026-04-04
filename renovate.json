@@ -21,7 +21,9 @@
     {
       "description": "Sync GO_VERSION in CI workflows with go.mod",
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/.+\\.ya?ml$"],
+      "managerFilePatterns": [
+        "/^\.github/workflows/.+\.ya?ml$/"
+      ],
       "matchStrings": [
         "# renovate: datasource=golang-version depName=go\\s+GO_VERSION: \"(?<currentValue>[^\"]+)\""
       ],
