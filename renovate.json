@@ -5,7 +5,6 @@
     ":dependencyDashboard",
     ":semanticCommits",
     ":semanticCommitTypeAll(chore)",
-    "group:allNonMajor",
     "schedule:weekly"
   ],
   "labels": ["dependencies"],
@@ -44,12 +43,27 @@
   ],
   "packageRules": [
     {
-      "description": "Group Go module updates and workflow GO_VERSION together",
-      "matchManagers": ["gomod", "custom.regex"],
+      "description": "Group all Go module dependency updates",
+      "matchManagers": ["gomod"],
+      "groupName": "Go modules",
+      "labels": ["dependencies", "go"],
+      "commitMessagePrefix": "deps(go):"
+    },
+    {
+      "description": "Group workflow GO_VERSION with Go modules",
+      "matchManagers": ["custom.regex"],
       "matchDepNames": ["go"],
       "groupName": "Go modules",
       "labels": ["dependencies", "go"],
       "commitMessagePrefix": "deps(go):"
+    },
+    {
+      "description": "Group all npm production dependency updates",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["dependencies"],
+      "groupName": "npm dependencies",
+      "labels": ["dependencies", "npm"],
+      "commitMessagePrefix": "deps(npm):"
     },
     {
       "description": "Group all @tanstack/react-router packages together regardless of dep type so peer dependencies always stay in sync",
