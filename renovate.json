@@ -82,7 +82,7 @@
     {
       "description": "Group npm dev dependencies",
       "matchManagers": ["npm"],
-      "matchDepTypes": ["devDependencies"],
+      "matchDepTypes": ["devDependencies", "indirect"],
       "groupName": "npm dev dependencies",
       "labels": ["dependencies", "npm"],
       "commitMessagePrefix": "deps(npm):"
