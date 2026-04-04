@@ -20,6 +20,13 @@
   "separateMajorMinor": true,
   "separateMinorPatch": false,
   "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "commitMessageAction": "Refresh",
+    "commitMessageTopic": "lockfile",
+    "labels": ["dependencies"],
+    "schedule": ["every day before 5am"]
+  },
   "gomod": {
     "postUpdateOptions": ["gomodTidy"]
   },
@@ -82,7 +89,7 @@
     {
       "description": "Group npm dev dependencies",
       "matchManagers": ["npm"],
-      "matchDepTypes": ["devDependencies", "indirect"],
+      "matchDepTypes": ["devDependencies"],
       "groupName": "npm dev dependencies",
       "labels": ["dependencies", "npm"],
       "commitMessagePrefix": "deps(npm):"
