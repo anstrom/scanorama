@@ -910,6 +910,7 @@ func (h *NetworkHandler) StartNetworkScan(w http.ResponseWriter, r *http.Request
 		ScanType:    "connect",
 		Ports:       "1-1024",
 		OSDetection: req.OSDetection,
+		NetworkID:   &networkID,
 	})
 	if err != nil {
 		h.logger.Error("Failed to create network scan",

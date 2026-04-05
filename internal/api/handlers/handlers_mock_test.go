@@ -2137,7 +2137,14 @@ func TestNetworkHandler_StartNetworkScan_Mock(t *testing.T) {
 
 		netSvc.EXPECT().GetNetworkByID(gomock.Any(), netID).Return(nwe, nil)
 		hostSvc.EXPECT().ListHosts(gomock.Any(), gomock.Any(), 0, 500).Return([]*db.Host{host}, int64(1), nil)
-		scanSvc.EXPECT().CreateScan(gomock.Any(), gomock.Any()).Return(scan, nil)
+		scanSvc.EXPECT().CreateScan(gomock.Any(), db.CreateScanInput{
+			Name:        "Network scan: Office (1 hosts)",
+			Targets:     []string{"10.0.0.5"},
+			ScanType:    "connect",
+			Ports:       "1-1024",
+			OSDetection: false,
+			NetworkID:   &netID,
+		}).Return(scan, nil)
 
 		router, _ := routerWithID(http.MethodPost, "/api/v1/networks/{id}/scan", h.StartNetworkScan)
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/networks/%s/scan", netID), nil)
@@ -2235,6 +2242,44 @@ func TestNetworkHandler_StartNetworkScan_Mock(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("forwards networkID from path into CreateScanInput", func(t *testing.T) {
+		h, netSvc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+		hostSvc := mocks.NewMockHostServicer(ctrl)
+		scanSvc := mocks.NewMockScanServicer(ctrl)
+		h.WithHostService(hostSvc).WithScanService(scanSvc)
+
+		netID := uuid.New()
+		scanID := uuid.New()
+		nwe := makeNWE(netID, "Production", "172.16.0.0/24")
+		host := makeHost(uuid.New(), "172.16.0.10")
+		scan := makeScan(scanID, "Network scan: Production (1 hosts)", "pending", "connect")
+
+		netSvc.EXPECT().GetNetworkByID(gomock.Any(), netID).Return(nwe, nil)
+		hostSvc.EXPECT().ListHosts(gomock.Any(), gomock.Any(), 0, 500).Return([]*db.Host{host}, int64(1), nil)
+
+		// The critical assertion: NetworkID must equal the UUID extracted from
+		// the URL path — it must NOT be nil (the bug this change fixes).
+		scanSvc.EXPECT().CreateScan(gomock.Any(), db.CreateScanInput{
+			Name:        "Network scan: Production (1 hosts)",
+			Targets:     []string{"172.16.0.10"},
+			ScanType:    "connect",
+			Ports:       "1-1024",
+			OSDetection: false,
+			NetworkID:   &netID,
+		}).Return(scan, nil)
+
+		router, _ := routerWithID(http.MethodPost, "/api/v1/networks/{id}/scan", h.StartNetworkScan)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/networks/%s/scan", netID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusCreated, w.Code)
+		var resp map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, scanID.String(), resp["id"])
 	})
 }
 
