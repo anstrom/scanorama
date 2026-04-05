@@ -656,6 +656,37 @@ func TestDiscoveryHandler_RequestToDBDiscovery(t *testing.T) {
 				assert.Equal(t, "icmp", result.Method)
 			},
 		},
+		{
+			name: "network_id present – forwarded as non-nil",
+			request: &DiscoveryRequest{
+				Name:     "Linked Discovery",
+				Networks: []string{"192.168.2.0/24"},
+				Method:   "ping",
+				NetworkID: func() *uuid.UUID {
+					id := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
+					return &id
+				}(),
+			},
+			validate: func(t *testing.T, result db.CreateDiscoveryJobInput) {
+				require.NotNil(t, result.NetworkID)
+				assert.Equal(t, uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"), *result.NetworkID)
+				assert.Equal(t, []string{"192.168.2.0/24"}, result.Networks)
+				assert.Equal(t, "ping", result.Method)
+			},
+		},
+		{
+			name: "network_id absent – remains nil",
+			request: &DiscoveryRequest{
+				Name:     "Unlinked Discovery",
+				Networks: []string{"10.1.0.0/16"},
+				Method:   "arp",
+			},
+			validate: func(t *testing.T, result db.CreateDiscoveryJobInput) {
+				assert.Nil(t, result.NetworkID)
+				assert.Equal(t, []string{"10.1.0.0/16"}, result.Networks)
+				assert.Equal(t, "arp", result.Method)
+			},
+		},
 	}
 
 	for _, tt := range tests {

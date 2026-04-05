@@ -181,6 +181,7 @@ type DiscoveryRequest struct {
 	ScheduleID  *int64            `json:"schedule_id,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
 	Enabled     bool              `json:"enabled"`
+	NetworkID   *uuid.UUID        `json:"network_id,omitempty"`
 }
 
 // DiscoveryResponse represents a discovery job response.
@@ -610,8 +611,9 @@ func (h *DiscoveryHandler) getDiscoveryFilters(r *http.Request) db.DiscoveryFilt
 // requestToCreateDiscovery converts a DiscoveryRequest to a typed CreateDiscoveryJobInput for the DB layer.
 func (h *DiscoveryHandler) requestToCreateDiscovery(req *DiscoveryRequest) db.CreateDiscoveryJobInput {
 	return db.CreateDiscoveryJobInput{
-		Networks: req.Networks,
-		Method:   req.Method,
+		Networks:  req.Networks,
+		Method:    req.Method,
+		NetworkID: req.NetworkID,
 	}
 }
 
