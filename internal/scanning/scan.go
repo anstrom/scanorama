@@ -534,7 +534,7 @@ func storeScanResults(
 		now := time.Now()
 		scanJob := &db.ScanJob{
 			ID:        jobID,
-			NetworkID: networkID,
+			NetworkID: &networkID,
 			Status:    db.ScanJobStatusCompleted,
 		}
 		scanJob.StartedAt = &result.StartTime

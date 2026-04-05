@@ -353,7 +353,7 @@ func TestScanJobValidation(t *testing.T) {
 
 		job := &ScanJob{
 			ID:              uuid.New(),
-			NetworkID:       targetID,
+			NetworkID:       &targetID,
 			Status:          ScanJobStatusPending,
 			StartedAt:       &startTime,
 			CompletedAt:     nil,
@@ -363,7 +363,8 @@ func TestScanJobValidation(t *testing.T) {
 		}
 
 		assert.NotEqual(t, uuid.Nil, job.ID)
-		assert.Equal(t, targetID, job.NetworkID)
+		require.NotNil(t, job.NetworkID)
+		assert.Equal(t, targetID, *job.NetworkID)
 		assert.Equal(t, ScanJobStatusPending, job.Status)
 		assert.NotNil(t, job.StartedAt)
 		assert.Nil(t, job.CompletedAt)
@@ -375,9 +376,10 @@ func TestScanJobValidation(t *testing.T) {
 		progress := 100
 		errorMsg := "Scan completed with warnings"
 
+		nid := uuid.New()
 		job := &ScanJob{
 			ID:              uuid.New(),
-			NetworkID:       uuid.New(),
+			NetworkID:       &nid,
 			Status:          ScanJobStatusCompleted,
 			StartedAt:       &startTime,
 			CompletedAt:     &endTime,

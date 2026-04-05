@@ -272,7 +272,7 @@ type ScheduledJob struct {
 // ScanJob represents a scan job execution.
 type ScanJob struct {
 	ID               uuid.UUID  `db:"id" json:"id"`
-	NetworkID        uuid.UUID  `db:"network_id" json:"network_id"`
+	NetworkID        *uuid.UUID `db:"network_id" json:"network_id,omitempty"`
 	ProfileID        *string    `db:"profile_id" json:"profile_id,omitempty"`
 	Status           string     `db:"status" json:"status"`
 	StartedAt        *time.Time `db:"started_at" json:"started_at,omitempty"`
