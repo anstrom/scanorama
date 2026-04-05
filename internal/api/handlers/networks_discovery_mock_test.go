@@ -3,7 +3,9 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -435,5 +437,323 @@ func TestNetworkHandler_ListNetworkDiscoveryJobs(t *testing.T) {
 		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 		pagination := resp["pagination"].(map[string]interface{})
 		assert.Equal(t, float64(12), pagination["total_items"])
+	})
+}
+
+// ── RenameNetwork ─────────────────────────────────────────────────────────────
+
+func TestNetworkHandler_RenameNetwork_Mock(t *testing.T) {
+	t.Run("400 on invalid UUID", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		r := mux.NewRouter()
+		r.HandleFunc("/networks/{id}/rename", h.RenameNetwork).Methods("PUT")
+		body := bytes.NewBufferString(`{"new_name":"x"}`)
+		req := httptest.NewRequest("PUT", "/networks/not-a-uuid/rename", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("400 on invalid JSON", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		networkID := uuid.New()
+		r := mux.NewRouter()
+		r.HandleFunc("/networks/{id}/rename", h.RenameNetwork).Methods("PUT")
+		body := bytes.NewBufferString(`{bad json`)
+		req := httptest.NewRequest("PUT", "/networks/"+networkID.String()+"/rename", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("400 on empty new_name", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		networkID := uuid.New()
+		r := mux.NewRouter()
+		r.HandleFunc("/networks/{id}/rename", h.RenameNetwork).Methods("PUT")
+		body := bytes.NewBufferString(`{"new_name":""}`)
+		req := httptest.NewRequest("PUT", "/networks/"+networkID.String()+"/rename", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("404 when network not found", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		networkID := uuid.New()
+		svc.EXPECT().
+			GetNetworkByID(gomock.Any(), networkID).
+			Return(nil, errors.NewDatabaseError(errors.CodeNotFound, "not found"))
+
+		r := mux.NewRouter()
+		r.HandleFunc("/networks/{id}/rename", h.RenameNetwork).Methods("PUT")
+		body := bytes.NewBufferString(`{"new_name":"NewName"}`)
+		req := httptest.NewRequest("PUT", "/networks/"+networkID.String()+"/rename", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("409 on duplicate name", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		networkID := uuid.New()
+		network := testNetwork(networkID, "OldName", "10.0.0.0/8", "tcp")
+		svc.EXPECT().
+			GetNetworkByID(gomock.Any(), networkID).
+			Return(&services.NetworkWithExclusions{Network: network}, nil)
+		svc.EXPECT().
+			UpdateNetwork(
+				gomock.Any(), networkID, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+			).
+			Return(nil, fmt.Errorf("network name already exists"))
+
+		r := mux.NewRouter()
+		r.HandleFunc("/networks/{id}/rename", h.RenameNetwork).Methods("PUT")
+		body := bytes.NewBufferString(`{"new_name":"OldName"}`)
+		req := httptest.NewRequest("PUT", "/networks/"+networkID.String()+"/rename", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
+	})
+
+	t.Run("200 success", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		networkID := uuid.New()
+		network := testNetwork(networkID, "OldName", "10.0.0.0/8", "tcp")
+		updated := testNetwork(networkID, "NewName", "10.0.0.0/8", "tcp")
+		svc.EXPECT().
+			GetNetworkByID(gomock.Any(), networkID).
+			Return(&services.NetworkWithExclusions{Network: network}, nil)
+		svc.EXPECT().
+			UpdateNetwork(gomock.Any(), networkID, "NewName", "10.0.0.0/8", "", "tcp", true).
+			Return(updated, nil)
+
+		r := mux.NewRouter()
+		r.HandleFunc("/networks/{id}/rename", h.RenameNetwork).Methods("PUT")
+		body := bytes.NewBufferString(`{"new_name":"NewName"}`)
+		req := httptest.NewRequest("PUT", "/networks/"+networkID.String()+"/rename", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+}
+
+// ── ListGlobalExclusions ──────────────────────────────────────────────────────
+
+func TestNetworkHandler_ListGlobalExclusions_Unit(t *testing.T) {
+	t.Run("500 on db error", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		svc.EXPECT().
+			GetGlobalExclusions(gomock.Any()).
+			Return(nil, fmt.Errorf("db error"))
+
+		r := mux.NewRouter()
+		r.HandleFunc("/exclusions", h.ListGlobalExclusions).Methods("GET")
+		req := httptest.NewRequest("GET", "/exclusions", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("200 empty list", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		svc.EXPECT().
+			GetGlobalExclusions(gomock.Any()).
+			Return([]*db.NetworkExclusion{}, nil)
+
+		r := mux.NewRouter()
+		r.HandleFunc("/exclusions", h.ListGlobalExclusions).Methods("GET")
+		req := httptest.NewRequest("GET", "/exclusions", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var result []interface{}
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+		assert.Empty(t, result)
+	})
+
+	t.Run("200 with items", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		excl := &db.NetworkExclusion{
+			ID:           uuid.New(),
+			ExcludedCIDR: "10.99.0.0/16",
+			Enabled:      true,
+		}
+		svc.EXPECT().
+			GetGlobalExclusions(gomock.Any()).
+			Return([]*db.NetworkExclusion{excl}, nil)
+
+		r := mux.NewRouter()
+		r.HandleFunc("/exclusions", h.ListGlobalExclusions).Methods("GET")
+		req := httptest.NewRequest("GET", "/exclusions", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var result []interface{}
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+		assert.Len(t, result, 1)
+	})
+}
+
+// ── CreateGlobalExclusion ─────────────────────────────────────────────────────
+
+func TestNetworkHandler_CreateGlobalExclusion_Unit(t *testing.T) {
+	t.Run("400 on invalid JSON", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		r := mux.NewRouter()
+		r.HandleFunc("/exclusions", h.CreateGlobalExclusion).Methods("POST")
+		body := bytes.NewBufferString(`{bad json`)
+		req := httptest.NewRequest("POST", "/exclusions", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("400 on empty excluded_cidr", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		r := mux.NewRouter()
+		r.HandleFunc("/exclusions", h.CreateGlobalExclusion).Methods("POST")
+		body := bytes.NewBufferString(`{"excluded_cidr":""}`)
+		req := httptest.NewRequest("POST", "/exclusions", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("500 on db error", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		svc.EXPECT().
+			AddExclusion(gomock.Any(), (*uuid.UUID)(nil), "10.55.0.0/16", gomock.Any()).
+			Return(nil, fmt.Errorf("db error"))
+
+		r := mux.NewRouter()
+		r.HandleFunc("/exclusions", h.CreateGlobalExclusion).Methods("POST")
+		body := bytes.NewBufferString(`{"excluded_cidr":"10.55.0.0/16"}`)
+		req := httptest.NewRequest("POST", "/exclusions", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("201 success", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		excl := &db.NetworkExclusion{
+			ID:           uuid.New(),
+			ExcludedCIDR: "10.55.0.0/16",
+			Enabled:      true,
+		}
+		svc.EXPECT().
+			AddExclusion(gomock.Any(), (*uuid.UUID)(nil), "10.55.0.0/16", gomock.Any()).
+			Return(excl, nil)
+
+		r := mux.NewRouter()
+		r.HandleFunc("/exclusions", h.CreateGlobalExclusion).Methods("POST")
+		body := bytes.NewBufferString(`{"excluded_cidr":"10.55.0.0/16"}`)
+		req := httptest.NewRequest("POST", "/exclusions", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+	})
+}
+
+// ── DeleteExclusion ───────────────────────────────────────────────────────────
+
+func TestNetworkHandler_DeleteExclusion_Unit(t *testing.T) {
+	t.Run("400 on invalid UUID", func(t *testing.T) {
+		h, _, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		r := mux.NewRouter()
+		r.HandleFunc("/exclusions/{id}", h.DeleteExclusion).Methods("DELETE")
+		req := httptest.NewRequest("DELETE", "/exclusions/not-a-uuid", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("404 when not found", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		exclusionID := uuid.New()
+		svc.EXPECT().
+			RemoveExclusion(gomock.Any(), exclusionID).
+			Return(errors.NewDatabaseError(errors.CodeNotFound, "not found"))
+
+		r := mux.NewRouter()
+		r.HandleFunc("/exclusions/{id}", h.DeleteExclusion).Methods("DELETE")
+		req := httptest.NewRequest("DELETE", "/exclusions/"+exclusionID.String(), nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("204 on success", func(t *testing.T) {
+		h, svc, ctrl := newNetworkHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		exclusionID := uuid.New()
+		svc.EXPECT().
+			RemoveExclusion(gomock.Any(), exclusionID).
+			Return(nil)
+
+		r := mux.NewRouter()
+		r.HandleFunc("/exclusions/{id}", h.DeleteExclusion).Methods("DELETE")
+		req := httptest.NewRequest("DELETE", "/exclusions/"+exclusionID.String(), nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNoContent, w.Code)
 	})
 }
