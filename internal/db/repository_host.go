@@ -154,6 +154,9 @@ func (r *HostRepository) ListHosts(
 			h.os_name,
 			h.os_version,
 			h.os_confidence,
+			h.os_detected_at,
+			h.os_method,
+			h.os_details,
 			h.discovery_method,
 			h.response_time_ms,
 			h.ignore_scanning,
@@ -185,7 +188,8 @@ func (r *HostRepository) ListHosts(
 	// Add GROUP BY clause.
 	groupByClause := `
 		GROUP BY h.id, h.ip_address, h.hostname, h.mac_address, h.vendor, h.os_family,
-			h.os_name, h.os_version, h.os_confidence, h.discovery_method,
+			h.os_name, h.os_version, h.os_confidence, h.os_detected_at, h.os_method,
+			h.os_details, h.discovery_method,
 			h.response_time_ms, h.ignore_scanning, h.first_seen, h.last_seen, h.status
 	`
 
@@ -349,6 +353,9 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 			h.os_name,
 			h.os_version,
 			h.os_confidence,
+			h.os_detected_at,
+			h.os_method,
+			h.os_details,
 			h.discovery_method,
 			h.response_time_ms,
 			h.ignore_scanning,
@@ -363,6 +370,9 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 	var ipAddress string
 	var hostname, macAddressStr, vendor, osFamily, osName, osVersion *string
 	var osConfidence, responseTimeMS *int
+	var osDetectedAt *time.Time
+	var osMethod *string
+	var osDetails JSONB
 	var discoveryMethod *string
 	var ignoreScanning *bool
 
@@ -376,6 +386,9 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 		&osName,
 		&osVersion,
 		&osConfidence,
+		&osDetectedAt,
+		&osMethod,
+		&osDetails,
 		&discoveryMethod,
 		&responseTimeMS,
 		&ignoreScanning,
@@ -401,6 +414,9 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 	assignStringPtr(&host.OSName, osName)
 	assignStringPtr(&host.OSVersion, osVersion)
 	assignIntPtr(&host.OSConfidence, osConfidence)
+	host.OSDetectedAt = osDetectedAt
+	assignStringPtr(&host.OSMethod, osMethod)
+	host.OSDetails = osDetails
 	assignStringPtr(&host.DiscoveryMethod, discoveryMethod)
 	assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
 	assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
@@ -793,6 +809,9 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 		var ipAddress string
 		var hostname, macAddressStr, vendor, osFamily, osName, osVersion *string
 		var osConfidence, responseTimeMS *int
+		var osDetectedAt *time.Time
+		var osMethod *string
+		var osDetails JSONB
 		var discoveryMethod *string
 		var ignoreScanning *bool
 		var openPorts sql.NullInt64
@@ -809,6 +828,9 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 			&osName,
 			&osVersion,
 			&osConfidence,
+			&osDetectedAt,
+			&osMethod,
+			&osDetails,
 			&discoveryMethod,
 			&responseTimeMS,
 			&ignoreScanning,
@@ -834,6 +856,9 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 		assignStringPtr(&host.OSName, osName)
 		assignStringPtr(&host.OSVersion, osVersion)
 		assignIntPtr(&host.OSConfidence, osConfidence)
+		host.OSDetectedAt = osDetectedAt
+		assignStringPtr(&host.OSMethod, osMethod)
+		host.OSDetails = osDetails
 		assignStringPtr(&host.DiscoveryMethod, discoveryMethod)
 		assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
 		assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
