@@ -451,6 +451,67 @@ func TestErrorHandling(t *testing.T) {
 	})
 }
 
+func TestPanicRecovery(t *testing.T) {
+	config := Config{
+		Size:            2,
+		QueueSize:       10,
+		MaxRetries:      0,
+		RetryDelay:      10 * time.Millisecond,
+		ShutdownTimeout: 2 * time.Second,
+	}
+
+	pool := New(config)
+	pool.Start()
+	defer pool.Shutdown()
+
+	t.Run("panicking job produces a failed result without crashing pool", func(t *testing.T) {
+		panicJob := &panicMockJob{id: "panic-job", jobType: "test"}
+		err := pool.Submit(panicJob)
+		require.NoError(t, err)
+
+		// Wait for the result with a generous timeout.
+		var got Result
+		select {
+		case got = <-pool.Results():
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for result from panicking job")
+		}
+
+		assert.Equal(t, "panic-job", got.JobID)
+		assert.Error(t, got.Error, "panicking job should produce an error result")
+		assert.Contains(t, got.Error.Error(), "panic")
+	})
+
+	t.Run("pool is still functional after a panic", func(t *testing.T) {
+		normalJob := NewMockJob("post-panic-job", "test", 0, nil)
+		err := pool.Submit(normalJob)
+		require.NoError(t, err)
+
+		var got Result
+		select {
+		case got = <-pool.Results():
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for result after panic recovery")
+		}
+
+		assert.Equal(t, "post-panic-job", got.JobID)
+		assert.NoError(t, got.Error, "normal job after panic should succeed")
+	})
+}
+
+// panicMockJob is a Job whose Execute always panics.
+type panicMockJob struct {
+	id      string
+	jobType string
+}
+
+func (p *panicMockJob) Execute(_ context.Context) error {
+	panic("intentional test panic")
+}
+
+func (p *panicMockJob) ID() string   { return p.id }
+func (p *panicMockJob) Type() string { return p.jobType }
+
 func TestRateLimiting(t *testing.T) {
 	t.Run("respects rate limiting", func(t *testing.T) {
 		config := Config{

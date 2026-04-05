@@ -6,6 +6,7 @@ package workers
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -253,15 +254,41 @@ func (w *worker) run() {
 	}
 }
 
-// executeJob executes a single job with retry logic.
+// executeJob executes a single job with panic recovery, rate limiting, and retry logic.
 func (w *worker) executeJob(job Job) {
+	defer func() {
+		if r := recover(); r != nil {
+			stack := debug.Stack()
+			logging.Error("Job panicked",
+				"job_id", job.ID(),
+				"job_type", job.Type(),
+				"worker_id", w.id,
+				"panic", r,
+				"stack", string(stack))
+
+			select {
+			case w.pool.results <- Result{
+				JobID:   job.ID(),
+				JobType: job.Type(),
+				Error:   fmt.Errorf("panic: %v", r),
+			}:
+			case <-w.pool.ctx.Done():
+			}
+
+			metrics.Counter("jobs_completed_total", metrics.Labels{
+				"job_type": job.Type(),
+				"status":   "panic",
+			})
+		}
+	}()
+
 	jobTimer := metrics.NewTimer("job_duration_seconds", metrics.Labels{
 		"job_type":  job.Type(),
 		"worker_id": fmt.Sprintf("worker-%d", w.id),
 	})
 	defer jobTimer.Stop()
 
-	// Apply rate limiting if configured
+	// Apply rate limiting if configured.
 	if w.pool.rateLimiter != nil {
 		select {
 		case <-w.pool.rateLimiter.C:
@@ -271,35 +298,35 @@ func (w *worker) executeJob(job Job) {
 		}
 	}
 
+	w.runWithRetry(job)
+}
+
+// runWithRetry attempts a job up to MaxRetries times, sending one Result to the
+// results channel regardless of outcome.
+func (w *worker) runWithRetry(job Job) {
 	var lastErr error
 	var retries int
 
 	for attempt := 0; attempt <= w.pool.config.MaxRetries; attempt++ {
 		start := time.Now()
 
-		// Create job context with timeout
 		jobCtx, cancel := context.WithCancel(w.pool.ctx)
-
-		// Execute the job
 		err := job.Execute(jobCtx)
 		cancel()
 
 		duration := time.Since(start)
 
 		if err == nil {
-			// Job succeeded
 			w.pool.results <- Result{
 				JobID:    job.ID(),
 				JobType:  job.Type(),
 				Duration: duration,
 				Retries:  retries,
 			}
-
 			metrics.Counter("jobs_completed_total", metrics.Labels{
 				"job_type": job.Type(),
 				"status":   "success",
 			})
-
 			logging.Debug("Job completed successfully",
 				"job_id", job.ID(),
 				"job_type", job.Type(),
@@ -312,7 +339,6 @@ func (w *worker) executeJob(job Job) {
 		lastErr = err
 		retries = attempt
 
-		// Check if we should retry
 		if attempt < w.pool.config.MaxRetries {
 			logging.Debug("Job failed, retrying",
 				"job_id", job.ID(),
@@ -320,8 +346,6 @@ func (w *worker) executeJob(job Job) {
 				"attempt", attempt+1,
 				"max_retries", w.pool.config.MaxRetries,
 				"error", err)
-
-			// Wait before retry
 			select {
 			case <-time.After(w.pool.config.RetryDelay):
 			case <-w.pool.ctx.Done():
@@ -330,19 +354,17 @@ func (w *worker) executeJob(job Job) {
 		}
 	}
 
-	// Job failed after all retries
+	// All attempts exhausted.
 	w.pool.results <- Result{
 		JobID:   job.ID(),
 		JobType: job.Type(),
 		Error:   lastErr,
 		Retries: retries,
 	}
-
 	metrics.Counter("jobs_completed_total", metrics.Labels{
 		"job_type": job.Type(),
 		"status":   "error",
 	})
-
 	logging.Error("Job failed after retries",
 		"job_id", job.ID(),
 		"job_type", job.Type(),
