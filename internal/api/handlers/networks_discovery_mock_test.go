@@ -224,7 +224,7 @@ func TestNetworkHandler_StartNetworkDiscovery(t *testing.T) {
 			CreateDiscoveryJob(gomock.Any(), db.CreateDiscoveryJobInput{
 				Networks:  []string{"192.168.0.0/16"},
 				Method:    "tcp",
-				NetworkID: nil,
+				NetworkID: &networkID,
 			}).
 			Return(pendingJob, nil)
 		store.EXPECT().
@@ -266,7 +266,7 @@ func TestNetworkHandler_StartNetworkDiscovery(t *testing.T) {
 			CreateDiscoveryJob(gomock.Any(), db.CreateDiscoveryJobInput{
 				Networks:  []string{"10.0.0.0/8"},
 				Method:    "tcp",
-				NetworkID: nil,
+				NetworkID: &networkID,
 			}).
 			Return(pendingJob, nil)
 		store.EXPECT().StartDiscoveryJob(gomock.Any(), jobID).Return(nil)
