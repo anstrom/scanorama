@@ -1220,3 +1220,56 @@ func TestPersistOSData_ZeroAccuracy_ConfidenceNotSet(t *testing.T) {
 	assert.Equal(t, "Unknown", result.OSName,
 		"OSName is set regardless of accuracy value")
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// validateTargets — flag-injection defense-in-depth
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestValidateTargets(t *testing.T) {
+	validBase := ScanConfig{
+		Ports:    "80",
+		ScanType: "connect",
+	}
+
+	t.Run("valid IP target passes", func(t *testing.T) {
+		cfg := validBase
+		cfg.Targets = []string{"192.168.1.1"}
+		assert.NoError(t, cfg.Validate())
+	})
+
+	t.Run("valid CIDR target passes", func(t *testing.T) {
+		cfg := validBase
+		cfg.Targets = []string{"10.0.0.0/24"}
+		assert.NoError(t, cfg.Validate())
+	})
+
+	t.Run("valid hostname target passes", func(t *testing.T) {
+		cfg := validBase
+		cfg.Targets = []string{"scanme.nmap.org"}
+		assert.NoError(t, cfg.Validate())
+	})
+
+	t.Run("target starting with dash is rejected", func(t *testing.T) {
+		cfg := validBase
+		cfg.Targets = []string{"--script=evil"}
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must not start with '-'")
+	})
+
+	t.Run("nmap flag injection via target is rejected", func(t *testing.T) {
+		cfg := validBase
+		cfg.Targets = []string{"192.168.1.1", "-sV"}
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must not start with '-'")
+	})
+
+	t.Run("mixed valid and invalid targets fails on first bad one", func(t *testing.T) {
+		cfg := validBase
+		cfg.Targets = []string{"10.0.0.1", "--script=vuln", "10.0.0.2"}
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "--script=vuln")
+	})
+}
