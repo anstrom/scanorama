@@ -182,6 +182,27 @@ func TestDiscover_PrefersSingleNetworkField(t *testing.T) {
 	require.NotNil(t, job)
 }
 
+func TestDiscover_PropagatesNetworkID(t *testing.T) {
+	// Config.NetworkID must be copied onto the returned db.DiscoveryJob.
+	database, mock := newMockDB(t)
+	engine := NewEngine(database)
+
+	networkID := uuid.New()
+	mock.ExpectExec(discoverJobInsert).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	cfg := &Config{
+		Network:   "192.168.3.0/24",
+		NetworkID: &networkID,
+		Method:    "tcp",
+	}
+	job, err := engine.Discover(context.Background(), cfg)
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	require.NotNil(t, job.NetworkID, "NetworkID should be propagated from config to the job struct")
+	assert.Equal(t, networkID, *job.NetworkID)
+}
+
 // ─── saveDiscoveryJob ──────────────────────────────────────────────────────────
 
 func TestSaveDiscoveryJob_Success(t *testing.T) {
@@ -267,6 +288,77 @@ func TestSaveDiscoveryJob_FailedStatus(t *testing.T) {
 
 	err := engine.saveDiscoveryJob(ctx, job)
 	assert.NoError(t, err)
+}
+
+func TestSaveDiscoveryJob_WithNetworkID(t *testing.T) {
+	// When NetworkID is non-nil it must appear as the second argument ($2) of
+	// the INSERT so that the networks FK column is populated.
+	engine, mock := newEngine(t)
+	ctx := context.Background()
+
+	networkID := uuid.New()
+	job := &db.DiscoveryJob{
+		ID:        uuid.New(),
+		NetworkID: &networkID,
+		Network:   db.NetworkAddr{IPNet: mustParseCIDR("10.0.2.0/24")},
+		Method:    "tcp",
+		Status:    db.DiscoveryJobStatusRunning,
+		CreatedAt: time.Now(),
+	}
+
+	// AnyArg() for all positions except network_id so we verify both the
+	// argument count (9, not the old 8) and the UUID value itself.
+	mock.ExpectExec(discoverJobInsert).
+		WithArgs(
+			sqlmock.AnyArg(), // $1 id
+			&networkID,       // $2 network_id — must match the UUID we set
+			sqlmock.AnyArg(), // $3 network
+			sqlmock.AnyArg(), // $4 method
+			sqlmock.AnyArg(), // $5 status
+			sqlmock.AnyArg(), // $6 created_at
+			sqlmock.AnyArg(), // $7 completed_at
+			sqlmock.AnyArg(), // $8 hosts_discovered
+			sqlmock.AnyArg(), // $9 hosts_responsive
+		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	err := engine.saveDiscoveryJob(ctx, job)
+	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSaveDiscoveryJob_NilNetworkID(t *testing.T) {
+	// When NetworkID is nil the second argument must be nil so that the
+	// database/sql driver maps it to SQL NULL (preserving existing behavior).
+	engine, mock := newEngine(t)
+	ctx := context.Background()
+
+	job := &db.DiscoveryJob{
+		ID:        uuid.New(),
+		NetworkID: nil,
+		Network:   db.NetworkAddr{IPNet: mustParseCIDR("10.0.3.0/24")},
+		Method:    "tcp",
+		Status:    db.DiscoveryJobStatusRunning,
+		CreatedAt: time.Now(),
+	}
+
+	mock.ExpectExec(discoverJobInsert).
+		WithArgs(
+			sqlmock.AnyArg(),  // $1 id
+			(*uuid.UUID)(nil), // $2 network_id → SQL NULL
+			sqlmock.AnyArg(),  // $3 network
+			sqlmock.AnyArg(),  // $4 method
+			sqlmock.AnyArg(),  // $5 status
+			sqlmock.AnyArg(),  // $6 created_at
+			sqlmock.AnyArg(),  // $7 completed_at
+			sqlmock.AnyArg(),  // $8 hosts_discovered
+			sqlmock.AnyArg(),  // $9 hosts_responsive
+		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	err := engine.saveDiscoveryJob(ctx, job)
+	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // ─── finalizeDiscoveryJob ──────────────────────────────────────────────────────
