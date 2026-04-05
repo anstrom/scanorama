@@ -83,6 +83,81 @@ func (r *HostRepository) CreateOrUpdate(ctx context.Context, host *Host) error {
 	return nil
 }
 
+// UpsertForScan atomically inserts a new host by IP address, or — if a host
+// with that address already exists — updates only its status and last_seen
+// timestamp. It returns the complete host row so callers can link scan results
+// without a separate SELECT.
+//
+// This replaces the old get-then-create pattern which had a TOCTOU race: two
+// concurrent scan goroutines could both see "not found" and then both attempt
+// an INSERT, causing a constraint violation.
+func (r *HostRepository) UpsertForScan(ctx context.Context, ipAddr IPAddr, status string) (*Host, error) {
+	const query = `
+		INSERT INTO hosts (ip_address, status)
+		VALUES ($1, $2)
+		ON CONFLICT (ip_address)
+		DO UPDATE SET
+			status    = EXCLUDED.status,
+			last_seen  = NOW()
+		RETURNING
+			id, ip_address, hostname, mac_address, vendor,
+			os_family, os_name, os_version, os_confidence,
+			os_detected_at, os_method, os_details,
+			discovery_method, response_time_ms, ignore_scanning,
+			first_seen, last_seen, status
+	`
+
+	host := &Host{}
+	var ipAddrStr string
+	var hostname, macAddrStr, vendor, osFamily, osName, osVersion, osMethod *string
+	var osConfidence, responseTimeMS *int
+	var discoveryMethod *string
+	var ignoreScanning *bool
+	var osDetectedAt *time.Time
+	var osDetails JSONB
+
+	err := r.db.QueryRowContext(ctx, query, ipAddr.String(), status).Scan(
+		&host.ID,
+		&ipAddrStr,
+		&hostname,
+		&macAddrStr,
+		&vendor,
+		&osFamily,
+		&osName,
+		&osVersion,
+		&osConfidence,
+		&osDetectedAt,
+		&osMethod,
+		&osDetails,
+		&discoveryMethod,
+		&responseTimeMS,
+		&ignoreScanning,
+		&host.FirstSeen,
+		&host.LastSeen,
+		&host.Status,
+	)
+	if err != nil {
+		return nil, sanitizeDBError("upsert host for scan", err)
+	}
+
+	host.IPAddress = IPAddr{IP: net.ParseIP(ipAddrStr)}
+	assignStringPtr(&host.Hostname, hostname)
+	assignMACAddress(&host.MACAddress, macAddrStr)
+	assignStringPtr(&host.Vendor, vendor)
+	assignStringPtr(&host.OSFamily, osFamily)
+	assignStringPtr(&host.OSName, osName)
+	assignStringPtr(&host.OSVersion, osVersion)
+	assignIntPtr(&host.OSConfidence, osConfidence)
+	host.OSDetectedAt = osDetectedAt
+	assignStringPtr(&host.OSMethod, osMethod)
+	host.OSDetails = osDetails
+	assignStringPtr(&host.DiscoveryMethod, discoveryMethod)
+	assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
+	assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
+
+	return host, nil
+}
+
 // GetByIP retrieves a host by IP address.
 func (r *HostRepository) GetByIP(ctx context.Context, ip IPAddr) (*Host, error) {
 	var host Host

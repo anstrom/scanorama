@@ -17,6 +17,92 @@ import (
 	"github.com/anstrom/scanorama/internal/errors"
 )
 
+// upsertForScanColumns mirrors the RETURNING clause in UpsertForScan.
+var upsertForScanColumns = []string{
+	"id", "ip_address", "hostname", "mac_address", "vendor",
+	"os_family", "os_name", "os_version", "os_confidence",
+	"os_detected_at", "os_method", "os_details",
+	"discovery_method", "response_time_ms", "ignore_scanning",
+	"first_seen", "last_seen", "status",
+}
+
+// ── UpsertForScan ─────────────────────────────────────────────────────────────
+
+func TestUpsertForScan_Unit(t *testing.T) {
+	now := time.Now()
+	hostID := uuid.New()
+	ip := IPAddr{IP: net.ParseIP("10.0.0.1")}
+
+	t.Run("happy path — row returned, fields populated", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`INSERT INTO hosts`).
+			WillReturnRows(
+				sqlmock.NewRows(upsertForScanColumns).AddRow(
+					hostID, "10.0.0.1", nil, nil, nil,
+					nil, nil, nil, nil,
+					nil, nil, nil,
+					nil, nil, false,
+					now, now, "up",
+				),
+			)
+
+		host, err := NewHostRepository(db).UpsertForScan(context.Background(), ip, "up")
+
+		require.NoError(t, err)
+		require.NotNil(t, host)
+		assert.Equal(t, hostID, host.ID)
+		assert.Equal(t, "10.0.0.1", host.IPAddress.String())
+		assert.Equal(t, "up", host.Status)
+		assert.Nil(t, host.Hostname)
+		assert.Nil(t, host.OSFamily)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("happy path — nullable fields populated", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		hostname := "web-01.example.com"
+		osFamily := "Linux"
+		osName := "Ubuntu"
+		osVersion := "22.04"
+		osConfidence := 90
+		osMethod := "nmap"
+		discoveryMethod := "ping"
+		responseTimeMS := 3
+		mock.ExpectQuery(`INSERT INTO hosts`).
+			WillReturnRows(
+				sqlmock.NewRows(upsertForScanColumns).AddRow(
+					hostID, "10.0.0.1", &hostname, nil, nil,
+					&osFamily, &osName, &osVersion, &osConfidence,
+					&now, &osMethod, nil,
+					&discoveryMethod, &responseTimeMS, false,
+					now, now, "up",
+				),
+			)
+
+		host, err := NewHostRepository(db).UpsertForScan(context.Background(), ip, "up")
+
+		require.NoError(t, err)
+		require.NotNil(t, host.Hostname)
+		assert.Equal(t, hostname, *host.Hostname)
+		assert.Equal(t, osFamily, *host.OSFamily)
+		assert.Equal(t, osConfidence, *host.OSConfidence)
+		assert.Equal(t, discoveryMethod, *host.DiscoveryMethod)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("db error is wrapped and propagated", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`INSERT INTO hosts`).
+			WillReturnError(fmt.Errorf("connection reset by peer"))
+
+		host, err := NewHostRepository(db).UpsertForScan(context.Background(), ip, "up")
+
+		require.Error(t, err)
+		assert.Nil(t, host)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
 // ── GetHost ───────────────────────────────────────────────────────────────────
 
 func TestGetHost_Unit(t *testing.T) {

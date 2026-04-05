@@ -670,24 +670,11 @@ func parseTargetAddress(target string) (db.NetworkAddr, error) {
 	return networkAddr, nil
 }
 
-// debugHostLookup performs detailed debugging of host lookup process.
-func debugHostLookup(ctx context.Context, database *db.DB, hostAddress string, ipAddr db.IPAddr) {
-	logging.Debug("Looking up host", "address", hostAddress, "ip", ipAddr.IP)
-
-	// Debug: Check what hosts actually exist in database
-	var hostCount int
-	countQuery := `SELECT COUNT(*) FROM hosts WHERE ip_address::text LIKE '%' || $1 || '%'`
-	if err := database.QueryRowContext(ctx, countQuery, hostAddress).Scan(&hostCount); err == nil {
-		logging.Debug("Found hosts with IP", "count", hostCount, "address", hostAddress)
-	}
-}
-
 // processHostForScan processes a single host for scanning, preserving discovery data.
 // Uses transaction-safe approach to handle race conditions between discovery and scan.
 func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostRepository,
 	host *Host, jobID uuid.UUID) ([]*db.PortScan, error) {
 	ipAddr := db.IPAddr{IP: net.ParseIP(host.Address)}
-	debugHostLookup(ctx, database, host.Address, ipAddr)
 
 	dbHost, err := getOrCreateHostSafely(ctx, database, hostRepo, ipAddr, host)
 	if err != nil {
@@ -757,61 +744,18 @@ func persistOSData(ctx context.Context, hostRepo *db.HostRepository, dbHost *db.
 	}
 }
 
-// getOrCreateHostSafely looks up a host by IP address and creates it if it does
-// not yet exist. It uses the repository's GetByIP (sqlx tag-based scanning) so
-// there is no dependency on physical column order in the hosts table.
+// getOrCreateHostSafely atomically upserts a host by IP address, eliminating
+// the TOCTOU race of the previous get-then-create pattern.
 func getOrCreateHostSafely(ctx context.Context, _ *db.DB, hostRepo *db.HostRepository,
 	ipAddr db.IPAddr, host *Host) (*db.Host, error) {
-	logging.Debug("Looking up host by IP", "ip", ipAddr.String())
-
-	existing, err := hostRepo.GetByIP(ctx, ipAddr)
-	if err == nil {
-		// Host already exists — update status but preserve all discovery data.
-		existing.Status = host.Status
-		logging.Debug("Found existing host",
-			"ip", ipAddr.String(),
-			"id", existing.ID.String(),
-			"discovery_method", func() string {
-				if existing.DiscoveryMethod != nil {
-					return *existing.DiscoveryMethod
-				}
-				return nullValue
-			}())
-		return existing, nil
+	dbHost, err := hostRepo.UpsertForScan(ctx, ipAddr, host.Status)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upsert host %s: %w", ipAddr, err)
 	}
-
-	// Any error other than not-found is unexpected.
-	if !isNotFoundError(err) {
-		return nil, fmt.Errorf("failed to look up host %s: %w", ipAddr, err)
-	}
-
-	// Host does not exist yet — create it.
-	logging.Debug("Creating new host", "ip", ipAddr.String())
-	newHost := &db.Host{
-		ID:        uuid.New(),
-		IPAddress: ipAddr,
-		Status:    host.Status,
-	}
-	if createErr := hostRepo.CreateOrUpdate(ctx, newHost); createErr != nil {
-		return nil, fmt.Errorf("failed to create new host %s: %w", ipAddr, createErr)
-	}
-
-	logging.Debug("Successfully created new host", "ip", ipAddr.String())
-	return newHost, nil
-}
-
-// isNotFoundError reports whether err represents a "not found" condition
-// returned by the db layer (wraps sql.ErrNoRows or our own CodeNotFound error).
-func isNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// Our sanitizeDBError wraps sql.ErrNoRows as errors.DatabaseError with CodeNotFound.
-	var dbErr *errors.DatabaseError
-	if stderrors.As(err, &dbErr) {
-		return dbErr.Code == errors.CodeNotFound
-	}
-	return false
+	logging.Debug("Host upserted for scan",
+		"ip", ipAddr.String(),
+		"id", dbHost.ID.String())
+	return dbHost, nil
 }
 
 // storeHostResults stores host and port scan results in the database.
