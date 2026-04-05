@@ -543,7 +543,7 @@ func TestScanWithPreExistingScanJob(t *testing.T) {
 	jobRepo := db.NewScanJobRepository(database)
 	preInsertedJob := &db.ScanJob{
 		ID:        knownUUID,
-		NetworkID: networkID,
+		NetworkID: &networkID,
 		Status:    db.ScanJobStatusPending,
 	}
 	require.NoError(t, jobRepo.Create(ctx, preInsertedJob),

@@ -311,7 +311,7 @@ func TestScanJobRepository_CreateAndGet(t *testing.T) {
 
 	jobRepo := NewScanJobRepository(db)
 	jobID := uuid.New()
-	job := &ScanJob{ID: jobID, NetworkID: networkID, Status: ScanJobStatusPending}
+	job := &ScanJob{ID: jobID, NetworkID: &networkID, Status: ScanJobStatusPending}
 	require.NoError(t, jobRepo.Create(ctx, job))
 	t.Cleanup(func() {
 		_, _ = db.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", jobID)
@@ -350,7 +350,7 @@ func TestScanJobRepository_UpdateStatus(t *testing.T) {
 	jobRepo := NewScanJobRepository(db)
 	jobID := uuid.New()
 	require.NoError(t, jobRepo.Create(ctx, &ScanJob{
-		ID: jobID, NetworkID: networkID, Status: ScanJobStatusPending,
+		ID: jobID, NetworkID: &networkID, Status: ScanJobStatusPending,
 	}))
 	t.Cleanup(func() {
 		_, _ = db.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", jobID)
@@ -403,7 +403,7 @@ func TestPortScanRepository_CreateBatchAndGetByHost(t *testing.T) {
 	jobRepo := NewScanJobRepository(db)
 	jobID := uuid.New()
 	require.NoError(t, jobRepo.Create(ctx, &ScanJob{
-		ID: jobID, NetworkID: networkID, Status: ScanJobStatusPending,
+		ID: jobID, NetworkID: &networkID, Status: ScanJobStatusPending,
 	}))
 	t.Cleanup(func() {
 		_, _ = db.ExecContext(ctx, "DELETE FROM scan_jobs WHERE id = $1", jobID)
@@ -1105,7 +1105,7 @@ func TestHostRepository_GetHostScans(t *testing.T) {
 	jobID := uuid.New()
 	require.NoError(t, jobRepo.Create(ctx, &ScanJob{
 		ID:        jobID,
-		NetworkID: networkID,
+		NetworkID: &networkID,
 		Status:    ScanJobStatusPending,
 	}))
 	t.Cleanup(func() {
