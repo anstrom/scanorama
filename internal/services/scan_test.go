@@ -466,21 +466,15 @@ func TestScanService_StartScan_Success(t *testing.T) {
 	ctx := context.Background()
 	id := uuid.New()
 
-	pending := &db.Scan{ID: id, Status: db.ScanJobStatusPending}
 	running := &db.Scan{ID: id, Status: db.ScanJobStatusRunning}
 
-	callCount := 0
 	mock := &mockScanRepo{
-		getScan: func(_ context.Context, _ uuid.UUID) (*db.Scan, error) {
-			callCount++
-			if callCount == 1 {
-				return pending, nil
-			}
-			return running, nil
-		},
 		startScan: func(_ context.Context, gotID uuid.UUID) error {
 			assert.Equal(t, id, gotID)
 			return nil
+		},
+		getScan: func(_ context.Context, _ uuid.UUID) (*db.Scan, error) {
+			return running, nil
 		},
 	}
 
@@ -489,55 +483,41 @@ func TestScanService_StartScan_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, db.ScanJobStatusRunning, result.Status)
-	assert.Equal(t, 2, callCount, "GetScan must be called twice: pre-flight guard + post-start refresh")
 }
 
 func TestScanService_StartScan_AlreadyRunning(t *testing.T) {
 	ctx := context.Background()
 	id := uuid.New()
-
 	mock := &mockScanRepo{
-		getScan: func(_ context.Context, _ uuid.UUID) (*db.Scan, error) {
-			return &db.Scan{ID: id, Status: db.ScanJobStatusRunning}, nil
+		startScan: func(_ context.Context, _ uuid.UUID) error {
+			return errors.ErrConflictWithReason("scan", `scan is in state "running", expected "pending"`)
 		},
 	}
-
 	_, err := newTestScanService(mock).StartScan(ctx, id)
-
 	require.Error(t, err)
 	assert.True(t, errors.IsConflict(err))
-	assert.Contains(t, err.Error(), "already running")
 }
 
 func TestScanService_StartScan_AlreadyCompleted(t *testing.T) {
 	ctx := context.Background()
 	id := uuid.New()
-
 	mock := &mockScanRepo{
-		getScan: func(_ context.Context, _ uuid.UUID) (*db.Scan, error) {
-			return &db.Scan{ID: id, Status: db.ScanJobStatusCompleted}, nil
+		startScan: func(_ context.Context, _ uuid.UUID) error {
+			return errors.ErrConflictWithReason("scan", `scan is in state "completed", expected "pending"`)
 		},
 	}
-
 	_, err := newTestScanService(mock).StartScan(ctx, id)
-
 	require.Error(t, err)
 	assert.True(t, errors.IsConflict(err))
-	assert.Contains(t, err.Error(), "already completed")
 }
 
-func TestScanService_StartScan_GetScanError(t *testing.T) {
+func TestScanService_StartScan_NotFound(t *testing.T) {
 	ctx := context.Background()
 	wantErr := errors.ErrNotFound("scan")
-
 	mock := &mockScanRepo{
-		getScan: func(_ context.Context, _ uuid.UUID) (*db.Scan, error) {
-			return nil, wantErr
-		},
+		startScan: func(_ context.Context, _ uuid.UUID) error { return wantErr },
 	}
-
 	_, err := newTestScanService(mock).StartScan(ctx, uuid.New())
-
 	require.Error(t, err)
 	assert.True(t, errors.IsNotFound(err))
 }
@@ -548,9 +528,6 @@ func TestScanService_StartScan_StartScanError(t *testing.T) {
 	wantErr := fmt.Errorf("start transition failed")
 
 	mock := &mockScanRepo{
-		getScan: func(_ context.Context, _ uuid.UUID) (*db.Scan, error) {
-			return &db.Scan{ID: id, Status: db.ScanJobStatusPending}, nil
-		},
 		startScan: func(_ context.Context, _ uuid.UUID) error {
 			return wantErr
 		},
@@ -565,21 +542,11 @@ func TestScanService_StartScan_FinalGetScanError(t *testing.T) {
 	ctx := context.Background()
 	id := uuid.New()
 	wantErr := fmt.Errorf("refresh query failed")
-
-	callCount := 0
 	mock := &mockScanRepo{
-		getScan: func(_ context.Context, _ uuid.UUID) (*db.Scan, error) {
-			callCount++
-			if callCount == 1 {
-				return &db.Scan{ID: id, Status: db.ScanJobStatusPending}, nil
-			}
-			return nil, wantErr
-		},
 		startScan: func(_ context.Context, _ uuid.UUID) error { return nil },
+		getScan:   func(_ context.Context, _ uuid.UUID) (*db.Scan, error) { return nil, wantErr },
 	}
-
 	_, err := newTestScanService(mock).StartScan(ctx, id)
-
 	assert.ErrorIs(t, err, wantErr)
 }
 

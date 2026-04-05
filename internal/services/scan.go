@@ -137,22 +137,11 @@ func (s *ScanService) DeleteScan(ctx context.Context, id uuid.UUID) error {
 // It fetches the current scan to guard against invalid state transitions,
 // calls repo.StartScan, then returns the refreshed scan record.
 func (s *ScanService) StartScan(ctx context.Context, id uuid.UUID) (*db.Scan, error) {
-	scan, err := s.repo.GetScan(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	switch scan.Status {
-	case db.ScanJobStatusRunning:
-		return nil, errors.ErrConflictWithReason("scan", "scan is already running")
-	case db.ScanJobStatusCompleted:
-		return nil, errors.ErrConflictWithReason("scan", "scan is already completed")
-	}
-
+	// repo.StartScan uses a single conditional UPDATE (WHERE status = 'pending')
+	// that is atomic at the database level — no separate pre-read is needed.
 	if err := s.repo.StartScan(ctx, id); err != nil {
 		return nil, err
 	}
-
 	return s.repo.GetScan(ctx, id)
 }
 

@@ -859,7 +859,21 @@ func (r *ScanRepository) StartScan(ctx context.Context, id uuid.UUID) error {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
-		return errors.ErrNotFoundWithID("scan", id.String())
+		// The conditional UPDATE matched nothing. Distinguish between:
+		//   (a) the scan no longer exists → NOT FOUND
+		//   (b) the scan exists but is not pending → CONFLICT
+		var currentStatus string
+		queryErr := r.db.QueryRowContext(ctx,
+			`SELECT status FROM scan_jobs WHERE id = $1`, id,
+		).Scan(&currentStatus)
+		if queryErr != nil {
+			if stderrors.Is(queryErr, sql.ErrNoRows) {
+				return errors.ErrNotFoundWithID("scan", id.String())
+			}
+			return sanitizeDBError("check scan status", queryErr)
+		}
+		return errors.ErrConflictWithReason("scan",
+			fmt.Sprintf("scan is in state %q, expected %q", currentStatus, ScanJobStatusPending))
 	}
 
 	return nil
