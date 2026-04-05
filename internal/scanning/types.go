@@ -84,7 +84,25 @@ func (c *ScanConfig) Validate() error {
 		return &ExecError{Op: "validate config", Err: fmt.Errorf("invalid scan type: %s", c.ScanType)}
 	}
 
+	if err := c.validateTargets(); err != nil {
+		return err
+	}
 	return c.validatePorts()
+}
+
+// validateTargets checks that no target looks like a nmap flag (starts with '-').
+// The HTTP handler already validates targets as IPs/CIDRs; this defense-in-depth
+// check also covers CLI and internal callers that bypass the handler.
+func (c *ScanConfig) validateTargets() error {
+	for _, target := range c.Targets {
+		if strings.HasPrefix(target, "-") {
+			return &ExecError{
+				Op:  "validate config",
+				Err: fmt.Errorf("invalid target %q: targets must not start with '-'", target),
+			}
+		}
+	}
+	return nil
 }
 
 // validatePorts validates the port specification.
