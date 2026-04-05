@@ -560,9 +560,12 @@ const (
 
 // ScanType constants.
 const (
-	ScanTypeConnect = "connect"
-	ScanTypeSYN     = "syn"
-	ScanTypeVersion = "version"
+	ScanTypeConnect       = "connect"
+	ScanTypeSYN           = "syn"
+	ScanTypeACK           = "ack"
+	ScanTypeUDP           = "udp"
+	ScanTypeAggressive    = "aggressive"
+	ScanTypeComprehensive = "comprehensive"
 )
 
 // Protocol constants.

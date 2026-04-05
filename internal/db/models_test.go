@@ -354,7 +354,10 @@ func TestConstantValues(t *testing.T) {
 	assert.Equal(t, "unknown", PortStateUnknown)
 	assert.Equal(t, "connect", ScanTypeConnect)
 	assert.Equal(t, "syn", ScanTypeSYN)
-	assert.Equal(t, "version", ScanTypeVersion)
+	assert.Equal(t, "ack", ScanTypeACK)
+	assert.Equal(t, "udp", ScanTypeUDP)
+	assert.Equal(t, "aggressive", ScanTypeAggressive)
+	assert.Equal(t, "comprehensive", ScanTypeComprehensive)
 	assert.Equal(t, "tcp", ProtocolTCP)
 	assert.Equal(t, "udp", ProtocolUDP)
 	assert.Equal(t, "pending", ScanJobStatusPending)
@@ -376,7 +379,10 @@ func TestConstantUniqueness(t *testing.T) {
 		assertUnique(t, []string{PortStateOpen, PortStateClosed, PortStateFiltered, PortStateUnknown})
 	})
 	t.Run("scan types are unique", func(t *testing.T) {
-		assertUnique(t, []string{ScanTypeConnect, ScanTypeSYN, ScanTypeVersion})
+		assertUnique(t, []string{
+			ScanTypeConnect, ScanTypeSYN, ScanTypeACK,
+			ScanTypeUDP, ScanTypeAggressive, ScanTypeComprehensive,
+		})
 	})
 	t.Run("protocols are unique", func(t *testing.T) {
 		assertUnique(t, []string{ProtocolTCP, ProtocolUDP})
