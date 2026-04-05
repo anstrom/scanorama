@@ -209,7 +209,7 @@ func TestValidateProfile(t *testing.T) {
 				ID:       "test",
 				Name:     "Test",
 				Ports:    "80",
-				ScanType: db.ScanTypeVersion,
+				ScanType: db.ScanTypeConnect,
 			},
 			expectError: false,
 		},

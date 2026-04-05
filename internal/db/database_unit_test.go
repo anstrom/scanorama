@@ -476,7 +476,10 @@ func TestConstants(t *testing.T) {
 	// Scan type constants
 	assert.Equal(t, "connect", ScanTypeConnect)
 	assert.Equal(t, "syn", ScanTypeSYN)
-	assert.Equal(t, "version", ScanTypeVersion)
+	assert.Equal(t, "ack", ScanTypeACK)
+	assert.Equal(t, "udp", ScanTypeUDP)
+	assert.Equal(t, "aggressive", ScanTypeAggressive)
+	assert.Equal(t, "comprehensive", ScanTypeComprehensive)
 
 	// Protocol constants
 	assert.Equal(t, "tcp", ProtocolTCP)

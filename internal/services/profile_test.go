@@ -278,7 +278,7 @@ func TestCloneProfile_SourceFoundWithEmptyOptions_Success(t *testing.T) {
 	source := &db.ScanProfile{
 		ID:       "source-id",
 		Name:     "minimal-scan",
-		ScanType: db.ScanTypeVersion,
+		ScanType: db.ScanTypeConnect,
 		Ports:    "1-1024",
 		Timing:   db.ScanTimingPolite,
 		Options:  nil, // empty — no options to copy
@@ -305,7 +305,7 @@ func TestCloneProfile_SourceFoundWithEmptyOptions_Success(t *testing.T) {
 
 	assert.Equal(t, "minimal-copy", gotInput.Name)
 	assert.Equal(t, "Clone of minimal-scan", gotInput.Description)
-	assert.Equal(t, db.ScanTypeVersion, gotInput.ScanType)
+	assert.Equal(t, db.ScanTypeConnect, gotInput.ScanType)
 	assert.Equal(t, "1-1024", gotInput.Ports)
 	assert.Equal(t, db.ScanTimingPolite, gotInput.Timing)
 	assert.Nil(t, gotInput.Options, "Options should be nil when source has no options")

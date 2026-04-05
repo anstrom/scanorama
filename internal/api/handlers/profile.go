@@ -63,7 +63,6 @@ const (
 
 	// Scan type constants
 	scanTypeComprehensive = "comprehensive"
-	scanTypeVersion       = "version"
 	scanTypeAggressive    = "aggressive"
 )
 
@@ -577,7 +576,7 @@ func extractScanFlags(parsedOptions map[string]interface{}, profile *db.ScanProf
 	if val, ok := parsedOptions["service_detection"].(bool); ok {
 		service = val
 	} else {
-		service = profile.ScanType == scanTypeVersion || profile.ScanType == scanTypeComprehensive
+		service = profile.ScanType == scanTypeComprehensive
 	}
 
 	if val, ok := parsedOptions["os_detection"].(bool); ok {

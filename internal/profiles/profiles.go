@@ -306,9 +306,12 @@ func (m *Manager) ValidateProfile(profile *db.ScanProfile) error {
 
 	// Validate scan type
 	validScanTypes := map[string]bool{
-		db.ScanTypeConnect: true,
-		db.ScanTypeSYN:     true,
-		db.ScanTypeVersion: true,
+		db.ScanTypeConnect:       true,
+		db.ScanTypeSYN:           true,
+		db.ScanTypeACK:           true,
+		db.ScanTypeUDP:           true,
+		db.ScanTypeAggressive:    true,
+		db.ScanTypeComprehensive: true,
 	}
 
 	if !validScanTypes[profile.ScanType] {
