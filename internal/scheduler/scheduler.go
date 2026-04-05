@@ -65,8 +65,9 @@ type ScheduledJob struct {
 
 // DiscoveryJobConfig represents discovery job configuration.
 type DiscoveryJobConfig struct {
-	Network     string `json:"network"`
-	Method      string `json:"method"`
+	NetworkID   string `json:"network_id"` // UUID string stored by the API handler
+	Network     string `json:"network"`    // CIDR — populated at runtime if empty
+	Method      string `json:"method"`     // populated at runtime if empty
 	DetectOS    bool   `json:"detect_os"`
 	Timeout     int    `json:"timeout_seconds"`
 	Concurrency int    `json:"concurrency"`
@@ -74,8 +75,9 @@ type DiscoveryJobConfig struct {
 
 // ScanJobConfig represents scan job configuration.
 type ScanJobConfig struct {
+	NetworkID     string   `json:"network_id"` // UUID string stored by the API handler
 	LiveHostsOnly bool     `json:"live_hosts_only"`
-	Networks      []string `json:"networks,omitempty"`
+	Networks      []string `json:"networks,omitempty"` // populated at runtime if nil
 	ProfileID     string   `json:"profile_id,omitempty"`
 	MaxAge        int      `json:"max_age_hours"`
 	OSFamily      []string `json:"os_family,omitempty"`
@@ -425,13 +427,39 @@ func (s *Scheduler) executeDiscoveryJob(jobID uuid.UUID, config DiscoveryJobConf
 	startTime := job.LastRun
 	log.Printf("Executing discovery job '%s' for network %s", job.Config.Name, config.Network)
 
+	// Resolve network CIDR and discovery method from the database when the
+	// stored config only carries a network UUID (as written by buildScheduleJobConfig).
+	network := config.Network
+	method := config.Method
+	if network == "" && config.NetworkID != "" {
+		var cidr, discoveryMethod string
+		err := s.db.QueryRowContext(
+			context.Background(),
+			`SELECT cidr::text, discovery_method FROM networks WHERE id = $1`,
+			config.NetworkID,
+		).Scan(&cidr, &discoveryMethod)
+		if err != nil {
+			log.Printf("executeDiscoveryJob: failed to resolve network %s: %v", config.NetworkID, err)
+			return
+		}
+		network = cidr
+		method = discoveryMethod
+	}
+
 	// Create discovery config
 	discoveryConfig := discovery.Config{
-		Network:     config.Network,
-		Method:      config.Method,
+		Network:     network,
+		Method:      method,
 		DetectOS:    config.DetectOS,
 		Timeout:     time.Duration(config.Timeout) * time.Second,
 		Concurrency: config.Concurrency,
+	}
+	// Bug 3: forward the registered network UUID so the engine can persist
+	// network_id on the discovery_jobs row it creates internally.
+	if config.NetworkID != "" {
+		if uid, err := uuid.Parse(config.NetworkID); err == nil {
+			discoveryConfig.NetworkID = &uid
+		}
 	}
 
 	// Execute discovery
@@ -475,6 +503,23 @@ func (s *Scheduler) executeScanJob(jobID uuid.UUID, config *ScanJobConfig) {
 
 	// Always persist last_run and next_run when the job finishes (success or failure).
 	defer s.updateJobLastRun(ctx, jobID, startTime)
+
+	// Resolve network CIDR from the database when the stored config only carries a
+	// network UUID (as written by buildScheduleJobConfig).  Without this, Networks
+	// stays nil and getHostsToScan scans every host in the database.
+	if len(config.Networks) == 0 && config.NetworkID != "" {
+		var cidr string
+		err := s.db.QueryRowContext(
+			context.Background(),
+			`SELECT cidr::text FROM networks WHERE id = $1`,
+			config.NetworkID,
+		).Scan(&cidr)
+		if err != nil {
+			log.Printf("executeScanJob: failed to resolve network %s: %v", config.NetworkID, err)
+			return
+		}
+		config.Networks = []string{cidr}
+	}
 
 	// Get hosts to scan based on configuration
 	hosts, err := s.getHostsToScan(ctx, config)

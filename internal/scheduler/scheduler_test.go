@@ -669,6 +669,7 @@ func TestScheduler_StoreJobInMemoryConcurrency(t *testing.T) {
 // TestDiscoveryJobConfig_JSONMarshalUnmarshal tests marshaling/unmarshaling
 func TestDiscoveryJobConfig_JSONMarshalUnmarshal(t *testing.T) {
 	config := DiscoveryJobConfig{
+		NetworkID:   "550e8400-e29b-41d4-a716-446655440000",
 		Network:     "192.168.1.0/24",
 		Method:      "ping",
 		DetectOS:    true,
@@ -686,16 +687,34 @@ func TestDiscoveryJobConfig_JSONMarshalUnmarshal(t *testing.T) {
 	require.NoError(t, err)
 
 	// Assert
+	assert.Equal(t, config.NetworkID, decoded.NetworkID)
 	assert.Equal(t, config.Network, decoded.Network)
 	assert.Equal(t, config.Method, decoded.Method)
 	assert.Equal(t, config.DetectOS, decoded.DetectOS)
 	assert.Equal(t, config.Timeout, decoded.Timeout)
 	assert.Equal(t, config.Concurrency, decoded.Concurrency)
+
+	// Verify the JSON key name matches what buildScheduleJobConfig writes ("network_id").
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &raw))
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", raw["network_id"],
+		"DiscoveryJobConfig must serialize NetworkID under the key \"network_id\"")
+
+	// Verify that a payload produced by buildScheduleJobConfig (only "network_id",
+	// no "network" / "method") is correctly decoded: NetworkID is populated and
+	// Network/Method fall back to their zero values.
+	apiPayload := []byte(`{"network_id":"550e8400-e29b-41d4-a716-446655440000"}`)
+	var fromAPI DiscoveryJobConfig
+	require.NoError(t, json.Unmarshal(apiPayload, &fromAPI))
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", fromAPI.NetworkID)
+	assert.Empty(t, fromAPI.Network, "Network must be empty when only network_id is stored")
+	assert.Empty(t, fromAPI.Method, "Method must be empty when only network_id is stored")
 }
 
 // TestScanJobConfig_JSONMarshalUnmarshal tests marshaling/unmarshaling
 func TestScanJobConfig_JSONMarshalUnmarshal(t *testing.T) {
 	config := ScanJobConfig{
+		NetworkID:     "550e8400-e29b-41d4-a716-446655440001",
 		LiveHostsOnly: true,
 		Networks:      []string{"192.168.1.0/24", "10.0.0.0/8"},
 		ProfileID:     "profile-123",
@@ -713,11 +732,26 @@ func TestScanJobConfig_JSONMarshalUnmarshal(t *testing.T) {
 	require.NoError(t, err)
 
 	// Assert
+	assert.Equal(t, config.NetworkID, decoded.NetworkID)
 	assert.Equal(t, config.LiveHostsOnly, decoded.LiveHostsOnly)
 	assert.Equal(t, config.Networks, decoded.Networks)
 	assert.Equal(t, config.ProfileID, decoded.ProfileID)
 	assert.Equal(t, config.MaxAge, decoded.MaxAge)
 	assert.Equal(t, config.OSFamily, decoded.OSFamily)
+
+	// Verify the JSON key name matches what buildScheduleJobConfig writes ("network_id").
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &raw))
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440001", raw["network_id"],
+		"ScanJobConfig must serialize NetworkID under the key \"network_id\"")
+
+	// Verify that a payload produced by buildScheduleJobConfig (only "network_id",
+	// no "networks") is correctly decoded: NetworkID is populated and Networks is nil.
+	apiPayload := []byte(`{"network_id":"550e8400-e29b-41d4-a716-446655440001"}`)
+	var fromAPI ScanJobConfig
+	require.NoError(t, json.Unmarshal(apiPayload, &fromAPI))
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440001", fromAPI.NetworkID)
+	assert.Empty(t, fromAPI.Networks, "Networks must be nil/empty when only network_id is stored")
 }
 
 // TestScheduledJob_StateTransitions tests job state transitions
