@@ -651,8 +651,9 @@ func (h *NetworkHandler) StartNetworkDiscovery(w http.ResponseWriter, r *http.Re
 
 	// Create the discovery job.
 	job, err := h.discoveryStore.CreateDiscoveryJob(r.Context(), db.CreateDiscoveryJobInput{
-		Networks: []string{cidr},
-		Method:   method,
+		Networks:  []string{cidr},
+		Method:    method,
+		NetworkID: &networkID,
 	})
 	if err != nil {
 		h.logger.Error("Failed to create discovery job for network",
