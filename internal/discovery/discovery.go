@@ -49,6 +49,7 @@ type Engine struct {
 type Config struct {
 	Networks    []string      `json:"networks"`
 	Network     string        `json:"network"`
+	NetworkID   *uuid.UUID    `json:"network_id,omitempty"`
 	Method      string        `json:"method"`
 	DetectOS    bool          `json:"detect_os"`
 	Timeout     time.Duration `json:"timeout"`
@@ -111,6 +112,7 @@ func (e *Engine) Discover(ctx context.Context, config *Config) (*db.DiscoveryJob
 	// Create discovery job
 	job := &db.DiscoveryJob{
 		ID:        uuid.New(),
+		NetworkID: config.NetworkID,
 		Network:   db.NetworkAddr{IPNet: *ipnet},
 		Method:    config.Method,
 		Status:    db.DiscoveryJobStatusRunning,
@@ -498,9 +500,9 @@ func (e *Engine) finalizeDiscoveryJob(ctx context.Context, job *db.DiscoveryJob)
 // saveDiscoveryJob saves or updates a discovery job in the database.
 func (e *Engine) saveDiscoveryJob(ctx context.Context, job *db.DiscoveryJob) error {
 	query := `
-		INSERT INTO discovery_jobs (id, network, method, status, created_at, completed_at,
+		INSERT INTO discovery_jobs (id, network_id, network, method, status, created_at, completed_at,
 			hosts_discovered, hosts_responsive)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (id) DO UPDATE SET
 			status = EXCLUDED.status,
 			completed_at = EXCLUDED.completed_at,
@@ -509,6 +511,7 @@ func (e *Engine) saveDiscoveryJob(ctx context.Context, job *db.DiscoveryJob) err
 
 	_, err := e.db.ExecContext(ctx, query,
 		job.ID,
+		job.NetworkID,
 		job.Network.String(),
 		job.Method,
 		job.Status,
