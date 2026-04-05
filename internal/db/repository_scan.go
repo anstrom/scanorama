@@ -374,8 +374,14 @@ func (r *ScanRepository) CreateScan(ctx context.Context, input CreateScanInput) 
 	// When every target is a single host (/32 / /128 or a bare IP) we must not
 	// create a networks row — instead we store all metadata in execution_details
 	// and leave network_id NULL.
+	//
+	// When the caller already knows the parent network (e.g. StartNetworkScan),
+	// skip the lookup/create branch entirely and use the supplied ID directly.
 	var networkID *uuid.UUID
-	if !allHostTargets(input.Targets) {
+	if input.NetworkID != nil {
+		// Caller already resolved the parent network — use it directly.
+		networkID = input.NetworkID
+	} else if !allHostTargets(input.Targets) {
 		nid, err := findOrCreateNetwork(ctx, tx, input.Name, input.Targets[0],
 			input.Description, input.Ports, input.ScanType)
 		if err != nil {

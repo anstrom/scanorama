@@ -20,6 +20,7 @@ type CreateScanInput struct {
 	Ports       string
 	ProfileID   *string
 	OSDetection bool
+	NetworkID   *uuid.UUID // optional: caller-supplied FK to an existing networks row
 }
 
 // UpdateScanInput holds the optional fields that may be changed on an existing

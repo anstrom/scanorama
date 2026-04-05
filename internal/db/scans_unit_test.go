@@ -961,6 +961,32 @@ func TestCreateScan_Unit(t *testing.T) {
 		require.NotNil(t, scan.ProfileID)
 		assert.Equal(t, "linux-server", *scan.ProfileID)
 	})
+
+	t.Run("pre-supplied NetworkID skips network lookup and insert", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		netID := uuid.New()
+
+		mock.ExpectBegin()
+		// No SELECT or INSERT into networks — networkID is provided by the caller.
+		mock.ExpectExec(`INSERT INTO scan_jobs`).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+
+		scan, err := NewScanRepository(db).CreateScan(context.Background(), CreateScanInput{
+			Name:      "Network Scan",
+			Targets:   []string{"10.0.0.1", "10.0.0.2"},
+			ScanType:  "connect",
+			Ports:     "1-1024",
+			NetworkID: &netID,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "Network Scan", scan.Name)
+		assert.Equal(t, []string{"10.0.0.1", "10.0.0.2"}, scan.Targets)
+		assert.Equal(t, "pending", scan.Status)
+		// All mock expectations must be satisfied — in particular, no network
+		// SELECT or INSERT should have been issued.
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
 }
 
 // ── DeleteScan ────────────────────────────────────────────────────────────────
