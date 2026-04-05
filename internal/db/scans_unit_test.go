@@ -1070,14 +1070,54 @@ func TestStartScan_Unit(t *testing.T) {
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("zero rows affected returns CodeNotFound", func(t *testing.T) {
+	t.Run("zero rows + scan exists in wrong state returns CodeConflict", func(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`UPDATE scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT status FROM scan_jobs WHERE id`).
+			WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("running"))
 
 		err := NewScanRepository(db).StartScan(context.Background(), id)
 		require.Error(t, err)
-		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
+		assert.True(t, errors.IsConflict(err), "expected conflict, got: %v", err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("zero rows + scan not found returns CodeNotFound", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectExec(`UPDATE scan_jobs`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT status FROM scan_jobs WHERE id`).
+			WillReturnError(sql.ErrNoRows)
+
+		err := NewScanRepository(db).StartScan(context.Background(), id)
+		require.Error(t, err)
+		assert.True(t, errors.IsNotFound(err), "expected not-found, got: %v", err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("zero rows + secondary SELECT fails with generic error", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectExec(`UPDATE scan_jobs`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT status FROM scan_jobs WHERE id`).
+			WillReturnError(fmt.Errorf("connection reset"))
+
+		err := NewScanRepository(db).StartScan(context.Background(), id)
+		require.Error(t, err)
+		assert.False(t, errors.IsConflict(err), "generic SELECT error should not be conflict")
+		assert.False(t, errors.IsNotFound(err), "generic SELECT error should not be not-found")
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("rows affected error is wrapped", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectExec(`UPDATE scan_jobs`).
+			WillReturnResult(sqlmock.NewErrorResult(fmt.Errorf("rows affected failed")))
+
+		err := NewScanRepository(db).StartScan(context.Background(), id)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "rows affected")
 	})
 
 	t.Run("db error is wrapped", func(t *testing.T) {
