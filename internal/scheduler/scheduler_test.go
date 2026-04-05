@@ -1703,3 +1703,142 @@ func TestUpdateJobNextRunInMemory(t *testing.T) {
 		assert.True(t, exists)
 	})
 }
+
+// TestExecuteDiscoveryJob_NetworkIDResolution tests the network-ID resolution
+// path inside executeDiscoveryJob: when config.Network is empty but
+// config.NetworkID is set, the function must look up the CIDR and discovery
+// method from the database before running the discovery engine.
+func TestExecuteDiscoveryJob_NetworkIDResolution(t *testing.T) {
+	tests := []struct {
+		name      string
+		mockSetup func(mock sqlmock.Sqlmock, networkID uuid.UUID)
+	}{
+		{
+			// The SELECT fails: the function should log and return early without
+			// calling s.discovery.Discover (and therefore without panicking on
+			// the nil discovery engine).  No UPDATE is issued because
+			// updateJobLastRun is only called after a successful Discover call,
+			// not in a defer.
+			name: "db_lookup_fails_returns_early",
+			mockSetup: func(mock sqlmock.Sqlmock, networkID uuid.UUID) {
+				mock.ExpectQuery("SELECT cidr").
+					WithArgs(networkID.String()).
+					WillReturnError(sql.ErrNoRows)
+			},
+		},
+		{
+			// The SELECT succeeds: the function proceeds to call
+			// s.discovery.Discover.  s.discovery is a nil *discovery.Engine,
+			// but Go allows method calls on nil receivers; the Engine's Discover
+			// method validates the network before touching any receiver fields,
+			// so for "10.0.0.0/8" it returns an error ("network size too large")
+			// rather than panicking.  executeDiscoveryJob calls updateJobLastRun
+			// unconditionally after Discover returns (success or failure), so an
+			// UPDATE expectation is required after the SELECT.
+			name: "db_lookup_succeeds_proceeds",
+			mockSetup: func(mock sqlmock.Sqlmock, networkID uuid.UUID) {
+				rows := sqlmock.NewRows([]string{"cidr", "discovery_method"}).
+					AddRow("10.0.0.0/8", "tcp")
+				mock.ExpectQuery("SELECT cidr").
+					WithArgs(networkID.String()).
+					WillReturnRows(rows)
+				// updateJobLastRun fires after Discover returns with an error.
+				mock.ExpectExec("UPDATE scheduled_jobs").
+					WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			jobID := uuid.New()
+			networkID := uuid.New()
+
+			tt.mockSetup(mock, networkID)
+
+			wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+			// nil discovery engine: Discover() will panic if reached; the
+			// function's own recover() handles that case.
+			s := NewScheduler(wrappedDB, nil, nil)
+
+			s.jobs[jobID] = &ScheduledJob{
+				ID: jobID,
+				Config: &db.ScheduledJob{
+					ID:      jobID,
+					Name:    "net-test",
+					Enabled: true,
+				},
+				Running: false,
+			}
+
+			// Must not propagate any panic to the test.
+			s.executeDiscoveryJob(jobID, DiscoveryJobConfig{NetworkID: networkID.String()})
+
+			assert.NoError(t, mock.ExpectationsWereMet())
+
+			s.mu.RLock()
+			running := s.jobs[jobID].Running
+			s.mu.RUnlock()
+			assert.False(t, running, "job should not be marked as running after executeDiscoveryJob returns")
+		})
+	}
+}
+
+// TestExecuteScanJob_NetworkIDResolution tests the network-ID resolution path
+// inside executeScanJob: when config.Networks is empty but config.NetworkID is
+// set, the function must look up the CIDR from the database before querying
+// hosts.
+func TestExecuteScanJob_NetworkIDResolution(t *testing.T) {
+	t.Run("db_lookup_fails_returns_early", func(t *testing.T) {
+		mockDB, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer mockDB.Close()
+
+		jobID := uuid.New()
+		networkID := uuid.New()
+
+		// Execution order inside executeScanJob when the SELECT fails:
+		//   1. prepareJobExecution succeeds → Running = true
+		//   2. defer cleanupJobExecution registered  (no DB call)
+		//   3. defer updateJobLastRun registered     (will issue UPDATE)
+		//   4. SELECT cidr fails → early return
+		//   5. Defers fire LIFO: updateJobLastRun → issues UPDATE
+		//                        cleanupJobExecution → no DB call
+		//                        panic-recovery defer → r == nil, no-op
+		// Register expectations in the order the queries actually hit the driver.
+		mock.ExpectQuery("SELECT cidr").
+			WithArgs(networkID.String()).
+			WillReturnError(sql.ErrNoRows)
+
+		mock.ExpectExec("UPDATE scheduled_jobs").
+			WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), jobID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+
+		wrappedDB := &db.DB{DB: sqlx.NewDb(mockDB, "sqlmock")}
+		s := NewScheduler(wrappedDB, nil, nil)
+
+		s.jobs[jobID] = &ScheduledJob{
+			ID: jobID,
+			Config: &db.ScheduledJob{
+				ID:      jobID,
+				Name:    "net-test",
+				Enabled: true,
+			},
+			Running: false,
+		}
+
+		s.executeScanJob(jobID, &ScanJobConfig{NetworkID: networkID.String()})
+
+		assert.NoError(t, mock.ExpectationsWereMet())
+
+		s.mu.RLock()
+		running := s.jobs[jobID].Running
+		s.mu.RUnlock()
+		assert.False(t, running, "job should not be marked as running after executeScanJob returns")
+	})
+}
