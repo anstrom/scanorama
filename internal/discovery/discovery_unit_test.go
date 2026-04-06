@@ -9,6 +9,7 @@ import (
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/Ullaakut/nmap/v3"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
@@ -757,4 +758,188 @@ func TestSetTimeout_UpdatesField(t *testing.T) {
 	e := NewEngine(nil)
 	e.SetTimeout(2 * time.Minute)
 	assert.Equal(t, 2*time.Minute, e.timeout)
+}
+
+// ─── convertNmapResultsToDiscovery — RTT and vendor/MAC ───────────────────────
+
+func TestConvertNmapResults_RTT_Populated(t *testing.T) {
+	engine := &Engine{}
+
+	// SRTT = "4000" means 4000 µs = 4 ms.
+	nmapResult := &nmap.Run{
+		Hosts: []nmap.Host{
+			{
+				Addresses: []nmap.Address{
+					{Addr: "192.168.1.1", AddrType: "ipv4"},
+				},
+				Status: nmap.Status{State: "up"},
+				Times:  nmap.Times{SRTT: "4000"},
+			},
+		},
+	}
+
+	results := engine.convertNmapResultsToDiscovery(nmapResult, "ping")
+	require.Len(t, results, 1)
+	assert.Equal(t, 4*time.Millisecond, results[0].ResponseTime)
+}
+
+func TestConvertNmapResults_RTT_ZeroWhenMissing(t *testing.T) {
+	engine := &Engine{}
+
+	// Empty SRTT string → ResponseTime stays zero.
+	nmapResult := &nmap.Run{
+		Hosts: []nmap.Host{
+			{
+				Addresses: []nmap.Address{
+					{Addr: "10.0.0.1", AddrType: "ipv4"},
+				},
+				Status: nmap.Status{State: "up"},
+				Times:  nmap.Times{SRTT: ""},
+			},
+		},
+	}
+
+	results := engine.convertNmapResultsToDiscovery(nmapResult, "ping")
+	require.Len(t, results, 1)
+	assert.Equal(t, time.Duration(0), results[0].ResponseTime)
+}
+
+func TestConvertNmapResults_VendorAndMAC_Populated(t *testing.T) {
+	engine := &Engine{}
+
+	nmapResult := &nmap.Run{
+		Hosts: []nmap.Host{
+			{
+				Addresses: []nmap.Address{
+					{Addr: "192.168.1.2", AddrType: "ipv4"},
+					{Addr: "aa:bb:cc:dd:ee:ff", AddrType: "mac", Vendor: "Cisco"},
+				},
+				Status: nmap.Status{State: "up"},
+			},
+		},
+	}
+
+	results := engine.convertNmapResultsToDiscovery(nmapResult, "arp")
+	require.Len(t, results, 1)
+	assert.Equal(t, "Cisco", results[0].Vendor)
+	assert.Equal(t, "aa:bb:cc:dd:ee:ff", results[0].MACAddress)
+}
+
+func TestConvertNmapResults_MAC_NoVendor(t *testing.T) {
+	engine := &Engine{}
+
+	// MAC address present but Vendor is empty — MACAddress should be set, Vendor stays "".
+	nmapResult := &nmap.Run{
+		Hosts: []nmap.Host{
+			{
+				Addresses: []nmap.Address{
+					{Addr: "192.168.1.3", AddrType: "ipv4"},
+					{Addr: "11:22:33:44:55:66", AddrType: "mac", Vendor: ""},
+				},
+				Status: nmap.Status{State: "up"},
+			},
+		},
+	}
+
+	results := engine.convertNmapResultsToDiscovery(nmapResult, "arp")
+	require.Len(t, results, 1)
+	assert.Equal(t, "11:22:33:44:55:66", results[0].MACAddress)
+	assert.Equal(t, "", results[0].Vendor)
+}
+
+// ─── saveDiscoveredHosts — vendor / RTT / nil arg paths ───────────────────────
+
+func TestSaveDiscoveredHosts_WithVendorAndRTT_Inserted(t *testing.T) {
+	engine, mock := newEngine(t)
+	ctx := context.Background()
+
+	ip := net.ParseIP("10.10.10.1")
+
+	// SELECT returns no rows → INSERT path with non-nil $4/$5/$6.
+	mock.ExpectQuery(`SELECT id FROM hosts`).
+		WithArgs("10.10.10.1").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectExec(`INSERT INTO hosts`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	results := []Result{
+		{
+			IPAddress:    ip,
+			Status:       "up",
+			Method:       "arp",
+			Vendor:       "Apple",
+			MACAddress:   "aa:bb:cc:dd:ee:ff",
+			ResponseTime: 5 * time.Millisecond,
+		},
+	}
+
+	err := engine.saveDiscoveredHosts(ctx, results)
+	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSaveDiscoveredHosts_WithVendorAndRTT_Updated(t *testing.T) {
+	engine, mock := newEngine(t)
+	ctx := context.Background()
+
+	ip := net.ParseIP("10.10.10.2")
+	existingID := uuid.New().String()
+
+	// SELECT returns existing ID → UPDATE path with non-nil $4/$6.
+	mock.ExpectQuery(`SELECT id FROM hosts`).
+		WithArgs("10.10.10.2").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(existingID))
+
+	mock.ExpectExec(`UPDATE hosts`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	results := []Result{
+		{
+			IPAddress:    ip,
+			Status:       "up",
+			Method:       "arp",
+			Vendor:       "Dell",
+			ResponseTime: 10 * time.Millisecond,
+		},
+	}
+
+	err := engine.saveDiscoveredHosts(ctx, results)
+	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSaveDiscoveredHosts_EmptyVendorAndZeroRTT(t *testing.T) {
+	// Vendor="" and ResponseTime=0 → $4/$5/$6 are nil (SQL NULL).
+	// Both INSERT and UPDATE paths still succeed.
+	engine, mock := newEngine(t)
+	ctx := context.Background()
+
+	ip1 := net.ParseIP("10.10.10.3")
+	ip2 := net.ParseIP("10.10.10.4")
+	existingID := uuid.New().String()
+
+	// First host: no existing row → INSERT with all nil nullable args.
+	mock.ExpectQuery(`SELECT id FROM hosts`).
+		WithArgs("10.10.10.3").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectExec(`INSERT INTO hosts`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Second host: existing row → UPDATE with all nil nullable args.
+	mock.ExpectQuery(`SELECT id FROM hosts`).
+		WithArgs("10.10.10.4").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(existingID))
+	mock.ExpectExec(`UPDATE hosts`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	results := []Result{
+		// Vendor="", MACAddress="", ResponseTime=0 → all nullable args become nil.
+		{IPAddress: ip1, Status: "up", Method: "ping"},
+		{IPAddress: ip2, Status: "up", Method: "ping"},
+	}
+
+	err := engine.saveDiscoveredHosts(ctx, results)
+	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }

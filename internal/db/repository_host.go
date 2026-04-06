@@ -238,6 +238,7 @@ type HostFilters struct {
 	Search    string // searches ip_address and hostname
 	SortBy    string // column to sort by: ip_address, hostname, os_family, status, last_seen, first_seen
 	SortOrder string // asc or desc
+	Vendor    string // filter by vendor name (partial match)
 }
 
 // validHostSortColumns is the allowlist of columns that may be used in ORDER BY.
@@ -248,11 +249,14 @@ var validHostSortColumns = map[string]string{
 	"status":     "h.status",
 	"last_seen":  "h.last_seen",
 	"first_seen": "h.first_seen",
+	"vendor":     "h.vendor",
 	// Aggregate aliases from the SELECT clause — valid in PostgreSQL ORDER BY.
 	// These return NULL for unscanned hosts (see CASE WHEN below), so NULLS LAST
 	// naturally pushes them to the bottom without any workaround.
-	"open_ports": "open_ports",
-	"scan_count": "scan_count",
+	"open_ports":           "open_ports",
+	"scan_count":           "scan_count",
+	"response_time_ms":     "h.response_time_ms",
+	"response_time_avg_ms": "h.response_time_avg_ms",
 }
 
 // ListHosts retrieves hosts with filtering and pagination.
@@ -276,6 +280,9 @@ func (r *HostRepository) ListHosts(
 			h.os_details,
 			h.discovery_method,
 			h.response_time_ms,
+			h.response_time_min_ms,
+			h.response_time_max_ms,
+			h.response_time_avg_ms,
 			h.ignore_scanning,
 			h.first_seen,
 			h.last_seen,
@@ -310,7 +317,8 @@ func (r *HostRepository) ListHosts(
 		GROUP BY h.id, h.ip_address, h.hostname, h.mac_address, h.vendor, h.os_family,
 			h.os_name, h.os_version, h.os_confidence, h.os_detected_at, h.os_method,
 			h.os_details, h.discovery_method,
-			h.response_time_ms, h.ignore_scanning, h.first_seen, h.last_seen, h.status,
+			h.response_time_ms, h.response_time_min_ms, h.response_time_max_ms, h.response_time_avg_ms,
+			h.ignore_scanning, h.first_seen, h.last_seen, h.status,
 			h.status_changed_at, h.previous_status, h.timeout_count
 	`
 
@@ -319,9 +327,9 @@ func (r *HostRepository) ListHosts(
 	if col, ok := validHostSortColumns[filters.SortBy]; ok {
 		orderCol = col
 	}
-	orderDir := "DESC"
-	if strings.EqualFold(filters.SortOrder, "ASC") {
-		orderDir = "ASC"
+	orderDir := sortOrderDESC
+	if strings.EqualFold(filters.SortOrder, sortOrderASC) {
+		orderDir = sortOrderASC
 	}
 	orderClause := fmt.Sprintf(" ORDER BY %s %s NULLS LAST", orderCol, orderDir)
 
@@ -462,6 +470,49 @@ func (r *HostRepository) fetchHostScanCount(ctx context.Context, hostID uuid.UUI
 }
 
 // GetHost retrieves a host by ID.
+// hostScanVars holds the nullable scan variables for a single hosts row.
+// Grouping them in a struct keeps GetHost under the funlen limit and allows
+// the field-assignment logic to live in the applyHostScanVars helper.
+type hostScanVars struct {
+	ipAddress                             string
+	hostname, macAddressStr, vendor       *string
+	osFamily, osName, osVersion, osMethod *string
+	osConfidence                          *int
+	responseTimeMS                        *int
+	responseTimeMinMS, responseTimeMaxMS  *int
+	responseTimeAvgMS                     *int
+	osDetectedAt, statusChangedAt         *time.Time
+	osDetails                             JSONB
+	discoveryMethod                       *string
+	ignoreScanning                        *bool
+	previousStatus                        *string
+	timeoutCount                          int
+}
+
+// applyHostScanVars copies the scanned nullable fields from vars into host,
+// calling the appropriate helper for each type.
+func applyHostScanVars(host *Host, vars hostScanVars) {
+	assignStringPtr(&host.Hostname, vars.hostname)
+	assignMACAddress(&host.MACAddress, vars.macAddressStr)
+	assignStringPtr(&host.Vendor, vars.vendor)
+	assignStringPtr(&host.OSFamily, vars.osFamily)
+	assignStringPtr(&host.OSName, vars.osName)
+	assignStringPtr(&host.OSVersion, vars.osVersion)
+	assignIntPtr(&host.OSConfidence, vars.osConfidence)
+	host.OSDetectedAt = vars.osDetectedAt
+	assignStringPtr(&host.OSMethod, vars.osMethod)
+	host.OSDetails = vars.osDetails
+	assignStringPtr(&host.DiscoveryMethod, vars.discoveryMethod)
+	assignIntPtr(&host.ResponseTimeMS, vars.responseTimeMS)
+	assignIntPtr(&host.ResponseTimeMinMS, vars.responseTimeMinMS)
+	assignIntPtr(&host.ResponseTimeMaxMS, vars.responseTimeMaxMS)
+	assignIntPtr(&host.ResponseTimeAvgMS, vars.responseTimeAvgMS)
+	assignBoolFromPtr(&host.IgnoreScanning, vars.ignoreScanning)
+	host.StatusChangedAt = vars.statusChangedAt
+	assignStringPtr(&host.PreviousStatus, vars.previousStatus)
+	host.TimeoutCount = vars.timeoutCount
+}
+
 func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, error) {
 	query := `
 		SELECT
@@ -479,6 +530,9 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 			h.os_details,
 			h.discovery_method,
 			h.response_time_ms,
+			h.response_time_min_ms,
+			h.response_time_max_ms,
+			h.response_time_avg_ms,
 			h.ignore_scanning,
 			h.first_seen,
 			h.last_seen,
@@ -491,40 +545,33 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 	`
 
 	host := &Host{}
-	var ipAddress string
-	var hostname, macAddressStr, vendor, osFamily, osName, osVersion *string
-	var osConfidence, responseTimeMS *int
-	var osDetectedAt *time.Time
-	var osMethod *string
-	var osDetails JSONB
-	var discoveryMethod *string
-	var ignoreScanning *bool
-	var statusChangedAt *time.Time
-	var previousStatus *string
-	var timeoutCount int
+	var vars hostScanVars
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&host.ID,
-		&ipAddress,
-		&hostname,
-		&macAddressStr,
-		&vendor,
-		&osFamily,
-		&osName,
-		&osVersion,
-		&osConfidence,
-		&osDetectedAt,
-		&osMethod,
-		&osDetails,
-		&discoveryMethod,
-		&responseTimeMS,
-		&ignoreScanning,
+		&vars.ipAddress,
+		&vars.hostname,
+		&vars.macAddressStr,
+		&vars.vendor,
+		&vars.osFamily,
+		&vars.osName,
+		&vars.osVersion,
+		&vars.osConfidence,
+		&vars.osDetectedAt,
+		&vars.osMethod,
+		&vars.osDetails,
+		&vars.discoveryMethod,
+		&vars.responseTimeMS,
+		&vars.responseTimeMinMS,
+		&vars.responseTimeMaxMS,
+		&vars.responseTimeAvgMS,
+		&vars.ignoreScanning,
 		&host.FirstSeen,
 		&host.LastSeen,
 		&host.Status,
-		&statusChangedAt,
-		&previousStatus,
-		&timeoutCount,
+		&vars.statusChangedAt,
+		&vars.previousStatus,
+		&vars.timeoutCount,
 	)
 	if err != nil {
 		if stderrors.Is(err, sql.ErrNoRows) {
@@ -533,26 +580,9 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 		return nil, sanitizeDBError("get host", err)
 	}
 
-	// Convert IP address.
-	host.IPAddress = IPAddr{IP: net.ParseIP(ipAddress)}
-
-	// Handle nullable fields using helper functions.
-	assignStringPtr(&host.Hostname, hostname)
-	assignMACAddress(&host.MACAddress, macAddressStr)
-	assignStringPtr(&host.Vendor, vendor)
-	assignStringPtr(&host.OSFamily, osFamily)
-	assignStringPtr(&host.OSName, osName)
-	assignStringPtr(&host.OSVersion, osVersion)
-	assignIntPtr(&host.OSConfidence, osConfidence)
-	host.OSDetectedAt = osDetectedAt
-	assignStringPtr(&host.OSMethod, osMethod)
-	host.OSDetails = osDetails
-	assignStringPtr(&host.DiscoveryMethod, discoveryMethod)
-	assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
-	assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
-	host.StatusChangedAt = statusChangedAt
-	assignStringPtr(&host.PreviousStatus, previousStatus)
-	host.TimeoutCount = timeoutCount
+	// Convert IP address and apply nullable fields via helper.
+	host.IPAddress = IPAddr{IP: net.ParseIP(vars.ipAddress)}
+	applyHostScanVars(host, vars)
 
 	if err := r.fetchHostPorts(ctx, id, host); err != nil {
 		return nil, err
@@ -914,6 +944,18 @@ func buildHostFilters(filters *HostFilters) (whereClause string, args []interfac
 		args = append(args, pattern)
 	}
 
+	if filters.Vendor != "" {
+		paramIdx := len(args) + 1
+		pattern := "%" + filters.Vendor + "%"
+		vendorFragment := fmt.Sprintf("h.vendor ILIKE $%d", paramIdx)
+		if whereClause == "" {
+			whereClause = fmt.Sprintf("WHERE %s", vendorFragment)
+		} else {
+			whereClause += fmt.Sprintf(" AND %s", vendorFragment)
+		}
+		args = append(args, pattern)
+	}
+
 	return whereClause, args
 }
 
@@ -942,6 +984,7 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 		var ipAddress string
 		var hostname, macAddressStr, vendor, osFamily, osName, osVersion *string
 		var osConfidence, responseTimeMS *int
+		var responseTimeMinMS, responseTimeMaxMS, responseTimeAvgMS *int
 		var osDetectedAt *time.Time
 		var osMethod *string
 		var osDetails JSONB
@@ -969,6 +1012,9 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 			&osDetails,
 			&discoveryMethod,
 			&responseTimeMS,
+			&responseTimeMinMS,
+			&responseTimeMaxMS,
+			&responseTimeAvgMS,
 			&ignoreScanning,
 			&host.FirstSeen,
 			&host.LastSeen,
@@ -1000,6 +1046,9 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 		host.OSDetails = osDetails
 		assignStringPtr(&host.DiscoveryMethod, discoveryMethod)
 		assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
+		assignIntPtr(&host.ResponseTimeMinMS, responseTimeMinMS)
+		assignIntPtr(&host.ResponseTimeMaxMS, responseTimeMaxMS)
+		assignIntPtr(&host.ResponseTimeAvgMS, responseTimeAvgMS)
 		assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
 		host.StatusChangedAt = statusChangedAt
 		assignStringPtr(&host.PreviousStatus, previousStatus)

@@ -376,14 +376,14 @@ describe("HostsPage", () => {
 
   // ── Open port count ───────────────────────────────────────────
   // Column order: IP=0, Hostname=1, Status=2, OS=3, MAC=4,
-  //               Open Ports=5, Last Seen=6, Scans=7, action=8
+  //               Vendor=5, Open Ports=6, Last Seen=7, Scans=8, action=9
 
   it("shows open port count when total_ports is set", () => {
     render(<HostsPage />);
     const rows = screen.getAllByRole("row");
-    // host-1 has total_ports: 3 — Open Ports column is index 5
+    // host-1 has total_ports: 3 — Open Ports column is index 6
     const cells = within(rows[1]).getAllByRole("cell");
-    expect(cells[5]).toHaveTextContent("3");
+    expect(cells[6]).toHaveTextContent("3");
   });
 
   it("shows em-dash for open ports when total_ports is missing", () => {
@@ -391,12 +391,12 @@ describe("HostsPage", () => {
     const rows = screen.getAllByRole("row");
     // host-3 has no total_ports
     const cells = within(rows[3]).getAllByRole("cell");
-    expect(cells[5]).toHaveTextContent("—");
+    expect(cells[6]).toHaveTextContent("—");
   });
 
   // ── OS column ─────────────────────────────────────────────────
   // Column order: IP=0, Hostname=1, Status=2, OS=3, MAC=4,
-  //               Open Ports=5, Last Seen=6, Scans=7, action=8
+  //               Vendor=5, Open Ports=6, Last Seen=7, Scans=8, action=9
 
   it("renders os_family when present", () => {
     render(<HostsPage />);
@@ -435,24 +435,24 @@ describe("HostsPage", () => {
     render(<HostsPage />);
     const rows = screen.getAllByRole("row");
     const cells = within(rows[3]).getAllByRole("cell");
-    // Open Ports is index 5
-    expect(cells[5]).toHaveTextContent("—");
+    // Open Ports is index 6
+    expect(cells[6]).toHaveTextContent("—");
   });
 
   it("shows em-dash for missing last_seen", () => {
     render(<HostsPage />);
     const rows = screen.getAllByRole("row");
     const cells = within(rows[3]).getAllByRole("cell");
-    // Last Seen is index 6
-    expect(cells[6]).toHaveTextContent("—");
+    // Last Seen is index 7
+    expect(cells[7]).toHaveTextContent("—");
   });
 
   it("shows em-dash for missing scan_count", () => {
     render(<HostsPage />);
     const rows = screen.getAllByRole("row");
     const cells = within(rows[3]).getAllByRole("cell");
-    // Scans is index 7
-    expect(cells[7]).toHaveTextContent("—");
+    // Scans is index 8
+    expect(cells[8]).toHaveTextContent("—");
   });
 
   // ── Sort interaction ──────────────────────────────────────────

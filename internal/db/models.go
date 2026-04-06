@@ -310,28 +310,31 @@ type PortInfo struct {
 
 // Host represents a discovered host.
 type Host struct {
-	ID              uuid.UUID  `db:"id" json:"id"`
-	IPAddress       IPAddr     `db:"ip_address" json:"ip_address"`
-	Hostname        *string    `db:"hostname" json:"hostname,omitempty"`
-	MACAddress      *MACAddr   `db:"mac_address" json:"mac_address,omitempty"`
-	Vendor          *string    `db:"vendor" json:"vendor,omitempty"`
-	OSFamily        *string    `db:"os_family" json:"os_family,omitempty"`
-	OSName          *string    `db:"os_name" json:"os_name,omitempty"`
-	OSVersion       *string    `db:"os_version" json:"os_version,omitempty"`
-	OSConfidence    *int       `db:"os_confidence" json:"os_confidence,omitempty"`
-	OSDetectedAt    *time.Time `db:"os_detected_at" json:"os_detected_at,omitempty"`
-	OSMethod        *string    `db:"os_method" json:"os_method,omitempty"`
-	OSDetails       JSONB      `db:"os_details" json:"os_details,omitempty"`
-	DiscoveryMethod *string    `db:"discovery_method" json:"discovery_method,omitempty"`
-	ResponseTimeMS  *int       `db:"response_time_ms" json:"response_time_ms,omitempty"`
-	DiscoveryCount  int        `db:"discovery_count" json:"discovery_count"`
-	IgnoreScanning  bool       `db:"ignore_scanning" json:"ignore_scanning"`
-	FirstSeen       time.Time  `db:"first_seen" json:"first_seen"`
-	LastSeen        time.Time  `db:"last_seen" json:"last_seen"`
-	Status          string     `db:"status" json:"status"`
-	StatusChangedAt *time.Time `db:"status_changed_at" json:"status_changed_at,omitempty"`
-	PreviousStatus  *string    `db:"previous_status" json:"previous_status,omitempty"`
-	TimeoutCount    int        `db:"timeout_count" json:"timeout_count"`
+	ID                uuid.UUID  `db:"id" json:"id"`
+	IPAddress         IPAddr     `db:"ip_address" json:"ip_address"`
+	Hostname          *string    `db:"hostname" json:"hostname,omitempty"`
+	MACAddress        *MACAddr   `db:"mac_address" json:"mac_address,omitempty"`
+	Vendor            *string    `db:"vendor" json:"vendor,omitempty"`
+	OSFamily          *string    `db:"os_family" json:"os_family,omitempty"`
+	OSName            *string    `db:"os_name" json:"os_name,omitempty"`
+	OSVersion         *string    `db:"os_version" json:"os_version,omitempty"`
+	OSConfidence      *int       `db:"os_confidence" json:"os_confidence,omitempty"`
+	OSDetectedAt      *time.Time `db:"os_detected_at" json:"os_detected_at,omitempty"`
+	OSMethod          *string    `db:"os_method" json:"os_method,omitempty"`
+	OSDetails         JSONB      `db:"os_details" json:"os_details,omitempty"`
+	DiscoveryMethod   *string    `db:"discovery_method" json:"discovery_method,omitempty"`
+	ResponseTimeMS    *int       `db:"response_time_ms" json:"response_time_ms,omitempty"`
+	DiscoveryCount    int        `db:"discovery_count" json:"discovery_count"`
+	IgnoreScanning    bool       `db:"ignore_scanning" json:"ignore_scanning"`
+	FirstSeen         time.Time  `db:"first_seen" json:"first_seen"`
+	LastSeen          time.Time  `db:"last_seen" json:"last_seen"`
+	Status            string     `db:"status" json:"status"`
+	StatusChangedAt   *time.Time `db:"status_changed_at" json:"status_changed_at,omitempty"`
+	PreviousStatus    *string    `db:"previous_status" json:"previous_status,omitempty"`
+	TimeoutCount      int        `db:"timeout_count" json:"timeout_count"`
+	ResponseTimeMinMS *int       `db:"response_time_min_ms" json:"response_time_min_ms,omitempty"`
+	ResponseTimeMaxMS *int       `db:"response_time_max_ms" json:"response_time_max_ms,omitempty"`
+	ResponseTimeAvgMS *int       `db:"response_time_avg_ms" json:"response_time_avg_ms,omitempty"`
 	// Computed from port_scans — latest known state per (port, protocol).
 	// Ports holds the full PortInfo for every distinct (port, protocol) seen.
 	// TotalPorts is the count of distinct (port, protocol) pairs ever seen.

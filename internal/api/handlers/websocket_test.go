@@ -1599,7 +1599,7 @@ func TestWebSocketHandler_LogsWebSocket(t *testing.T) {
 		rb.Append(logging.LogEntry{Time: time.Now(), Level: "warn", Message: "live-entry"})
 
 		// The subscription channel should deliver the entry to runLogsWriteLoop
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, entryMsg, err := conn.ReadMessage()
 		require.NoError(t, err)
 

@@ -577,13 +577,13 @@ func (h *WebSocketHandler) LogsWebSocket(w http.ResponseWriter, r *http.Request)
 		return conn.SetReadDeadline(time.Now().Add(pongWait))
 	})
 
-	h.sendLogsHistory(conn)
-
 	var sub chan logging.LogEntry
 	if h.ringBuffer != nil {
 		sub = h.ringBuffer.Subscribe()
 		defer h.ringBuffer.Unsubscribe(sub)
 	}
+
+	h.sendLogsHistory(conn)
 
 	done := make(chan struct{})
 	go func() {

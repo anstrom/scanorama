@@ -8,10 +8,9 @@ import {
   Pencil,
   Check,
   Trash2,
-  ChevronUp,
-  ChevronDown,
-  ChevronsUpDown,
 } from "lucide-react";
+import { SortHeader } from "../components/sort-header";
+import type { SortOrder } from "../components/sort-header";
 import { Button } from "../components/button";
 import {
   useHosts,
@@ -50,6 +49,7 @@ type HostWithDetails = HostResponse & {
   os_name?: string;
   os_version_detail?: string;
   os_confidence?: number;
+  vendor?: string;
 };
 
 const PAGE_SIZE = 25;
@@ -604,54 +604,6 @@ function SkeletonRows({ count }: { count: number }) {
   );
 }
 
-// ── Sort column header ─────────────────────────────────────────────────────
-
-type SortOrder = "asc" | "desc";
-
-interface SortHeaderProps {
-  label: string;
-  column: string;
-  sortBy: string;
-  sortOrder: SortOrder;
-  onSort: (col: string) => void;
-  className?: string;
-}
-
-function SortHeader({
-  label,
-  column,
-  sortBy,
-  sortOrder,
-  onSort,
-  className,
-}: SortHeaderProps) {
-  const active = sortBy === column;
-  return (
-    <th
-      onClick={() => onSort(column)}
-      className={cn(
-        "text-left font-medium text-text-muted py-3 pr-4",
-        "cursor-pointer select-none hover:text-text-secondary transition-colors whitespace-nowrap",
-        active && "text-text-secondary",
-        className,
-      )}
-    >
-      <span className="inline-flex items-center gap-1">
-        {label}
-        {active ? (
-          sortOrder === "asc" ? (
-            <ChevronUp className="h-3 w-3 shrink-0" />
-          ) : (
-            <ChevronDown className="h-3 w-3 shrink-0" />
-          )
-        ) : (
-          <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-30" />
-        )}
-      </span>
-    </th>
-  );
-}
-
 // ── OS family filter options ───────────────────────────────────────────────
 
 const OS_FAMILIES = ["Linux", "Windows", "macOS", "FreeBSD", "iOS", "Android"];
@@ -664,6 +616,7 @@ export function HostsPage() {
   const [sortBy, setSortBy] = useState("last_seen");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [osFilter, setOsFilter] = useState("");
+  const [vendorFilter, setVendorFilter] = useState("");
   const [scanIP, setScanIP] = useState<string | null>(null);
   const [selectedHost, setSelectedHost] = useState<HostResponse | null>(null);
 
@@ -703,6 +656,7 @@ export function HostsPage() {
     ...(statusFilter !== "all" ? { status: statusFilter } : {}),
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(osFilter ? { os: osFilter } : {}),
+    ...(vendorFilter ? { vendor: vendorFilter } : {}),
   };
 
   const { data, isLoading, isError } = useHosts(queryParams);
@@ -777,6 +731,24 @@ export function HostsPage() {
             ))}
           </select>
 
+          {/* Vendor filter */}
+          <input
+            type="text"
+            placeholder="Filter by vendor…"
+            value={vendorFilter}
+            onChange={(e) => {
+              setVendorFilter(e.target.value);
+              setPage(1);
+            }}
+            className={cn(
+              "px-3 py-1.5 text-xs rounded border border-border",
+              "bg-surface text-text-primary placeholder:text-text-muted",
+              "focus:outline-none focus:ring-1 focus:ring-border",
+              "min-w-36",
+            )}
+            aria-label="Filter by vendor"
+          />
+
           <Button
             onClick={() => setScanIP("")}
             icon={<ScanLine className="h-3.5 w-3.5" />}
@@ -825,6 +797,13 @@ export function HostsPage() {
                     MAC Address
                   </th>
                   <SortHeader
+                    label="Vendor"
+                    column="vendor"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
                     label="Open Ports"
                     column="open_ports"
                     sortBy={sortBy}
@@ -852,7 +831,7 @@ export function HostsPage() {
                 {isError ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="py-10 text-center text-xs text-danger"
                     >
                       Failed to load hosts.
@@ -863,7 +842,7 @@ export function HostsPage() {
                 ) : hosts.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="py-10 text-center text-xs text-text-muted"
                     >
                       No hosts found.
@@ -900,6 +879,9 @@ export function HostsPage() {
                       </td>
                       <td className="py-3 pr-4 font-mono text-text-muted whitespace-nowrap">
                         {host.mac_address ?? "—"}
+                      </td>
+                      <td className="py-3 pr-4 text-text-muted whitespace-nowrap">
+                        {(host as HostWithDetails).vendor ?? "—"}
                       </td>
                       <td className="py-3 pr-4 tabular-nums text-text-secondary">
                         {(() => {
