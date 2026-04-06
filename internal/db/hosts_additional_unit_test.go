@@ -413,3 +413,140 @@ func TestDeleteHost_Unit(t *testing.T) {
 		assert.Contains(t, err.Error(), "check host existence")
 	})
 }
+
+// ── buildHostFilters — vendor filter ─────────────────────────────────────────
+
+func TestBuildHostFilters_VendorFilter(t *testing.T) {
+	t.Run("vendor filter adds ILIKE clause", func(t *testing.T) {
+		whereClause, args := buildHostFilters(&HostFilters{Vendor: "Cisco"})
+		assert.Contains(t, whereClause, "h.vendor ILIKE")
+		assert.Contains(t, args, "%Cisco%")
+	})
+
+	t.Run("vendor filter combined with status filter", func(t *testing.T) {
+		whereClause, args := buildHostFilters(&HostFilters{Status: "up", Vendor: "Apple"})
+		assert.Contains(t, whereClause, "h.status")
+		assert.Contains(t, whereClause, "h.vendor ILIKE")
+		assert.Len(t, args, 2)
+		assert.Equal(t, "up", args[0])
+		assert.Equal(t, "%Apple%", args[1])
+	})
+
+	t.Run("empty vendor does not add WHERE clause", func(t *testing.T) {
+		whereClause, args := buildHostFilters(&HostFilters{Vendor: ""})
+		assert.Empty(t, whereClause)
+		assert.Nil(t, args)
+	})
+
+	t.Run("vendor pattern wraps value in percent signs", func(t *testing.T) {
+		_, args := buildHostFilters(&HostFilters{Vendor: "Dell"})
+		require.Len(t, args, 1)
+		assert.Equal(t, "%Dell%", args[0])
+	})
+}
+
+// ── ListHosts — vendor filter ─────────────────────────────────────────────────
+
+func TestListHosts_WithVendorFilter(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	// COUNT query issued first.
+	mock.ExpectQuery("SELECT COUNT").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	// SELECT query issued second — return empty rows so scanHostRows exits cleanly.
+	mock.ExpectQuery("SELECT").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	hosts, total, err := NewHostRepository(db).ListHosts(
+		context.Background(),
+		&HostFilters{Vendor: "Apple"},
+		0, 10,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), total)
+	assert.Empty(t, hosts)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ── GetHost success path (exercises applyHostScanVars) ────────────────────────
+
+// getHostColumns lists the 24 columns returned by the GetHost SELECT in the
+// same order they are scanned into hostScanVars / Host fields.
+var getHostColumns = []string{
+	"id", "ip_address", "hostname", "mac_address", "vendor",
+	"os_family", "os_name", "os_version", "os_confidence",
+	"os_detected_at", "os_method", "os_details",
+	"discovery_method",
+	"response_time_ms", "response_time_min_ms", "response_time_max_ms", "response_time_avg_ms",
+	"ignore_scanning",
+	"first_seen", "last_seen", "status",
+	"status_changed_at", "previous_status", "timeout_count",
+}
+
+func TestGetHost_Success(t *testing.T) {
+	id := uuid.New()
+	now := time.Now().UTC()
+
+	hostname := "web-01.example.com"
+	vendor := "Apple"
+	osFamily := "Linux"
+	osName := "Ubuntu"
+	osVersion := "22.04"
+	osConfidence := 90
+	osMethod := "nmap"
+	discovery := "arp"
+	rtt := 12
+	rttMin := 8
+	rttMax := 20
+	rttAvg := 14
+	ignore := false
+	prevStatus := "down"
+
+	db, mock := newMockDB(t)
+
+	// Main SELECT — one fully-populated row.
+	mock.ExpectQuery(`SELECT`).
+		WillReturnRows(sqlmock.NewRows(getHostColumns).AddRow(
+			id, "10.0.0.1", &hostname, nil, &vendor,
+			&osFamily, &osName, &osVersion, &osConfidence,
+			&now, &osMethod, nil,
+			&discovery,
+			&rtt, &rttMin, &rttMax, &rttAvg,
+			&ignore,
+			now, now, "up",
+			&now, &prevStatus, 3,
+		))
+
+	// fetchHostPorts — return empty result set (no ports for this host).
+	mock.ExpectQuery(`SELECT DISTINCT`).
+		WillReturnRows(sqlmock.NewRows([]string{"port", "protocol", "state", "service_name", "scanned_at"}))
+
+	// fetchHostScanCount — return a scan count.
+	mock.ExpectQuery(`SELECT COUNT`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+
+	host, err := NewHostRepository(db).GetHost(context.Background(), id)
+
+	require.NoError(t, err)
+	require.NotNil(t, host)
+	assert.Equal(t, id, host.ID)
+	assert.Equal(t, "10.0.0.1", host.IPAddress.String())
+	assert.Equal(t, "up", host.Status)
+	require.NotNil(t, host.Hostname)
+	assert.Equal(t, hostname, *host.Hostname)
+	require.NotNil(t, host.Vendor)
+	assert.Equal(t, vendor, *host.Vendor)
+	require.NotNil(t, host.OSFamily)
+	assert.Equal(t, osFamily, *host.OSFamily)
+	require.NotNil(t, host.ResponseTimeMS)
+	assert.Equal(t, rtt, *host.ResponseTimeMS)
+	require.NotNil(t, host.ResponseTimeMinMS)
+	assert.Equal(t, rttMin, *host.ResponseTimeMinMS)
+	require.NotNil(t, host.PreviousStatus)
+	assert.Equal(t, prevStatus, *host.PreviousStatus)
+	assert.Equal(t, 3, host.TimeoutCount)
+	assert.Equal(t, 5, host.ScanCount)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

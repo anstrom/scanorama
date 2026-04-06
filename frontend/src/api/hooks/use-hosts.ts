@@ -9,6 +9,7 @@ interface HostListParams {
   network?: string;
   search?: string;
   os?: string;
+  vendor?: string;
   sort_by?: string;
   sort_order?: "asc" | "desc";
 }

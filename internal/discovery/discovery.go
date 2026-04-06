@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,6 +68,8 @@ type Result struct {
 	OSInfo       string        `json:"os_info"`
 	Method       string        `json:"method"`
 	Error        string        `json:"error,omitempty"`
+	Vendor       string        `json:"vendor,omitempty"`      // from MAC address OUI lookup (nmap)
+	MACAddress   string        `json:"mac_address,omitempty"` // raw MAC address string
 }
 
 // NewEngine creates a new discovery engine with the given database.
@@ -263,8 +266,8 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 	// Only do this when we have a known network CIDR to scope the query.
 	if job.Network.IP != nil {
 		discoveredIPs := make([]string, 0, len(discoveredHosts))
-		for _, h := range discoveredHosts {
-			discoveredIPs = append(discoveredIPs, h.IPAddress.String())
+		for i := range discoveredHosts {
+			discoveredIPs = append(discoveredIPs, discoveredHosts[i].IPAddress.String())
 		}
 
 		hostRepo := db.NewHostRepository(e.db)
@@ -490,6 +493,25 @@ func (e *Engine) convertNmapResultsToDiscovery(nmapResult *nmap.Run, method stri
 			result.OSInfo = host.OS.Matches[0].Name
 		}
 
+		// Capture smoothed RTT (SRTT) reported by nmap in microseconds.
+		// The nmap library exposes Times.SRTT as a string; parse it defensively.
+		if host.Times.SRTT != "" {
+			if srtt, err := strconv.ParseInt(host.Times.SRTT, 10, 64); err == nil && srtt > 0 {
+				result.ResponseTime = time.Duration(srtt) * time.Microsecond
+			}
+		}
+
+		// Extract MAC address and vendor from nmap results.
+		// For ARP scans nmap populates the Vendor field from its built-in OUI DB.
+		for _, addr := range host.Addresses {
+			if addr.AddrType == "mac" {
+				result.MACAddress = addr.Addr
+				if addr.Vendor != "" {
+					result.Vendor = addr.Vendor
+				}
+			}
+		}
+
 		results = append(results, result)
 	}
 
@@ -587,7 +609,8 @@ func (e *Engine) saveDiscoveredHosts(ctx context.Context, results []Result) erro
 
 	var errors []string
 
-	for _, result := range results {
+	for i := range results {
+		result := results[i]
 		// Check if host already exists
 		var existingID string
 		checkQuery := `SELECT id FROM hosts WHERE ip_address = $1`
@@ -600,20 +623,54 @@ func (e *Engine) saveDiscoveredHosts(ctx context.Context, results []Result) erro
 			continue
 		}
 
+		// Prepare nullable args — pass nil (SQL NULL) for empty strings so that
+		// COALESCE leaves existing DB values untouched and the macaddr cast doesn't fail.
+		var vendorArg interface{}
+		if result.Vendor != "" {
+			vendorArg = result.Vendor
+		}
+		var macArg interface{}
+		if result.MACAddress != "" {
+			macArg = result.MACAddress
+		}
+		// Pass nil (SQL NULL) when there is no RTT so CASE expressions leave
+		// existing min/max/avg values untouched.
+		var responseTimeMSArg interface{}
+		if rttMS := result.ResponseTime.Milliseconds(); rttMS > 0 {
+			responseTimeMSArg = int(rttMS)
+		}
+
 		if existingID != "" {
-			// Host exists, update it
+			// Host exists, update it — reset timeout_count and maintain RTT stats.
 			updateQuery := `
 				UPDATE hosts SET
 					status = $2,
 					discovery_method = $3,
 					last_seen = NOW(),
-					discovery_count = COALESCE(discovery_count, 0) + 1
+					discovery_count = COALESCE(discovery_count, 0) + 1,
+					vendor = COALESCE($4, vendor),
+					mac_address = COALESCE($5::macaddr, mac_address),
+					timeout_count = 0,
+					response_time_ms = CASE WHEN $6::integer IS NOT NULL THEN $6::integer ELSE response_time_ms END,
+					response_time_min_ms = CASE WHEN $6::integer IS NOT NULL
+						THEN LEAST(COALESCE(response_time_min_ms, $6::integer), $6::integer)
+						ELSE response_time_min_ms END,
+					response_time_max_ms = CASE WHEN $6::integer IS NOT NULL
+						THEN GREATEST(COALESCE(response_time_max_ms, $6::integer), $6::integer)
+						ELSE response_time_max_ms END,
+					response_time_avg_ms = CASE WHEN $6::integer IS NOT NULL
+						THEN (COALESCE(response_time_avg_ms, 0) * COALESCE(discovery_count, 0) + $6::integer)
+						     / (COALESCE(discovery_count, 0) + 1)
+						ELSE response_time_avg_ms END
 				WHERE ip_address = $1`
 
 			_, err = e.db.ExecContext(ctx, updateQuery,
 				result.IPAddress.String(),
 				result.Status,
-				result.Method)
+				result.Method,
+				vendorArg,
+				macArg,
+				responseTimeMSArg)
 
 			if err != nil {
 				slog.Warn("failed to update host", "ip", result.IPAddress, "error", err)
@@ -622,13 +679,18 @@ func (e *Engine) saveDiscoveredHosts(ctx context.Context, results []Result) erro
 		} else {
 			// Host doesn't exist, create it
 			insertQuery := `
-				INSERT INTO hosts (ip_address, status, discovery_method, first_seen, last_seen, discovery_count)
-				VALUES ($1, $2, $3, NOW(), NOW(), 1)`
+				INSERT INTO hosts (ip_address, status, discovery_method, first_seen, last_seen, discovery_count,
+				                   vendor, mac_address,
+				                   response_time_ms, response_time_min_ms, response_time_max_ms, response_time_avg_ms)
+				VALUES ($1, $2, $3, NOW(), NOW(), 1, $4, $5::macaddr, $6, $6, $6, $6)`
 
 			_, err = e.db.ExecContext(ctx, insertQuery,
 				result.IPAddress.String(),
 				result.Status,
-				result.Method)
+				result.Method,
+				vendorArg,
+				macArg,
+				responseTimeMSArg)
 
 			if err != nil {
 				slog.Warn("failed to insert host", "ip", result.IPAddress, "error", err)

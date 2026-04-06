@@ -72,20 +72,28 @@ type HostResponse struct {
 	// OSVersion is the OS generation / version string returned by nmap.
 	OSVersion string `json:"os_version_detail,omitempty"`
 	// OSConfidence is the nmap detection confidence percentage (0–100).
-	OSConfidence *int              `json:"os_confidence,omitempty"`
-	Tags         []string          `json:"tags,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
-	Status       string            `json:"status"`
-	MACAddress   string            `json:"mac_address,omitempty"`
-	Ports        []db.PortInfo     `json:"ports,omitempty"`
-	FirstSeen    time.Time         `json:"first_seen"`
-	LastSeen     *time.Time        `json:"last_seen,omitempty"`
-	LastScanID   *int64            `json:"last_scan_id,omitempty"`
-	ScanCount    int               `json:"scan_count"`
-	TotalPorts   int               `json:"total_ports"`
-	CreatedAt    time.Time         `json:"created_at"`
-	UpdatedAt    time.Time         `json:"updated_at"`
-	DiscoveredBy string            `json:"discovered_by,omitempty"`
+	OSConfidence      *int              `json:"os_confidence,omitempty"`
+	Tags              []string          `json:"tags,omitempty"`
+	Metadata          map[string]string `json:"metadata,omitempty"`
+	Status            string            `json:"status"`
+	MACAddress        string            `json:"mac_address,omitempty"`
+	Ports             []db.PortInfo     `json:"ports,omitempty"`
+	FirstSeen         time.Time         `json:"first_seen"`
+	LastSeen          *time.Time        `json:"last_seen,omitempty"`
+	LastScanID        *int64            `json:"last_scan_id,omitempty"`
+	ScanCount         int               `json:"scan_count"`
+	TotalPorts        int               `json:"total_ports"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at"`
+	DiscoveredBy      string            `json:"discovered_by,omitempty"`
+	StatusChangedAt   *time.Time        `json:"status_changed_at,omitempty"`
+	PreviousStatus    string            `json:"previous_status,omitempty"`
+	Vendor            string            `json:"vendor,omitempty"`
+	ResponseTimeMS    *int              `json:"response_time_ms,omitempty"`
+	ResponseTimeMinMS *int              `json:"response_time_min_ms,omitempty"`
+	ResponseTimeMaxMS *int              `json:"response_time_max_ms,omitempty"`
+	ResponseTimeAvgMS *int              `json:"response_time_avg_ms,omitempty"`
+	TimeoutCount      int               `json:"timeout_count"`
 }
 
 // HostScanResponse represents a scan associated with a host.
@@ -360,6 +368,10 @@ func (h *HostHandler) getHostFilters(r *http.Request) *db.HostFilters {
 		filters.SortOrder = sortOrder
 	}
 
+	if vendor := r.URL.Query().Get("vendor"); vendor != "" {
+		filters.Vendor = vendor
+	}
+
 	return filters
 }
 
@@ -428,6 +440,48 @@ func (h *HostHandler) requestToUpdateHost(req *HostRequest) db.UpdateHostInput {
 }
 
 // hostToResponse converts a database host to response format.
+// populateOSFields fills OS-related fields on the response from the host model.
+func populateOSFields(r *HostResponse, host *db.Host) {
+	if host.OSFamily != nil {
+		r.OSFamily = *host.OSFamily
+		r.OS = *host.OSFamily
+	}
+	if host.OSName != nil {
+		r.OSName = *host.OSName
+	}
+	if host.OSVersion != nil {
+		r.OSVersion = *host.OSVersion
+	}
+	if host.OSConfidence != nil {
+		r.OSConfidence = host.OSConfidence
+	}
+	switch {
+	case host.OSName != nil && host.OSVersion != nil:
+		r.OSVersionLegacy = fmt.Sprintf("%s %s", *host.OSName, *host.OSVersion)
+	case host.OSName != nil:
+		r.OSVersionLegacy = *host.OSName
+	case host.OSVersion != nil:
+		r.OSVersionLegacy = *host.OSVersion
+	}
+}
+
+// populateResponseTimeFields fills response-time statistics on the response.
+func populateResponseTimeFields(r *HostResponse, host *db.Host) {
+	if host.ResponseTimeMS != nil {
+		r.ResponseTimeMS = host.ResponseTimeMS
+	}
+	if host.ResponseTimeMinMS != nil {
+		r.ResponseTimeMinMS = host.ResponseTimeMinMS
+	}
+	if host.ResponseTimeMaxMS != nil {
+		r.ResponseTimeMaxMS = host.ResponseTimeMaxMS
+	}
+	if host.ResponseTimeAvgMS != nil {
+		r.ResponseTimeAvgMS = host.ResponseTimeAvgMS
+	}
+	r.TimeoutCount = host.TimeoutCount
+}
+
 func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 	response := HostResponse{
 		ID:        host.ID.String(),
@@ -444,32 +498,7 @@ func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 	}
 
 	// Populate all OS fields individually so the frontend can display each one.
-	if host.OSFamily != nil {
-		response.OSFamily = *host.OSFamily
-		// Keep legacy field populated for backwards compatibility.
-		response.OS = *host.OSFamily
-	}
-
-	if host.OSName != nil {
-		response.OSName = *host.OSName
-	}
-
-	if host.OSVersion != nil {
-		response.OSVersion = *host.OSVersion
-	}
-
-	if host.OSConfidence != nil {
-		response.OSConfidence = host.OSConfidence
-	}
-
-	// Legacy combined field: "<OSName> <OSVersion>" for old consumers.
-	if host.OSName != nil && host.OSVersion != nil {
-		response.OSVersionLegacy = fmt.Sprintf("%s %s", *host.OSName, *host.OSVersion)
-	} else if host.OSName != nil {
-		response.OSVersionLegacy = *host.OSName
-	} else if host.OSVersion != nil {
-		response.OSVersionLegacy = *host.OSVersion
-	}
+	populateOSFields(&response, host)
 
 	// Set last seen time
 	response.LastSeen = &host.LastSeen
@@ -487,6 +516,17 @@ func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 	}
 	response.Tags = []string{}
 	response.Metadata = map[string]string{}
+
+	if host.StatusChangedAt != nil {
+		response.StatusChangedAt = host.StatusChangedAt
+	}
+	if host.PreviousStatus != nil {
+		response.PreviousStatus = *host.PreviousStatus
+	}
+	if host.Vendor != nil {
+		response.Vendor = *host.Vendor
+	}
+	populateResponseTimeFields(&response, host)
 
 	return response
 }
