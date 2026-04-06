@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Plus, X, Pencil } from "lucide-react";
+import { SortHeader } from "../components/sort-header";
+import type { SortOrder } from "../components/sort-header";
 import { Button } from "../components/button";
 import {
   useSchedules,
@@ -359,13 +361,30 @@ function ScheduleDetailPanel({
 export function SchedulesPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sortBy, setSortBy] = useState("name");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [selectedSchedule, setSelectedSchedule] =
     useState<ScheduleResponse | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
+  const handleSort = useCallback(
+    (column: string) => {
+      if (sortBy === column) {
+        setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+      } else {
+        setSortBy(column);
+        setSortOrder("asc");
+      }
+      setPage(1);
+    },
+    [sortBy],
+  );
+
   const queryParams = {
     page,
     page_size: PAGE_SIZE,
+    sort_by: sortBy,
+    sort_order: sortOrder,
     ...(statusFilter === "enabled" ? { enabled: true } : {}),
     ...(statusFilter === "disabled" ? { enabled: false } : {}),
   };
@@ -416,21 +435,46 @@ export function SchedulesPage() {
         <table className="w-full text-xs border-collapse min-w-[640px]">
           <thead>
             <tr className="bg-surface-raised border-b border-border text-left">
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Name
-              </th>
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Cron
-              </th>
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Next Run
-              </th>
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Last Run
-              </th>
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Status
-              </th>
+              <SortHeader
+                label="Name"
+                column="name"
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                className="px-4 py-2.5"
+              />
+              <SortHeader
+                label="Cron"
+                column="cron_expression"
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                className="px-4 py-2.5"
+              />
+              <SortHeader
+                label="Next Run"
+                column="next_run"
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                className="px-4 py-2.5"
+              />
+              <SortHeader
+                label="Last Run"
+                column="last_run"
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                className="px-4 py-2.5"
+              />
+              <SortHeader
+                label="Status"
+                column="enabled"
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                className="px-4 py-2.5"
+              />
               <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
                 Network
               </th>

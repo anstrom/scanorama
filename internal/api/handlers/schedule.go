@@ -462,6 +462,13 @@ func (h *ScheduleHandler) getScheduleFilters(r *http.Request) db.ScheduleFilters
 		}
 	}
 
+	if sortBy := r.URL.Query().Get("sort_by"); sortBy != "" {
+		filters.SortBy = sortBy
+	}
+	if sortOrder := r.URL.Query().Get("sort_order"); sortOrder != "" {
+		filters.SortOrder = sortOrder
+	}
+
 	return filters
 }
 

@@ -28,6 +28,62 @@ func NewProfileRepository(db *DB) *ProfileRepository {
 	return &ProfileRepository{db: db}
 }
 
+// validProfileSortColumns maps API sort keys to safe SQL column expressions.
+var validProfileSortColumns = map[string]string{
+	"name":       "name",
+	"scan_type":  "scan_type",
+	"created_at": "created_at",
+	"updated_at": "updated_at",
+	"priority":   "priority",
+}
+
+// scanProfileRow scans a single profile row from *sql.Rows into a *ScanProfile.
+func scanProfileRow(rows *sql.Rows) (*ScanProfile, error) {
+	profile := &ScanProfile{}
+	var description *string
+	var timing *string
+	var options []byte
+	var osFamily, scripts interface{}
+
+	err := rows.Scan(
+		&profile.ID,
+		&profile.Name,
+		&description,
+		&osFamily,
+		&profile.Ports,
+		&profile.ScanType,
+		&timing,
+		&scripts,
+		&options,
+		&profile.Priority,
+		&profile.BuiltIn,
+		&profile.CreatedAt,
+		&profile.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan profile row: %w", err)
+	}
+
+	// Handle nullable fields.
+	if description != nil {
+		profile.Description = *description
+	}
+	if timing != nil {
+		profile.Timing = *timing
+	}
+
+	// Handle PostgreSQL arrays.
+	profile.OSFamily = parsePostgreSQLArray(osFamily)
+	profile.Scripts = parsePostgreSQLArray(scripts)
+
+	// Handle JSONB options.
+	if len(options) > 0 {
+		profile.Options = JSONB(string(options))
+	}
+
+	return profile, nil
+}
+
 // ListProfiles retrieves profiles with filtering and pagination.
 func (r *ProfileRepository) ListProfiles(ctx context.Context, filters ProfileFilters,
 	offset, limit int) ([]*ScanProfile, int64, error) {
@@ -64,9 +120,19 @@ func (r *ProfileRepository) ListProfiles(ctx context.Context, filters ProfileFil
 	}
 
 	// Get paginated results.
+	orderByClause := " ORDER BY priority DESC, name ASC NULLS LAST"
+	if filters.SortBy != "" {
+		if col, ok := validProfileSortColumns[filters.SortBy]; ok {
+			dir := sortOrderASC
+			if strings.EqualFold(filters.SortOrder, sortOrderDESC) {
+				dir = sortOrderDESC
+			}
+			orderByClause = fmt.Sprintf(" ORDER BY %s %s NULLS LAST", col, dir)
+		}
+	}
 	listQuery := fmt.Sprintf(
-		"%s %s ORDER BY priority DESC, name ASC LIMIT $%d OFFSET $%d",
-		baseQuery, whereClause, argIndex+1, argIndex+2)
+		"%s %s%s LIMIT $%d OFFSET $%d",
+		baseQuery, whereClause, orderByClause, argIndex+1, argIndex+2)
 	args = append(args, limit, offset)
 
 	rows, err := r.db.QueryContext(ctx, listQuery, args...)
@@ -81,48 +147,10 @@ func (r *ProfileRepository) ListProfiles(ctx context.Context, filters ProfileFil
 
 	var profiles []*ScanProfile
 	for rows.Next() {
-		profile := &ScanProfile{}
-		var description *string
-		var timing *string
-		var options []byte
-		var osFamily, scripts interface{}
-
-		err := rows.Scan(
-			&profile.ID,
-			&profile.Name,
-			&description,
-			&osFamily,
-			&profile.Ports,
-			&profile.ScanType,
-			&timing,
-			&scripts,
-			&options,
-			&profile.Priority,
-			&profile.BuiltIn,
-			&profile.CreatedAt,
-			&profile.UpdatedAt,
-		)
+		profile, err := scanProfileRow(rows)
 		if err != nil {
-			return nil, 0, fmt.Errorf("failed to scan profile row: %w", err)
+			return nil, 0, err
 		}
-
-		// Handle nullable fields.
-		if description != nil {
-			profile.Description = *description
-		}
-		if timing != nil {
-			profile.Timing = *timing
-		}
-
-		// Handle PostgreSQL arrays.
-		profile.OSFamily = parsePostgreSQLArray(osFamily)
-		profile.Scripts = parsePostgreSQLArray(scripts)
-
-		// Handle JSONB options.
-		if len(options) > 0 {
-			profile.Options = JSONB(string(options))
-		}
-
 		profiles = append(profiles, profile)
 	}
 

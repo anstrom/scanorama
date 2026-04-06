@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import {
   Network,
   Plus,
@@ -13,6 +13,8 @@ import {
   Radar,
   TrendingUp,
 } from "lucide-react";
+import { SortHeader } from "../components/sort-header";
+import type { SortOrder } from "../components/sort-header";
 import {
   AreaChart,
   Area,
@@ -1056,11 +1058,25 @@ export function NetworksPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [nameSearch, setNameSearch] = useState("");
   const [debouncedName, setDebouncedName] = useState("");
+  const [sortBy, setSortBy] = useState("cidr");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [selectedNetwork, setSelectedNetwork] =
     useState<NetworkResponse | null>(null);
   const [showAddNetwork, setShowAddNetwork] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSort = useCallback(
+    (column: string) => {
+      if (sortBy === column) {
+        setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+      } else {
+        setSortBy(column);
+        setSortOrder("asc");
+      }
+    },
+    [sortBy],
+  );
 
   const handleNameInput = useCallback((value: string) => {
     setNameSearch(value);
@@ -1079,9 +1095,21 @@ export function NetworksPage() {
   };
 
   const { data, isLoading } = useNetworks(queryParams);
-  const networks = data?.data ?? [];
   const pagination = data?.pagination;
   const totalPages = pagination?.total_pages ?? 1;
+
+  const sortedNetworks = useMemo(() => {
+    const raw = data?.data ?? [];
+    if (!sortBy) return raw;
+    return [...raw].sort((a, b) => {
+      const aVal = a[sortBy as keyof typeof a] ?? "";
+      const bVal = b[sortBy as keyof typeof b] ?? "";
+      const cmp = String(aVal).localeCompare(String(bVal), undefined, {
+        numeric: true,
+      });
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+  }, [data, sortBy, sortOrder]);
 
   function handleShowInactiveChange(checked: boolean) {
     setShowInactive(checked);
@@ -1136,15 +1164,30 @@ export function NetworksPage() {
           <table className="w-full text-xs border-collapse min-w-[640px]">
             <thead>
               <tr className="bg-surface-raised border-b border-border text-left">
-                <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                  Name
-                </th>
-                <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                  CIDR
-                </th>
-                <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap text-right">
-                  Hosts
-                </th>
+                <SortHeader
+                  label="Name"
+                  column="name"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="px-4 py-2.5"
+                />
+                <SortHeader
+                  label="CIDR"
+                  column="cidr"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="px-4 py-2.5"
+                />
+                <SortHeader
+                  label="Hosts"
+                  column="host_count"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="px-4 py-2.5 text-right"
+                />
                 <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap text-right">
                   Active
                 </th>
@@ -1162,7 +1205,7 @@ export function NetworksPage() {
             <tbody>
               {isLoading ? (
                 <NetworkSkeletonRows />
-              ) : networks.length === 0 ? (
+              ) : sortedNetworks.length === 0 ? (
                 <tr>
                   <td
                     colSpan={7}
@@ -1172,7 +1215,7 @@ export function NetworksPage() {
                   </td>
                 </tr>
               ) : (
-                networks.map((network) => (
+                sortedNetworks.map((network) => (
                   <tr
                     key={network.id}
                     onClick={() =>
@@ -1222,7 +1265,7 @@ export function NetworksPage() {
         </div>
 
         {/* Pagination */}
-        {!isLoading && networks.length > 0 && totalPages > 1 && (
+        {!isLoading && sortedNetworks.length > 0 && totalPages > 1 && (
           <PaginationBar
             page={page}
             totalPages={totalPages}

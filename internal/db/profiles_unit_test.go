@@ -330,3 +330,153 @@ func TestDeleteProfile_Unit_EdgeCases(t *testing.T) {
 		assert.Contains(t, err.Error(), "in use by scan jobs")
 	})
 }
+
+// ── ListProfiles sorting ──────────────────────────────────────────────────────
+
+func TestListProfiles_Sorting(t *testing.T) {
+	t.Run("default sort: priority desc name asc", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY priority DESC, name ASC`).
+			WillReturnRows(sqlmock.NewRows(profileColumns))
+
+		_, _, err := NewProfileRepository(db).ListProfiles(context.Background(), ProfileFilters{}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("sort by name asc", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY name ASC`).
+			WillReturnRows(sqlmock.NewRows(profileColumns))
+
+		_, _, err := NewProfileRepository(db).ListProfiles(context.Background(), ProfileFilters{
+			SortBy: "name", SortOrder: "asc",
+		}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("sort by updated_at desc", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY updated_at DESC`).
+			WillReturnRows(sqlmock.NewRows(profileColumns))
+
+		_, _, err := NewProfileRepository(db).ListProfiles(context.Background(), ProfileFilters{
+			SortBy: "updated_at", SortOrder: "desc",
+		}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("ignores invalid column", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY priority DESC, name ASC`).
+			WillReturnRows(sqlmock.NewRows(profileColumns))
+
+		_, _, err := NewProfileRepository(db).ListProfiles(context.Background(), ProfileFilters{
+			SortBy: "'; DROP TABLE--",
+		}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("sort by priority asc", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY priority ASC`).
+			WillReturnRows(sqlmock.NewRows(profileColumns))
+
+		_, _, err := NewProfileRepository(db).ListProfiles(context.Background(), ProfileFilters{
+			SortBy: "priority", SortOrder: "asc",
+		}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
+// ── scanProfileRow ────────────────────────────────────────────────────────────
+
+func TestScanProfileRow(t *testing.T) {
+	now := time.Now().UTC()
+
+	t.Run("scans all null-nullable fields correctly", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery("SELECT").WillReturnRows(
+			sqlmock.NewRows(profileColumns).
+				AddRow(profileRow("test-profile", "Test Profile", now)...))
+
+		rows, err := db.QueryContext(context.Background(), "SELECT")
+		require.NoError(t, err)
+		defer rows.Close()
+
+		require.True(t, rows.Next())
+		profile, err := scanProfileRow(rows)
+		require.NoError(t, err)
+		require.NotNil(t, profile)
+		assert.Equal(t, "test-profile", profile.ID)
+		assert.Equal(t, "Test Profile", profile.Name)
+		assert.Equal(t, "connect", profile.ScanType)
+		assert.Equal(t, "22,80", profile.Ports)
+		assert.False(t, profile.BuiltIn)
+		assert.Equal(t, 0, profile.Priority)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("handles non-null description and timing", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		desc := "a description"
+		timing := "T4"
+		mock.ExpectQuery("SELECT").WillReturnRows(
+			sqlmock.NewRows(profileColumns).AddRow(
+				"prof-id", "My Profile",
+				&desc,                   // description
+				nil,                     // os_family
+				"80",                    // ports
+				"syn",                   // scan_type
+				&timing,                 // timing
+				nil,                     // scripts
+				[]byte(`{"key":"val"}`), // options
+				5,                       // priority
+				true,                    // built_in
+				now, now,
+			))
+
+		rows, err := db.QueryContext(context.Background(), "SELECT")
+		require.NoError(t, err)
+		defer rows.Close()
+
+		require.True(t, rows.Next())
+		profile, err := scanProfileRow(rows)
+		require.NoError(t, err)
+		require.NotNil(t, profile)
+		assert.Equal(t, "a description", profile.Description)
+		assert.Equal(t, "T4", profile.Timing)
+		assert.Equal(t, 5, profile.Priority)
+		assert.True(t, profile.BuiltIn)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("scan error propagates when column count mismatches", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		// Only one column returned — Scan will fail with a column-count mismatch.
+		mock.ExpectQuery("SELECT").WillReturnRows(
+			sqlmock.NewRows([]string{"id"}).AddRow("only-one-column"))
+
+		rows, err := db.QueryContext(context.Background(), "SELECT")
+		require.NoError(t, err)
+		defer rows.Close()
+
+		require.True(t, rows.Next())
+		_, err = scanProfileRow(rows)
+		require.Error(t, err)
+	})
+}

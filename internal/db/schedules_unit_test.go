@@ -226,3 +226,75 @@ func TestCreateSchedule_Unit(t *testing.T) {
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 }
+
+// ── ListSchedules sorting ─────────────────────────────────────────────────────
+
+func TestListSchedules_Sorting(t *testing.T) {
+	t.Run("sorts by name asc by default", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY name ASC`).
+			WillReturnRows(sqlmock.NewRows(scheduleColumns))
+
+		_, _, err := NewScheduleRepository(db).ListSchedules(context.Background(), ScheduleFilters{}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("sorts by enabled desc when requested", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY enabled DESC`).
+			WillReturnRows(sqlmock.NewRows(scheduleColumns))
+
+		_, _, err := NewScheduleRepository(db).ListSchedules(context.Background(), ScheduleFilters{
+			SortBy: "enabled", SortOrder: "desc",
+		}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("ignores invalid sort column", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY name ASC`).
+			WillReturnRows(sqlmock.NewRows(scheduleColumns))
+
+		_, _, err := NewScheduleRepository(db).ListSchedules(context.Background(), ScheduleFilters{
+			SortBy: "'; DROP TABLE--",
+		}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("sorts by next_run asc when requested", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY next_run ASC`).
+			WillReturnRows(sqlmock.NewRows(scheduleColumns))
+
+		_, _, err := NewScheduleRepository(db).ListSchedules(context.Background(), ScheduleFilters{
+			SortBy: "next_run", SortOrder: "asc",
+		}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("sorts by created_at desc when requested", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY created_at DESC`).
+			WillReturnRows(sqlmock.NewRows(scheduleColumns))
+
+		_, _, err := NewScheduleRepository(db).ListSchedules(context.Background(), ScheduleFilters{
+			SortBy: "created_at", SortOrder: "desc",
+		}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}

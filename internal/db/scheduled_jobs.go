@@ -24,6 +24,8 @@ type Schedule struct {
 
 // ScheduleFilters represents filters for listing schedules.
 type ScheduleFilters struct {
-	Enabled bool
-	JobType string
+	Enabled   bool
+	JobType   string
+	SortBy    string
+	SortOrder string
 }
