@@ -329,6 +329,9 @@ type Host struct {
 	FirstSeen       time.Time  `db:"first_seen" json:"first_seen"`
 	LastSeen        time.Time  `db:"last_seen" json:"last_seen"`
 	Status          string     `db:"status" json:"status"`
+	StatusChangedAt *time.Time `db:"status_changed_at" json:"status_changed_at,omitempty"`
+	PreviousStatus  *string    `db:"previous_status" json:"previous_status,omitempty"`
+	TimeoutCount    int        `db:"timeout_count" json:"timeout_count"`
 	// Computed from port_scans — latest known state per (port, protocol).
 	// Ports holds the full PortInfo for every distinct (port, protocol) seen.
 	// TotalPorts is the count of distinct (port, protocol) pairs ever seen.
@@ -437,6 +440,16 @@ type HostHistory struct {
 	ChangedBy    *string   `db:"changed_by" json:"changed_by,omitempty"`
 	ChangeReason *string   `db:"change_reason" json:"change_reason,omitempty"`
 	ClientIP     *IPAddr   `db:"client_ip" json:"client_ip,omitempty"`
+}
+
+// HostStatusEvent records a single host status transition.
+type HostStatusEvent struct {
+	ID         uuid.UUID `db:"id"          json:"id"`
+	HostID     uuid.UUID `db:"host_id"     json:"host_id"`
+	FromStatus string    `db:"from_status" json:"from_status"`
+	ToStatus   string    `db:"to_status"   json:"to_status"`
+	ChangedAt  time.Time `db:"changed_at"  json:"changed_at"`
+	Source     *string   `db:"source"      json:"source,omitempty"`
 }
 
 // ActiveHost represents the active_hosts view.
@@ -548,6 +561,7 @@ const (
 	HostStatusUp      = "up"
 	HostStatusDown    = "down"
 	HostStatusUnknown = "unknown"
+	HostStatusGone    = "gone"
 )
 
 // PortState constants.
