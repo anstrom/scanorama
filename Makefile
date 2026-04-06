@@ -290,5 +290,8 @@ dev-setup: deps frontend-deps ## Set up dev environment (install tools + deps)
 		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
 			| sh -s -- -b $$(go env GOPATH)/bin; \
 	fi
+	@git config core.hooksPath .githooks
+	@chmod +x .githooks/*
+	@echo "✓ Git hooks configured (.githooks/)"
 	@echo ""
 	@echo "✓ Ready. Run 'make dev' to start developing."

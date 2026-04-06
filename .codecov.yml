@@ -37,7 +37,6 @@ ignore:
   - "**/*.pb.go" # Generated protobuf files
   - "**/vendor/**" # Vendored third-party dependencies
   - "cmd/**" # Command-line entry points (mainly setup)
-  - "scripts/**" # Build and utility scripts
   - "build/**" # Build artifacts directory
   - "dist/**" # Distribution files
   - "frontend/**" # Frontend code (non-Go)

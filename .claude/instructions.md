@@ -286,8 +286,8 @@ make quality       # Just quality checks
 4. Run fresh build: `make build`
 
 ### Database Connection Issues
-1. Check database status: `./scripts/check-db.sh`
-2. Restart containers: `make setup-dev-db`
+1. Check database status: `make dev-db-up` (starts dev DB) or `make test-db-up` (starts test DB)
+2. Restart containers: `make dev-down && make dev-db-up`
 3. Check port conflicts: Default is 5432
 
 ## Git Workflow and Commit Strategy
