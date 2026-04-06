@@ -255,9 +255,29 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 		}
 	}
 
-	// Update job with results
+	// Update job with results.
 	job.HostsResponsive = len(discoveredHosts)
 	job.HostsDiscovered = len(discoveredHosts)
+
+	// Mark previously-up hosts that were not found in this run as "gone".
+	// Only do this when we have a known network CIDR to scope the query.
+	if job.Network.IP != nil {
+		discoveredIPs := make([]string, 0, len(discoveredHosts))
+		for _, h := range discoveredHosts {
+			discoveredIPs = append(discoveredIPs, h.IPAddress.String())
+		}
+
+		hostRepo := db.NewHostRepository(e.db)
+		goneCount, gErr := hostRepo.MarkGoneHosts(ctx, job.Network.String(), discoveredIPs)
+		if gErr != nil {
+			slog.Warn("failed to mark gone hosts",
+				"network", job.Network.String(), "error", gErr)
+		} else if goneCount > 0 {
+			slog.Info("marked hosts as gone",
+				"count", goneCount, "network", job.Network.String())
+		}
+	}
+
 	slog.Info("discovery completed", "hosts_discovered", job.HostsDiscovered)
 }
 

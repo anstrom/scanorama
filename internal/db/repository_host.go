@@ -158,6 +158,48 @@ func (r *HostRepository) UpsertForScan(ctx context.Context, ipAddr IPAddr, statu
 	return host, nil
 }
 
+// MarkGoneHosts marks previously-up hosts within networkCIDR as "gone" if
+// their IP address is not in discoveredIPs. It is called at the end of a
+// discovery run so that hosts that didn't respond are distinguished from hosts
+// that are merely down.
+//
+// The database trigger track_host_status_change automatically records the
+// transition in host_status_events and updates previous_status /
+// status_changed_at, so this method only needs to issue the UPDATE.
+//
+// Returns the number of rows updated.
+func (r *HostRepository) MarkGoneHosts(
+	ctx context.Context,
+	networkCIDR string,
+	discoveredIPs []string,
+) (int, error) {
+	// Cast the Go string slice to a PostgreSQL inet[] so the NOT ANY check
+	// works with the inet-typed ip_address column.
+	query := `
+		UPDATE hosts
+		   SET status = $1
+		 WHERE ip_address <<= $2::cidr
+		   AND status     = $3
+		   AND NOT (ip_address = ANY($4::inet[]))`
+
+	result, err := r.db.ExecContext(ctx, query,
+		HostStatusGone,
+		networkCIDR,
+		HostStatusUp,
+		pq.Array(discoveredIPs),
+	)
+	if err != nil {
+		return 0, sanitizeDBError("mark gone hosts", err)
+	}
+
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("mark gone hosts: rows affected: %w", err)
+	}
+
+	return int(n), nil
+}
+
 // GetByIP retrieves a host by IP address.
 func (r *HostRepository) GetByIP(ctx context.Context, ip IPAddr) (*Host, error) {
 	var host Host
@@ -238,6 +280,9 @@ func (r *HostRepository) ListHosts(
 			h.first_seen,
 			h.last_seen,
 			h.status,
+			h.status_changed_at,
+			h.previous_status,
+			h.timeout_count,
 			CASE WHEN COUNT(DISTINCT ps.id) = 0 THEN NULL
 			     ELSE COUNT(DISTINCT ps.id) FILTER (WHERE ps.state = 'open')
 			END AS open_ports,
@@ -265,7 +310,8 @@ func (r *HostRepository) ListHosts(
 		GROUP BY h.id, h.ip_address, h.hostname, h.mac_address, h.vendor, h.os_family,
 			h.os_name, h.os_version, h.os_confidence, h.os_detected_at, h.os_method,
 			h.os_details, h.discovery_method,
-			h.response_time_ms, h.ignore_scanning, h.first_seen, h.last_seen, h.status
+			h.response_time_ms, h.ignore_scanning, h.first_seen, h.last_seen, h.status,
+			h.status_changed_at, h.previous_status, h.timeout_count
 	`
 
 	// Resolve ORDER BY clause from validated sort parameters.
@@ -436,7 +482,10 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 			h.ignore_scanning,
 			h.first_seen,
 			h.last_seen,
-			h.status
+			h.status,
+			h.status_changed_at,
+			h.previous_status,
+			h.timeout_count
 		FROM hosts h
 		WHERE h.id = $1
 	`
@@ -450,6 +499,9 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 	var osDetails JSONB
 	var discoveryMethod *string
 	var ignoreScanning *bool
+	var statusChangedAt *time.Time
+	var previousStatus *string
+	var timeoutCount int
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&host.ID,
@@ -470,6 +522,9 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 		&host.FirstSeen,
 		&host.LastSeen,
 		&host.Status,
+		&statusChangedAt,
+		&previousStatus,
+		&timeoutCount,
 	)
 	if err != nil {
 		if stderrors.Is(err, sql.ErrNoRows) {
@@ -495,6 +550,9 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 	assignStringPtr(&host.DiscoveryMethod, discoveryMethod)
 	assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
 	assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
+	host.StatusChangedAt = statusChangedAt
+	assignStringPtr(&host.PreviousStatus, previousStatus)
+	host.TimeoutCount = timeoutCount
 
 	if err := r.fetchHostPorts(ctx, id, host); err != nil {
 		return nil, err
@@ -889,6 +947,9 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 		var osDetails JSONB
 		var discoveryMethod *string
 		var ignoreScanning *bool
+		var statusChangedAt *time.Time
+		var previousStatus *string
+		var timeoutCount int
 		var openPorts sql.NullInt64
 		var totalPortsScanned int64
 		var scanCount sql.NullInt64
@@ -912,6 +973,9 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 			&host.FirstSeen,
 			&host.LastSeen,
 			&host.Status,
+			&statusChangedAt,
+			&previousStatus,
+			&timeoutCount,
 			&openPorts,
 			&totalPortsScanned,
 			&scanCount,
@@ -937,6 +1001,9 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 		assignStringPtr(&host.DiscoveryMethod, discoveryMethod)
 		assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
 		assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
+		host.StatusChangedAt = statusChangedAt
+		assignStringPtr(&host.PreviousStatus, previousStatus)
+		host.TimeoutCount = timeoutCount
 
 		// Wire the aggregated port counts from the list query.
 		// These are counts across all scan jobs — not latest-state — so they
