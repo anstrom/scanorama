@@ -443,8 +443,8 @@ describe("NetworksPage — row data", () => {
   it("shows em-dash for missing host_count", () => {
     render(<NetworksPage />);
     const rows = screen.getAllByRole("row");
-    // Wireless (net-3) is the 3rd data row (index 3)
-    const cells = within(rows[3]).getAllByRole("cell");
+    // After CIDR sort: 10.x=row1, 172.x=row2 (Wireless, no host_count), 192.x=row3
+    const cells = within(rows[2]).getAllByRole("cell");
     // Hosts is index 2
     expect(cells[2]).toHaveTextContent("—");
   });
@@ -461,8 +461,8 @@ describe("NetworksPage — row data", () => {
   it("shows relative time for last_discovery when present", () => {
     render(<NetworksPage />);
     const rows = screen.getAllByRole("row");
-    // Office LAN (net-1) is the 1st data row (index 1), has last_discovery ~1h ago
-    const cells = within(rows[1]).getAllByRole("cell");
+    // After CIDR sort: 10.x=row1, 172.x=row2, 192.x=row3 (Office LAN, has last_discovery)
+    const cells = within(rows[3]).getAllByRole("cell");
     // Should contain "ago" or "just now"
     expect(cells[6].textContent).toMatch(/ago|just now/i);
   });

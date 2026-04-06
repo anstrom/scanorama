@@ -3,7 +3,9 @@ package db
 
 // ProfileFilters represents filters for listing profiles.
 type ProfileFilters struct {
-	ScanType string
+	ScanType  string
+	SortBy    string
+	SortOrder string
 }
 
 // parsePostgreSQLArray converts a PostgreSQL array interface{} to []string.

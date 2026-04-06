@@ -19,3 +19,5 @@ export {
   CreateScheduleModal,
 } from "./create-schedule-modal";
 export * from "./layout";
+export { SortHeader } from "./sort-header";
+export type { SortOrder, SortHeaderProps } from "./sort-header";

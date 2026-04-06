@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { ShieldOff, Plus, Trash2 } from "lucide-react";
+import { SortHeader } from "../components/sort-header";
+import type { SortOrder } from "../components/sort-header";
 import { Button } from "../components/button";
 import {
   useGlobalExclusions,
@@ -46,12 +48,32 @@ function SkeletonRows() {
 export function ExclusionsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState("excluded_cidr");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
 
   const { data: exclusions, isLoading } = useGlobalExclusions();
   const { mutate: deleteExclusion, isPending: isDeleting } =
     useDeleteExclusion();
 
-  const list: NetworkExclusionResponse[] = exclusions ?? [];
+  function handleSort(column: string) {
+    if (sortBy === column) {
+      setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(column);
+      setSortOrder("asc");
+    }
+  }
+
+  const sortedList = useMemo(() => {
+    const raw: NetworkExclusionResponse[] = exclusions ?? [];
+    if (!sortBy) return raw;
+    return [...raw].sort((a, b) => {
+      const aVal = a[sortBy as keyof typeof a] ?? "";
+      const bVal = b[sortBy as keyof typeof b] ?? "";
+      const cmp = String(aVal).localeCompare(String(bVal));
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+  }, [exclusions, sortBy, sortOrder]);
 
   function handleDelete(id: string) {
     if (confirmDeleteId !== id) {
@@ -91,18 +113,33 @@ export function ExclusionsPage() {
         <table className="w-full text-xs border-collapse min-w-[560px]">
           <thead>
             <tr className="bg-surface-raised border-b border-border text-left">
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                CIDR Block
-              </th>
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Reason
-              </th>
+              <SortHeader
+                label="CIDR Block"
+                column="excluded_cidr"
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                className="px-4 py-2.5"
+              />
+              <SortHeader
+                label="Reason"
+                column="reason"
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                className="px-4 py-2.5"
+              />
               <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
                 Created By
               </th>
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Created At
-              </th>
+              <SortHeader
+                label="Created At"
+                column="created_at"
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                className="px-4 py-2.5"
+              />
               <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap w-16">
                 {/* actions */}
               </th>
@@ -111,7 +148,7 @@ export function ExclusionsPage() {
           <tbody>
             {isLoading ? (
               <SkeletonRows />
-            ) : list.length === 0 ? (
+            ) : sortedList.length === 0 ? (
               <tr>
                 <td
                   colSpan={5}
@@ -121,7 +158,7 @@ export function ExclusionsPage() {
                 </td>
               </tr>
             ) : (
-              list.map((excl) => (
+              sortedList.map((excl) => (
                 <tr
                   key={excl.id}
                   className={cn(

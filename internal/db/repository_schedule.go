@@ -111,6 +111,16 @@ func buildScheduleSetParts(input UpdateScheduleInput) (setParts []string, args [
 	return
 }
 
+// validScheduleSortColumns maps API sort keys to safe SQL column expressions.
+var validScheduleSortColumns = map[string]string{
+	"name":            "name",
+	"enabled":         "enabled",
+	"cron_expression": "cron_expression",
+	"next_run":        "next_run",
+	"last_run":        "last_run",
+	"created_at":      "created_at",
+}
+
 // ListSchedules retrieves schedules with filtering and pagination.
 func (r *ScheduleRepository) ListSchedules(
 	ctx context.Context,
@@ -147,11 +157,20 @@ func (r *ScheduleRepository) ListSchedules(
 		return nil, 0, sanitizeDBError("count schedules", err)
 	}
 
+	orderByClause := " ORDER BY name ASC NULLS LAST"
+	if filters.SortBy != "" {
+		if col, ok := validScheduleSortColumns[filters.SortBy]; ok {
+			dir := sortOrderASC
+			if strings.EqualFold(filters.SortOrder, sortOrderDESC) {
+				dir = sortOrderDESC
+			}
+			orderByClause = fmt.Sprintf(" ORDER BY %s %s NULLS LAST", col, dir)
+		}
+	}
 	listQuery := fmt.Sprintf(`
 		SELECT id, name, type, cron_expression, config, enabled, last_run, next_run, created_at
-		FROM scheduled_jobs %s
-		ORDER BY name ASC
-		LIMIT $%d OFFSET $%d`, whereClause, argIdx, argIdx+1)
+		FROM scheduled_jobs %s%s
+		LIMIT $%d OFFSET $%d`, whereClause, orderByClause, argIdx, argIdx+1)
 
 	args = append(args, limit, offset)
 	listArgs := args

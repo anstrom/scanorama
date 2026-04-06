@@ -24,7 +24,10 @@ vi.mock("../components/add-exclusion-modal", () => ({
   ),
 }));
 
-import { useGlobalExclusions, useDeleteExclusion } from "../api/hooks/use-networks";
+import {
+  useGlobalExclusions,
+  useDeleteExclusion,
+} from "../api/hooks/use-networks";
 
 const mockUseGlobalExclusions = vi.mocked(useGlobalExclusions);
 const mockUseDeleteExclusion = vi.mocked(useDeleteExclusion);
@@ -106,9 +109,7 @@ describe("ExclusionsPage", () => {
 
   // ── Empty state ──────────────────────────────────────────────────────────
   it("shows empty message when there are no global exclusions", () => {
-    mockUseGlobalExclusions.mockReturnValue(
-      makeQueryResult({ data: [] }),
-    );
+    mockUseGlobalExclusions.mockReturnValue(makeQueryResult({ data: [] }));
     render(<ExclusionsPage />);
     expect(
       screen.getByText("No global exclusions defined."),
@@ -155,8 +156,8 @@ describe("ExclusionsPage", () => {
   it("renders em-dash for missing reason", () => {
     render(<ExclusionsPage />);
     const rows = screen.getAllByRole("row");
-    // excl-3 (172.16.0.0/12) has no reason — it's the third data row (index 3)
-    const cells = within(rows[3]).getAllByRole("cell");
+    // After CIDR sort: 10.x=row1, 172.x=row2 (excl-3, no reason), 192.x=row3
+    const cells = within(rows[2]).getAllByRole("cell");
     // Reason is column index 1
     expect(cells[1]).toHaveTextContent("—");
   });
@@ -204,9 +205,13 @@ describe("ExclusionsPage", () => {
 
   it("closes AddExclusionModal when the modal's close action fires", async () => {
     render(<ExclusionsPage />);
-    await userEvent.click(screen.getByRole("button", { name: /add exclusion/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /add exclusion/i }),
+    );
     const modal = screen.getByRole("dialog", { name: /add global exclusion/i });
-    await userEvent.click(within(modal).getByRole("button", { name: /close modal/i }));
+    await userEvent.click(
+      within(modal).getByRole("button", { name: /close modal/i }),
+    );
     expect(
       screen.queryByRole("dialog", { name: /add global exclusion/i }),
     ).not.toBeInTheDocument();
@@ -234,17 +239,18 @@ describe("ExclusionsPage", () => {
 
   it("calls deleteExclusion.mutate with the correct id on Confirm", async () => {
     const mockMutate = vi.fn();
-    mockUseDeleteExclusion.mockReturnValue(makeDeleteResult({ mutate: mockMutate }));
+    mockUseDeleteExclusion.mockReturnValue(
+      makeDeleteResult({ mutate: mockMutate }),
+    );
 
     render(<ExclusionsPage />);
     await userEvent.click(
-      screen.getByRole("button", { name: /delete exclusion 192\.168\.100\.0\/24/i }),
+      screen.getByRole("button", {
+        name: /delete exclusion 192\.168\.100\.0\/24/i,
+      }),
     );
     await userEvent.click(screen.getByText("Confirm"));
-    expect(mockMutate).toHaveBeenCalledWith(
-      "excl-2",
-      expect.any(Object),
-    );
+    expect(mockMutate).toHaveBeenCalledWith("excl-2", expect.any(Object));
   });
 
   it("only shows confirm prompt for the clicked row, not all rows", async () => {
@@ -256,7 +262,9 @@ describe("ExclusionsPage", () => {
     expect(screen.getAllByText("Confirm")).toHaveLength(1);
     // The other delete buttons remain as icon buttons
     expect(
-      screen.getByRole("button", { name: /delete exclusion 192\.168\.100\.0\/24/i }),
+      screen.getByRole("button", {
+        name: /delete exclusion 192\.168\.100\.0\/24/i,
+      }),
     ).toBeInTheDocument();
   });
 });

@@ -269,6 +269,39 @@ func TestScanHandler_GetScanFilters(t *testing.T) {
 	}
 }
 
+func TestGetScanFilters_SortParams(t *testing.T) {
+	logger := createTestLogger()
+	h := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
+
+	t.Run("extracts sort_by and sort_order", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodGet, "/?sort_by=status&sort_order=asc", nil)
+		f := h.getScanFilters(r)
+		assert.Equal(t, "status", f.SortBy)
+		assert.Equal(t, "asc", f.SortOrder)
+	})
+
+	t.Run("empty when params absent", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		f := h.getScanFilters(r)
+		assert.Empty(t, f.SortBy)
+		assert.Empty(t, f.SortOrder)
+	})
+
+	t.Run("sort_by=created_at sort_order=desc", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodGet, "/?sort_by=created_at&sort_order=desc", nil)
+		f := h.getScanFilters(r)
+		assert.Equal(t, "created_at", f.SortBy)
+		assert.Equal(t, "desc", f.SortOrder)
+	})
+
+	t.Run("sort_by only, no sort_order", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodGet, "/?sort_by=status", nil)
+		f := h.getScanFilters(r)
+		assert.Equal(t, "status", f.SortBy)
+		assert.Empty(t, f.SortOrder)
+	})
+}
+
 func TestScanHandler_RequestToDBScan(t *testing.T) {
 	logger := createTestLogger()
 	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())

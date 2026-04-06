@@ -18,6 +18,12 @@ import (
 	"github.com/anstrom/scanorama/internal/errors"
 )
 
+// sort direction constants used in ORDER BY clauses throughout this package.
+const (
+	sortOrderASC  = "ASC"
+	sortOrderDESC = "DESC"
+)
+
 // isHostTarget reports whether target represents a single host: a bare IP
 // address or a /32 (IPv4) / /128 (IPv6) CIDR.  Such targets must not be
 // stored as rows in the networks table.
@@ -160,6 +166,14 @@ func processScanRow(rows *sql.Rows) (*Scan, error) {
 }
 
 // ListScans retrieves scans with filtering and pagination.
+var validScanSortColumns = map[string]string{
+	"status":       "sj.status",
+	"created_at":   "sj.created_at",
+	"started_at":   "sj.started_at",
+	"completed_at": "sj.completed_at",
+	"scan_type":    "COALESCE(sp.scan_type, sj.execution_details->>'scan_type', n.scan_type, '')",
+}
+
 func (r *ScanRepository) ListScans(
 	ctx context.Context, filters ScanFilters, offset, limit int,
 ) ([]*Scan, int64, error) {
@@ -191,8 +205,18 @@ func (r *ScanRepository) ListScans(
 	}
 
 	argIndex := len(args)
-	listQuery := fmt.Sprintf("%s %s ORDER BY sj.created_at DESC LIMIT $%d OFFSET $%d",
-		baseQuery, whereClause, argIndex+1, argIndex+2)
+	orderByClause := " ORDER BY sj.created_at DESC NULLS LAST"
+	if filters.SortBy != "" {
+		if col, ok := validScanSortColumns[filters.SortBy]; ok {
+			dir := sortOrderASC
+			if strings.EqualFold(filters.SortOrder, sortOrderDESC) {
+				dir = sortOrderDESC
+			}
+			orderByClause = fmt.Sprintf(" ORDER BY %s %s NULLS LAST", col, dir)
+		}
+	}
+	listQuery := fmt.Sprintf("%s %s%s LIMIT $%d OFFSET $%d",
+		baseQuery, whereClause, orderByClause, argIndex+1, argIndex+2)
 	args = append(args, limit, offset)
 
 	rows, err := r.db.QueryContext(ctx, listQuery, args...)

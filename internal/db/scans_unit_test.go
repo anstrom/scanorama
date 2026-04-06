@@ -1444,6 +1444,84 @@ func TestProcessHostScanRow(t *testing.T) {
 
 // ── GetHostScans ──────────────────────────────────────────────────────────────
 
+func TestListScans_Sorting(t *testing.T) {
+	now := time.Now().UTC()
+	id := uuid.New()
+
+	t.Run("sorts by status asc when sort_by=status sort_order=asc", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+		// The query should contain ORDER BY sj.status ASC
+		mock.ExpectQuery(`ORDER BY sj\.status ASC`).
+			WillReturnRows(sqlmock.NewRows(scanColumns).AddRow(
+				scanRow(id, "Scan", "10.0.0.0/8", "connect", "22", "pending", now)...))
+
+		_, _, err := NewScanRepository(db).ListScans(context.Background(), ScanFilters{
+			SortBy:    "status",
+			SortOrder: "asc",
+		}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("sorts by created_at desc by default", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY sj\.created_at DESC`).
+			WillReturnRows(sqlmock.NewRows(scanColumns))
+
+		_, _, err := NewScanRepository(db).ListScans(context.Background(), ScanFilters{}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("ignores invalid sort column, uses default", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY sj\.created_at DESC`).
+			WillReturnRows(sqlmock.NewRows(scanColumns))
+
+		_, _, err := NewScanRepository(db).ListScans(context.Background(), ScanFilters{
+			SortBy: "drop table--",
+		}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("sort_order desc sets DESC", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY sj\.status DESC`).
+			WillReturnRows(sqlmock.NewRows(scanColumns))
+
+		_, _, err := NewScanRepository(db).ListScans(context.Background(), ScanFilters{
+			SortBy:    "status",
+			SortOrder: "desc",
+		}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("sorts by started_at asc", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectQuery(`SELECT COUNT`).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery(`ORDER BY sj\.started_at ASC`).
+			WillReturnRows(sqlmock.NewRows(scanColumns))
+
+		_, _, err := NewScanRepository(db).ListScans(context.Background(), ScanFilters{
+			SortBy:    "started_at",
+			SortOrder: "asc",
+		}, 0, 10)
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
 func TestGetHostScans_Unit(t *testing.T) {
 	now := time.Now().UTC()
 	hostID := uuid.New()

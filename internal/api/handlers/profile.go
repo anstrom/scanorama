@@ -491,6 +491,13 @@ func (h *ProfileHandler) getProfileFilters(r *http.Request) db.ProfileFilters {
 		filters.ScanType = scanType
 	}
 
+	if sortBy := r.URL.Query().Get("sort_by"); sortBy != "" {
+		filters.SortBy = sortBy
+	}
+	if sortOrder := r.URL.Query().Get("sort_order"); sortOrder != "" {
+		filters.SortOrder = sortOrder
+	}
+
 	return filters
 }
 

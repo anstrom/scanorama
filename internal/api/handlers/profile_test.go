@@ -213,6 +213,39 @@ func TestProfileHandler_GetProfileFilters(t *testing.T) {
 	}
 }
 
+func TestGetProfileFilters_SortParams(t *testing.T) {
+	logger := createTestLogger()
+	h := NewProfileHandler(nilProfileServicer{}, logger, metrics.NewRegistry())
+
+	t.Run("extracts sort_by and sort_order", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodGet, "/?sort_by=name&sort_order=asc", nil)
+		f := h.getProfileFilters(r)
+		assert.Equal(t, "name", f.SortBy)
+		assert.Equal(t, "asc", f.SortOrder)
+	})
+
+	t.Run("empty when params absent", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		f := h.getProfileFilters(r)
+		assert.Empty(t, f.SortBy)
+		assert.Empty(t, f.SortOrder)
+	})
+
+	t.Run("sort_by=updated_at sort_order=desc", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodGet, "/?sort_by=updated_at&sort_order=desc", nil)
+		f := h.getProfileFilters(r)
+		assert.Equal(t, "updated_at", f.SortBy)
+		assert.Equal(t, "desc", f.SortOrder)
+	})
+
+	t.Run("sort_by only, no sort_order", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodGet, "/?sort_by=priority", nil)
+		f := h.getProfileFilters(r)
+		assert.Equal(t, "priority", f.SortBy)
+		assert.Empty(t, f.SortOrder)
+	})
+}
+
 func TestProfileHandler_RequestToDBProfile(t *testing.T) {
 	logger := createTestLogger()
 	handler := NewProfileHandler(nilProfileServicer{}, logger, metrics.NewRegistry())

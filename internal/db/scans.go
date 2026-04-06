@@ -239,6 +239,8 @@ type ScanFilters struct {
 	ScanType  string
 	ProfileID *string
 	Tags      []string
+	SortBy    string // column to sort by
+	SortOrder string // "asc" or "desc"
 }
 
 // ScanResult represents a scan result entry.

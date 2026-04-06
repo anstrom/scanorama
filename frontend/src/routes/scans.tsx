@@ -1,5 +1,7 @@
 import { useState, useCallback } from "react";
 import { ScanLine } from "lucide-react";
+import { SortHeader } from "../components/sort-header";
+import type { SortOrder } from "../components/sort-header";
 import { Button } from "../components/button";
 import { useScans } from "../api/hooks/use-scans";
 import {
@@ -49,6 +51,8 @@ function SkeletonRows({ count }: { count: number }) {
 export function ScansPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<ScanStatus>("all");
+  const [sortBy, setSortBy] = useState("created_at");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [selectedScanId, setSelectedScanId] = useState<string | null>(null);
   const [showRunScan, setShowRunScan] = useState(false);
 
@@ -57,9 +61,24 @@ export function ScansPage() {
     setPage(1);
   }, []);
 
+  const handleSort = useCallback(
+    (column: string) => {
+      if (sortBy === column) {
+        setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+      } else {
+        setSortBy(column);
+        setSortOrder("desc");
+      }
+      setPage(1);
+    },
+    [sortBy],
+  );
+
   const queryParams = {
     page,
     page_size: PAGE_SIZE,
+    sort_by: sortBy,
+    sort_order: sortOrder,
     ...(statusFilter !== "all" ? { status: statusFilter } : {}),
   };
 
@@ -114,18 +133,26 @@ export function ScansPage() {
                   <th className="text-left font-medium text-text-muted px-4 py-3 pr-4">
                     Targets
                   </th>
-                  <th className="text-left font-medium text-text-muted py-3 pr-4">
-                    Status
-                  </th>
+                  <SortHeader
+                    label="Status"
+                    column="status"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
                   <th className="text-left font-medium text-text-muted py-3 pr-4">
                     Ports
                   </th>
                   <th className="text-left font-medium text-text-muted py-3 pr-4">
                     Duration
                   </th>
-                  <th className="text-left font-medium text-text-muted py-3">
-                    Started
-                  </th>
+                  <SortHeader
+                    label="Started"
+                    column="started_at"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
                 </tr>
               </thead>
               <tbody>

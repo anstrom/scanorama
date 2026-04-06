@@ -715,6 +715,38 @@ func TestScheduleHandler_getScheduleFilters(t *testing.T) {
 	}
 }
 
+func TestGetScheduleFilters_SortParams(t *testing.T) {
+	handler := createTestScheduleHandler(t)
+
+	t.Run("extracts sort_by and sort_order", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/?sort_by=name&sort_order=asc", nil)
+		f := handler.getScheduleFilters(req)
+		assert.Equal(t, "name", f.SortBy)
+		assert.Equal(t, "asc", f.SortOrder)
+	})
+
+	t.Run("empty when params absent", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		f := handler.getScheduleFilters(req)
+		assert.Empty(t, f.SortBy)
+		assert.Empty(t, f.SortOrder)
+	})
+
+	t.Run("sort_by=enabled sort_order=desc", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/?sort_by=enabled&sort_order=desc", nil)
+		f := handler.getScheduleFilters(req)
+		assert.Equal(t, "enabled", f.SortBy)
+		assert.Equal(t, "desc", f.SortOrder)
+	})
+
+	t.Run("sort_by only, no sort_order", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/?sort_by=created_at", nil)
+		f := handler.getScheduleFilters(req)
+		assert.Equal(t, "created_at", f.SortBy)
+		assert.Empty(t, f.SortOrder)
+	})
+}
+
 func TestScheduleHandler_requestToDBSchedule(t *testing.T) {
 	handler := createTestScheduleHandler(t)
 

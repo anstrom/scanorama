@@ -1,5 +1,7 @@
 import { useState, useCallback } from "react";
 import { Plus, Pencil, Trash2, X, SlidersHorizontal } from "lucide-react";
+import { SortHeader } from "../components/sort-header";
+import type { SortOrder } from "../components/sort-header";
 import { Button } from "../components/button";
 import { useProfiles, useDeleteProfile } from "../api/hooks/use-profiles";
 import { useToast } from "../components/toast-provider";
@@ -278,9 +280,24 @@ export function ProfilesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [sortBy, setSortBy] = useState("name");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [selectedProfile, setSelectedProfile] =
     useState<ProfileResponse | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  const handleSort = useCallback(
+    (column: string) => {
+      if (sortBy === column) {
+        setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+      } else {
+        setSortBy(column);
+        setSortOrder("asc");
+      }
+      setPage(1);
+    },
+    [sortBy],
+  );
 
   // Debounce name search
   const debounceRef = {
@@ -299,7 +316,12 @@ export function ProfilesPage() {
     [],
   );
 
-  const { data, isLoading } = useProfiles({ page, page_size: PAGE_SIZE });
+  const { data, isLoading } = useProfiles({
+    page,
+    page_size: PAGE_SIZE,
+    sort_by: sortBy,
+    sort_order: sortOrder,
+  });
 
   const allProfiles = data?.data ?? [];
   const pagination = data?.pagination;
@@ -352,21 +374,36 @@ export function ProfilesPage() {
         <table className="w-full text-xs border-collapse min-w-[640px]">
           <thead>
             <tr className="bg-surface-raised border-b border-border text-left">
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Name
-              </th>
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Scan Type
-              </th>
+              <SortHeader
+                label="Name"
+                column="name"
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                className="px-4 py-2.5"
+              />
+              <SortHeader
+                label="Scan Type"
+                column="scan_type"
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                className="px-4 py-2.5"
+              />
               <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
                 Ports
               </th>
               <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
                 Description
               </th>
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Updated
-              </th>
+              <SortHeader
+                label="Updated"
+                column="updated_at"
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                className="px-4 py-2.5"
+              />
             </tr>
           </thead>
           <tbody>

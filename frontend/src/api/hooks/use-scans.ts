@@ -52,18 +52,19 @@ interface ScanListParams {
   page?: number;
   page_size?: number;
   status?: ScanStatus;
+  sort_by?: string;
+  sort_order?: "asc" | "desc";
 }
 
 export function useScans(params: ScanListParams = {}) {
   return useQuery({
     queryKey: ["scans", "list", params],
     queryFn: async () => {
-      // Cast status: the generated types omit "stopped" but the backend supports it.
-      const query = params as Omit<typeof params, "status"> & {
-        status?: "pending" | "running" | "completed" | "failed" | "cancelled";
-      };
       const { data, error, response } = await api.GET("/scans", {
-        params: { query },
+        // Cast to any: the generated types are narrower than what the API
+        // actually accepts (sort_by, sort_order, stopped status are not in the spec yet).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        params: { query: params as any },
       });
       if (error) throw new ApiError(response.status, error);
       return data;
