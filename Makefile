@@ -132,6 +132,9 @@ dev: build dev-db-up dev-config frontend-deps ## Ensure DB is up; rebuild + rest
 		fi; \
 		rm -f $(PID_FILE); \
 	fi
+	@# Authenticate sudo upfront (foreground, so the password prompt works),
+	@# then start the daemon as root in the background using the cached token.
+	@sudo -v
 	@# Run as root so nmap can perform SYN scans and OS detection without SUID.
 	@# Privileges are dropped to daemon.user after initialisation if configured.
 	@sudo -E $(BUILD_DIR)/$(BINARY_NAME) api \
