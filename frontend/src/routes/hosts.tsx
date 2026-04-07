@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { isNotFound } from "../api/errors";
 import {
   Search,
@@ -9,6 +10,7 @@ import {
   Check,
   Trash2,
   Activity,
+  Play,
 } from "lucide-react";
 import { SortHeader } from "../components/sort-header";
 import type { SortOrder } from "../components/sort-header";
@@ -675,9 +677,11 @@ export function HostsPage() {
   const [scanIP, setScanIP] = useState<string | null>(null);
   const [selectedHost, setSelectedHost] = useState<HostResponse | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkScanIPs, setBulkScanIPs] = useState<string[] | null>(null);
   const { mutateAsync: bulkDeleteHosts, isPending: isBulkDeleting } =
     useBulkDeleteHosts();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   // Debounce search input ~300ms
   useEffect(() => {
@@ -747,6 +751,15 @@ export function HostsPage() {
       setSelectedIds(new Set(hosts.map((h) => h.id ?? "")));
     }
   }, [selectedIds, hosts]);
+
+  function handleScanSelected() {
+    const ips = hosts
+      .filter((h) => selectedIds.has(h.id ?? ""))
+      .map((h) => h.ip_address ?? "")
+      .filter(Boolean);
+    if (ips.length === 0) return;
+    setBulkScanIPs(ips);
+  }
 
   async function handleBulkDelete() {
     const ids = Array.from(selectedIds);
@@ -859,6 +872,13 @@ export function HostsPage() {
             <span className="text-text-secondary font-medium">
               {selectedIds.size} selected
             </span>
+            <Button
+              icon={<Play className="h-3.5 w-3.5" />}
+              onClick={handleScanSelected}
+              className="text-xs h-7 px-2"
+            >
+              Scan selected
+            </Button>
             <Button
               variant="danger"
               icon={<Trash2 className="h-3.5 w-3.5" />}
@@ -1094,6 +1114,18 @@ export function HostsPage() {
 
       {scanIP !== null && (
         <RunScanModal initialTarget={scanIP} onClose={() => setScanIP(null)} />
+      )}
+
+      {bulkScanIPs !== null && (
+        <RunScanModal
+          initialTargets={bulkScanIPs}
+          onClose={() => setBulkScanIPs(null)}
+          onSubmitted={() => {
+            setBulkScanIPs(null);
+            setSelectedIds(new Set());
+            void navigate({ to: "/scans" });
+          }}
+        />
       )}
 
       {selectedHost && (

@@ -536,4 +536,95 @@ describe("RunScanModal", () => {
       expect.objectContaining({ ports: "22,80,443" }),
     );
   });
+
+  // ── initialTargets (bulk scan from host selection) ────────────────────────
+
+  it("hides the target source toggle when initialTargets is provided", () => {
+    render(
+      <RunScanModal
+        onClose={vi.fn()}
+        initialTargets={["10.0.0.1", "10.0.0.2"]}
+      />,
+    );
+    expect(
+      screen.queryByRole("radiogroup", { name: "Target source" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the manual target input when initialTargets is provided", () => {
+    render(
+      <RunScanModal
+        onClose={vi.fn()}
+        initialTargets={["10.0.0.1", "10.0.0.2"]}
+      />,
+    );
+    expect(screen.queryByLabelText("Target")).not.toBeInTheDocument();
+  });
+
+  it("shows a read-only list of the locked targets", () => {
+    render(
+      <RunScanModal
+        onClose={vi.fn()}
+        initialTargets={["10.0.0.1", "10.0.0.2", "10.0.0.3"]}
+      />,
+    );
+    expect(screen.getByText(/10\.0\.0\.1/)).toBeInTheDocument();
+    expect(screen.getByText(/3 hosts/)).toBeInTheDocument();
+  });
+
+  it("shows singular 'host' label for a single locked target", () => {
+    render(<RunScanModal onClose={vi.fn()} initialTargets={["192.168.1.1"]} />);
+    expect(screen.getByText(/1 host[^s]/)).toBeInTheDocument();
+  });
+
+  it("submits using the locked targets without requiring manual input", async () => {
+    const user = userEvent.setup();
+    const createScan = vi.fn().mockResolvedValue({ id: "bulk-scan-1" });
+    mockUseCreateScan.mockReturnValue({
+      mutateAsync: createScan,
+      isPending: false,
+    } as unknown as ReturnType<typeof useCreateScan>);
+
+    render(
+      <RunScanModal
+        onClose={vi.fn()}
+        initialTargets={["10.0.0.1", "10.0.0.2"]}
+      />,
+    );
+    await user.selectOptions(screen.getByLabelText("Select profile"), "p1");
+    await user.click(screen.getByRole("button", { name: "Run scan" }));
+
+    expect(createScan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targets: ["10.0.0.1", "10.0.0.2"],
+      }),
+    );
+  });
+
+  it("passes the new scan ID to onSubmitted in initialTargets mode", async () => {
+    const user = userEvent.setup();
+    const createScan = vi.fn().mockResolvedValue({ id: "bulk-scan-2" });
+    mockUseCreateScan.mockReturnValue({
+      mutateAsync: createScan,
+      isPending: false,
+    } as unknown as ReturnType<typeof useCreateScan>);
+    const onSubmitted = vi.fn();
+
+    render(
+      <RunScanModal
+        onClose={vi.fn()}
+        onSubmitted={onSubmitted}
+        initialTargets={["10.0.0.5"]}
+      />,
+    );
+    await user.selectOptions(screen.getByLabelText("Select profile"), "p1");
+    await user.click(screen.getByRole("button", { name: "Run scan" }));
+
+    expect(onSubmitted).toHaveBeenCalledWith("bulk-scan-2");
+  });
+
+  it("treats an empty initialTargets array the same as no prop (shows target input)", () => {
+    render(<RunScanModal onClose={vi.fn()} initialTargets={[]} />);
+    expect(screen.getByLabelText("Target")).toBeInTheDocument();
+  });
 });

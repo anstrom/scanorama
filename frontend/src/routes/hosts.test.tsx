@@ -40,8 +40,19 @@ vi.mock("../components", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../components")>();
   return {
     ...actual,
-    RunScanModal: ({ onClose }: { onClose: () => void }) => (
+    RunScanModal: ({
+      onClose,
+      initialTargets,
+    }: {
+      onClose: () => void;
+      initialTargets?: string[];
+    }) => (
       <div data-testid="run-scan-modal">
+        {initialTargets && initialTargets.length > 0 && (
+          <span data-testid="bulk-scan-targets">
+            {initialTargets.join(",")}
+          </span>
+        )}
         <button onClick={onClose}>Close scan modal</button>
       </div>
     ),
@@ -938,5 +949,64 @@ describe("HostsPage", () => {
       );
       expect(screen.getByTestId("run-scan-modal")).toBeInTheDocument();
     });
+  });
+
+  // ── Scan selected (bulk scan) ─────────────────────────────────
+
+  it("does not show the Scan selected button when nothing is selected", () => {
+    render(<HostsPage />);
+    expect(
+      screen.queryByRole("button", { name: /scan selected/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the Scan selected button after checking a host row", async () => {
+    render(<HostsPage />);
+    const rows = screen.getAllByRole("row");
+    const checkbox = within(rows[1]).getByRole("checkbox");
+    await userEvent.click(checkbox);
+    expect(
+      screen.getByRole("button", { name: /scan selected/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the scan modal with initialTargets when Scan selected is clicked", async () => {
+    render(<HostsPage />);
+    const rows = screen.getAllByRole("row");
+    const checkbox = within(rows[1]).getByRole("checkbox");
+    await userEvent.click(checkbox);
+    await userEvent.click(
+      screen.getByRole("button", { name: /scan selected/i }),
+    );
+    expect(screen.getByTestId("run-scan-modal")).toBeInTheDocument();
+    expect(screen.getByTestId("bulk-scan-targets")).toHaveTextContent(
+      "192.168.1.1",
+    );
+  });
+
+  it("passes all selected IPs when multiple hosts are checked", async () => {
+    render(<HostsPage />);
+    const rows = screen.getAllByRole("row");
+    await userEvent.click(within(rows[1]).getByRole("checkbox"));
+    await userEvent.click(within(rows[2]).getByRole("checkbox"));
+    await userEvent.click(
+      screen.getByRole("button", { name: /scan selected/i }),
+    );
+    const targets = screen.getByTestId("bulk-scan-targets").textContent ?? "";
+    expect(targets).toContain("192.168.1.1");
+    expect(targets).toContain("192.168.1.2");
+  });
+
+  it("closes the scan modal when it calls onClose", async () => {
+    render(<HostsPage />);
+    const rows = screen.getAllByRole("row");
+    await userEvent.click(within(rows[1]).getByRole("checkbox"));
+    await userEvent.click(
+      screen.getByRole("button", { name: /scan selected/i }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /close scan modal/i }),
+    );
+    expect(screen.queryByTestId("run-scan-modal")).not.toBeInTheDocument();
   });
 });
