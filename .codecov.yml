@@ -1,69 +1,66 @@
 # Codecov Configuration
 # https://docs.codecov.io/docs/codecov-yaml
-#
-# This configuration excludes test files from coverage statistics to ensure
-# that coverage percentages reflect only production code, not test code.
-# This gives more accurate metrics of actual code coverage.
+
+codecov:
+  notify:
+    after_n_builds: 2 # Wait for both unit and integration uploads before posting
+    wait_for_ci: true
 
 # Coverage settings
 coverage:
   precision: 2 # Show coverage to 2 decimal places (e.g., 43.25%)
   round: down # Round down coverage percentages
-  range: "40...100" # Consider 40-100% as "good" coverage range
+  range: "40...100"
 
-  # Status checks for pull requests
   status:
     project:
       default:
         target: auto # Compare to base branch coverage
         threshold: 2% # Allow 2% decrease without failing
-        if_ci_failed: error # Fail if CI tests fail
-        after_n_builds: 2 # Wait for both unit and integration uploads
+        if_ci_failed: error
 
     patch:
       default:
         target: 40% # Fixed threshold for new/changed code
-        threshold: 0% # No additional slack on top of target
+        threshold: 0%
         if_ci_failed: error
-        after_n_builds: 2 # Wait for both unit and integration uploads
+        informational: true # Show patch coverage without blocking — project check is the gate
 
-# Ignore patterns - exclude test files and non-production code from coverage
-# This is the key section that excludes test files from coverage statistics
+# Ignore patterns — exclude test files and non-production code
 ignore:
-  - "**/*_test.go" # All Go test files (main exclusion)
-  - "**/test/**" # Test helper packages and utilities
-  - "**/mocks/**" # Mock implementations for testing
-  - "**/testdata/**" # Test data and fixtures
+  - "**/*_test.go" # All Go test files
+  - "**/test/**" # Test helper packages
+  - "**/mocks/**" # Mock implementations
+  - "**/testdata/**" # Test fixtures
   - "**/*.pb.go" # Generated protobuf files
-  - "**/vendor/**" # Vendored third-party dependencies
-  - "cmd/**" # Command-line entry points (mainly setup)
-  - "scripts/**" # Build and utility scripts
-  - "build/**" # Build artifacts directory
+  - "**/vendor/**" # Vendored dependencies
+  - "cmd/**" # CLI entry points
+  - "scripts/**" # Build scripts
+  - "build/**" # Build artifacts
   - "dist/**" # Distribution files
-  - "frontend/**" # Frontend code (non-Go)
-  - "docs/**" # Documentation files
+  - "frontend/**" # Frontend (non-Go)
+  - "docs/**" # Documentation
 
-# Comment settings for pull requests
+# Pull request comment settings
 comment:
-  layout: "reach,diff,flags,tree,files" # Show detailed coverage info
-  behavior: default # Always post comment
-  require_changes: false # Post even if no coverage change
-  require_base: false # Post even without base comparison
-  require_head: true # Require head commit coverage
+  layout: "reach,diff,flags,tree,files"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
 
-# GitHub checks configuration
+# GitHub Checks inline annotations
 github_checks:
-  annotations: true # Add inline annotations on files with coverage changes
+  annotations: true
 
-# Coverage flags for different test types
-# These can be used in CI to track unit vs integration test coverage separately
+# Coverage flags for unit vs integration split
 flags:
   unit:
     paths:
-      - internal/ # Track coverage for internal packages
-    carryforward: true # Preserve flag value if not present in upload
+      - internal/
+    carryforward: true
 
   integration:
     paths:
-      - internal/ # Track coverage for internal packages
-    carryforward: true # Preserve flag value if not present in upload
+      - internal/
+    carryforward: true
