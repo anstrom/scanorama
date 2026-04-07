@@ -415,6 +415,16 @@ func convertNmapHost(h *nmap.Host) *Host {
 		}
 	}
 
+	// Derive per-host scan duration from the nmap XML start/end timestamps.
+	// nmap.Timestamp is an alias for time.Time, so a zero value means the
+	// attribute was absent in the XML (host was down or timing not reported).
+	start := time.Time(h.StartTime)
+	end := time.Time(h.EndTime)
+	if !start.IsZero() && !end.IsZero() && end.After(start) {
+		ms := int(end.Sub(start).Milliseconds())
+		host.ScanDurationMs = &ms
+	}
+
 	return host
 }
 
@@ -700,12 +710,13 @@ func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostR
 	portScans := make([]*db.PortScan, 0, len(host.Ports))
 	for _, port := range host.Ports {
 		portScan := &db.PortScan{
-			ID:       uuid.New(),
-			JobID:    jobID,
-			HostID:   dbHost.ID,
-			Port:     int(port.Number),
-			Protocol: port.Protocol,
-			State:    port.State,
+			ID:             uuid.New(),
+			JobID:          jobID,
+			HostID:         dbHost.ID,
+			Port:           int(port.Number),
+			Protocol:       port.Protocol,
+			State:          port.State,
+			ScanDurationMs: host.ScanDurationMs,
 		}
 
 		if port.Service != "" {

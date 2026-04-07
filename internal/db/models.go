@@ -417,6 +417,7 @@ type PortScan struct {
 	ServiceProduct *string   `db:"service_product" json:"service_product,omitempty"`
 	Banner         *string   `db:"banner" json:"banner,omitempty"`
 	ScannedAt      time.Time `db:"scanned_at" json:"scanned_at"`
+	ScanDurationMs *int      `db:"scan_duration_ms" json:"scan_duration_ms,omitempty"`
 }
 
 // Service represents detailed service detection.
