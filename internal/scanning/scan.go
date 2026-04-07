@@ -218,6 +218,23 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 			return nil, errors.WrapScanError(errors.CodeTimeout, "scan operation timed out", err)
 		}
 
+		// Detect privilege errors: SYN, ACK, and UDP scans require raw sockets
+		// (root / CAP_NET_RAW). Surface a clear message rather than the generic
+		// "scanner execution failed" so operators know exactly what to fix.
+		errStr := err.Error()
+		if strings.Contains(errStr, "Operation not permitted") ||
+			strings.Contains(errStr, "requires root privileges") ||
+			strings.Contains(errStr, "requires elevated privileges") ||
+			strings.Contains(errStr, "raw sockets") ||
+			strings.Contains(errStr, "You requested a scan type which requires") {
+			metrics.GetGlobalMetrics().IncrementScanErrors(config.ScanType, "permission_denied")
+			logging.Error("Scanner requires elevated privileges",
+				"scan_type", config.ScanType, "error", err)
+			return nil, errors.WrapScanError(errors.CodeScanFailed,
+				"scan type '"+config.ScanType+"' requires root privileges (CAP_NET_RAW); "+
+					"switch to scan type 'connect' or run the daemon as root", err)
+		}
+
 		metrics.GetGlobalMetrics().IncrementScanErrors(config.ScanType, "execution_failed")
 		logging.Error("Scanner execution failed", "scan_type", config.ScanType, "error", err)
 		return nil, errors.WrapScanError(errors.CodeScanFailed, "scanner execution failed", err)

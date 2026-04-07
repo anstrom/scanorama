@@ -418,11 +418,12 @@ func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error
 		concreteDB = svc.DB()
 	}
 
+	scanType := firstNonEmpty(scan.ScanType, h.scanMode, "connect")
 	scanConfig := &scanning.ScanConfig{
 		Targets:     scan.Targets,
 		Ports:       scan.Ports,
-		ScanType:    firstNonEmpty(scan.ScanType, h.scanMode, "connect"),
-		TimeoutSec:  300,
+		ScanType:    scanType,
+		TimeoutSec:  scanning.CalculateTimeout(scan.Ports, len(scan.Targets), scanType),
 		OSDetection: getOptionBool(scan.Options, "os_detection"),
 		ScanID:      &scanID,
 	}
