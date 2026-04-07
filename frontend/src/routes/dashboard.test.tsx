@@ -21,16 +21,24 @@ vi.mock("../api/hooks/use-hosts", () => ({
   useActiveHostCount: vi.fn(),
 }));
 
+vi.mock("../api/hooks/use-discovery", () => ({
+  useDiscoveryJobs: vi.fn(),
+  useDiscoveryDiff: vi.fn(),
+}));
+
 import { useVersion } from "../api/hooks/use-system";
 import { useNetworkStats } from "../api/hooks/use-networks";
 import { useRecentScans, useScanActivity } from "../api/hooks/use-scans";
 import { useActiveHostCount } from "../api/hooks/use-hosts";
+import { useDiscoveryJobs, useDiscoveryDiff } from "../api/hooks/use-discovery";
 
 const mockUseVersion = vi.mocked(useVersion);
 const mockUseNetworkStats = vi.mocked(useNetworkStats);
 const mockUseRecentScans = vi.mocked(useRecentScans);
 const mockUseScanActivity = vi.mocked(useScanActivity);
 const mockUseActiveHostCount = vi.mocked(useActiveHostCount);
+const mockUseDiscoveryJobs = vi.mocked(useDiscoveryJobs);
+const mockUseDiscoveryDiff = vi.mocked(useDiscoveryDiff);
 
 function setupDefaultMocks() {
   mockUseVersion.mockReturnValue({
@@ -78,6 +86,17 @@ function setupDefaultMocks() {
     data: [],
     isLoading: false,
   } as unknown as ReturnType<typeof useScanActivity>);
+
+  mockUseDiscoveryJobs.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+  } as unknown as ReturnType<typeof useDiscoveryJobs>);
+
+  mockUseDiscoveryDiff.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof useDiscoveryDiff>);
 }
 
 beforeEach(() => {
@@ -251,6 +270,92 @@ describe("DashboardPage", () => {
       data: undefined,
       isLoading: true,
     } as unknown as ReturnType<typeof useRecentScans>);
+    const { container } = await renderWithRouter(<DashboardPage />);
+    const skeletons = container.querySelectorAll(".animate-pulse");
+    expect(skeletons.length).toBeGreaterThan(0);
+  });
+
+  // ── Recent Discovery Changes widget ───────────────────────────────────────
+
+  it("shows Recent Discovery Changes heading", async () => {
+    await renderWithRouter(<DashboardPage />);
+    expect(screen.getByText("Recent Discovery Changes")).toBeInTheDocument();
+  });
+
+  it("shows no discovery runs yet when there are no completed jobs", async () => {
+    mockUseDiscoveryJobs.mockReturnValue({
+      data: {
+        data: [],
+        pagination: { page: 1, page_size: 1, total_items: 0, total_pages: 0 },
+      },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useDiscoveryJobs>);
+    await renderWithRouter(<DashboardPage />);
+    expect(screen.getByText("No discovery runs yet.")).toBeInTheDocument();
+  });
+
+  it("shows diff counts when a completed job and diff are available", async () => {
+    mockUseDiscoveryJobs.mockReturnValue({
+      data: {
+        data: [
+          {
+            id: "job-1",
+            name: "Office LAN",
+            networks: ["10.0.1.0/24"],
+            status: "completed",
+            started_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          },
+        ],
+        pagination: { page: 1, page_size: 1, total_items: 1, total_pages: 1 },
+      },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useDiscoveryJobs>);
+    mockUseDiscoveryDiff.mockReturnValue({
+      data: {
+        job_id: "job-1",
+        new_hosts: [
+          {
+            id: "h1",
+            ip_address: "10.0.1.50",
+            status: "up",
+            last_seen: new Date().toISOString(),
+            first_seen: new Date().toISOString(),
+          },
+          {
+            id: "h2",
+            ip_address: "10.0.1.51",
+            status: "up",
+            last_seen: new Date().toISOString(),
+            first_seen: new Date().toISOString(),
+          },
+        ],
+        gone_hosts: [
+          {
+            id: "h3",
+            ip_address: "10.0.1.10",
+            status: "down",
+            last_seen: new Date().toISOString(),
+            first_seen: new Date().toISOString(),
+          },
+        ],
+        changed_hosts: [],
+        unchanged_count: 47,
+      },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useDiscoveryDiff>);
+    await renderWithRouter(<DashboardPage />);
+    expect(screen.getByText(/2 new/)).toBeInTheDocument();
+    expect(screen.getByText(/1 gone/)).toBeInTheDocument();
+    expect(screen.getByText(/47 unchanged/)).toBeInTheDocument();
+  });
+
+  it("shows loading skeleton for the discovery widget while jobs are loading", async () => {
+    mockUseDiscoveryJobs.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+    } as unknown as ReturnType<typeof useDiscoveryJobs>);
     const { container } = await renderWithRouter(<DashboardPage />);
     const skeletons = container.querySelectorAll(".animate-pulse");
     expect(skeletons.length).toBeGreaterThan(0);
