@@ -173,27 +173,39 @@ func (r *HostRepository) UpsertForScan(ctx context.Context, ipAddr IPAddr, statu
 // host_status_events and updates previous_status / status_changed_at
 // automatically without any extra work here.
 //
+// A row is also inserted into host_timeout_events for every affected host so
+// the frontend can surface an accurate "last timed out" timestamp and a full
+// per-host miss history without reconstructing it from the status-change log.
+//
 // Returns the number of rows updated (newly gone + already gone).
 func (r *HostRepository) MarkGoneHosts(
 	ctx context.Context,
 	networkCIDR string,
 	discoveredIPs []string,
+	discoveryRunID uuid.UUID,
 ) (int, error) {
-	// Process both "up" hosts (transition to "gone") and already-"gone" hosts
-	// (keep status, but still bump the consecutive-miss counter).
+	// A single CTE atomically updates the hosts and inserts one timeout event
+	// per affected row, keyed to the discovery run that triggered the miss.
 	query := `
-		UPDATE hosts
-		   SET status        = CASE WHEN status = $1 THEN $2 ELSE status END,
-		       timeout_count = timeout_count + 1
-		 WHERE ip_address <<= $3::cidr
-		   AND status        IN ($1, $2)
-		   AND NOT (ip_address = ANY($4::inet[]))`
+		WITH updated AS (
+			UPDATE hosts
+			   SET status        = CASE WHEN status = $1 THEN $2 ELSE status END,
+			       timeout_count = timeout_count + 1
+			 WHERE ip_address <<= $3::cidr
+			   AND status        IN ($1, $2)
+			   AND NOT (ip_address = ANY($4::inet[]))
+			RETURNING id
+		)
+		INSERT INTO host_timeout_events (host_id, source, discovery_run_id)
+		SELECT id, 'discovery', $5
+		FROM updated`
 
 	result, err := r.db.ExecContext(ctx, query,
 		HostStatusUp,
 		HostStatusGone,
 		networkCIDR,
 		pq.Array(discoveredIPs),
+		discoveryRunID,
 	)
 	if err != nil {
 		return 0, sanitizeDBError("mark gone hosts", err)
