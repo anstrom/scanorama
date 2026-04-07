@@ -16,6 +16,7 @@ import (
 
 	"github.com/anstrom/scanorama/internal/api"
 	"github.com/anstrom/scanorama/internal/config"
+	"github.com/anstrom/scanorama/internal/daemon"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/logging"
 )
@@ -245,6 +246,19 @@ func runAPIServer(_ *cobra.Command, _ []string) error {
 	printAPIEndpoints()
 
 	logger.Info("API server started", "address", cfg.GetAPIAddress())
+
+	// Drop root privileges if daemon.user / daemon.group are configured.
+	// This must happen after the API server is bound and all privileged
+	// initialisation is complete. Once dropped, the process cannot reclaim
+	// root — callers that need nmap SYN/OS-detection scans should leave
+	// both fields empty so the process retains the privileges nmap needs.
+	if err := daemon.DropPrivileges(
+		cfg.Daemon.User,
+		cfg.Daemon.Group,
+		func(format string, args ...any) { logger.Info(fmt.Sprintf(format, args...)) },
+	); err != nil {
+		return fmt.Errorf("failed to drop privileges: %w", err)
+	}
 
 	// Wait for shutdown signal or server error
 	select {

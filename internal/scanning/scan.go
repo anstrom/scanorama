@@ -31,6 +31,9 @@ const (
 	defaultTargetCapacity       = 10
 	nullMethodValue             = "NULL"
 	scanTypeConnect             = "connect"
+	scanTypeSYN                 = "syn"
+	scanTypeACK                 = "ack"
+	scanTypeUDP                 = "udp"
 	scanTypeAggressive          = "aggressive"
 	scanTypeComprehensive       = "comprehensive"
 	udpTimeoutMultiplier        = 4
@@ -72,7 +75,7 @@ func CalculateTimeout(ports string, targetCount int, scanType string) int {
 
 	// UDP is significantly slower — retransmit delays add up.
 	hasUDP := strings.Contains(ports, "U:")
-	if scanType == "udp" || hasUDP {
+	if scanType == scanTypeUDP || hasUDP {
 		seconds *= udpTimeoutMultiplier
 	}
 
@@ -304,11 +307,11 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 	switch config.ScanType {
 	case scanTypeConnect:
 		options = append(options, nmap.WithConnectScan())
-	case "syn":
+	case scanTypeSYN:
 		options = append(options, nmap.WithSYNScan())
-	case "ack":
+	case scanTypeACK:
 		options = append(options, nmap.WithACKScan())
-	case "udp":
+	case scanTypeUDP:
 		options = append(options, nmap.WithUDPScan())
 	case scanTypeAggressive:
 		options = append(options,
@@ -328,6 +331,17 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 
 	if config.OSDetection {
 		options = append(options, nmap.WithOSDetection())
+	}
+
+	// Tell nmap to assume it is fully privileged when the scan requires raw
+	// sockets (SYN/ACK/UDP/OS-detection). This is necessary when the nmap
+	// binary runs via SUID root or Linux capabilities (CAP_NET_RAW): without
+	// --privileged nmap checks its own EUID and may abort before even trying,
+	// even though it actually has the OS-level access it needs.
+	// Connect-only scans without OS detection never need raw sockets, so we
+	// leave --privileged off to avoid unnecessary permission escalation.
+	if scanNeedsPrivileged(config, hasUDP) {
+		options = append(options, nmap.WithPrivileged())
 	}
 
 	// Add nmap timing template. The Timing field (set from the scan profile) takes
@@ -514,6 +528,20 @@ func PrintResults(result *ScanResult) {
 		}
 		fmt.Println()
 	}
+}
+
+// scanNeedsPrivileged reports whether the scan configuration requires raw
+// socket access (CAP_NET_RAW / SUID root). Used to decide whether to pass
+// --privileged to nmap so it does not abort its own EUID pre-check when
+// running via SUID or Linux capabilities.
+func scanNeedsPrivileged(config *ScanConfig, hasUDP bool) bool {
+	return config.OSDetection ||
+		hasUDP ||
+		config.ScanType == scanTypeSYN ||
+		config.ScanType == scanTypeACK ||
+		config.ScanType == scanTypeUDP ||
+		config.ScanType == scanTypeAggressive ||
+		config.ScanType == scanTypeComprehensive
 }
 
 // privilegeErrorMessage returns an actionable error string explaining which
