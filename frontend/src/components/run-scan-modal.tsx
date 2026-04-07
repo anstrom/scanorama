@@ -29,17 +29,28 @@ const SCAN_TYPES: { value: ScanType; label: string }[] = [
 export interface RunScanModalProps {
   /** Pre-fill the target field (e.g. a host IP from the Hosts page). */
   initialTarget?: string;
+  /**
+   * Pre-set targets for bulk scanning (e.g. IPs from a multi-host selection).
+   * When provided the target source section is hidden and these IPs are used
+   * directly as scan targets.
+   */
+  initialTargets?: string[];
   onClose: () => void;
-  /** Called after the scan is successfully submitted. */
-  onSubmitted?: () => void;
+  /** Called after the scan is successfully submitted, with the new scan ID. */
+  onSubmitted?: (scanId?: string) => void;
 }
 
 export function RunScanModal({
   initialTarget = "",
+  initialTargets,
   onClose,
   onSubmitted,
 }: RunScanModalProps) {
   const id = useId();
+
+  // When initialTargets is provided the source UI is locked to those IPs.
+  const lockedTargets =
+    initialTargets && initialTargets.length > 0 ? initialTargets : null;
 
   // Source: manual free-text entry vs. picking a registered network
   const [source, setSource] = useState<Source>("manual");
@@ -93,7 +104,15 @@ export function RunScanModal({
     let effectiveTargets: string[];
     let scanName: string;
 
-    if (source === "network") {
+    if (lockedTargets) {
+      effectiveTargets = lockedTargets;
+      scanName =
+        "Ad-hoc scan: " +
+        effectiveTargets[0] +
+        (effectiveTargets.length > 1
+          ? " +" + (effectiveTargets.length - 1)
+          : "");
+    } else if (source === "network") {
       if (!selectedNetwork) {
         setError("Please select a network.");
         return;
@@ -186,12 +205,12 @@ export function RunScanModal({
         setError(
           'Scan was created but could not be started. It will appear as "pending" in the Scans page.',
         );
-        onSubmitted?.();
+        onSubmitted?.(scanId?.toString());
         return;
       }
     }
 
-    onSubmitted?.();
+    onSubmitted?.(scanId ?? undefined);
     onClose();
   }
 
@@ -236,139 +255,165 @@ export function RunScanModal({
 
         {/* Body */}
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-5">
-          {/* Target source toggle */}
-          <div className="space-y-1.5">
-            <span className="block text-xs font-medium text-text-primary">
-              Target source
-            </span>
-            <div
-              role="radiogroup"
-              aria-label="Target source"
-              className="flex rounded border border-border overflow-hidden text-xs"
-            >
-              {(["manual", "network"] as Source[]).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  role="radio"
-                  aria-checked={source === s}
-                  onClick={() => handleSourceChange(s)}
-                  className={cn(
-                    "flex-1 py-1.5 text-center transition-colors",
-                    source === s
-                      ? "bg-accent text-white font-medium"
-                      : "text-text-secondary hover:bg-surface-raised",
-                  )}
-                >
-                  {s === "manual" ? "Manual" : "Network"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Manual: free-text target */}
-          {source === "manual" && (
+          {/* Locked targets (bulk scan from host selection) */}
+          {lockedTargets ? (
             <div className="space-y-1.5">
-              <label
-                htmlFor={`${id}-target`}
-                className="block text-xs font-medium text-text-primary"
-              >
-                Target
-              </label>
-              <input
-                id={`${id}-target`}
-                type="text"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                placeholder="192.168.1.1, 10.0.0.0/24…"
-                autoFocus
+              <span className="block text-xs font-medium text-text-primary">
+                Targets
+                <span className="ml-1.5 text-text-muted font-normal">
+                  ({lockedTargets.length} host
+                  {lockedTargets.length !== 1 ? "s" : ""})
+                </span>
+              </span>
+              <div
                 className={cn(
-                  "w-full px-3 py-1.5 text-xs rounded border border-border font-mono",
-                  "bg-surface text-text-primary placeholder:text-text-muted",
-                  "focus:outline-none focus:ring-1 focus:ring-border",
+                  "px-3 py-2 rounded border border-border bg-surface-raised",
+                  "max-h-28 overflow-y-auto",
                 )}
-              />
-              <p className="text-xs text-text-muted">
-                Comma-separated IPs, ranges, or CIDR blocks.
-              </p>
-            </div>
-          )}
-
-          {/* Network: registered network picker */}
-          {source === "network" && (
-            <div className="space-y-2">
-              <label
-                htmlFor={`${id}-network`}
-                className="block text-xs font-medium text-text-primary"
               >
-                Network
-              </label>
-
-              {networksLoading ? (
-                <div className="flex items-center gap-2 text-xs text-text-muted py-1">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Loading networks…
-                </div>
-              ) : networks.length === 0 ? (
-                <p className="text-xs text-text-muted py-1">
-                  No networks found. Add one on the Networks page first.
+                <p className="font-mono text-xs text-text-secondary leading-5">
+                  {lockedTargets.join(", ")}
                 </p>
-              ) : (
-                <select
-                  id={`${id}-network`}
-                  value={selectedNetworkId}
-                  onChange={(e) => setSelectedNetworkId(e.target.value)}
-                  aria-label="Select network"
-                  className={cn(
-                    "w-full px-3 py-1.5 text-xs rounded border border-border",
-                    "bg-surface text-text-primary",
-                    "focus:outline-none focus:ring-1 focus:ring-border",
-                  )}
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Target source toggle */}
+              <div className="space-y-1.5">
+                <span className="block text-xs font-medium text-text-primary">
+                  Target source
+                </span>
+                <div
+                  role="radiogroup"
+                  aria-label="Target source"
+                  className="flex rounded border border-border overflow-hidden text-xs"
                 >
-                  <option value="">— Select a network —</option>
-                  {networks.map((n) => (
-                    <option key={n.id} value={n.id ?? ""}>
-                      {n.name
-                        ? n.name + (n.cidr ? " — " + n.cidr : "")
-                        : (n.cidr ?? "")}
-                    </option>
+                  {(["manual", "network"] as Source[]).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      role="radio"
+                      aria-checked={source === s}
+                      onClick={() => handleSourceChange(s)}
+                      className={cn(
+                        "flex-1 py-1.5 text-center transition-colors",
+                        source === s
+                          ? "bg-accent text-white font-medium"
+                          : "text-text-secondary hover:bg-surface-raised",
+                      )}
+                    >
+                      {s === "manual" ? "Manual" : "Network"}
+                    </button>
                   ))}
-                </select>
-              )}
+                </div>
+              </div>
 
-              {/* Selected network info pill */}
-              {selectedNetwork && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded bg-surface-raised border border-border/50 text-xs">
-                  <Network className="h-3.5 w-3.5 text-text-muted shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <span className="font-mono text-text-primary">
-                      {selectedNetwork.cidr}
-                    </span>
-                    {selectedNetwork.active_host_count != null && (
-                      <span className="ml-2 text-text-muted">
-                        {selectedNetwork.active_host_count}
-                        {" active host"}
-                        {selectedNetwork.active_host_count !== 1 ? "s" : ""}
-                      </span>
-                    )}
-                  </div>
-                  <span
-                    className={cn(
-                      "shrink-0 px-1.5 py-0.5 rounded text-[11px] font-medium",
-                      selectedNetwork.is_active
-                        ? "bg-success/15 text-success"
-                        : "bg-text-muted/15 text-text-muted",
-                    )}
+              {/* Manual: free-text target */}
+              {source === "manual" && (
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor={`${id}-target`}
+                    className="block text-xs font-medium text-text-primary"
                   >
-                    {selectedNetwork.is_active ? "active" : "inactive"}
-                  </span>
+                    Target
+                  </label>
+                  <input
+                    id={`${id}-target`}
+                    type="text"
+                    value={target}
+                    onChange={(e) => setTarget(e.target.value)}
+                    placeholder="192.168.1.1, 10.0.0.0/24…"
+                    autoFocus
+                    className={cn(
+                      "w-full px-3 py-1.5 text-xs rounded border border-border font-mono",
+                      "bg-surface text-text-primary placeholder:text-text-muted",
+                      "focus:outline-none focus:ring-1 focus:ring-border",
+                    )}
+                  />
+                  <p className="text-xs text-text-muted">
+                    Comma-separated IPs, ranges, or CIDR blocks.
+                  </p>
                 </div>
               )}
 
-              <p className="text-xs text-text-muted">
-                The network's full CIDR range will be used as the scan target.
-              </p>
-            </div>
+              {/* Network: registered network picker */}
+              {source === "network" && (
+                <div className="space-y-2">
+                  <label
+                    htmlFor={`${id}-network`}
+                    className="block text-xs font-medium text-text-primary"
+                  >
+                    Network
+                  </label>
+
+                  {networksLoading ? (
+                    <div className="flex items-center gap-2 text-xs text-text-muted py-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Loading networks…
+                    </div>
+                  ) : networks.length === 0 ? (
+                    <p className="text-xs text-text-muted py-1">
+                      No networks found. Add one on the Networks page first.
+                    </p>
+                  ) : (
+                    <select
+                      id={`${id}-network`}
+                      value={selectedNetworkId}
+                      onChange={(e) => setSelectedNetworkId(e.target.value)}
+                      aria-label="Select network"
+                      className={cn(
+                        "w-full px-3 py-1.5 text-xs rounded border border-border",
+                        "bg-surface text-text-primary",
+                        "focus:outline-none focus:ring-1 focus:ring-border",
+                      )}
+                    >
+                      <option value="">— Select a network —</option>
+                      {networks.map((n) => (
+                        <option key={n.id} value={n.id ?? ""}>
+                          {n.name
+                            ? n.name + (n.cidr ? " — " + n.cidr : "")
+                            : (n.cidr ?? "")}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {/* Selected network info pill */}
+                  {selectedNetwork && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded bg-surface-raised border border-border/50 text-xs">
+                      <Network className="h-3.5 w-3.5 text-text-muted shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <span className="font-mono text-text-primary">
+                          {selectedNetwork.cidr}
+                        </span>
+                        {selectedNetwork.active_host_count != null && (
+                          <span className="ml-2 text-text-muted">
+                            {selectedNetwork.active_host_count}
+                            {" active host"}
+                            {selectedNetwork.active_host_count !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        className={cn(
+                          "shrink-0 px-1.5 py-0.5 rounded text-[11px] font-medium",
+                          selectedNetwork.is_active
+                            ? "bg-success/15 text-success"
+                            : "bg-text-muted/15 text-text-muted",
+                        )}
+                      >
+                        {selectedNetwork.is_active ? "active" : "inactive"}
+                      </span>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-text-muted">
+                    The network's full CIDR range will be used as the scan
+                    target.
+                  </p>
+                </div>
+              )}
+            </>
           )}
 
           {/* Scan configuration toggle */}
