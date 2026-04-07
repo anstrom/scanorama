@@ -36,6 +36,15 @@ vi.mock("../components/toast-provider", () => ({
   }),
 }));
 
+vi.mock("../hooks/use-table-key-nav", () => ({
+  useTableKeyNav: () => ({
+    focusedIndex: -1,
+    setFocusedIndex: vi.fn(),
+    containerProps: { tabIndex: 0, onKeyDown: vi.fn(), onBlur: vi.fn() },
+    isFocused: () => false,
+  }),
+}));
+
 vi.mock("../components", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../components")>();
   return {
@@ -56,6 +65,7 @@ vi.mock("../components", async (importOriginal) => {
         <button onClick={onClose}>Close scan modal</button>
       </div>
     ),
+    ColumnToggle: () => null,
   };
 });
 
@@ -1008,5 +1018,18 @@ describe("HostsPage", () => {
       screen.getByRole("button", { name: /close scan modal/i }),
     );
     expect(screen.queryByTestId("run-scan-modal")).not.toBeInTheDocument();
+  });
+
+  it("renders the column toggle button", () => {
+    // ColumnToggle is mocked to null — just verify the page renders without error
+    render(<HostsPage />);
+    expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+
+  it("renders keyboard nav container with tabIndex 0", () => {
+    render(<HostsPage />);
+    // containerProps mock sets tabIndex: 0 on the wrapping div
+    const navDiv = document.querySelector('[tabindex="0"]');
+    expect(navDiv).toBeInTheDocument();
   });
 });

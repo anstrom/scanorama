@@ -9,10 +9,22 @@ import { Skeleton, PaginationBar } from "../components";
 import { ProfileFormModal } from "../components/profile-form-modal";
 import { formatRelativeTime, formatAbsoluteTime, cn } from "../lib/utils";
 import type { components } from "../api/types";
+import { ColumnToggle } from "../components/column-toggle";
+import type { ColumnDef } from "../components/column-toggle";
 
 type ProfileResponse = components["schemas"]["docs.ProfileResponse"];
 
 const PAGE_SIZE = 25;
+
+// ── Column definitions ────────────────────────────────────────────────────────
+
+const PROFILE_COLUMNS: ColumnDef[] = [
+  { key: "name", label: "Name", alwaysVisible: true },
+  { key: "scan_type", label: "Scan Type", alwaysVisible: true },
+  { key: "ports", label: "Ports" },
+  { key: "description", label: "Description" },
+  { key: "updated", label: "Updated" },
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -36,7 +48,7 @@ const SCAN_TYPE_SHORT_LABELS: Record<string, string> = {
 
 // ── Skeleton rows ─────────────────────────────────────────────────────────────
 
-function SkeletonRows() {
+function SkeletonRows({ colVis }: { colVis: Record<string, boolean> }) {
   return (
     <>
       {Array.from({ length: 6 }).map((_, i) => (
@@ -47,15 +59,21 @@ function SkeletonRows() {
           <td className="px-4 py-2.5">
             <Skeleton className="h-3 w-20" />
           </td>
-          <td className="px-4 py-2.5">
-            <Skeleton className="h-3 w-28 font-mono" />
-          </td>
-          <td className="px-4 py-2.5">
-            <Skeleton className="h-3 w-40" />
-          </td>
-          <td className="px-4 py-2.5">
-            <Skeleton className="h-3 w-16" />
-          </td>
+          {colVis.ports && (
+            <td className="px-4 py-2.5">
+              <Skeleton className="h-3 w-28 font-mono" />
+            </td>
+          )}
+          {colVis.description && (
+            <td className="px-4 py-2.5">
+              <Skeleton className="h-3 w-40" />
+            </td>
+          )}
+          {colVis.updated && (
+            <td className="px-4 py-2.5">
+              <Skeleton className="h-3 w-16" />
+            </td>
+          )}
         </tr>
       ))}
     </>
@@ -68,7 +86,7 @@ function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex gap-2 text-xs">
       <span className="text-text-muted w-32 shrink-0">{label}</span>
-      <span className="text-text-secondary break-all">{value ?? "—"}</span>
+      <span className="text-text-secondary break-all">{value ?? "\u2014"}</span>
     </div>
   );
 }
@@ -134,7 +152,7 @@ function ProfileDetailPanel({
           <div className="flex flex-col gap-1.5 min-w-0">
             <p className="text-xs text-text-muted">Profile</p>
             <p className="text-sm font-medium text-text-primary truncate">
-              {p.name ?? "—"}
+              {p.name ?? "\u2014"}
             </p>
             {p.scan_type && (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-accent/15 text-accent w-fit">
@@ -255,7 +273,7 @@ function ProfileDetailPanel({
         </div>
       </div>
 
-      {/* Edit modal — rendered outside the panel div so z-index stacking works */}
+      {/* Edit modal -- rendered outside the panel div so z-index stacking works */}
       {showEditModal && (
         <ProfileFormModal
           mode="edit"
@@ -285,6 +303,18 @@ export function ProfilesPage() {
   const [selectedProfile, setSelectedProfile] =
     useState<ProfileResponse | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [colVis, setColVis] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(PROFILE_COLUMNS.map((c) => [c.key, true])),
+  );
+
+  const toggleCol = useCallback((key: string) => {
+    const col = PROFILE_COLUMNS.find((c) => c.key === key);
+    if (col?.alwaysVisible) return;
+    setColVis((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const visibleColCount =
+    PROFILE_COLUMNS.filter((c) => colVis[c.key] !== false).length + 1; // +1 for actions
 
   const handleSort = useCallback(
     (column: string) => {
@@ -327,7 +357,7 @@ export function ProfilesPage() {
   const pagination = data?.pagination;
   const totalPages = pagination?.total_pages ?? 1;
 
-  // Client-side name filter — the API doesn't expose a search query param
+  // Client-side name filter -- the API does not expose a search query param
   const profiles = debouncedSearch.trim()
     ? allProfiles.filter((p) =>
         (p.name ?? "")
@@ -346,8 +376,8 @@ export function ProfilesPage() {
             type="text"
             value={search}
             onChange={(e) => handleSearchInput(e.target.value)}
-            placeholder="Search by name…"
-            aria-label="Search by name…"
+            placeholder="Search by name\u2026"
+            aria-label="Search by name\u2026"
             className={cn(
               "w-full pl-3 pr-3 py-1.5 text-xs rounded border border-border",
               "bg-surface text-text-primary placeholder:text-text-muted",
@@ -358,6 +388,13 @@ export function ProfilesPage() {
 
         {/* Spacer */}
         <div className="flex-1" />
+
+        {/* Column toggle */}
+        <ColumnToggle
+          columns={PROFILE_COLUMNS}
+          visibility={colVis}
+          onToggle={toggleCol}
+        />
 
         {/* Create profile */}
         <Button
@@ -390,29 +427,35 @@ export function ProfilesPage() {
                 onSort={handleSort}
                 className="px-4 py-2.5"
               />
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Ports
-              </th>
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Description
-              </th>
-              <SortHeader
-                label="Updated"
-                column="updated_at"
-                sortBy={sortBy}
-                sortOrder={sortOrder}
-                onSort={handleSort}
-                className="px-4 py-2.5"
-              />
+              {colVis.ports && (
+                <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
+                  Ports
+                </th>
+              )}
+              {colVis.description && (
+                <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
+                  Description
+                </th>
+              )}
+              {colVis.updated && (
+                <SortHeader
+                  label="Updated"
+                  column="updated_at"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="px-4 py-2.5"
+                />
+              )}
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <SkeletonRows />
+              <SkeletonRows colVis={colVis} />
             ) : profiles.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={visibleColCount}
                   className="px-4 py-10 text-center text-text-muted"
                 >
                   No profiles found.
@@ -430,25 +473,31 @@ export function ProfilesPage() {
                   )}
                 >
                   <td className="px-4 py-2.5 text-text-primary font-medium truncate max-w-45">
-                    {profile.name ?? "—"}
+                    {profile.name ?? "\u2014"}
                   </td>
                   <td className="px-4 py-2.5 text-text-secondary">
                     {profile.scan_type
                       ? (SCAN_TYPE_SHORT_LABELS[profile.scan_type] ??
                         profile.scan_type)
-                      : "—"}
+                      : "\u2014"}
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-text-secondary whitespace-nowrap">
-                    {profile.ports ?? "—"}
-                  </td>
-                  <td className="px-4 py-2.5 text-text-secondary truncate max-w-50">
-                    {profile.description ?? "—"}
-                  </td>
-                  <td className="px-4 py-2.5 text-text-muted whitespace-nowrap">
-                    {profile.updated_at
-                      ? formatRelativeTime(profile.updated_at)
-                      : "—"}
-                  </td>
+                  {colVis.ports && (
+                    <td className="px-4 py-2.5 font-mono text-text-secondary whitespace-nowrap">
+                      {profile.ports ?? "\u2014"}
+                    </td>
+                  )}
+                  {colVis.description && (
+                    <td className="px-4 py-2.5 text-text-secondary truncate max-w-50">
+                      {profile.description ?? "\u2014"}
+                    </td>
+                  )}
+                  {colVis.updated && (
+                    <td className="px-4 py-2.5 text-text-muted whitespace-nowrap">
+                      {profile.updated_at
+                        ? formatRelativeTime(profile.updated_at)
+                        : "\u2014"}
+                    </td>
+                  )}
                 </tr>
               ))
             )}

@@ -33,6 +33,9 @@ import {
 import { formatRelativeTime } from "../lib/utils";
 import { cn } from "../lib/utils";
 import type { components } from "../api/types";
+import { ColumnToggle } from "../components/column-toggle";
+import type { ColumnDef } from "../components/column-toggle";
+import { useTableKeyNav } from "../hooks/use-table-key-nav";
 
 type HostResponse = components["schemas"]["docs.HostResponse"];
 
@@ -623,7 +626,13 @@ function HostDetailPanel({
 
 type HostStatus = "all" | "up" | "down" | "unknown";
 
-function SkeletonRows({ count }: { count: number }) {
+function SkeletonRows({
+  count,
+  colVis,
+}: {
+  count: number;
+  colVis: Record<string, boolean>;
+}) {
   return (
     <>
       {Array.from({ length: count }).map((_, i) => (
@@ -634,27 +643,44 @@ function SkeletonRows({ count }: { count: number }) {
           <td className="py-3 pr-4">
             <Skeleton className="h-3.5 w-28" />
           </td>
-          <td className="py-3 pr-4">
-            <Skeleton className="h-3.5 w-36" />
-          </td>
+          {colVis.hostname && (
+            <td className="py-3 pr-4">
+              <Skeleton className="h-3.5 w-36" />
+            </td>
+          )}
           <td className="py-3 pr-4">
             <Skeleton className="h-5 w-14" />
           </td>
-          <td className="py-3 pr-4">
-            <Skeleton className="h-3.5 w-20" />
-          </td>
-          <td className="py-3 pr-4">
-            <Skeleton className="h-3.5 w-32" />
-          </td>
-          <td className="py-3 pr-4">
-            <Skeleton className="h-3.5 w-24" />
-          </td>
-          <td className="py-3 pr-4">
-            <Skeleton className="h-3.5 w-20" />
-          </td>
-          <td className="py-3">
-            <Skeleton className="h-3.5 w-8" />
-          </td>
+          {colVis.os && (
+            <td className="py-3 pr-4">
+              <Skeleton className="h-3.5 w-20" />
+            </td>
+          )}
+          {colVis.mac && (
+            <td className="py-3 pr-4">
+              <Skeleton className="h-3.5 w-32" />
+            </td>
+          )}
+          {colVis.vendor && (
+            <td className="py-3 pr-4">
+              <Skeleton className="h-3.5 w-24" />
+            </td>
+          )}
+          {colVis.ports && (
+            <td className="py-3 pr-4">
+              <Skeleton className="h-3.5 w-20" />
+            </td>
+          )}
+          {colVis.last_seen && (
+            <td className="py-3 pr-4">
+              <Skeleton className="h-3.5 w-8" />
+            </td>
+          )}
+          {colVis.scans && (
+            <td className="py-3">
+              <Skeleton className="h-3.5 w-8" />
+            </td>
+          )}
         </tr>
       ))}
     </>
@@ -664,6 +690,18 @@ function SkeletonRows({ count }: { count: number }) {
 // ── OS family filter options ───────────────────────────────────────────────
 
 const OS_FAMILIES = ["Linux", "Windows", "macOS", "FreeBSD", "iOS", "Android"];
+
+const HOST_COLUMNS: ColumnDef[] = [
+  { key: "ip", label: "IP Address", alwaysVisible: true },
+  { key: "hostname", label: "Hostname" },
+  { key: "status", label: "Status", alwaysVisible: true },
+  { key: "os", label: "OS" },
+  { key: "mac", label: "MAC Address" },
+  { key: "vendor", label: "Vendor" },
+  { key: "ports", label: "Open Ports" },
+  { key: "last_seen", label: "Last Seen" },
+  { key: "scans", label: "Scans" },
+];
 
 export function HostsPage() {
   const [page, setPage] = useState(1);
@@ -678,6 +716,9 @@ export function HostsPage() {
   const [selectedHost, setSelectedHost] = useState<HostResponse | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkScanIPs, setBulkScanIPs] = useState<string[] | null>(null);
+  const [colVis, setColVis] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(HOST_COLUMNS.map((c) => [c.key, true])),
+  );
   const { mutateAsync: bulkDeleteHosts, isPending: isBulkDeleting } =
     useBulkDeleteHosts();
   const { toast } = useToast();
@@ -722,6 +763,12 @@ export function HostsPage() {
     });
   }, []);
 
+  const toggleCol = useCallback((key: string) => {
+    const col = HOST_COLUMNS.find((c) => c.key === key);
+    if (col?.alwaysVisible) return;
+    setColVis((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
   const queryParams = {
     page,
     page_size: PAGE_SIZE,
@@ -738,6 +785,33 @@ export function HostsPage() {
   const hosts = useMemo(() => data?.data ?? [], [data]);
   const pagination = data?.pagination;
   const totalPages = pagination?.total_pages ?? 0;
+
+  const { containerProps, isFocused, setFocusedIndex } = useTableKeyNav({
+    items: hosts,
+    onActivate: (host) => setSelectedHost(host),
+    onSelect: (host) => {
+      const id = host.id ?? "";
+      toggleSelect(id, !selectedIds.has(id));
+    },
+    onEscape: () => setSelectedHost(null),
+  });
+
+  const visibleColCount =
+    HOST_COLUMNS.filter((c) => colVis[c.key] !== false).length + 2;
+
+  // Reset keyboard focus when page/filters change
+  useEffect(() => {
+    setFocusedIndex(-1);
+  }, [
+    page,
+    statusFilter,
+    debouncedSearch,
+    sortBy,
+    sortOrder,
+    osFilter,
+    vendorFilter,
+    setFocusedIndex,
+  ]);
 
   // Clamp page back when a filter/search change reduces total_pages below current page.
   if (!isLoading && totalPages > 0 && page > totalPages) {
@@ -857,13 +931,19 @@ export function HostsPage() {
             aria-label="Filter by vendor"
           />
 
-          <Button
-            onClick={() => setScanIP("")}
-            icon={<ScanLine className="h-3.5 w-3.5" />}
-            className="sm:ml-auto"
-          >
-            New scan
-          </Button>
+          <div className="flex items-center gap-2 sm:ml-auto">
+            <Button
+              onClick={() => setScanIP("")}
+              icon={<ScanLine className="h-3.5 w-3.5" />}
+            >
+              New scan
+            </Button>
+            <ColumnToggle
+              columns={HOST_COLUMNS}
+              visibility={colVis}
+              onToggle={toggleCol}
+            />
+          </div>
         </div>
 
         {/* Bulk action bar */}
@@ -900,202 +980,246 @@ export function HostsPage() {
 
         {/* Table card */}
         <div className="bg-surface rounded-lg border border-border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border bg-surface">
-                  <th className="py-3 pl-4 pr-2 w-8">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all hosts"
-                      checked={
-                        hosts.length > 0 && selectedIds.size === hosts.length
-                      }
-                      ref={(el) => {
-                        if (el)
-                          el.indeterminate =
-                            selectedIds.size > 0 &&
-                            selectedIds.size < hosts.length;
-                      }}
-                      onChange={toggleSelectAll}
-                      className="rounded border-border cursor-pointer accent-accent"
+          {/* Keyboard-navigable container */}
+          <div
+            {...containerProps}
+            role="region"
+            className="focus:outline-none"
+            aria-label="Hosts table"
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-surface">
+                    <th className="py-3 pl-4 pr-2 w-8">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all hosts"
+                        checked={
+                          hosts.length > 0 && selectedIds.size === hosts.length
+                        }
+                        ref={(el) => {
+                          if (el)
+                            el.indeterminate =
+                              selectedIds.size > 0 &&
+                              selectedIds.size < hosts.length;
+                        }}
+                        onChange={toggleSelectAll}
+                        className="rounded border-border cursor-pointer accent-accent"
+                      />
+                    </th>
+                    <SortHeader
+                      label="IP Address"
+                      column="ip_address"
+                      sortBy={sortBy}
+                      sortOrder={sortOrder}
+                      onSort={handleSort}
+                      className="px-4"
                     />
-                  </th>
-                  <SortHeader
-                    label="IP Address"
-                    column="ip_address"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={handleSort}
-                    className="px-4"
-                  />
-                  <SortHeader
-                    label="Hostname"
-                    column="hostname"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={handleSort}
-                  />
-                  <SortHeader
-                    label="Status"
-                    column="status"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={handleSort}
-                  />
-                  <SortHeader
-                    label="OS"
-                    column="os_family"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={handleSort}
-                  />
-                  <th className="text-left font-medium text-text-muted py-3 pr-4 whitespace-nowrap">
-                    MAC Address
-                  </th>
-                  <SortHeader
-                    label="Vendor"
-                    column="vendor"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={handleSort}
-                  />
-                  <SortHeader
-                    label="Open Ports"
-                    column="open_ports"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={handleSort}
-                  />
-                  <SortHeader
-                    label="Last Seen"
-                    column="last_seen"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={handleSort}
-                  />
-                  <SortHeader
-                    label="Scans"
-                    column="scan_count"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={handleSort}
-                  />
-                  <th className="py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {isError ? (
-                  <tr>
-                    <td
-                      colSpan={10}
-                      className="py-10 text-center text-xs text-danger"
-                    >
-                      Failed to load hosts.
-                    </td>
+                    {colVis.hostname && (
+                      <SortHeader
+                        label="Hostname"
+                        column="hostname"
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSort={handleSort}
+                      />
+                    )}
+                    <SortHeader
+                      label="Status"
+                      column="status"
+                      sortBy={sortBy}
+                      sortOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    {colVis.os && (
+                      <SortHeader
+                        label="OS"
+                        column="os_family"
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSort={handleSort}
+                      />
+                    )}
+                    {colVis.mac && (
+                      <th className="text-left font-medium text-text-muted py-3 pr-4 whitespace-nowrap">
+                        MAC Address
+                      </th>
+                    )}
+                    {colVis.vendor && (
+                      <SortHeader
+                        label="Vendor"
+                        column="vendor"
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSort={handleSort}
+                      />
+                    )}
+                    {colVis.ports && (
+                      <SortHeader
+                        label="Open Ports"
+                        column="open_ports"
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSort={handleSort}
+                      />
+                    )}
+                    {colVis.last_seen && (
+                      <SortHeader
+                        label="Last Seen"
+                        column="last_seen"
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSort={handleSort}
+                      />
+                    )}
+                    {colVis.scans && (
+                      <SortHeader
+                        label="Scans"
+                        column="scan_count"
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSort={handleSort}
+                      />
+                    )}
+                    <th className="py-3" />
                   </tr>
-                ) : isLoading ? (
-                  <SkeletonRows count={8} />
-                ) : hosts.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={10}
-                      className="py-10 text-center text-xs text-text-muted"
-                    >
-                      No hosts found.
-                    </td>
-                  </tr>
-                ) : (
-                  hosts.map((host) => (
-                    <tr
-                      key={host.id}
-                      onClick={() => setSelectedHost(host)}
-                      className="border-b border-border/50 last:border-0 hover:bg-surface-raised/50 transition-colors cursor-pointer"
-                    >
+                </thead>
+                <tbody>
+                  {isError ? (
+                    <tr>
                       <td
-                        className="py-3 pl-4 pr-2"
-                        onClick={(e) => e.stopPropagation()}
+                        colSpan={visibleColCount}
+                        className="py-10 text-center text-xs text-danger"
                       >
-                        <input
-                          type="checkbox"
-                          aria-label={`Select ${host.ip_address ?? "host"}`}
-                          checked={selectedIds.has(host.id ?? "")}
-                          onChange={(e) =>
-                            toggleSelect(host.id ?? "", e.target.checked)
-                          }
-                          className="rounded border-border cursor-pointer accent-accent"
-                        />
-                      </td>
-                      <td className="py-3 px-4 pr-4 font-mono text-text-primary whitespace-nowrap">
-                        {host.ip_address ?? "—"}
-                      </td>
-                      <td className="py-3 pr-4 text-text-secondary">
-                        {host.hostname ?? "—"}
-                      </td>
-                      <td className="py-3 pr-4">
-                        <StatusBadge status={host.status ?? "unknown"} />
-                      </td>
-                      <td className="py-3 pr-4 text-text-secondary whitespace-nowrap">
-                        {(host as HostWithDetails).os_family ? (
-                          <span
-                            title={
-                              (host as HostWithDetails).os_name ?? undefined
-                            }
-                          >
-                            {(host as HostWithDetails).os_family}
-                          </span>
-                        ) : (
-                          <span className="text-text-muted">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 pr-4 font-mono text-text-muted whitespace-nowrap">
-                        {host.mac_address ?? "—"}
-                      </td>
-                      <td className="py-3 pr-4 text-text-muted whitespace-nowrap">
-                        {(host as HostWithDetails).vendor ?? "—"}
-                      </td>
-                      <td className="py-3 pr-4 tabular-nums text-text-secondary">
-                        {(() => {
-                          const count = (host as HostWithDetails).total_ports;
-                          return count != null && count > 0 ? (
-                            count
-                          ) : (
-                            <span className="text-text-muted">—</span>
-                          );
-                        })()}
-                      </td>
-                      <td className="py-3 pr-4 text-text-muted whitespace-nowrap">
-                        {host.last_seen
-                          ? formatRelativeTime(host.last_seen)
-                          : "—"}
-                      </td>
-                      <td className="py-3 pr-4 text-text-secondary tabular-nums">
-                        {host.scan_count ?? "—"}
-                      </td>
-                      <td className="py-3">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setScanIP(host.ip_address ?? "");
-                          }}
-                          aria-label={`Scan ${host.ip_address ?? "host"}`}
-                          className={cn(
-                            "flex items-center gap-1 px-2 py-1 rounded text-xs",
-                            "text-text-muted border border-border",
-                            "hover:text-accent hover:border-accent hover:bg-accent/5",
-                            "transition-colors",
-                          )}
-                        >
-                          <ScanLine className="h-3 w-3" />
-                          Scan
-                        </button>
+                        Failed to load hosts.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : isLoading ? (
+                    <SkeletonRows count={8} colVis={colVis} />
+                  ) : hosts.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={visibleColCount}
+                        className="py-10 text-center text-xs text-text-muted"
+                      >
+                        No hosts found.
+                      </td>
+                    </tr>
+                  ) : (
+                    hosts.map((host, idx) => (
+                      <tr
+                        key={host.id}
+                        onClick={() => {
+                          setSelectedHost(host);
+                          setFocusedIndex(idx);
+                        }}
+                        className={cn(
+                          "border-b border-border/50 last:border-0 hover:bg-surface-raised/50 transition-colors cursor-pointer",
+                          isFocused(idx) &&
+                            "ring-1 ring-inset ring-accent/60 bg-surface-raised/40",
+                        )}
+                      >
+                        <td
+                          className="py-3 pl-4 pr-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${host.ip_address ?? "host"}`}
+                            checked={selectedIds.has(host.id ?? "")}
+                            onChange={(e) =>
+                              toggleSelect(host.id ?? "", e.target.checked)
+                            }
+                            className="rounded border-border cursor-pointer accent-accent"
+                          />
+                        </td>
+                        <td className="py-3 px-4 pr-4 font-mono text-text-primary whitespace-nowrap">
+                          {host.ip_address ?? "—"}
+                        </td>
+                        {colVis.hostname && (
+                          <td className="py-3 pr-4 text-text-secondary">
+                            {host.hostname ?? "—"}
+                          </td>
+                        )}
+                        <td className="py-3 pr-4">
+                          <StatusBadge status={host.status ?? "unknown"} />
+                        </td>
+                        {colVis.os && (
+                          <td className="py-3 pr-4 text-text-secondary whitespace-nowrap">
+                            {(host as HostWithDetails).os_family ? (
+                              <span
+                                title={
+                                  (host as HostWithDetails).os_name ?? undefined
+                                }
+                              >
+                                {(host as HostWithDetails).os_family}
+                              </span>
+                            ) : (
+                              <span className="text-text-muted">—</span>
+                            )}
+                          </td>
+                        )}
+                        {colVis.mac && (
+                          <td className="py-3 pr-4 font-mono text-text-muted whitespace-nowrap">
+                            {host.mac_address ?? "—"}
+                          </td>
+                        )}
+                        {colVis.vendor && (
+                          <td className="py-3 pr-4 text-text-muted whitespace-nowrap">
+                            {(host as HostWithDetails).vendor ?? "—"}
+                          </td>
+                        )}
+                        {colVis.ports && (
+                          <td className="py-3 pr-4 tabular-nums text-text-secondary">
+                            {(() => {
+                              const count = (host as HostWithDetails)
+                                .total_ports;
+                              return count != null && count > 0 ? (
+                                count
+                              ) : (
+                                <span className="text-text-muted">—</span>
+                              );
+                            })()}
+                          </td>
+                        )}
+                        {colVis.last_seen && (
+                          <td className="py-3 pr-4 text-text-muted whitespace-nowrap">
+                            {host.last_seen
+                              ? formatRelativeTime(host.last_seen)
+                              : "—"}
+                          </td>
+                        )}
+                        {colVis.scans && (
+                          <td className="py-3 pr-4 text-text-secondary tabular-nums">
+                            {host.scan_count ?? "—"}
+                          </td>
+                        )}
+                        <td className="py-3">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setScanIP(host.ip_address ?? "");
+                            }}
+                            aria-label={`Scan ${host.ip_address ?? "host"}`}
+                            className={cn(
+                              "flex items-center gap-1 px-2 py-1 rounded text-xs",
+                              "text-text-muted border border-border",
+                              "hover:text-accent hover:border-accent hover:bg-accent/5",
+                              "transition-colors",
+                            )}
+                          >
+                            <ScanLine className="h-3 w-3" />
+                            Scan
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Pagination */}
