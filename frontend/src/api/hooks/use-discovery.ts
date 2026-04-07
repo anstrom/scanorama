@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../client";
+import { ApiError } from "../errors";
 import type { components } from "../types";
 
 type CreateDiscoveryJobRequest =
@@ -8,6 +9,29 @@ type CreateDiscoveryJobRequest =
 interface DiscoveryListParams {
   page?: number;
   page_size?: number;
+  status?: string;
+}
+
+// ── Diff types ────────────────────────────────────────────────────────────────
+
+export interface DiscoveryDiffHost {
+  id: string;
+  ip_address: string;
+  hostname?: string;
+  status: string;
+  previous_status?: string;
+  vendor?: string;
+  mac_address?: string;
+  last_seen: string;
+  first_seen: string;
+}
+
+export interface DiscoveryDiff {
+  job_id: string;
+  new_hosts: DiscoveryDiffHost[];
+  gone_hosts: DiscoveryDiffHost[];
+  changed_hosts: DiscoveryDiffHost[];
+  unchanged_count: number;
 }
 
 // ── Queries ──────────────────────────────────────────────────────────────────
@@ -110,6 +134,21 @@ export function useStopDiscovery() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["discovery"] });
     },
+  });
+}
+
+export function useDiscoveryDiff(jobId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["discovery", jobId, "diff"],
+    queryFn: async (): Promise<DiscoveryDiff> => {
+      const res = await fetch(`/api/v1/discovery/${jobId}/diff`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new ApiError(res.status, body);
+      }
+      return res.json() as Promise<DiscoveryDiff>;
+    },
+    enabled: !!jobId && enabled,
   });
 }
 

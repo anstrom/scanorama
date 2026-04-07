@@ -7,6 +7,7 @@ vi.mock("../api/hooks/use-discovery", () => ({
   useDiscoveryJobs: vi.fn(),
   useStartDiscovery: vi.fn(),
   useStopDiscovery: vi.fn(),
+  useDiscoveryDiff: vi.fn(),
 }));
 
 vi.mock("../components/create-discovery-modal", () => ({
@@ -23,11 +24,13 @@ import {
   useDiscoveryJobs,
   useStartDiscovery,
   useStopDiscovery,
+  useDiscoveryDiff,
 } from "../api/hooks/use-discovery";
 
 const mockUseDiscoveryJobs = vi.mocked(useDiscoveryJobs);
 const mockUseStartDiscovery = vi.mocked(useStartDiscovery);
 const mockUseStopDiscovery = vi.mocked(useStopDiscovery);
+const mockUseDiscoveryDiff = vi.mocked(useDiscoveryDiff);
 
 const mockJobs = [
   {
@@ -101,6 +104,11 @@ beforeEach(() => {
   mockUseDiscoveryJobs.mockReturnValue(makeUseDiscoveryJobsResult());
   mockUseStartDiscovery.mockReturnValue(makeStartMutationResult());
   mockUseStopDiscovery.mockReturnValue(makeStopMutationResult());
+  mockUseDiscoveryDiff.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof useDiscoveryDiff>);
 });
 
 describe("DiscoveryPage", () => {
@@ -441,6 +449,122 @@ describe("DiscoveryPage", () => {
     expect(
       screen.queryByRole("button", { name: /previous page/i }),
     ).not.toBeInTheDocument();
+  });
+
+  // ── Changes tab ───────────────────────────────────────────────
+
+  it("Changes tab is disabled for non-completed jobs", async () => {
+    render(<DiscoveryPage />);
+    const rows = screen.getAllByRole("row");
+    // job-2 is pending (rows[2])
+    await userEvent.click(rows[2]);
+    const dialog = screen.getByRole("dialog", {
+      name: /discovery job details/i,
+    });
+    const changesTab = within(dialog).getByRole("button", { name: /changes/i });
+    expect(changesTab).toBeDisabled();
+  });
+
+  it("Changes tab shows loading skeleton while diff loads", async () => {
+    mockUseDiscoveryDiff.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+    } as unknown as ReturnType<typeof useDiscoveryDiff>);
+    render(<DiscoveryPage />);
+    const rows = screen.getAllByRole("row");
+    // job-1 is completed (rows[1])
+    await userEvent.click(rows[1]);
+    const dialog = screen.getByRole("dialog", {
+      name: /discovery job details/i,
+    });
+    const changesTab = within(dialog).getByRole("button", { name: /changes/i });
+    await userEvent.click(changesTab);
+    const skeletons = dialog.querySelectorAll(".animate-pulse");
+    expect(skeletons.length).toBeGreaterThan(0);
+  });
+
+  it("Changes tab renders new/gone/changed/unchanged sections", async () => {
+    mockUseDiscoveryDiff.mockReturnValue({
+      data: {
+        job_id: "job-1",
+        new_hosts: [
+          {
+            id: "h1",
+            ip_address: "10.0.1.50",
+            hostname: "router-1",
+            status: "up",
+            vendor: "Cisco Systems",
+            last_seen: new Date().toISOString(),
+            first_seen: new Date().toISOString(),
+          },
+        ],
+        gone_hosts: [
+          {
+            id: "h2",
+            ip_address: "10.0.1.10",
+            hostname: "old-box",
+            status: "down",
+            last_seen: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+            first_seen: new Date().toISOString(),
+          },
+        ],
+        changed_hosts: [
+          {
+            id: "h3",
+            ip_address: "10.0.1.20",
+            hostname: "server-1",
+            status: "up",
+            previous_status: "down",
+            last_seen: new Date(Date.now() - 3_600_000).toISOString(),
+            first_seen: new Date().toISOString(),
+          },
+        ],
+        unchanged_count: 42,
+      },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useDiscoveryDiff>);
+    render(<DiscoveryPage />);
+    const rows = screen.getAllByRole("row");
+    await userEvent.click(rows[1]);
+    const dialog = screen.getByRole("dialog", {
+      name: /discovery job details/i,
+    });
+    const changesTab = within(dialog).getByRole("button", { name: /changes/i });
+    await userEvent.click(changesTab);
+    expect(within(dialog).getByText(/new \(1\)/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/gone \(1\)/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/changed \(1\)/i)).toBeInTheDocument();
+    expect(within(dialog).getByText("10.0.1.50")).toBeInTheDocument();
+    expect(within(dialog).getByText("42 hosts unchanged")).toBeInTheDocument();
+    // status change arrow
+    expect(within(dialog).getByText(/down → up/i)).toBeInTheDocument();
+  });
+
+  it("Changes tab shows empty state when no changes", async () => {
+    mockUseDiscoveryDiff.mockReturnValue({
+      data: {
+        job_id: "job-1",
+        new_hosts: [],
+        gone_hosts: [],
+        changed_hosts: [],
+        unchanged_count: 0,
+      },
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useDiscoveryDiff>);
+    render(<DiscoveryPage />);
+    const rows = screen.getAllByRole("row");
+    await userEvent.click(rows[1]);
+    const dialog = screen.getByRole("dialog", {
+      name: /discovery job details/i,
+    });
+    const changesTab = within(dialog).getByRole("button", { name: /changes/i });
+    await userEvent.click(changesTab);
+    expect(
+      within(dialog).getByText(/no changes detected in this run/i),
+    ).toBeInTheDocument();
   });
 
   // ── Create modal ──────────────────────────────────────────────
