@@ -3,8 +3,13 @@ import { X, Plus } from "lucide-react";
 import { Button } from "../components/button";
 import {
   useDiscoveryJobs,
+  useDiscoveryDiff,
   useStartDiscovery,
   useStopDiscovery,
+} from "../api/hooks/use-discovery";
+import type {
+  DiscoveryDiff,
+  DiscoveryDiffHost,
 } from "../api/hooks/use-discovery";
 import { StatusBadge, Skeleton, PaginationBar } from "../components";
 import { CreateDiscoveryModal } from "../components/create-discovery-modal";
@@ -59,6 +64,143 @@ function SkeletonRows({ count }: { count: number }) {
   );
 }
 
+// ── Changes tab components ────────────────────────────────────────────────────
+
+function DiffHostRow({
+  host,
+  showStatusChange,
+}: {
+  host: DiscoveryDiffHost;
+  showStatusChange?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3 text-xs py-1.5">
+      <span className="font-mono text-text-secondary w-28 shrink-0">
+        {host.ip_address}
+      </span>
+      <span className="text-text-muted w-20 shrink-0 truncate">
+        {host.hostname ?? "—"}
+      </span>
+      <span className="text-text-muted flex-1 truncate">
+        {host.vendor ?? "—"}
+      </span>
+      {showStatusChange && host.previous_status && (
+        <span className="text-text-muted shrink-0">
+          {host.previous_status} → {host.status}
+        </span>
+      )}
+      <span className="text-text-muted shrink-0">
+        {formatRelativeTime(host.last_seen)}
+      </span>
+    </div>
+  );
+}
+
+interface DiffSectionProps {
+  title: string;
+  count: number;
+  hosts: DiscoveryDiffHost[];
+  headerClass: string;
+  showStatusChange?: boolean;
+}
+
+function DiffSection({
+  title,
+  count,
+  hosts,
+  headerClass,
+  showStatusChange,
+}: DiffSectionProps) {
+  return (
+    <section>
+      <h4 className={cn("text-xs font-medium mb-2", headerClass)}>
+        {title} ({count})
+      </h4>
+      {hosts.length === 0 ? (
+        <p className="text-xs text-text-muted">None</p>
+      ) : (
+        <div className="space-y-0.5">
+          {hosts.map((host) => (
+            <DiffHostRow
+              key={host.id}
+              host={host}
+              showStatusChange={showStatusChange}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+interface ChangesTabProps {
+  diff?: DiscoveryDiff;
+  isLoading: boolean;
+  isError: boolean;
+}
+
+function ChangesTab({ diff, isLoading, isError }: ChangesTabProps) {
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-8 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return <p className="text-xs text-danger">Failed to load changes.</p>;
+  }
+
+  if (!diff) return null;
+
+  const isEmpty =
+    diff.new_hosts.length === 0 &&
+    diff.gone_hosts.length === 0 &&
+    diff.changed_hosts.length === 0 &&
+    diff.unchanged_count === 0;
+
+  if (isEmpty) {
+    return (
+      <p className="text-xs text-text-muted">
+        No changes detected in this run.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <DiffSection
+        title="New"
+        count={diff.new_hosts.length}
+        hosts={diff.new_hosts}
+        headerClass="text-success"
+      />
+      <DiffSection
+        title="Gone"
+        count={diff.gone_hosts.length}
+        hosts={diff.gone_hosts}
+        headerClass="text-danger"
+      />
+      <DiffSection
+        title="Changed"
+        count={diff.changed_hosts.length}
+        hosts={diff.changed_hosts}
+        headerClass="text-warning"
+        showStatusChange
+      />
+      <section>
+        <h4 className="text-xs font-medium text-text-muted mb-2">Unchanged</h4>
+        <p className="text-xs text-text-muted">
+          {diff.unchanged_count} hosts unchanged
+        </p>
+      </section>
+    </div>
+  );
+}
+
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
 interface DetailPanelProps {
@@ -78,6 +220,15 @@ function MetaRow({ label, value }: { label: string; value?: React.ReactNode }) {
 
 function DiscoveryDetailPanel({ job, onClose }: DetailPanelProps) {
   const title = job.name || `Discovery #${job.id}`;
+  const [tab, setTab] = useState<"overview" | "changes">("overview");
+
+  const isCompleted = job.status === "completed";
+
+  const {
+    data: diff,
+    isLoading: diffLoading,
+    isError: diffError,
+  } = useDiscoveryDiff(job.id ?? "", isCompleted);
 
   return (
     <>
@@ -121,70 +272,112 @@ function DiscoveryDetailPanel({ job, onClose }: DetailPanelProps) {
           </button>
         </div>
 
+        {/* Tab bar */}
+        <div className="border-b border-border px-5 shrink-0 flex gap-4">
+          <button
+            type="button"
+            onClick={() => setTab("overview")}
+            className={cn(
+              "text-xs py-2 border-b-2 -mb-px transition-colors",
+              tab === "overview"
+                ? "border-accent text-text-primary font-medium"
+                : "border-transparent text-text-muted hover:text-text-secondary",
+            )}
+          >
+            Overview
+          </button>
+          <button
+            type="button"
+            onClick={() => isCompleted && setTab("changes")}
+            disabled={!isCompleted}
+            className={cn(
+              "text-xs py-2 border-b-2 -mb-px transition-colors",
+              tab === "changes"
+                ? "border-accent text-text-primary font-medium"
+                : "border-transparent text-text-muted",
+              !isCompleted && "opacity-40 cursor-not-allowed",
+            )}
+          >
+            Changes
+          </button>
+        </div>
+
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
-          {/* Progress (only when running) */}
-          {job.status === "running" && (
-            <section>
-              <h3 className="text-xs font-medium text-text-primary mb-3">
-                Progress
-              </h3>
-              <div className="space-y-1.5">
-                <div className="w-full bg-border rounded-full h-1">
-                  <div
-                    className="bg-accent h-1 rounded-full"
-                    style={{ width: `${job.progress ?? 0}%` }}
+          {tab === "overview" ? (
+            <>
+              {/* Progress (only when running) */}
+              {job.status === "running" && (
+                <section>
+                  <h3 className="text-xs font-medium text-text-primary mb-3">
+                    Progress
+                  </h3>
+                  <div className="space-y-1.5">
+                    <div className="w-full bg-border rounded-full h-1">
+                      <div
+                        className="bg-accent h-1 rounded-full"
+                        style={{ width: `${job.progress ?? 0}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-text-muted">
+                      {job.progress ?? 0}%
+                    </p>
+                  </div>
+                </section>
+              )}
+
+              {/* Details */}
+              <section>
+                <h3 className="text-xs font-medium text-text-primary mb-3">
+                  Details
+                </h3>
+                <div className="space-y-2">
+                  <MetaRow label="ID" value={job.id} />
+                  <MetaRow label="Network" value={job.networks?.join(", ")} />
+                  <MetaRow
+                    label="Method"
+                    value={
+                      job.method
+                        ? (METHOD_LABELS[job.method] ?? job.method)
+                        : undefined
+                    }
+                  />
+                  <MetaRow label="Status" value={job.status} />
+                </div>
+              </section>
+
+              {/* Timestamps */}
+              <section>
+                <h3 className="text-xs font-medium text-text-primary mb-3">
+                  Timestamps
+                </h3>
+                <div className="space-y-2">
+                  <MetaRow
+                    label="Started"
+                    value={
+                      job.started_at
+                        ? formatRelativeTime(job.started_at)
+                        : undefined
+                    }
+                  />
+                  <MetaRow
+                    label="Created"
+                    value={
+                      job.created_at
+                        ? formatRelativeTime(job.created_at)
+                        : undefined
+                    }
                   />
                 </div>
-                <p className="text-xs text-text-muted">{job.progress ?? 0}%</p>
-              </div>
-            </section>
+              </section>
+            </>
+          ) : (
+            <ChangesTab
+              diff={diff}
+              isLoading={diffLoading}
+              isError={diffError}
+            />
           )}
-
-          {/* Details */}
-          <section>
-            <h3 className="text-xs font-medium text-text-primary mb-3">
-              Details
-            </h3>
-            <div className="space-y-2">
-              <MetaRow label="ID" value={job.id} />
-              <MetaRow label="Network" value={job.networks?.join(", ")} />
-              <MetaRow
-                label="Method"
-                value={
-                  job.method
-                    ? (METHOD_LABELS[job.method] ?? job.method)
-                    : undefined
-                }
-              />
-              <MetaRow label="Status" value={job.status} />
-            </div>
-          </section>
-
-          {/* Timestamps */}
-          <section>
-            <h3 className="text-xs font-medium text-text-primary mb-3">
-              Timestamps
-            </h3>
-            <div className="space-y-2">
-              <MetaRow
-                label="Started"
-                value={
-                  job.started_at
-                    ? formatRelativeTime(job.started_at)
-                    : undefined
-                }
-              />
-              <MetaRow
-                label="Created"
-                value={
-                  job.created_at
-                    ? formatRelativeTime(job.created_at)
-                    : undefined
-                }
-              />
-            </div>
-          </section>
         </div>
       </div>
     </>
