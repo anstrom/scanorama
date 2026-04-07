@@ -732,6 +732,31 @@ func (r *HostRepository) DeleteHost(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// BulkDeleteHosts deletes multiple hosts by ID in a single transaction.
+// It returns the count of hosts actually deleted (IDs that did not exist are silently skipped).
+// Returns an error only for genuine database failures.
+func (r *HostRepository) BulkDeleteHosts(ctx context.Context, ids []uuid.UUID) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	// pq.Array lets us pass a Go slice as a Postgres ARRAY parameter.
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM hosts WHERE id = ANY($1::uuid[])`,
+		pq.Array(ids),
+	)
+	if err != nil {
+		return 0, sanitizeDBError("bulk delete hosts", err)
+	}
+
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+
+	return n, nil
+}
+
 // getHostScansCount gets total count of scans for a specific host.
 func (r *HostRepository) getHostScansCount(ctx context.Context, hostID uuid.UUID) (int64, error) {
 	countQuery := `

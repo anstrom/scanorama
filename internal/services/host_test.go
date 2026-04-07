@@ -20,12 +20,13 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockHostRepo struct {
-	listHostsFn    func(ctx context.Context, filters *db.HostFilters, offset, limit int) ([]*db.Host, int64, error)
-	createHostFn   func(ctx context.Context, input db.CreateHostInput) (*db.Host, error)
-	getHostFn      func(ctx context.Context, id uuid.UUID) (*db.Host, error)
-	updateHostFn   func(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error)
-	deleteHostFn   func(ctx context.Context, id uuid.UUID) error
-	getHostScansFn func(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*db.Scan, int64, error)
+	listHostsFn       func(ctx context.Context, filters *db.HostFilters, offset, limit int) ([]*db.Host, int64, error)
+	createHostFn      func(ctx context.Context, input db.CreateHostInput) (*db.Host, error)
+	getHostFn         func(ctx context.Context, id uuid.UUID) (*db.Host, error)
+	updateHostFn      func(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error)
+	deleteHostFn      func(ctx context.Context, id uuid.UUID) error
+	bulkDeleteHostsFn func(ctx context.Context, ids []uuid.UUID) (int64, error)
+	getHostScansFn    func(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*db.Scan, int64, error)
 }
 
 func (m *mockHostRepo) ListHosts(
@@ -48,6 +49,13 @@ func (m *mockHostRepo) UpdateHost(ctx context.Context, id uuid.UUID, input db.Up
 
 func (m *mockHostRepo) DeleteHost(ctx context.Context, id uuid.UUID) error {
 	return m.deleteHostFn(ctx, id)
+}
+
+func (m *mockHostRepo) BulkDeleteHosts(ctx context.Context, ids []uuid.UUID) (int64, error) {
+	if m.bulkDeleteHostsFn != nil {
+		return m.bulkDeleteHostsFn(ctx, ids)
+	}
+	panic("mockHostRepo: BulkDeleteHosts called unexpectedly")
 }
 
 func (m *mockHostRepo) GetHostScans(

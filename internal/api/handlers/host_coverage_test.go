@@ -2,12 +2,20 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/anstrom/scanorama/internal/db"
 )
@@ -142,4 +150,109 @@ func TestPopulateResponseTimeFields(t *testing.T) {
 		assert.Nil(t, r.ResponseTimeMS)
 		assert.Equal(t, 0, r.TimeoutCount)
 	})
+}
+
+// ── BulkDeleteHosts ───────────────────────────────────────────────────────────
+
+func TestHostHandler_BulkDeleteHosts_HappyPath(t *testing.T) {
+	h, store, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	id1 := uuid.New()
+	id2 := uuid.New()
+
+	store.EXPECT().
+		BulkDeleteHosts(gomock.Any(), []uuid.UUID{id1, id2}).
+		Return(int64(2), nil)
+
+	body, err := json.Marshal(BulkDeleteHostsRequest{IDs: []string{id1.String(), id2.String()}})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/hosts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.BulkDeleteHosts(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp BulkDeleteHostsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, int64(2), resp.Deleted)
+}
+
+func TestHostHandler_BulkDeleteHosts_EmptyIDs(t *testing.T) {
+	h, _, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	body, err := json.Marshal(BulkDeleteHostsRequest{IDs: []string{}})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/hosts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.BulkDeleteHosts(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHostHandler_BulkDeleteHosts_TooManyIDs(t *testing.T) {
+	h, _, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	ids := make([]string, 501)
+	for i := range ids {
+		ids[i] = uuid.New().String()
+	}
+
+	body, err := json.Marshal(BulkDeleteHostsRequest{IDs: ids})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/hosts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.BulkDeleteHosts(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	msg, _ := resp["message"].(string)
+	assert.True(t, strings.Contains(msg, "500") || strings.Contains(msg, "too many"),
+		"expected error message to mention the limit, got: %s", msg)
+}
+
+func TestHostHandler_BulkDeleteHosts_InvalidUUID(t *testing.T) {
+	h, _, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	body, err := json.Marshal(BulkDeleteHostsRequest{IDs: []string{"not-a-uuid"}})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/hosts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.BulkDeleteHosts(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHostHandler_BulkDeleteHosts_DBError(t *testing.T) {
+	h, store, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	id := uuid.New()
+
+	store.EXPECT().
+		BulkDeleteHosts(gomock.Any(), []uuid.UUID{id}).
+		Return(int64(0), fmt.Errorf("db connection lost"))
+
+	body, err := json.Marshal(BulkDeleteHostsRequest{IDs: []string{id.String()}})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/hosts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.BulkDeleteHosts(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }

@@ -152,6 +152,9 @@ func (nilHostServicer) UpdateHost(_ context.Context, _ uuid.UUID, _ db.UpdateHos
 func (nilHostServicer) DeleteHost(_ context.Context, _ uuid.UUID) error {
 	panic("nilHostServicer: DeleteHost called unexpectedly")
 }
+func (nilHostServicer) BulkDeleteHosts(_ context.Context, _ []uuid.UUID) (int64, error) {
+	panic("nilHostServicer: BulkDeleteHosts called unexpectedly")
+}
 func (nilHostServicer) GetHostScans(_ context.Context, _ uuid.UUID, _, _ int) ([]*db.Scan, int64, error) {
 	panic("nilHostServicer: GetHostScans called unexpectedly")
 }
