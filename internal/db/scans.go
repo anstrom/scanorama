@@ -162,11 +162,13 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 	query := `
 		INSERT INTO port_scans (
 			id, job_id, host_id, port, protocol, state,
-			service_name, service_version, service_product, banner
+			service_name, service_version, service_product, banner,
+			scan_duration_ms
 		)
 		VALUES (
 			:id, :job_id, :host_id, :port, :protocol, :state,
-			:service_name, :service_version, :service_product, :banner
+			:service_name, :service_version, :service_product, :banner,
+			:scan_duration_ms
 		)
 		ON CONFLICT (job_id, host_id, port, protocol)
 		DO UPDATE SET
@@ -175,6 +177,7 @@ func (r *PortScanRepository) CreateBatch(ctx context.Context, scans []*PortScan)
 			service_version = EXCLUDED.service_version,
 			service_product = EXCLUDED.service_product,
 			banner = EXCLUDED.banner,
+			scan_duration_ms = EXCLUDED.scan_duration_ms,
 			scanned_at = NOW()`
 
 	for _, scan := range scans {
@@ -245,19 +248,20 @@ type ScanFilters struct {
 
 // ScanResult represents a scan result entry.
 type ScanResult struct {
-	ID           uuid.UUID `json:"id" db:"id"`
-	ScanID       uuid.UUID `json:"scan_id" db:"scan_id"`
-	HostID       uuid.UUID `json:"host_id" db:"host_id"`
-	HostIP       string    `json:"host_ip" db:"host_ip"`
-	Port         int       `json:"port" db:"port"`
-	Protocol     string    `json:"protocol" db:"protocol"`
-	State        string    `json:"state" db:"state"`
-	Service      string    `json:"service" db:"service"`
-	ScannedAt    time.Time `json:"scanned_at" db:"scanned_at"`
-	OSName       string    `json:"os_name,omitempty" db:"os_name"`
-	OSFamily     string    `json:"os_family,omitempty" db:"os_family"`
-	OSVersion    string    `json:"os_version,omitempty" db:"os_version"`
-	OSConfidence *int      `json:"os_confidence,omitempty" db:"os_confidence"`
+	ID             uuid.UUID `json:"id" db:"id"`
+	ScanID         uuid.UUID `json:"scan_id" db:"scan_id"`
+	HostID         uuid.UUID `json:"host_id" db:"host_id"`
+	HostIP         string    `json:"host_ip" db:"host_ip"`
+	Port           int       `json:"port" db:"port"`
+	Protocol       string    `json:"protocol" db:"protocol"`
+	State          string    `json:"state" db:"state"`
+	Service        string    `json:"service" db:"service"`
+	ScannedAt      time.Time `json:"scanned_at" db:"scanned_at"`
+	OSName         string    `json:"os_name,omitempty" db:"os_name"`
+	OSFamily       string    `json:"os_family,omitempty" db:"os_family"`
+	OSVersion      string    `json:"os_version,omitempty" db:"os_version"`
+	OSConfidence   *int      `json:"os_confidence,omitempty" db:"os_confidence"`
+	ScanDurationMs *int      `json:"scan_duration_ms,omitempty" db:"scan_duration_ms"`
 }
 
 // ScanSummary represents aggregated scan statistics.

@@ -226,6 +226,10 @@ type Host struct {
 	OSVersion string
 	// OSAccuracy is the confidence percentage (0-100) of the OS detection
 	OSAccuracy int
+	// ScanDurationMs is the wall-clock milliseconds nmap spent scanning this
+	// host, derived from the per-host start/end timestamps in the XML output.
+	// Nil when nmap did not report per-host timing (e.g. the host was down).
+	ScanDurationMs *int
 }
 
 // Port represents the scan results for a single port.

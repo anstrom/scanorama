@@ -773,7 +773,8 @@ func (r *ScanRepository) GetScanResults(ctx context.Context, scanID uuid.UUID, o
 			COALESCE(h.os_name, '')    AS os_name,
 			COALESCE(h.os_family, '')  AS os_family,
 			COALESCE(h.os_version, '') AS os_version,
-			h.os_confidence
+			h.os_confidence,
+			ps.scan_duration_ms
 		FROM port_scans ps
 		LEFT JOIN hosts h ON h.id = ps.host_id
 		WHERE ps.job_id = $1
@@ -810,6 +811,7 @@ func (r *ScanRepository) GetScanResults(ctx context.Context, scanID uuid.UUID, o
 			&result.OSFamily,
 			&result.OSVersion,
 			&result.OSConfidence,
+			&result.ScanDurationMs,
 		); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan result row: %w", err)
 		}
