@@ -218,9 +218,9 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 			return nil, errors.WrapScanError(errors.CodeTimeout, "scan operation timed out", err)
 		}
 
-		// Detect privilege errors: SYN, ACK, and UDP scans require raw sockets
-		// (root / CAP_NET_RAW). Surface a clear message rather than the generic
-		// "scanner execution failed" so operators know exactly what to fix.
+		// Detect privilege errors: several nmap features require raw sockets
+		// (root / CAP_NET_RAW). Surface a clear, actionable message rather than
+		// the generic "scanner execution failed".
 		errStr := err.Error()
 		if strings.Contains(errStr, "Operation not permitted") ||
 			strings.Contains(errStr, "requires root privileges") ||
@@ -229,10 +229,8 @@ func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB
 			strings.Contains(errStr, "You requested a scan type which requires") {
 			metrics.GetGlobalMetrics().IncrementScanErrors(config.ScanType, "permission_denied")
 			logging.Error("Scanner requires elevated privileges",
-				"scan_type", config.ScanType, "error", err)
-			return nil, errors.WrapScanError(errors.CodeScanFailed,
-				"scan type '"+config.ScanType+"' requires root privileges (CAP_NET_RAW); "+
-					"switch to scan type 'connect' or run the daemon as root", err)
+				"scan_type", config.ScanType, "os_detection", config.OSDetection, "error", err)
+			return nil, errors.WrapScanError(errors.CodeScanFailed, privilegeErrorMessage(config), err)
 		}
 
 		metrics.GetGlobalMetrics().IncrementScanErrors(config.ScanType, "execution_failed")
@@ -515,6 +513,26 @@ func PrintResults(result *ScanResult) {
 				port.Service, version)
 		}
 		fmt.Println()
+	}
+}
+
+// privilegeErrorMessage returns an actionable error string explaining which
+// nmap feature triggered the raw-socket requirement and how to resolve it.
+// Three distinct cases in priority order:
+//  1. OS detection (-O) — can be disabled in the profile.
+//  2. UDP ports in the port list — UDP always needs CAP_NET_RAW.
+//  3. A privileged TCP scan type (syn, ack, …) — suggest 'connect'.
+func privilegeErrorMessage(config *ScanConfig) string {
+	switch {
+	case config.OSDetection:
+		return "OS detection (-O) requires root privileges (CAP_NET_RAW); " +
+			"disable OS detection in the scan profile or run the daemon as root"
+	case strings.Contains(config.Ports, "U:"):
+		return "UDP port scanning requires root privileges (CAP_NET_RAW); " +
+			"remove UDP ports from the port list or run the daemon as root"
+	default:
+		return "scan type '" + config.ScanType + "' requires root privileges (CAP_NET_RAW); " +
+			"switch to scan type 'connect' or run the daemon as root"
 	}
 }
 
