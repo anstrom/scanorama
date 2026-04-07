@@ -1161,7 +1161,7 @@ export function NetworksPage() {
 
         {/* Table */}
         <div className="overflow-auto rounded border border-border">
-          <table className="w-full text-xs border-collapse min-w-[640px]">
+          <table className="w-full text-xs border-collapse min-w-160">
             <thead>
               <tr className="bg-surface-raised border-b border-border text-left">
                 <SortHeader
@@ -1229,7 +1229,7 @@ export function NetworksPage() {
                       selectedNetwork?.id === network.id && "bg-accent/8",
                     )}
                   >
-                    <td className="px-4 py-2.5 text-text-primary font-medium truncate max-w-[180px]">
+                    <td className="px-4 py-2.5 text-text-primary font-medium truncate max-w-45">
                       {network.name ?? "—"}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-text-secondary whitespace-nowrap">

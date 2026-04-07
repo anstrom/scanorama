@@ -371,7 +371,7 @@ export function ProfilesPage() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto rounded border border-border">
-        <table className="w-full text-xs border-collapse min-w-[640px]">
+        <table className="w-full text-xs border-collapse min-w-160">
           <thead>
             <tr className="bg-surface-raised border-b border-border text-left">
               <SortHeader
@@ -429,7 +429,7 @@ export function ProfilesPage() {
                     selectedProfile?.id === profile.id && "bg-accent/8",
                   )}
                 >
-                  <td className="px-4 py-2.5 text-text-primary font-medium truncate max-w-[180px]">
+                  <td className="px-4 py-2.5 text-text-primary font-medium truncate max-w-45">
                     {profile.name ?? "—"}
                   </td>
                   <td className="px-4 py-2.5 text-text-secondary">
@@ -441,7 +441,7 @@ export function ProfilesPage() {
                   <td className="px-4 py-2.5 font-mono text-text-secondary whitespace-nowrap">
                     {profile.ports ?? "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-text-secondary truncate max-w-[200px]">
+                  <td className="px-4 py-2.5 text-text-secondary truncate max-w-50">
                     {profile.description ?? "—"}
                   </td>
                   <td className="px-4 py-2.5 text-text-muted whitespace-nowrap">
