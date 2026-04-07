@@ -110,7 +110,7 @@ export function ExclusionsPage() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto rounded border border-border">
-        <table className="w-full text-xs border-collapse min-w-[560px]">
+        <table className="w-full text-xs border-collapse min-w-140">
           <thead>
             <tr className="bg-surface-raised border-b border-border text-left">
               <SortHeader
@@ -172,7 +172,7 @@ export function ExclusionsPage() {
                   </td>
 
                   {/* Reason */}
-                  <td className="px-4 py-2.5 text-text-secondary max-w-[260px] truncate">
+                  <td className="px-4 py-2.5 text-text-secondary max-w-65 truncate">
                     {excl.reason ?? (
                       <span className="italic text-text-muted">—</span>
                     )}

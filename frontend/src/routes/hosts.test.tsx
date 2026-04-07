@@ -234,13 +234,21 @@ function makeMutationResult(overrides = {}) {
   } as unknown as ReturnType<typeof useUpdateHost>;
 }
 
+function makeDeleteMutationResult(overrides = {}) {
+  return {
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    isPending: false,
+    ...overrides,
+  } as unknown as ReturnType<typeof useDeleteHost>;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockUseHosts.mockReturnValue(makeUseHostsResult());
   mockUseHost.mockReturnValue(makeUseHostResult());
   mockUseHostScans.mockReturnValue(makeUseHostScansResult());
   mockUseUpdateHost.mockReturnValue(makeMutationResult());
-  mockUseDeleteHost.mockReturnValue(makeMutationResult());
+  mockUseDeleteHost.mockReturnValue(makeDeleteMutationResult());
 });
 
 describe("HostsPage", () => {
@@ -731,7 +739,7 @@ describe("HostsPage", () => {
             os_family: undefined,
             os_name: undefined,
             os_version_detail: undefined,
-          } as any,
+          } as unknown as typeof mockFullHost,
         }),
       );
       const panel = await openPanel();
@@ -881,7 +889,9 @@ describe("HostsPage", () => {
 
     it("cancels delete when Cancel is clicked", async () => {
       const mutateAsync = vi.fn();
-      mockUseDeleteHost.mockReturnValue(makeMutationResult({ mutateAsync }));
+      mockUseDeleteHost.mockReturnValue(
+        makeDeleteMutationResult({ mutateAsync }),
+      );
 
       const panel = await openPanel();
       await userEvent.click(
@@ -899,7 +909,9 @@ describe("HostsPage", () => {
 
     it("calls deleteHost and closes the panel on confirmation", async () => {
       const mutateAsync = vi.fn().mockResolvedValue({});
-      mockUseDeleteHost.mockReturnValue(makeMutationResult({ mutateAsync }));
+      mockUseDeleteHost.mockReturnValue(
+        makeDeleteMutationResult({ mutateAsync }),
+      );
 
       const panel = await openPanel();
       await userEvent.click(

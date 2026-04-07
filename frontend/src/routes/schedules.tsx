@@ -432,7 +432,7 @@ export function SchedulesPage() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto rounded border border-border">
-        <table className="w-full text-xs border-collapse min-w-[640px]">
+        <table className="w-full text-xs border-collapse min-w-160">
           <thead>
             <tr className="bg-surface-raised border-b border-border text-left">
               <SortHeader
@@ -506,7 +506,7 @@ export function SchedulesPage() {
                       selectedSchedule?.id === schedule.id && "bg-accent/8",
                     )}
                   >
-                    <td className="px-4 py-2.5 text-text-primary font-medium truncate max-w-[180px]">
+                    <td className="px-4 py-2.5 text-text-primary font-medium truncate max-w-45">
                       {schedule.name ?? "—"}
                     </td>
                     <td
