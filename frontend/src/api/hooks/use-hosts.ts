@@ -114,3 +114,21 @@ export function useDeleteHost() {
     },
   });
 }
+
+export function useBulkDeleteHosts() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error, response } = await (api as any).DELETE("/hosts", {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        body: { ids } as any,
+      });
+      if (error) throw new ApiError(response.status, error);
+      return data as { deleted: number } | undefined;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["hosts"] });
+    },
+  });
+}

@@ -9,6 +9,7 @@ vi.mock("../api/hooks/use-hosts", () => ({
   useHostScans: vi.fn(),
   useUpdateHost: vi.fn(),
   useDeleteHost: vi.fn(),
+  useBulkDeleteHosts: vi.fn(),
 }));
 
 import {
@@ -17,6 +18,7 @@ import {
   useHostScans,
   useUpdateHost,
   useDeleteHost,
+  useBulkDeleteHosts,
 } from "../api/hooks/use-hosts";
 
 const mockUseHosts = vi.mocked(useHosts);
@@ -24,6 +26,7 @@ const mockUseHost = vi.mocked(useHost);
 const mockUseHostScans = vi.mocked(useHostScans);
 const mockUseUpdateHost = vi.mocked(useUpdateHost);
 const mockUseDeleteHost = vi.mocked(useDeleteHost);
+const mockUseBulkDeleteHosts = vi.mocked(useBulkDeleteHosts);
 
 const mockToastSuccess = vi.fn();
 const mockToastError = vi.fn();
@@ -249,6 +252,7 @@ beforeEach(() => {
   mockUseHostScans.mockReturnValue(makeUseHostScansResult());
   mockUseUpdateHost.mockReturnValue(makeMutationResult());
   mockUseDeleteHost.mockReturnValue(makeDeleteMutationResult());
+  mockUseBulkDeleteHosts.mockReturnValue(makeDeleteMutationResult());
 });
 
 describe("HostsPage", () => {
@@ -383,15 +387,15 @@ describe("HostsPage", () => {
   });
 
   // ── Open port count ───────────────────────────────────────────
-  // Column order: IP=0, Hostname=1, Status=2, OS=3, MAC=4,
-  //               Vendor=5, Open Ports=6, Last Seen=7, Scans=8, action=9
+  // Column order: checkbox=0, IP=1, Hostname=2, Status=3, OS=4, MAC=5,
+  //               Vendor=6, Open Ports=7, Last Seen=8, Scans=9, action=10
 
   it("shows open port count when total_ports is set", () => {
     render(<HostsPage />);
     const rows = screen.getAllByRole("row");
-    // host-1 has total_ports: 3 — Open Ports column is index 6
+    // host-1 has total_ports: 3 — Open Ports column is index 7
     const cells = within(rows[1]).getAllByRole("cell");
-    expect(cells[6]).toHaveTextContent("3");
+    expect(cells[7]).toHaveTextContent("3");
   });
 
   it("shows em-dash for open ports when total_ports is missing", () => {
@@ -399,12 +403,12 @@ describe("HostsPage", () => {
     const rows = screen.getAllByRole("row");
     // host-3 has no total_ports
     const cells = within(rows[3]).getAllByRole("cell");
-    expect(cells[6]).toHaveTextContent("—");
+    expect(cells[7]).toHaveTextContent("—");
   });
 
   // ── OS column ─────────────────────────────────────────────────
-  // Column order: IP=0, Hostname=1, Status=2, OS=3, MAC=4,
-  //               Vendor=5, Open Ports=6, Last Seen=7, Scans=8, action=9
+  // Column order: checkbox=0, IP=1, Hostname=2, Status=3, OS=4, MAC=5,
+  //               Vendor=6, Open Ports=7, Last Seen=8, Scans=9, action=10
 
   it("renders os_family when present", () => {
     render(<HostsPage />);
@@ -417,8 +421,8 @@ describe("HostsPage", () => {
     render(<HostsPage />);
     const rows = screen.getAllByRole("row");
     const cells = within(rows[3]).getAllByRole("cell");
-    // host-3 has no os_family — OS column is index 3
-    expect(cells[3]).toHaveTextContent("—");
+    // host-3 has no os_family — OS column is index 4
+    expect(cells[4]).toHaveTextContent("—");
   });
 
   // ── Em-dash for missing fields ────────────────────────────────
@@ -427,40 +431,40 @@ describe("HostsPage", () => {
     render(<HostsPage />);
     const rows = screen.getAllByRole("row");
     const cells = within(rows[3]).getAllByRole("cell");
-    // Hostname is index 1
-    expect(cells[1]).toHaveTextContent("—");
+    // Hostname is index 2
+    expect(cells[2]).toHaveTextContent("—");
   });
 
   it("shows em-dash for missing MAC address", () => {
     render(<HostsPage />);
     const rows = screen.getAllByRole("row");
     const cells = within(rows[3]).getAllByRole("cell");
-    // MAC Address is index 4
-    expect(cells[4]).toHaveTextContent("—");
+    // MAC Address is index 5
+    expect(cells[5]).toHaveTextContent("—");
   });
 
   it("shows em-dash for missing open ports", () => {
     render(<HostsPage />);
     const rows = screen.getAllByRole("row");
     const cells = within(rows[3]).getAllByRole("cell");
-    // Open Ports is index 6
-    expect(cells[6]).toHaveTextContent("—");
+    // Open Ports is index 7
+    expect(cells[7]).toHaveTextContent("—");
   });
 
   it("shows em-dash for missing last_seen", () => {
     render(<HostsPage />);
     const rows = screen.getAllByRole("row");
     const cells = within(rows[3]).getAllByRole("cell");
-    // Last Seen is index 7
-    expect(cells[7]).toHaveTextContent("—");
+    // Last Seen is index 8
+    expect(cells[8]).toHaveTextContent("—");
   });
 
   it("shows em-dash for missing scan_count", () => {
     render(<HostsPage />);
     const rows = screen.getAllByRole("row");
     const cells = within(rows[3]).getAllByRole("cell");
-    // Scans is index 8
-    expect(cells[8]).toHaveTextContent("—");
+    // Scans is index 9
+    expect(cells[9]).toHaveTextContent("—");
   });
 
   // ── Sort interaction ──────────────────────────────────────────
