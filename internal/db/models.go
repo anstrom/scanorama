@@ -468,6 +468,28 @@ type HostTimeoutEvent struct {
 	RecordedAt     time.Time  `db:"recorded_at"      json:"recorded_at"`
 }
 
+// DiffHost is a lightweight host snapshot used in discovery diff results.
+type DiffHost struct {
+	ID             uuid.UUID `db:"id"              json:"id"`
+	IPAddress      string    `db:"ip_address"      json:"ip_address"`
+	Hostname       *string   `db:"hostname"        json:"hostname,omitempty"`
+	Status         string    `db:"status"          json:"status"`
+	PreviousStatus *string   `db:"previous_status" json:"previous_status,omitempty"`
+	Vendor         *string   `db:"vendor"          json:"vendor,omitempty"`
+	MACAddress     *string   `db:"mac_address"     json:"mac_address,omitempty"`
+	LastSeen       time.Time `db:"last_seen"       json:"last_seen"`
+	FirstSeen      time.Time `db:"first_seen"      json:"first_seen"`
+}
+
+// DiscoveryDiff summarizes what changed during a single discovery run.
+type DiscoveryDiff struct {
+	JobID          uuid.UUID  `json:"job_id"`
+	NewHosts       []DiffHost `json:"new_hosts"`
+	GoneHosts      []DiffHost `json:"gone_hosts"`
+	ChangedHosts   []DiffHost `json:"changed_hosts"`
+	UnchangedCount int        `json:"unchanged_count"`
+}
+
 // ActiveHost represents the active_hosts view.
 type ActiveHost struct {
 	IPAddress         IPAddr    `db:"ip_address" json:"ip_address"`
