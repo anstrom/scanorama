@@ -62,6 +62,7 @@ type DiscoveryHandler struct {
 	metrics   *metrics.Registry
 	engine    *discovery.Engine
 	scanQueue *scanning.ScanQueue
+	wsHandler *WebSocketHandler
 
 	cancelsMu sync.Mutex
 	cancels   map[uuid.UUID]context.CancelFunc
@@ -95,6 +96,13 @@ func (h *DiscoveryHandler) WithScanQueue(q *scanning.ScanQueue) *DiscoveryHandle
 	return h
 }
 
+// WithWebSocket attaches a WebSocketHandler so that completed discovery jobs
+// broadcast a diff summary to all connected discovery clients.
+func (h *DiscoveryHandler) WithWebSocket(ws *WebSocketHandler) *DiscoveryHandler {
+	h.wsHandler = ws
+	return h
+}
+
 // discoveryJob implements scanning.Job for nmap host-discovery operations.
 // It is created by StartDiscovery and submitted to the shared ScanQueue so
 // that discovery work appears alongside scan work in the admin worker view.
@@ -106,6 +114,7 @@ type discoveryJob struct {
 	engine    *discovery.Engine
 	database  DiscoveryStore
 	logger    *slog.Logger
+	wsHandler *WebSocketHandler
 	cancelCtx context.Context // cancelled by StopDiscovery for per-job stop
 	cleanup   func()          // removes the cancel func from the handler's map
 }
@@ -162,6 +171,19 @@ func (j *discoveryJob) Execute(workerCtx context.Context) error {
 		j.logger.Error("Failed to mark discovery job as completed",
 			"job_id", j.jobID, "error", updateErr)
 		return updateErr
+	}
+
+	if j.wsHandler != nil {
+		if diff, dErr := j.database.GetDiscoveryDiff(dbCtx, j.jobID); dErr == nil {
+			_ = j.wsHandler.BroadcastDiscoveryUpdate(&DiscoveryUpdateMessage{
+				JobID:        j.jobID.String(),
+				Status:       "completed",
+				HostsFound:   hostsFound,
+				NewHosts:     len(diff.NewHosts),
+				GoneHosts:    len(diff.GoneHosts),
+				ChangedHosts: len(diff.ChangedHosts),
+			})
+		}
 	}
 
 	j.logger.Info("Discovery job finished", "job_id", j.jobID, "hosts_found", hostsFound)
@@ -416,6 +438,7 @@ func (h *DiscoveryHandler) StartDiscovery(w http.ResponseWriter, r *http.Request
 			engine:    h.engine,
 			database:  h.database,
 			logger:    h.logger,
+			wsHandler: h.wsHandler,
 			cancelCtx: ctx,
 			cleanup: func() {
 				h.cancelsMu.Lock()

@@ -76,13 +76,15 @@ type ScanUpdateMessage struct {
 
 // DiscoveryUpdateMessage represents a discovery job status update.
 type DiscoveryUpdateMessage struct {
-	JobID      int64   `json:"job_id"`
-	Status     string  `json:"status"`
-	Progress   float64 `json:"progress"`
-	Message    string  `json:"message,omitempty"`
-	Error      string  `json:"error,omitempty"`
-	HostsFound int     `json:"hosts_found,omitempty"`
-	NewHosts   int     `json:"new_hosts,omitempty"`
+	JobID        string  `json:"job_id"`
+	Status       string  `json:"status"`
+	Progress     float64 `json:"progress"`
+	Message      string  `json:"message,omitempty"`
+	Error        string  `json:"error,omitempty"`
+	HostsFound   int     `json:"hosts_found,omitempty"`
+	NewHosts     int     `json:"new_hosts,omitempty"`
+	GoneHosts    int     `json:"gone_hosts,omitempty"`
+	ChangedHosts int     `json:"changed_hosts,omitempty"`
 }
 
 // NewWebSocketHandler creates a new WebSocket handler.

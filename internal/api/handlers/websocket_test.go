@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -154,7 +155,7 @@ func TestWebSocketMessage_Serialization(t *testing.T) {
 				Type:      "discovery_update",
 				Timestamp: time.Now().UTC(),
 				Data: DiscoveryUpdateMessage{
-					JobID:      456,
+					JobID:      "456",
 					Status:     "completed",
 					Progress:   100.0,
 					HostsFound: 5,
@@ -265,7 +266,7 @@ func TestDiscoveryUpdateMessage_Validation(t *testing.T) {
 		{
 			name: "valid complete message",
 			message: DiscoveryUpdateMessage{
-				JobID:      123,
+				JobID:      "123",
 				Status:     "running",
 				Progress:   75.0,
 				Message:    "Discovery in progress",
@@ -277,7 +278,7 @@ func TestDiscoveryUpdateMessage_Validation(t *testing.T) {
 		{
 			name: "valid minimal message",
 			message: DiscoveryUpdateMessage{
-				JobID:    456,
+				JobID:    "456",
 				Status:   "pending",
 				Progress: 0.0,
 			},
@@ -412,7 +413,7 @@ func TestWebSocketHandler_BroadcastChannelCapacity(t *testing.T) {
 	}
 
 	discoveryUpdate := &DiscoveryUpdateMessage{
-		JobID:    1,
+		JobID:    "1",
 		Status:   "running",
 		Progress: 0.0,
 	}
@@ -489,7 +490,7 @@ func TestWebSocketHandler_BroadcastSuccessfulCases(t *testing.T) {
 	// Test multiple successful discovery broadcasts
 	for i := 0; i < 10; i++ {
 		update := &DiscoveryUpdateMessage{
-			JobID:      int64(i + 100),
+			JobID:      fmt.Sprintf("job-%d", i+100),
 			Status:     "discovering",
 			Progress:   float64(i * 10),
 			HostsFound: i * 2,
@@ -529,7 +530,7 @@ func TestWebSocketHandler_BroadcastEdgeCases(t *testing.T) {
 
 	t.Run("discovery update with error", func(t *testing.T) {
 		update := &DiscoveryUpdateMessage{
-			JobID:      888,
+			JobID:      "888",
 			Status:     "failed",
 			Progress:   30.0,
 			Error:      "Network timeout occurred",
@@ -633,7 +634,7 @@ func TestWebSocketHandler_DiscoveryWebSocket(t *testing.T) {
 
 	// Test that we can broadcast to the client
 	update := &DiscoveryUpdateMessage{
-		JobID:      456,
+		JobID:      "456",
 		Status:     "discovering",
 		Progress:   75.0,
 		HostsFound: 10,
@@ -690,7 +691,7 @@ func TestWebSocketHandler_GeneralWebSocket(t *testing.T) {
 
 	// Test broadcast discovery update
 	discoveryUpdate := &DiscoveryUpdateMessage{
-		JobID:    999,
+		JobID:    "999",
 		Status:   "completed",
 		Progress: 100.0,
 	}
@@ -819,7 +820,7 @@ func TestWebSocketHandler_BroadcastWithNoClients(t *testing.T) {
 	assert.NoError(t, err, "should not error when no clients connected")
 
 	discoveryUpdate := &DiscoveryUpdateMessage{
-		JobID:    222,
+		JobID:    "222",
 		Status:   "running",
 		Progress: 20.0,
 	}
@@ -860,7 +861,7 @@ func TestWebSocketHandler_ConcurrentBroadcasts(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			update := &DiscoveryUpdateMessage{
-				JobID:    int64(idx + 1000),
+				JobID:    fmt.Sprintf("job-%d", idx+1000),
 				Status:   "discovering",
 				Progress: float64(idx * 5),
 			}
@@ -1025,7 +1026,7 @@ func TestWebSocketHandler_MixedClientTypes(t *testing.T) {
 
 	// Broadcast to discovery clients
 	discoveryUpdate := &DiscoveryUpdateMessage{
-		JobID:    888,
+		JobID:    "888",
 		Status:   "discovering",
 		Progress: 60.0,
 	}
@@ -1401,7 +1402,7 @@ func TestWebSocketHandler_MixedBroadcastTypes(t *testing.T) {
 	assert.NoError(t, err)
 
 	discoveryUpdate := &DiscoveryUpdateMessage{
-		JobID:    456,
+		JobID:    "456",
 		Status:   "discovering",
 		Progress: 50.0,
 	}
