@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/metrics"
@@ -232,6 +234,68 @@ func (h *HostHandler) DeleteHost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	crudOp.ExecuteDelete(w, r, hostID, h.service.DeleteHost, "api_hosts_deleted_total")
+}
+
+// BulkDeleteHostsRequest is the body for the bulk-delete endpoint.
+type BulkDeleteHostsRequest struct {
+	IDs []string `json:"ids"`
+}
+
+// BulkDeleteHostsResponse reports how many hosts were removed.
+type BulkDeleteHostsResponse struct {
+	Deleted int64 `json:"deleted"`
+}
+
+// BulkDeleteHosts handles DELETE /api/v1/hosts - delete multiple hosts in one call.
+// The request body must contain a JSON object with an "ids" array of UUID strings.
+// IDs that do not exist are silently skipped; only genuine DB errors are returned.
+func (h *HostHandler) BulkDeleteHosts(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
+
+	var req BulkDeleteHostsRequest
+	if err := parseJSON(r, &req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("ids must not be empty"))
+		return
+	}
+
+	const maxBulkDelete = 500
+	if len(req.IDs) > maxBulkDelete {
+		writeError(w, r, http.StatusBadRequest,
+			fmt.Errorf("too many ids: maximum %d per request", maxBulkDelete))
+		return
+	}
+
+	uuids := make([]uuid.UUID, 0, len(req.IDs))
+	for _, raw := range req.IDs {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			writeError(w, r, http.StatusBadRequest,
+				fmt.Errorf("invalid host id %q: %w", raw, err))
+			return
+		}
+		uuids = append(uuids, id)
+	}
+
+	deleted, err := h.service.BulkDeleteHosts(r.Context(), uuids)
+	if err != nil {
+		h.logger.Error("Failed to bulk-delete hosts", "request_id", requestID, "error", err)
+		writeError(w, r, http.StatusInternalServerError,
+			fmt.Errorf("failed to delete hosts: %w", err))
+		return
+	}
+
+	h.logger.Info("Hosts bulk-deleted", "request_id", requestID, "count", deleted)
+
+	writeJSON(w, r, http.StatusOK, BulkDeleteHostsResponse{Deleted: deleted})
+
+	if h.metrics != nil {
+		h.metrics.Counter("api_hosts_bulk_deleted_total", nil)
+	}
 }
 
 // GetHostScans handles GET /api/v1/hosts/{id}/scans - get scans for a specific host.

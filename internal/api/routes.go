@@ -88,6 +88,7 @@ func (s *Server) setupScanRoutes(api *mux.Router, h *apihandlers.ScanHandler) {
 func (s *Server) setupHostRoutes(api *mux.Router, h *apihandlers.HostHandler) {
 	api.HandleFunc("/hosts", h.ListHosts).Methods("GET")
 	api.HandleFunc("/hosts", h.CreateHost).Methods("POST")
+	api.HandleFunc("/hosts", h.BulkDeleteHosts).Methods("DELETE")
 	api.HandleFunc("/hosts/{id}", h.GetHost).Methods("GET")
 	api.HandleFunc("/hosts/{id}", h.UpdateHost).Methods("PUT")
 	api.HandleFunc("/hosts/{id}", h.DeleteHost).Methods("DELETE")

@@ -276,3 +276,42 @@ func (c *MockHostServicerUpdateHostCall) DoAndReturn(f func(context.Context, uui
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
+
+// BulkDeleteHosts mocks base method.
+func (m *MockHostServicer) BulkDeleteHosts(ctx context.Context, ids []uuid.UUID) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BulkDeleteHosts", ctx, ids)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BulkDeleteHosts indicates an expected call of BulkDeleteHosts.
+func (mr *MockHostServicerMockRecorder) BulkDeleteHosts(ctx, ids any) *MockHostServicerBulkDeleteHostsCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BulkDeleteHosts", reflect.TypeOf((*MockHostServicer)(nil).BulkDeleteHosts), ctx, ids)
+	return &MockHostServicerBulkDeleteHostsCall{Call: call}
+}
+
+// MockHostServicerBulkDeleteHostsCall wrap *gomock.Call
+type MockHostServicerBulkDeleteHostsCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockHostServicerBulkDeleteHostsCall) Return(arg0 int64, arg1 error) *MockHostServicerBulkDeleteHostsCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockHostServicerBulkDeleteHostsCall) Do(f func(context.Context, []uuid.UUID) (int64, error)) *MockHostServicerBulkDeleteHostsCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockHostServicerBulkDeleteHostsCall) DoAndReturn(f func(context.Context, []uuid.UUID) (int64, error)) *MockHostServicerBulkDeleteHostsCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
