@@ -19,10 +19,23 @@ import {
   describeCron,
 } from "../lib/utils";
 import type { components } from "../api/types";
+import { ColumnToggle } from "../components/column-toggle";
+import type { ColumnDef } from "../components/column-toggle";
 
 type ScheduleResponse = components["schemas"]["docs.ScheduleResponse"];
 
 const PAGE_SIZE = 25;
+
+// ── Column definitions ───────────────────────────────────────────────────────────────────────────────
+
+const SCHEDULE_COLUMNS: ColumnDef[] = [
+  { key: "name", label: "Name", alwaysVisible: true },
+  { key: "schedule", label: "Schedule", alwaysVisible: true },
+  { key: "status", label: "Status", alwaysVisible: true },
+  { key: "profile", label: "Profile" },
+  { key: "next_run", label: "Next Run" },
+  { key: "last_run", label: "Last Run" },
+];
 
 type StatusFilter = "all" | "enabled" | "disabled";
 
@@ -45,7 +58,7 @@ function ScheduleEnabledBadge({ enabled }: { enabled: boolean }) {
 
 // ── Skeleton rows ─────────────────────────────────────────────────────────────
 
-function SkeletonRows() {
+function SkeletonRows({ colVis }: { colVis: Record<string, boolean> }) {
   return (
     <>
       {Array.from({ length: 6 }).map((_, i) => (
@@ -56,18 +69,24 @@ function SkeletonRows() {
           <td className="px-4 py-2.5">
             <Skeleton className="h-3 w-40" />
           </td>
-          <td className="px-4 py-2.5">
-            <Skeleton className="h-3 w-20" />
-          </td>
-          <td className="px-4 py-2.5">
-            <Skeleton className="h-3 w-20" />
-          </td>
+          {colVis.next_run && (
+            <td className="px-4 py-2.5">
+              <Skeleton className="h-3 w-20" />
+            </td>
+          )}
+          {colVis.last_run && (
+            <td className="px-4 py-2.5">
+              <Skeleton className="h-3 w-20" />
+            </td>
+          )}
           <td className="px-4 py-2.5">
             <Skeleton className="h-5 w-16 rounded" />
           </td>
-          <td className="px-4 py-2.5">
-            <Skeleton className="h-3 w-28" />
-          </td>
+          {colVis.profile && (
+            <td className="px-4 py-2.5">
+              <Skeleton className="h-3 w-28" />
+            </td>
+          )}
         </tr>
       ))}
     </>
@@ -366,6 +385,18 @@ export function SchedulesPage() {
   const [selectedSchedule, setSelectedSchedule] =
     useState<ScheduleResponse | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [colVis, setColVis] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(SCHEDULE_COLUMNS.map((c) => [c.key, true])),
+  );
+
+  const toggleCol = useCallback((key: string) => {
+    const col = SCHEDULE_COLUMNS.find((c) => c.key === key);
+    if (col?.alwaysVisible) return;
+    setColVis((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const visibleColCount =
+    SCHEDULE_COLUMNS.filter((c) => colVis[c.key] !== false).length + 1; // +1 for actions
 
   const handleSort = useCallback(
     (column: string) => {
@@ -421,6 +452,13 @@ export function SchedulesPage() {
 
         <div className="flex-1" />
 
+        {/* Column toggle */}
+        <ColumnToggle
+          columns={SCHEDULE_COLUMNS}
+          visibility={colVis}
+          onToggle={toggleCol}
+        />
+
         <Button
           onClick={() => setShowCreateModal(true)}
           className="text-xs h-7 px-3"
@@ -451,22 +489,26 @@ export function SchedulesPage() {
                 onSort={handleSort}
                 className="px-4 py-2.5"
               />
-              <SortHeader
-                label="Next Run"
-                column="next_run"
-                sortBy={sortBy}
-                sortOrder={sortOrder}
-                onSort={handleSort}
-                className="px-4 py-2.5"
-              />
-              <SortHeader
-                label="Last Run"
-                column="last_run"
-                sortBy={sortBy}
-                sortOrder={sortOrder}
-                onSort={handleSort}
-                className="px-4 py-2.5"
-              />
+              {colVis.next_run && (
+                <SortHeader
+                  label="Next Run"
+                  column="next_run"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="px-4 py-2.5"
+                />
+              )}
+              {colVis.last_run && (
+                <SortHeader
+                  label="Last Run"
+                  column="last_run"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="px-4 py-2.5"
+                />
+              )}
               <SortHeader
                 label="Status"
                 column="enabled"
@@ -475,18 +517,20 @@ export function SchedulesPage() {
                 onSort={handleSort}
                 className="px-4 py-2.5"
               />
-              <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
-                Network
-              </th>
+              {colVis.profile && (
+                <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
+                  Network
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <SkeletonRows />
+              <SkeletonRows colVis={colVis} />
             ) : schedules.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={visibleColCount}
                   className="px-4 py-10 text-center text-text-muted"
                 >
                   No schedules found.
@@ -517,24 +561,30 @@ export function SchedulesPage() {
                         ? describeCron(schedule.cron_expr)
                         : "—"}
                     </td>
-                    <td className="px-4 py-2.5 text-text-muted whitespace-nowrap">
-                      {schedule.next_run
-                        ? formatRelativeTime(schedule.next_run)
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-text-muted whitespace-nowrap">
-                      {schedule.last_run
-                        ? formatRelativeTime(schedule.last_run)
-                        : "—"}
-                    </td>
+                    {colVis.next_run && (
+                      <td className="px-4 py-2.5 text-text-muted whitespace-nowrap">
+                        {schedule.next_run
+                          ? formatRelativeTime(schedule.next_run)
+                          : "—"}
+                      </td>
+                    )}
+                    {colVis.last_run && (
+                      <td className="px-4 py-2.5 text-text-muted whitespace-nowrap">
+                        {schedule.last_run
+                          ? formatRelativeTime(schedule.last_run)
+                          : "—"}
+                      </td>
+                    )}
                     <td className="px-4 py-2.5">
                       <ScheduleEnabledBadge
                         enabled={schedule.enabled ?? false}
                       />
                     </td>
-                    <td className="px-4 py-2.5 text-text-secondary font-mono whitespace-nowrap">
-                      {targetDisplay}
-                    </td>
+                    {colVis.profile && (
+                      <td className="px-4 py-2.5 text-text-secondary font-mono whitespace-nowrap">
+                        {targetDisplay}
+                      </td>
+                    )}
                   </tr>
                 );
               })

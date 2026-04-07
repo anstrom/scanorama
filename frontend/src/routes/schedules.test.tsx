@@ -35,6 +35,26 @@ vi.mock("../components/create-schedule-modal", () => ({
   ),
 }));
 
+vi.mock("../components/column-toggle", () => ({
+  ColumnToggle: ({
+    columns,
+    onToggle,
+  }: {
+    columns: Array<{ key: string; label: string; alwaysVisible?: boolean }>;
+    onToggle: (key: string) => void;
+  }) => (
+    <div aria-label="column-toggle">
+      {columns
+        .filter((c) => !c.alwaysVisible)
+        .map((c) => (
+          <button key={c.key} type="button" onClick={() => onToggle(c.key)}>
+            Toggle {c.label}
+          </button>
+        ))}
+    </div>
+  ),
+}));
+
 import {
   useSchedules,
   useEnableSchedule,
@@ -205,6 +225,11 @@ describe("SchedulesPage — empty state", () => {
 // ── Table structure ───────────────────────────────────────────────────────────
 
 describe("SchedulesPage — table structure", () => {
+  it("renders the schedules table", () => {
+    render(<SchedulesPage />);
+    expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+
   it("renders all column headers", () => {
     render(<SchedulesPage />);
     expect(
@@ -428,6 +453,36 @@ describe("SchedulesPage — add modal", () => {
     );
     expect(
       screen.queryByRole("dialog", { name: /schedule form/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// ── Column visibility ─────────────────────────────────────────────────────────
+
+describe("SchedulesPage — column visibility", () => {
+  it("renders optional columns visible by default", () => {
+    render(<SchedulesPage />);
+    expect(
+      screen.getByRole("columnheader", { name: "Next Run" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Last Run" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Network" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the Next Run column when its toggle is clicked", async () => {
+    render(<SchedulesPage />);
+    expect(
+      screen.getByRole("columnheader", { name: "Next Run" }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Toggle Next Run" }),
+    );
+    expect(
+      screen.queryByRole("columnheader", { name: "Next Run" }),
     ).not.toBeInTheDocument();
   });
 });

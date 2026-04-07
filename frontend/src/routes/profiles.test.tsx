@@ -20,10 +20,27 @@ vi.mock("../components/profile-form-modal", () => ({
   ),
 }));
 
-import {
-  useProfiles,
-  useDeleteProfile,
-} from "../api/hooks/use-profiles";
+vi.mock("../components/column-toggle", () => ({
+  ColumnToggle: ({
+    columns,
+    onToggle,
+  }: {
+    columns: Array<{ key: string; label: string; alwaysVisible?: boolean }>;
+    onToggle: (key: string) => void;
+  }) => (
+    <div aria-label="column-toggle">
+      {columns
+        .filter((c) => !c.alwaysVisible)
+        .map((c) => (
+          <button key={c.key} type="button" onClick={() => onToggle(c.key)}>
+            Toggle {c.label}
+          </button>
+        ))}
+    </div>
+  ),
+}));
+
+import { useProfiles, useDeleteProfile } from "../api/hooks/use-profiles";
 
 const mockUseProfiles = vi.mocked(useProfiles);
 const mockUseDeleteProfile = vi.mocked(useDeleteProfile);
@@ -319,9 +336,7 @@ describe("ProfilesPage — detail panel", () => {
     render(<ProfilesPage />);
     await userEvent.click(screen.getByText("Quick scan").closest("tr")!);
     const panel = screen.getByRole("dialog", { name: /profile details/i });
-    await userEvent.click(
-      within(panel).getByRole("button", { name: /edit/i }),
-    );
+    await userEvent.click(within(panel).getByRole("button", { name: /edit/i }));
     expect(
       screen.getByRole("dialog", { name: /profile form/i }),
     ).toBeInTheDocument();
@@ -333,9 +348,7 @@ describe("ProfilesPage — detail panel", () => {
     const panel = screen.getByRole("dialog", { name: /profile details/i });
     const deleteBtn = within(panel).getByRole("button", { name: /^delete$/i });
     await userEvent.click(deleteBtn);
-    expect(
-      within(panel).getByText("Delete this profile?"),
-    ).toBeInTheDocument();
+    expect(within(panel).getByText("Delete this profile?")).toBeInTheDocument();
   });
 });
 
@@ -363,6 +376,43 @@ describe("ProfilesPage — add modal", () => {
     );
     expect(
       screen.queryByRole("dialog", { name: /profile form/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// ── Table render ──────────────────────────────────────────────────────────────
+
+describe("ProfilesPage — table render", () => {
+  it("renders the profiles table", () => {
+    render(<ProfilesPage />);
+    expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+});
+
+// ── Column visibility ─────────────────────────────────────────────────────────
+
+describe("ProfilesPage — column visibility", () => {
+  it("renders optional columns visible by default", () => {
+    render(<ProfilesPage />);
+    expect(
+      screen.getByRole("columnheader", { name: "Ports" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Description" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Updated" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the Ports column when its toggle button is clicked", async () => {
+    render(<ProfilesPage />);
+    expect(
+      screen.getByRole("columnheader", { name: "Ports" }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Toggle Ports" }));
+    expect(
+      screen.queryByRole("columnheader", { name: "Ports" }),
     ).not.toBeInTheDocument();
   });
 });

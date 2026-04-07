@@ -21,3 +21,5 @@ export {
 export * from "./layout";
 export { SortHeader } from "./sort-header";
 export type { SortOrder, SortHeaderProps } from "./sort-header";
+export { ColumnToggle } from "./column-toggle";
+export type { ColumnDef, ColumnToggleProps } from "./column-toggle";
