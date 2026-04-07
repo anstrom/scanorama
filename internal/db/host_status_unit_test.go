@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
 
@@ -14,23 +15,25 @@ func TestMarkGoneHosts_Unit(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
+	runID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
 	t.Run("marks missing up hosts as gone", func(t *testing.T) {
 		t.Parallel()
 		db, mock := newMockDB(t)
 		repo := NewHostRepository(db)
 
-		// New arg order: $1=up, $2=gone, $3=cidr, $4=discovered IPs.
-		mock.ExpectExec(`UPDATE hosts`).
+		// Arg order: $1=up, $2=gone, $3=cidr, $4=discovered IPs, $5=run ID.
+		mock.ExpectExec(`WITH updated AS`).
 			WithArgs(
 				HostStatusUp,
 				HostStatusGone,
 				"192.168.1.0/24",
 				pq.Array([]string{"192.168.1.1", "192.168.1.2"}),
+				runID,
 			).
 			WillReturnResult(sqlmock.NewResult(0, 3))
 
-		n, err := repo.MarkGoneHosts(ctx, "192.168.1.0/24", []string{"192.168.1.1", "192.168.1.2"})
+		n, err := repo.MarkGoneHosts(ctx, "192.168.1.0/24", []string{"192.168.1.1", "192.168.1.2"}, runID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -48,18 +51,19 @@ func TestMarkGoneHosts_Unit(t *testing.T) {
 		repo := NewHostRepository(db)
 
 		// With an empty discovered list every host in the CIDR that is either
-		// "up" or "gone" gets its timeout_count bumped.  The result count
+		// "up" or "gone" gets its timeout_count bumped. The result count
 		// represents total rows touched (2 newly-gone + 5 already-gone = 7).
-		mock.ExpectExec(`UPDATE hosts`).
+		mock.ExpectExec(`WITH updated AS`).
 			WithArgs(
 				HostStatusUp,
 				HostStatusGone,
 				"10.0.0.0/8",
 				pq.Array([]string{}),
+				runID,
 			).
 			WillReturnResult(sqlmock.NewResult(0, 7))
 
-		n, err := repo.MarkGoneHosts(ctx, "10.0.0.0/8", []string{})
+		n, err := repo.MarkGoneHosts(ctx, "10.0.0.0/8", []string{}, runID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -76,16 +80,17 @@ func TestMarkGoneHosts_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		repo := NewHostRepository(db)
 
-		mock.ExpectExec(`UPDATE hosts`).
+		mock.ExpectExec(`WITH updated AS`).
 			WithArgs(
 				HostStatusUp,
 				HostStatusGone,
 				"10.0.0.0/8",
 				pq.Array([]string{}),
+				runID,
 			).
 			WillReturnResult(sqlmock.NewResult(0, 10))
 
-		n, err := repo.MarkGoneHosts(ctx, "10.0.0.0/8", []string{})
+		n, err := repo.MarkGoneHosts(ctx, "10.0.0.0/8", []string{}, runID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -102,16 +107,17 @@ func TestMarkGoneHosts_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		repo := NewHostRepository(db)
 
-		mock.ExpectExec(`UPDATE hosts`).
+		mock.ExpectExec(`WITH updated AS`).
 			WithArgs(
 				HostStatusUp,
 				HostStatusGone,
 				"172.16.0.0/12",
 				pq.Array([]string{"172.16.0.1"}),
+				runID,
 			).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
-		n, err := repo.MarkGoneHosts(ctx, "172.16.0.0/12", []string{"172.16.0.1"})
+		n, err := repo.MarkGoneHosts(ctx, "172.16.0.0/12", []string{"172.16.0.1"}, runID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -128,10 +134,10 @@ func TestMarkGoneHosts_Unit(t *testing.T) {
 		db, mock := newMockDB(t)
 		repo := NewHostRepository(db)
 
-		mock.ExpectExec(`UPDATE hosts`).
+		mock.ExpectExec(`WITH updated AS`).
 			WillReturnError(fmt.Errorf("connection reset"))
 
-		_, err := repo.MarkGoneHosts(ctx, "192.168.0.0/16", []string{"192.168.0.1"})
+		_, err := repo.MarkGoneHosts(ctx, "192.168.0.0/16", []string{"192.168.0.1"}, runID)
 		if err == nil {
 			t.Fatal("expected an error, got nil")
 		}

@@ -456,6 +456,18 @@ type HostStatusEvent struct {
 	Source     *string   `db:"source"      json:"source,omitempty"`
 }
 
+// HostTimeoutEvent records a single instance of a host failing to respond
+// during a discovery run. Unlike HostStatusEvent, a row is inserted on every
+// missed run — not just on status transitions — so the frontend can show an
+// accurate consecutive-miss count and a "last timed out" timestamp.
+type HostTimeoutEvent struct {
+	ID             uuid.UUID  `db:"id"               json:"id"`
+	HostID         uuid.UUID  `db:"host_id"          json:"host_id"`
+	Source         string     `db:"source"           json:"source"`
+	DiscoveryRunID *uuid.UUID `db:"discovery_run_id" json:"discovery_run_id,omitempty"`
+	RecordedAt     time.Time  `db:"recorded_at"      json:"recorded_at"`
+}
+
 // ActiveHost represents the active_hosts view.
 type ActiveHost struct {
 	IPAddress         IPAddr    `db:"ip_address" json:"ip_address"`

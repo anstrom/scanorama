@@ -271,7 +271,7 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 		}
 
 		hostRepo := db.NewHostRepository(e.db)
-		goneCount, gErr := hostRepo.MarkGoneHosts(ctx, job.Network.String(), discoveredIPs)
+		goneCount, gErr := hostRepo.MarkGoneHosts(ctx, job.Network.String(), discoveredIPs, job.ID)
 		if gErr != nil {
 			slog.Warn("failed to mark gone hosts",
 				"network", job.Network.String(), "error", gErr)

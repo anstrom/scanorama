@@ -84,6 +84,7 @@ var scanResultColumns = []string{
 	"id", "job_id", "host_id", "host_ip",
 	"port", "protocol", "state", "service_name",
 	"scanned_at", "os_name", "os_family", "os_version", "os_confidence",
+	"scan_duration_ms",
 }
 
 func TestGetScanResults_Unit(t *testing.T) {
@@ -137,7 +138,7 @@ func TestGetScanResults_Unit(t *testing.T) {
 			sqlmock.NewRows(scanResultColumns).AddRow(
 				resultID, scanID, hostID, "10.0.0.1",
 				80, "tcp", "open", nil,
-				now, "Linux", "linux", "5.15", 90,
+				now, "Linux", "linux", "5.15", 90, nil,
 			))
 
 		results, total, err := NewScanRepository(db).GetScanResults(ctx, scanID, 0, 10)
@@ -164,7 +165,7 @@ func TestGetScanResults_Unit(t *testing.T) {
 			sqlmock.NewRows(scanResultColumns).AddRow(
 				uuid.New(), scanID, uuid.New(), "192.168.1.1",
 				443, "tcp", "open", &svc,
-				now, "", "", "", nil,
+				now, "", "", "", nil, nil,
 			))
 
 		results, _, err := NewScanRepository(db).GetScanResults(ctx, scanID, 0, 10)
