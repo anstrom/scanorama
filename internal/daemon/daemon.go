@@ -180,49 +180,66 @@ func (d *Daemon) fork() error {
 
 // dropPrivileges drops root privileges if configured.
 func (d *Daemon) dropPrivileges() error {
-	if d.config.Daemon.User == "" && d.config.Daemon.Group == "" {
-		return nil // No privilege dropping configured
+	return DropPrivileges(d.config.Daemon.User, d.config.Daemon.Group, d.logger.Printf)
+}
+
+// DropPrivileges drops root privileges to the given user and group when the
+// process is running as root and both names are non-empty. It is safe to call
+// when not root — it logs a notice and returns nil. The logf argument accepts
+// a printf-style function so callers can plug in any logger.
+//
+// Order matters: group must be changed before user because setuid discards
+// the ability to call setgid afterwards.
+//
+// WARNING: once privileges are dropped the process cannot reclaim them. Callers
+// that need to invoke nmap with raw-socket access (SYN/OS-detection scans)
+// must do so before calling this function.
+func DropPrivileges(userName, groupName string, logf func(string, ...any)) error {
+	if userName == "" && groupName == "" {
+		return nil // nothing to do
 	}
 
-	// Note: Privilege dropping requires root privileges
-	// This is a simplified implementation
 	if os.Getuid() != 0 {
-		d.logger.Println("Not running as root, skipping privilege drop")
+		if logf != nil {
+			logf("not running as root — skipping privilege drop (requested user=%q group=%q)", userName, groupName)
+		}
 		return nil
 	}
 
-	// Change group first
-	if d.config.Daemon.Group != "" {
-		grp, err := user.LookupGroup(d.config.Daemon.Group)
+	// Drop group first.
+	if groupName != "" {
+		grp, err := user.LookupGroup(groupName)
 		if err != nil {
-			return fmt.Errorf("failed to lookup group %s: %w", d.config.Daemon.Group, err)
+			return fmt.Errorf("lookup group %q: %w", groupName, err)
 		}
 		gid, err := strconv.Atoi(grp.Gid)
 		if err != nil {
-			return fmt.Errorf("invalid group ID: %w", err)
+			return fmt.Errorf("invalid GID for group %q: %w", groupName, err)
 		}
 		if err := syscall.Setgid(gid); err != nil {
-			return fmt.Errorf("failed to set GID to %d: %w", gid, err)
+			return fmt.Errorf("setgid(%d) for group %q: %w", gid, groupName, err)
 		}
-		d.logger.Printf("Changed group to %s (GID: %d)", d.config.Daemon.Group, gid)
+		if logf != nil {
+			logf("dropped to group %s (GID %d)", groupName, gid)
+		}
 	}
 
-	// Change user
-	if d.config.Daemon.User != "" {
-		usr, err := user.Lookup(d.config.Daemon.User)
+	// Drop user.
+	if userName != "" {
+		usr, err := user.Lookup(userName)
 		if err != nil {
-			return fmt.Errorf("failed to lookup user %s: %w", d.config.Daemon.User, err)
+			return fmt.Errorf("lookup user %q: %w", userName, err)
 		}
-
 		uid, err := strconv.Atoi(usr.Uid)
 		if err != nil {
-			return fmt.Errorf("invalid user ID: %w", err)
+			return fmt.Errorf("invalid UID for user %q: %w", userName, err)
 		}
-
 		if err := syscall.Setuid(uid); err != nil {
-			return fmt.Errorf("failed to setuid to %d: %w", uid, err)
+			return fmt.Errorf("setuid(%d) for user %q: %w", uid, userName, err)
 		}
-		d.logger.Printf("Changed user to %s (UID: %d)", d.config.Daemon.User, uid)
+		if logf != nil {
+			logf("dropped to user %s (UID %d)", userName, uid)
+		}
 	}
 
 	return nil

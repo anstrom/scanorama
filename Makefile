@@ -104,6 +104,23 @@ stop: ## Stop background backend and frontend (started by 'make dev')
 
 
 
+.PHONY: nmap-check
+nmap-check: ## Check whether nmap has the SUID bit set; set it if missing (requires sudo)
+	@NMAP_BIN=$$(readlink -f $$(which nmap) 2>/dev/null || which nmap 2>/dev/null); \
+	if [ -z "$$NMAP_BIN" ]; then \
+		echo "✗ nmap not found in PATH — install it first (brew install nmap)"; \
+		exit 1; \
+	fi; \
+	if [ -u "$$NMAP_BIN" ]; then \
+		echo "✓ nmap SUID OK ($$NMAP_BIN)"; \
+	else \
+		echo "⚠ nmap at $$NMAP_BIN does not have the SUID bit set."; \
+		echo "  SYN scans and OS detection require nmap to run as root."; \
+		echo "  Setting SUID now (you may be prompted for your password)..."; \
+		sudo chmod u+s "$$NMAP_BIN" && echo "✓ SUID set on $$NMAP_BIN" || \
+			echo "  Could not set SUID — SYN/OS-detection scans will fail until it is set."; \
+	fi
+
 .PHONY: dev
 dev: build dev-db-up dev-config frontend-deps ## Ensure DB is up; rebuild + restart backend + frontend in the background
 	@# ── backend ────────────────────────────────────────────────────────────
@@ -115,7 +132,9 @@ dev: build dev-db-up dev-config frontend-deps ## Ensure DB is up; rebuild + rest
 		fi; \
 		rm -f $(PID_FILE); \
 	fi
-	@$(BUILD_DIR)/$(BINARY_NAME) api \
+	@# Run as root so nmap can perform SYN scans and OS detection without SUID.
+	@# Privileges are dropped to daemon.user after initialisation if configured.
+	@sudo -E $(BUILD_DIR)/$(BINARY_NAME) api \
 		--config $(DEV_CONFIG) \
 		--host $(HOST) \
 		--port $(PORT) \
