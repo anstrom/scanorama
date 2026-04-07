@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { isNotFound } from "../api/errors";
 import {
   Search,
@@ -8,6 +8,7 @@ import {
   Pencil,
   Check,
   Trash2,
+  Activity,
 } from "lucide-react";
 import { SortHeader } from "../components/sort-header";
 import type { SortOrder } from "../components/sort-header";
@@ -18,6 +19,7 @@ import {
   useHostScans,
   useUpdateHost,
   useDeleteHost,
+  useBulkDeleteHosts,
 } from "../api/hooks/use-hosts";
 import { useToast } from "../components/toast-provider";
 import {
@@ -50,6 +52,11 @@ type HostWithDetails = HostResponse & {
   os_version_detail?: string;
   os_confidence?: number;
   vendor?: string;
+  response_time_ms?: number | null;
+  response_time_min_ms?: number | null;
+  response_time_max_ms?: number | null;
+  response_time_avg_ms?: number | null;
+  timeout_count?: number;
 };
 
 const PAGE_SIZE = 25;
@@ -361,6 +368,51 @@ function HostDetailPanel({
             )}
           </section>
 
+          {/* Network / Response Time */}
+          {!isLoading &&
+            (h.response_time_avg_ms != null || (h.timeout_count ?? 0) > 0) && (
+              <section>
+                <h3 className="text-xs font-medium text-text-primary mb-3 flex items-center gap-1.5">
+                  <Activity className="h-3.5 w-3.5 text-text-muted" />
+                  Network
+                </h3>
+                <div className="space-y-2">
+                  {h.response_time_min_ms != null && (
+                    <MetaRow
+                      label="RTT min"
+                      value={`${h.response_time_min_ms} ms`}
+                    />
+                  )}
+                  {h.response_time_avg_ms != null && (
+                    <MetaRow
+                      label="RTT avg"
+                      value={
+                        <span className="flex items-center gap-1.5">
+                          <span className="tabular-nums">
+                            {h.response_time_avg_ms} ms
+                          </span>
+                          {h.response_time_avg_ms > 100 && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-warning/10 text-warning border border-warning/20">
+                              Slow
+                            </span>
+                          )}
+                        </span>
+                      }
+                    />
+                  )}
+                  {h.response_time_max_ms != null && (
+                    <MetaRow
+                      label="RTT max"
+                      value={`${h.response_time_max_ms} ms`}
+                    />
+                  )}
+                  {(h.timeout_count ?? 0) > 0 && (
+                    <MetaRow label="Timeouts" value={h.timeout_count} />
+                  )}
+                </div>
+              </section>
+            )}
+
           {/* Ports */}
           <section>
             {(() => {
@@ -574,6 +626,9 @@ function SkeletonRows({ count }: { count: number }) {
     <>
       {Array.from({ length: count }).map((_, i) => (
         <tr key={i} className="border-b border-border/50">
+          <td className="py-3 pl-4 pr-2 w-8">
+            <Skeleton className="h-3 w-3 rounded" />
+          </td>
           <td className="py-3 pr-4">
             <Skeleton className="h-3.5 w-28" />
           </td>
@@ -619,12 +674,17 @@ export function HostsPage() {
   const [vendorFilter, setVendorFilter] = useState("");
   const [scanIP, setScanIP] = useState<string | null>(null);
   const [selectedHost, setSelectedHost] = useState<HostResponse | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const { mutateAsync: bulkDeleteHosts, isPending: isBulkDeleting } =
+    useBulkDeleteHosts();
+  const { toast } = useToast();
 
   // Debounce search input ~300ms
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchInput);
       setPage(1);
+      setSelectedIds(new Set());
     }, 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
@@ -633,6 +693,7 @@ export function HostsPage() {
   const handleStatusChange = useCallback((value: HostStatus) => {
     setStatusFilter(value);
     setPage(1);
+    setSelectedIds(new Set());
   }, []);
 
   const handleSort = useCallback(
@@ -648,6 +709,15 @@ export function HostsPage() {
     [sortBy],
   );
 
+  const toggleSelect = useCallback((id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
   const queryParams = {
     page,
     page_size: PAGE_SIZE,
@@ -661,13 +731,38 @@ export function HostsPage() {
 
   const { data, isLoading, isError } = useHosts(queryParams);
 
-  const hosts = data?.data ?? [];
+  const hosts = useMemo(() => data?.data ?? [], [data]);
   const pagination = data?.pagination;
   const totalPages = pagination?.total_pages ?? 0;
 
   // Clamp page back when a filter/search change reduces total_pages below current page.
   if (!isLoading && totalPages > 0 && page > totalPages) {
     setPage(totalPages);
+  }
+
+  const toggleSelectAll = useCallback(() => {
+    if (selectedIds.size === hosts.length && hosts.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(hosts.map((h) => h.id ?? "")));
+    }
+  }, [selectedIds, hosts]);
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selectedIds);
+    try {
+      const result = await bulkDeleteHosts(ids);
+      setSelectedIds(new Set());
+      toast.success(
+        `Deleted ${result?.deleted ?? ids.length} host${(result?.deleted ?? ids.length) !== 1 ? "s" : ""}`,
+      );
+      // Close the detail panel if the selected host was deleted
+      if (selectedHost && selectedIds.has(selectedHost.id ?? "")) {
+        setSelectedHost(null);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Bulk delete failed.");
+    }
   }
 
   return (
@@ -758,12 +853,54 @@ export function HostsPage() {
           </Button>
         </div>
 
+        {/* Bulk action bar */}
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3 px-4 py-2 rounded-lg border border-border bg-surface-raised text-xs">
+            <span className="text-text-secondary font-medium">
+              {selectedIds.size} selected
+            </span>
+            <Button
+              variant="danger"
+              icon={<Trash2 className="h-3.5 w-3.5" />}
+              loading={isBulkDeleting}
+              onClick={() => void handleBulkDelete()}
+              className="text-xs h-7 px-2"
+            >
+              Delete selected
+            </Button>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-text-muted hover:text-text-primary transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         {/* Table card */}
         <div className="bg-surface rounded-lg border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-border bg-surface">
+                  <th className="py-3 pl-4 pr-2 w-8">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all hosts"
+                      checked={
+                        hosts.length > 0 && selectedIds.size === hosts.length
+                      }
+                      ref={(el) => {
+                        if (el)
+                          el.indeterminate =
+                            selectedIds.size > 0 &&
+                            selectedIds.size < hosts.length;
+                      }}
+                      onChange={toggleSelectAll}
+                      className="rounded border-border cursor-pointer accent-accent"
+                    />
+                  </th>
                   <SortHeader
                     label="IP Address"
                     column="ip_address"
@@ -831,7 +968,7 @@ export function HostsPage() {
                 {isError ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       className="py-10 text-center text-xs text-danger"
                     >
                       Failed to load hosts.
@@ -842,7 +979,7 @@ export function HostsPage() {
                 ) : hosts.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       className="py-10 text-center text-xs text-text-muted"
                     >
                       No hosts found.
@@ -855,6 +992,20 @@ export function HostsPage() {
                       onClick={() => setSelectedHost(host)}
                       className="border-b border-border/50 last:border-0 hover:bg-surface-raised/50 transition-colors cursor-pointer"
                     >
+                      <td
+                        className="py-3 pl-4 pr-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${host.ip_address ?? "host"}`}
+                          checked={selectedIds.has(host.id ?? "")}
+                          onChange={(e) =>
+                            toggleSelect(host.id ?? "", e.target.checked)
+                          }
+                          className="rounded border-border cursor-pointer accent-accent"
+                        />
+                      </td>
                       <td className="py-3 px-4 pr-4 font-mono text-text-primary whitespace-nowrap">
                         {host.ip_address ?? "—"}
                       </td>
