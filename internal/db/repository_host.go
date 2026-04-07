@@ -163,29 +163,36 @@ func (r *HostRepository) UpsertForScan(ctx context.Context, ipAddr IPAddr, statu
 // discovery run so that hosts that didn't respond are distinguished from hosts
 // that are merely down.
 //
-// The database trigger track_host_status_change automatically records the
-// transition in host_status_events and updates previous_status /
-// status_changed_at, so this method only needs to issue the UPDATE.
+// Hosts that are already "gone" are not transitioned again (the status CASE
+// keeps them as "gone"), but their timeout_count is still incremented so
+// consecutive misses are tracked. When a host responds again the discovery
+// engine resets timeout_count to 0 via the upsert path.
 //
-// Returns the number of rows updated.
+// The database trigger track_host_status_change fires only when status
+// actually changes (up → gone), so it records the transition in
+// host_status_events and updates previous_status / status_changed_at
+// automatically without any extra work here.
+//
+// Returns the number of rows updated (newly gone + already gone).
 func (r *HostRepository) MarkGoneHosts(
 	ctx context.Context,
 	networkCIDR string,
 	discoveredIPs []string,
 ) (int, error) {
-	// Cast the Go string slice to a PostgreSQL inet[] so the NOT ANY check
-	// works with the inet-typed ip_address column.
+	// Process both "up" hosts (transition to "gone") and already-"gone" hosts
+	// (keep status, but still bump the consecutive-miss counter).
 	query := `
 		UPDATE hosts
-		   SET status = $1
-		 WHERE ip_address <<= $2::cidr
-		   AND status     = $3
+		   SET status        = CASE WHEN status = $1 THEN $2 ELSE status END,
+		       timeout_count = timeout_count + 1
+		 WHERE ip_address <<= $3::cidr
+		   AND status        IN ($1, $2)
 		   AND NOT (ip_address = ANY($4::inet[]))`
 
 	result, err := r.db.ExecContext(ctx, query,
+		HostStatusUp,
 		HostStatusGone,
 		networkCIDR,
-		HostStatusUp,
 		pq.Array(discoveredIPs),
 	)
 	if err != nil {

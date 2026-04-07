@@ -15,16 +15,17 @@ func TestMarkGoneHosts_Unit(t *testing.T) {
 
 	ctx := context.Background()
 
-	t.Run("marks missing hosts as gone", func(t *testing.T) {
+	t.Run("marks missing up hosts as gone", func(t *testing.T) {
 		t.Parallel()
 		db, mock := newMockDB(t)
 		repo := NewHostRepository(db)
 
+		// New arg order: $1=up, $2=gone, $3=cidr, $4=discovered IPs.
 		mock.ExpectExec(`UPDATE hosts`).
 			WithArgs(
+				HostStatusUp,
 				HostStatusGone,
 				"192.168.1.0/24",
-				HostStatusUp,
 				pq.Array([]string{"192.168.1.1", "192.168.1.2"}),
 			).
 			WillReturnResult(sqlmock.NewResult(0, 3))
@@ -41,6 +42,35 @@ func TestMarkGoneHosts_Unit(t *testing.T) {
 		}
 	})
 
+	t.Run("also increments timeout_count for already-gone hosts", func(t *testing.T) {
+		t.Parallel()
+		db, mock := newMockDB(t)
+		repo := NewHostRepository(db)
+
+		// With an empty discovered list every host in the CIDR that is either
+		// "up" or "gone" gets its timeout_count bumped.  The result count
+		// represents total rows touched (2 newly-gone + 5 already-gone = 7).
+		mock.ExpectExec(`UPDATE hosts`).
+			WithArgs(
+				HostStatusUp,
+				HostStatusGone,
+				"10.0.0.0/8",
+				pq.Array([]string{}),
+			).
+			WillReturnResult(sqlmock.NewResult(0, 7))
+
+		n, err := repo.MarkGoneHosts(ctx, "10.0.0.0/8", []string{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if n != 7 {
+			t.Errorf("got %d, want 7", n)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet expectations: %v", err)
+		}
+	})
+
 	t.Run("empty discovered list marks all up hosts gone", func(t *testing.T) {
 		t.Parallel()
 		db, mock := newMockDB(t)
@@ -48,9 +78,9 @@ func TestMarkGoneHosts_Unit(t *testing.T) {
 
 		mock.ExpectExec(`UPDATE hosts`).
 			WithArgs(
+				HostStatusUp,
 				HostStatusGone,
 				"10.0.0.0/8",
-				HostStatusUp,
 				pq.Array([]string{}),
 			).
 			WillReturnResult(sqlmock.NewResult(0, 10))
@@ -74,9 +104,9 @@ func TestMarkGoneHosts_Unit(t *testing.T) {
 
 		mock.ExpectExec(`UPDATE hosts`).
 			WithArgs(
+				HostStatusUp,
 				HostStatusGone,
 				"172.16.0.0/12",
-				HostStatusUp,
 				pq.Array([]string{"172.16.0.1"}),
 			).
 			WillReturnResult(sqlmock.NewResult(0, 0))
