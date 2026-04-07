@@ -372,3 +372,127 @@ func (r *DiscoveryRepository) StopDiscoveryJob(ctx context.Context, id uuid.UUID
 
 	return nil
 }
+
+// GetDiscoveryDiff computes a diff for a single discovery run, returning the
+// sets of new, gone, and changed hosts along with an unchanged count.
+// Returns a not-found error (convertible to HTTP 404) when the job does not exist.
+func (r *DiscoveryRepository) GetDiscoveryDiff(ctx context.Context, jobID uuid.UUID) (*DiscoveryDiff, error) {
+	// ── existence check ────────────────────────────────────────────────────
+	var exists bool
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM discovery_jobs WHERE id = $1)`, jobID,
+	).Scan(&exists); err != nil {
+		return nil, sanitizeDBError("check discovery job for diff", err)
+	}
+	if !exists {
+		return nil, errors.ErrNotFoundWithID("discovery job", jobID.String())
+	}
+
+	// ── new hosts ──────────────────────────────────────────────────────────
+	newHosts, err := r.queryDiffHosts(ctx, `
+		SELECT h.id, host(h.ip_address) AS ip_address, h.hostname,
+		       h.status, h.previous_status, h.vendor, h.mac_address::text, h.last_seen, h.first_seen
+		FROM hosts h
+		JOIN discovery_jobs dj ON dj.id = $1
+		WHERE h.ip_address <<= dj.network::cidr
+		  AND h.first_seen >= dj.created_at
+		  AND (dj.completed_at IS NULL OR h.first_seen <= dj.completed_at)
+		ORDER BY h.first_seen ASC`, jobID, "query new hosts for diff")
+	if err != nil {
+		return nil, err
+	}
+
+	// ── gone hosts ─────────────────────────────────────────────────────────
+	goneHosts, err := r.queryDiffHosts(ctx, `
+		SELECT h.id, host(h.ip_address) AS ip_address, h.hostname,
+		       h.status, h.previous_status, h.vendor, h.mac_address::text, h.last_seen, h.first_seen
+		FROM hosts h
+		JOIN host_timeout_events te ON te.host_id = h.id
+		WHERE te.discovery_run_id = $1
+		ORDER BY h.last_seen DESC`, jobID, "query gone hosts for diff")
+	if err != nil {
+		return nil, err
+	}
+
+	// ── changed hosts ──────────────────────────────────────────────────────
+	changedHosts, err := r.queryDiffHosts(ctx, `
+		SELECT DISTINCT ON (h.id)
+		       h.id, host(h.ip_address) AS ip_address, h.hostname,
+		       h.status, h.previous_status, h.vendor, h.mac_address::text, h.last_seen, h.first_seen
+		FROM hosts h
+		JOIN host_status_events se ON se.host_id = h.id
+		JOIN discovery_jobs dj ON dj.id = $1
+		WHERE h.ip_address <<= dj.network::cidr
+		  AND se.changed_at >= dj.created_at
+		  AND (dj.completed_at IS NULL OR se.changed_at <= dj.completed_at)
+		  AND se.to_status != 'gone'
+		  AND h.first_seen < dj.created_at
+		ORDER BY h.id, se.changed_at DESC`, jobID, "query changed hosts for diff")
+	if err != nil {
+		return nil, err
+	}
+
+	// ── total hosts in network ─────────────────────────────────────────────
+	var total int
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM hosts h
+		JOIN discovery_jobs dj ON dj.id = $1
+		WHERE h.ip_address <<= dj.network::cidr`, jobID,
+	).Scan(&total); err != nil {
+		return nil, sanitizeDBError("count total hosts for diff", err)
+	}
+
+	unchanged := total - len(newHosts) - len(goneHosts) - len(changedHosts)
+	if unchanged < 0 {
+		unchanged = 0
+	}
+
+	return &DiscoveryDiff{
+		JobID:          jobID,
+		NewHosts:       newHosts,
+		GoneHosts:      goneHosts,
+		ChangedHosts:   changedHosts,
+		UnchangedCount: unchanged,
+	}, nil
+}
+
+// queryDiffHosts runs a single diff-host query and scans the results into a
+// []DiffHost slice. It is a shared helper used by GetDiscoveryDiff.
+func (r *DiscoveryRepository) queryDiffHosts(
+	ctx context.Context, query string, jobID uuid.UUID, operation string,
+) ([]DiffHost, error) {
+	rows, err := r.db.QueryContext(ctx, query, jobID)
+	if err != nil {
+		return nil, sanitizeDBError(operation, err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Warn("failed to close diff-host rows", "error", err)
+		}
+	}()
+
+	hosts := []DiffHost{}
+	for rows.Next() {
+		var h DiffHost
+		if err := rows.Scan(
+			&h.ID,
+			&h.IPAddress,
+			&h.Hostname,
+			&h.Status,
+			&h.PreviousStatus,
+			&h.Vendor,
+			&h.MACAddress,
+			&h.LastSeen,
+			&h.FirstSeen,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan diff host row: %w", err)
+		}
+		hosts = append(hosts, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate diff host rows: %w", err)
+	}
+
+	return hosts, nil
+}
