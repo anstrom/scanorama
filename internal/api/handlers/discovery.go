@@ -336,6 +336,21 @@ func (h *DiscoveryHandler) UpdateDiscoveryJob(w http.ResponseWriter, r *http.Req
 		"api_discovery_jobs_updated_total")
 }
 
+// GetDiscoveryDiff handles GET /api/v1/discovery/{id}/diff
+func (h *DiscoveryHandler) GetDiscoveryDiff(w http.ResponseWriter, r *http.Request) {
+	jobID, err := extractUUIDFromPath(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+	diff, err := h.database.GetDiscoveryDiff(r.Context(), jobID)
+	if err != nil {
+		handleDatabaseError(w, r, err, "get", "discovery diff", h.logger)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, diff)
+}
+
 // DeleteDiscoveryJob handles DELETE /api/v1/discovery/{id} - delete a discovery job.
 func (h *DiscoveryHandler) DeleteDiscoveryJob(w http.ResponseWriter, r *http.Request) {
 	jobID, err := extractUUIDFromPath(r)
