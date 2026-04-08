@@ -4,7 +4,7 @@ run:
   tests: true
   modules-download-mode: readonly
   allow-parallel-runners: true
-  go: "1.26.1"
+  go: "1.26.2"
 
 linters:
   default: none
