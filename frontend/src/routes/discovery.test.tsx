@@ -8,6 +8,11 @@ vi.mock("../api/hooks/use-discovery", () => ({
   useStartDiscovery: vi.fn(),
   useStopDiscovery: vi.fn(),
   useDiscoveryDiff: vi.fn(),
+  useDiscoveryCompare: vi.fn(),
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  useSearch: vi.fn().mockReturnValue({}),
 }));
 
 vi.mock("../components/create-discovery-modal", () => ({
@@ -25,12 +30,14 @@ import {
   useStartDiscovery,
   useStopDiscovery,
   useDiscoveryDiff,
+  useDiscoveryCompare,
 } from "../api/hooks/use-discovery";
 
 const mockUseDiscoveryJobs = vi.mocked(useDiscoveryJobs);
 const mockUseStartDiscovery = vi.mocked(useStartDiscovery);
 const mockUseStopDiscovery = vi.mocked(useStopDiscovery);
 const mockUseDiscoveryDiff = vi.mocked(useDiscoveryDiff);
+const mockUseDiscoveryCompare = vi.mocked(useDiscoveryCompare);
 
 const mockJobs = [
   {
@@ -109,6 +116,11 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
   } as unknown as ReturnType<typeof useDiscoveryDiff>);
+  mockUseDiscoveryCompare.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    error: null,
+  } as unknown as ReturnType<typeof useDiscoveryCompare>);
 });
 
 describe("DiscoveryPage", () => {
@@ -565,6 +577,49 @@ describe("DiscoveryPage", () => {
     expect(
       within(dialog).getByText(/no changes detected in this run/i),
     ).toBeInTheDocument();
+  });
+
+  // ── Compare panel ─────────────────────────────────────────────
+
+  it("renders Compare runs button", () => {
+    render(<DiscoveryPage />);
+    expect(
+      screen.getByRole("button", { name: /compare runs/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows compare panel when Compare runs clicked", async () => {
+    render(<DiscoveryPage />);
+    const compareButton = screen.getByRole("button", { name: /compare runs/i });
+    await userEvent.click(compareButton);
+    expect(screen.getByText("Compare Discovery Runs")).toBeInTheDocument();
+  });
+
+  it("shows run selectors in compare panel", async () => {
+    render(<DiscoveryPage />);
+    const compareButton = screen.getByRole("button", { name: /compare runs/i });
+    await userEvent.click(compareButton);
+    expect(
+      screen.getByRole("combobox", { name: /baseline run a/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: /current run b/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides compare panel when close button clicked", async () => {
+    render(<DiscoveryPage />);
+    const compareButton = screen.getByRole("button", { name: /compare runs/i });
+    await userEvent.click(compareButton);
+    expect(screen.getByText("Compare Discovery Runs")).toBeInTheDocument();
+
+    const closeButton = screen.getByRole("button", {
+      name: /close compare panel/i,
+    });
+    await userEvent.click(closeButton);
+    expect(
+      screen.queryByText("Compare Discovery Runs"),
+    ).not.toBeInTheDocument();
   });
 
   // ── Create modal ──────────────────────────────────────────────

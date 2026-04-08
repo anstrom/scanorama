@@ -99,6 +99,7 @@ func (s *Server) setupHostRoutes(api *mux.Router, h *apihandlers.HostHandler) {
 func (s *Server) setupDiscoveryRoutes(api *mux.Router, h *apihandlers.DiscoveryHandler) {
 	api.HandleFunc("/discovery", h.ListDiscoveryJobs).Methods("GET")
 	api.HandleFunc("/discovery", h.CreateDiscoveryJob).Methods("POST")
+	api.HandleFunc("/discovery/compare", h.GetDiscoveryCompare).Methods("GET")
 	api.HandleFunc("/discovery/{id}", h.GetDiscoveryJob).Methods("GET")
 	api.HandleFunc("/discovery/{id}/diff", h.GetDiscoveryDiff).Methods("GET")
 	api.HandleFunc("/discovery/{id}/start", h.StartDiscovery).Methods("POST")

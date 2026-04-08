@@ -66,6 +66,7 @@ type DiscoveryStore interface {
 	StartDiscoveryJob(ctx context.Context, id uuid.UUID) error
 	StopDiscoveryJob(ctx context.Context, id uuid.UUID) error
 	GetDiscoveryDiff(ctx context.Context, jobID uuid.UUID) (*db.DiscoveryDiff, error)
+	CompareDiscoveryRuns(ctx context.Context, jobA, jobB uuid.UUID) (*db.DiscoveryCompareDiff, error)
 }
 
 // HostServicer is the service-level interface consumed by HostHandler.

@@ -19,12 +19,13 @@ interface ToastItem {
   message: string;
   variant: ToastVariant;
   duration: number;
+  onClick?: () => void;
 }
 
 interface ToastContextValue {
   toast: {
-    success(message: string): void;
-    error(message: string): void;
+    success(message: string, onClick?: () => void): void;
+    error(message: string, onClick?: () => void): void;
   };
 }
 
@@ -59,6 +60,7 @@ function ToastCard({ item, onDismiss }: ToastCardProps) {
     <div
       role="alert"
       aria-live="assertive"
+      onClick={item.onClick}
       className={cn(
         // Base card
         "relative overflow-hidden pointer-events-auto",
@@ -70,6 +72,7 @@ function ToastCard({ item, onDismiss }: ToastCardProps) {
         isSuccess ? "border-l-success" : "border-l-danger",
         // Entrance animation
         "transition-all duration-200",
+        item.onClick ? "cursor-pointer" : "",
       )}
     >
       {/* Icon */}
@@ -124,30 +127,37 @@ export function ToastProvider({
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const addToast = useCallback((message: string, variant: ToastVariant) => {
-    const duration = variant === "success" ? SUCCESS_DURATION : ERROR_DURATION;
-    const newToast: ToastItem = {
-      id: crypto.randomUUID(),
-      message,
-      variant,
-      duration,
-    };
-    setToasts((prev) => {
-      const next = [...prev, newToast];
-      // Oldest entries are dropped from the front when the cap is exceeded
-      return next.length > MAX_TOASTS
-        ? next.slice(next.length - MAX_TOASTS)
-        : next;
-    });
-  }, []);
+  const addToast = useCallback(
+    (message: string, variant: ToastVariant, onClick?: () => void) => {
+      const duration =
+        variant === "success" ? SUCCESS_DURATION : ERROR_DURATION;
+      const newToast: ToastItem = {
+        id: crypto.randomUUID(),
+        message,
+        variant,
+        duration,
+        onClick,
+      };
+      setToasts((prev) => {
+        const next = [...prev, newToast];
+        // Oldest entries are dropped from the front when the cap is exceeded
+        return next.length > MAX_TOASTS
+          ? next.slice(next.length - MAX_TOASTS)
+          : next;
+      });
+    },
+    [],
+  );
 
   const toastSuccess = useCallback(
-    (message: string) => addToast(message, "success"),
+    (message: string, onClick?: () => void) =>
+      addToast(message, "success", onClick),
     [addToast],
   );
 
   const toastError = useCallback(
-    (message: string) => addToast(message, "error"),
+    (message: string, onClick?: () => void) =>
+      addToast(message, "error", onClick),
     [addToast],
   );
 

@@ -353,6 +353,45 @@ func (c *MockDiscoveryStoreStopDiscoveryJobCall) DoAndReturn(f func(context.Cont
 	return c
 }
 
+// CompareDiscoveryRuns mocks base method.
+func (m *MockDiscoveryStore) CompareDiscoveryRuns(ctx context.Context, jobA, jobB uuid.UUID) (*db.DiscoveryCompareDiff, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompareDiscoveryRuns", ctx, jobA, jobB)
+	ret0, _ := ret[0].(*db.DiscoveryCompareDiff)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CompareDiscoveryRuns indicates an expected call of CompareDiscoveryRuns.
+func (mr *MockDiscoveryStoreMockRecorder) CompareDiscoveryRuns(ctx, jobA, jobB any) *MockDiscoveryStoreCompareDiscoveryRunsCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompareDiscoveryRuns", reflect.TypeOf((*MockDiscoveryStore)(nil).CompareDiscoveryRuns), ctx, jobA, jobB)
+	return &MockDiscoveryStoreCompareDiscoveryRunsCall{Call: call}
+}
+
+// MockDiscoveryStoreCompareDiscoveryRunsCall wrap *gomock.Call
+type MockDiscoveryStoreCompareDiscoveryRunsCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockDiscoveryStoreCompareDiscoveryRunsCall) Return(arg0 *db.DiscoveryCompareDiff, arg1 error) *MockDiscoveryStoreCompareDiscoveryRunsCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockDiscoveryStoreCompareDiscoveryRunsCall) Do(f func(context.Context, uuid.UUID, uuid.UUID) (*db.DiscoveryCompareDiff, error)) *MockDiscoveryStoreCompareDiscoveryRunsCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockDiscoveryStoreCompareDiscoveryRunsCall) DoAndReturn(f func(context.Context, uuid.UUID, uuid.UUID) (*db.DiscoveryCompareDiff, error)) *MockDiscoveryStoreCompareDiscoveryRunsCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // UpdateDiscoveryJob mocks base method.
 func (m *MockDiscoveryStore) UpdateDiscoveryJob(ctx context.Context, id uuid.UUID, input db.UpdateDiscoveryJobInput) (*db.DiscoveryJob, error) {
 	m.ctrl.T.Helper()
