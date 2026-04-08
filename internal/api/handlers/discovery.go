@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -368,6 +369,37 @@ func (h *DiscoveryHandler) GetDiscoveryDiff(w http.ResponseWriter, r *http.Reque
 	diff, err := h.database.GetDiscoveryDiff(r.Context(), jobID)
 	if err != nil {
 		handleDatabaseError(w, r, err, "get", "discovery diff", h.logger)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, diff)
+}
+
+// GetDiscoveryCompare handles GET /api/v1/discovery/compare?run_a={id}&run_b={id}
+// It compares two discovery runs and returns which hosts are new, gone, or changed.
+func (h *DiscoveryHandler) GetDiscoveryCompare(w http.ResponseWriter, r *http.Request) {
+	runAStr := r.URL.Query().Get("run_a")
+	runBStr := r.URL.Query().Get("run_b")
+	if runAStr == "" || runBStr == "" {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("run_a and run_b query parameters are required"))
+		return
+	}
+	runA, err := uuid.Parse(runAStr)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("invalid run_a: must be a valid UUID"))
+		return
+	}
+	runB, err := uuid.Parse(runBStr)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("invalid run_b: must be a valid UUID"))
+		return
+	}
+	diff, err := h.database.CompareDiscoveryRuns(r.Context(), runA, runB)
+	if err != nil {
+		if strings.Contains(err.Error(), "cannot compare runs on different networks") {
+			writeError(w, r, http.StatusUnprocessableEntity, err)
+			return
+		}
+		handleDatabaseError(w, r, err, "compare", "discovery runs", h.logger)
 		return
 	}
 	writeJSON(w, r, http.StatusOK, diff)

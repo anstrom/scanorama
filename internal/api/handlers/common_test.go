@@ -133,6 +133,9 @@ func (nilDiscoveryStore) ListDiscoveryJobsByNetwork(
 func (nilDiscoveryStore) GetDiscoveryDiff(_ context.Context, _ uuid.UUID) (*db.DiscoveryDiff, error) {
 	panic("nilDiscoveryStore: GetDiscoveryDiff called unexpectedly")
 }
+func (nilDiscoveryStore) CompareDiscoveryRuns(_ context.Context, _, _ uuid.UUID) (*db.DiscoveryCompareDiff, error) {
+	panic("nilDiscoveryStore: CompareDiscoveryRuns called unexpectedly")
+}
 
 // nilHostServicer is a HostServicer that panics if any method is called.
 type nilHostServicer struct{}

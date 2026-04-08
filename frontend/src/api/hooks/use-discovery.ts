@@ -152,6 +152,38 @@ export function useDiscoveryDiff(jobId: string, enabled = true) {
   });
 }
 
+// ── Compare ───────────────────────────────────────────────────────────────────
+
+export interface DiscoveryCompareDiff {
+  run_a_id: string;
+  run_b_id: string;
+  new_hosts: DiscoveryDiffHost[];
+  gone_hosts: DiscoveryDiffHost[];
+  changed_hosts: DiscoveryDiffHost[];
+  unchanged_count: number;
+}
+
+export function useDiscoveryCompare(
+  runA: string,
+  runB: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["discovery", "compare", runA, runB],
+    queryFn: async (): Promise<DiscoveryCompareDiff> => {
+      const res = await fetch(
+        `/api/v1/discovery/compare?run_a=${encodeURIComponent(runA)}&run_b=${encodeURIComponent(runB)}`,
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new ApiError(res.status, body);
+      }
+      return res.json() as Promise<DiscoveryCompareDiff>;
+    },
+    enabled: !!runA && !!runB && enabled,
+  });
+}
+
 export function useRerunDiscovery() {
   const queryClient = useQueryClient();
   return useMutation({

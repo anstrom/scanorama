@@ -490,6 +490,16 @@ type DiscoveryDiff struct {
 	UnchangedCount int        `json:"unchanged_count"`
 }
 
+// DiscoveryCompareDiff summarizes what changed between two discovery runs.
+type DiscoveryCompareDiff struct {
+	RunAID         uuid.UUID  `json:"run_a_id"`
+	RunBID         uuid.UUID  `json:"run_b_id"`
+	NewHosts       []DiffHost `json:"new_hosts"`
+	GoneHosts      []DiffHost `json:"gone_hosts"`
+	ChangedHosts   []DiffHost `json:"changed_hosts"`
+	UnchangedCount int        `json:"unchanged_count"`
+}
+
 // ActiveHost represents the active_hosts view.
 type ActiveHost struct {
 	IPAddress         IPAddr    `db:"ip_address" json:"ip_address"`

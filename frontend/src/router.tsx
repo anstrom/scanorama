@@ -4,13 +4,14 @@ import {
   createRoute,
   createRootRoute,
 } from "@tanstack/react-router";
+import { z } from "zod";
 import { RootLayout } from "./components/layout/root-layout";
 import { DashboardPage } from "./routes/dashboard";
 import { ScansPage } from "./routes/scans";
 import { HostsPage } from "./routes/hosts";
 import { NetworksPage } from "./routes/networks";
 import { ExclusionsPage } from "./routes/exclusions";
-import { DiscoveryRedirect } from "./routes/discovery-redirect";
+import { DiscoveryPage } from "./routes/discovery";
 import { ProfilesPage } from "./routes/profiles";
 import { SchedulesPage } from "./routes/schedules";
 import { AdminPage } from "./routes/admin";
@@ -49,10 +50,15 @@ const exclusionsRoute = createRoute({
   component: ExclusionsPage,
 });
 
+const discoverySearchSchema = z.object({
+  job: z.string().optional(),
+});
+
 const discoveryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/discovery",
-  component: DiscoveryRedirect,
+  component: DiscoveryPage,
+  validateSearch: discoverySearchSchema,
 });
 
 const profilesRoute = createRoute({
@@ -91,3 +97,9 @@ export const router = createRouter({
   routeTree,
   history: hashHistory,
 });
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof router;
+  }
+}

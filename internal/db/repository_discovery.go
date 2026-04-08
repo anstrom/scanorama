@@ -496,3 +496,192 @@ func (r *DiscoveryRepository) queryDiffHosts(
 
 	return hosts, nil
 }
+
+// queryDiffHostsTwo runs a diff-host query parameterised with two UUIDs
+// ($1 = jobA, $2 = jobB) and scans the results into a []DiffHost slice.
+// It is used by CompareDiscoveryRuns for queries that reference both runs.
+func (r *DiscoveryRepository) queryDiffHostsTwo(
+	ctx context.Context, query string, jobA, jobB uuid.UUID, operation string,
+) ([]DiffHost, error) {
+	rows, err := r.db.QueryContext(ctx, query, jobA, jobB)
+	if err != nil {
+		return nil, sanitizeDBError(operation, err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Warn("failed to close diff-host rows", "error", err)
+		}
+	}()
+
+	hosts := []DiffHost{}
+	for rows.Next() {
+		var h DiffHost
+		if err := rows.Scan(
+			&h.ID,
+			&h.IPAddress,
+			&h.Hostname,
+			&h.Status,
+			&h.PreviousStatus,
+			&h.Vendor,
+			&h.MACAddress,
+			&h.LastSeen,
+			&h.FirstSeen,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan diff host row: %w", err)
+		}
+		hosts = append(hosts, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate diff host rows: %w", err)
+	}
+
+	return hosts, nil
+}
+
+// compareRunInfo holds the fields needed from a discovery_job row for comparison.
+type compareRunInfo struct {
+	network     string
+	completedAt *time.Time
+}
+
+// loadCompareRunInfo loads the network and completedAt for a discovery job.
+// Returns ErrNotFound if the job does not exist.
+func (r *DiscoveryRepository) loadCompareRunInfo(
+	ctx context.Context, id uuid.UUID,
+) (*compareRunInfo, error) {
+	var info compareRunInfo
+	err := r.db.QueryRowContext(ctx,
+		`SELECT network, completed_at FROM discovery_jobs WHERE id = $1`, id,
+	).Scan(&info.network, &info.completedAt)
+	if err != nil {
+		if stderrors.Is(err, sql.ErrNoRows) {
+			return nil, errors.ErrNotFoundWithID("discovery job", id.String())
+		}
+		return nil, sanitizeDBError("get discovery run for compare", err)
+	}
+	return &info, nil
+}
+
+// compareCountHosts returns the number of hosts currently within the network
+// of the given discovery job.
+func (r *DiscoveryRepository) compareCountHosts(ctx context.Context, jobID uuid.UUID) (int, error) {
+	var total int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM hosts h
+		WHERE h.ip_address <<= (SELECT network::cidr FROM discovery_jobs WHERE id = $1)`, jobID,
+	).Scan(&total)
+	if err != nil {
+		return 0, sanitizeDBError("count total hosts for compare", err)
+	}
+	return total, nil
+}
+
+// CompareDiscoveryRuns computes the diff between two discovery runs
+// (jobA = baseline, jobB = current).
+// Returns ErrNotFound if either run doesn't exist, and a descriptive error if
+// the networks differ.
+// If jobA == jobB the result has all existing hosts as unchanged and empty
+// new/gone/changed slices.
+func (r *DiscoveryRepository) CompareDiscoveryRuns(
+	ctx context.Context, jobA, jobB uuid.UUID,
+) (*DiscoveryCompareDiff, error) {
+	runA, err := r.loadCompareRunInfo(ctx, jobA)
+	if err != nil {
+		return nil, err
+	}
+	runB, err := r.loadCompareRunInfo(ctx, jobB)
+	if err != nil {
+		return nil, err
+	}
+
+	if runA.network != runB.network {
+		return nil, fmt.Errorf(
+			"cannot compare runs on different networks: %s vs %s",
+			runA.network, runB.network,
+		)
+	}
+
+	// Edge case: same run — all hosts unchanged, nothing new/gone/changed.
+	if jobA == jobB {
+		total, err := r.compareCountHosts(ctx, jobB)
+		if err != nil {
+			return nil, err
+		}
+		return &DiscoveryCompareDiff{
+			RunAID: jobA, RunBID: jobB,
+			NewHosts: []DiffHost{}, GoneHosts: []DiffHost{}, ChangedHosts: []DiffHost{},
+			UnchangedCount: total,
+		}, nil
+	}
+
+	// New hosts in B: first seen after A completed, on or before B completed.
+	newHosts, err := r.queryDiffHostsTwo(ctx, `
+		SELECT h.id, host(h.ip_address) AS ip_address, h.hostname,
+		       h.status, h.previous_status, h.vendor, h.mac_address::text, h.last_seen, h.first_seen
+		FROM hosts h
+		WHERE h.ip_address <<= (SELECT network::cidr FROM discovery_jobs WHERE id = $2)
+		  AND h.first_seen > COALESCE((SELECT completed_at FROM discovery_jobs WHERE id = $1),
+		                              (SELECT created_at  FROM discovery_jobs WHERE id = $1))
+		  AND h.first_seen <= COALESCE((SELECT completed_at FROM discovery_jobs WHERE id = $2), NOW())
+		ORDER BY h.first_seen ASC`,
+		jobA, jobB, "compare new hosts",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Gone hosts in B: hosts with timeout events recorded against run B.
+	goneHosts, err := r.queryDiffHosts(ctx, `
+		SELECT h.id, host(h.ip_address) AS ip_address, h.hostname,
+		       h.status, h.previous_status, h.vendor, h.mac_address::text, h.last_seen, h.first_seen
+		FROM hosts h
+		JOIN host_timeout_events te ON te.host_id = h.id
+		WHERE te.discovery_run_id = $1
+		ORDER BY h.last_seen DESC`,
+		jobB, "compare gone hosts",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Changed hosts in B: status changes between A.completed and B.completed,
+	// excluding brand-new and gone hosts.
+	changedHosts, err := r.queryDiffHostsTwo(ctx, `
+		SELECT DISTINCT ON (h.id)
+		       h.id, host(h.ip_address) AS ip_address, h.hostname,
+		       h.status, h.previous_status, h.vendor, h.mac_address::text, h.last_seen, h.first_seen
+		FROM hosts h
+		JOIN host_status_events se ON se.host_id = h.id
+		WHERE h.ip_address <<= (SELECT network::cidr FROM discovery_jobs WHERE id = $2)
+		  AND se.changed_at > COALESCE((SELECT completed_at FROM discovery_jobs WHERE id = $1),
+		                               (SELECT created_at  FROM discovery_jobs WHERE id = $1))
+		  AND se.changed_at <= COALESCE((SELECT completed_at FROM discovery_jobs WHERE id = $2), NOW())
+		  AND se.to_status != 'gone'
+		  AND h.first_seen <= COALESCE((SELECT completed_at FROM discovery_jobs WHERE id = $1),
+		                               (SELECT created_at  FROM discovery_jobs WHERE id = $1))
+		ORDER BY h.id, se.changed_at DESC`,
+		jobA, jobB, "compare changed hosts",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	total, err := r.compareCountHosts(ctx, jobB)
+	if err != nil {
+		return nil, err
+	}
+
+	unchanged := total - len(newHosts) - len(goneHosts) - len(changedHosts)
+	if unchanged < 0 {
+		unchanged = 0
+	}
+
+	return &DiscoveryCompareDiff{
+		RunAID:         jobA,
+		RunBID:         jobB,
+		NewHosts:       newHosts,
+		GoneHosts:      goneHosts,
+		ChangedHosts:   changedHosts,
+		UnchangedCount: unchanged,
+	}, nil
+}

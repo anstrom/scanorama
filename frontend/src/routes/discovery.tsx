@@ -1,15 +1,18 @@
 import { useState } from "react";
-import { X, Plus } from "lucide-react";
+import { X, Plus, ArrowRight, GitCompare } from "lucide-react";
+import { useSearch } from "@tanstack/react-router";
 import { Button } from "../components/button";
 import {
   useDiscoveryJobs,
   useDiscoveryDiff,
+  useDiscoveryCompare,
   useStartDiscovery,
   useStopDiscovery,
 } from "../api/hooks/use-discovery";
 import type {
   DiscoveryDiff,
   DiscoveryDiffHost,
+  DiscoveryCompareDiff,
 } from "../api/hooks/use-discovery";
 import { StatusBadge, Skeleton, PaginationBar } from "../components";
 import { CreateDiscoveryModal } from "../components/create-discovery-modal";
@@ -384,12 +387,182 @@ function DiscoveryDetailPanel({ job, onClose }: DetailPanelProps) {
   );
 }
 
+// ── Compare panel ─────────────────────────────────────────────────────────────
+
+interface ComparePanelProps {
+  jobs: DiscoveryJobResponse[];
+  runA: string;
+  runB: string;
+  onRunAChange: (id: string) => void;
+  onRunBChange: (id: string) => void;
+  result: DiscoveryCompareDiff | undefined;
+  isLoading: boolean;
+  error: unknown;
+  onClose: () => void;
+}
+
+function ComparePanel({
+  jobs,
+  runA,
+  runB,
+  onRunAChange,
+  onRunBChange,
+  result,
+  isLoading,
+  error,
+  onClose,
+}: ComparePanelProps) {
+  const completedJobs = jobs.filter((j) => j.status === "completed");
+
+  return (
+    <div className="bg-surface border border-border rounded-lg p-4 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-text-primary">
+          Compare Discovery Runs
+        </h3>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close compare panel"
+          className="text-text-muted hover:text-text-primary transition-colors"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Run selectors */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex flex-col gap-1 flex-1 min-w-36">
+          <label className="text-xs text-text-muted">Baseline (A)</label>
+          <select
+            value={runA}
+            onChange={(e) => onRunAChange(e.target.value)}
+            aria-label="Baseline run A"
+            className="bg-surface-raised border border-border rounded px-2 py-1.5 text-xs text-text-secondary focus:outline-none focus:border-accent"
+          >
+            <option value="">Select a run…</option>
+            {completedJobs.map((j) => (
+              <option key={j.id} value={j.id ?? ""}>
+                {j.name ?? j.networks?.join(", ") ?? j.id} ·{" "}
+                {j.started_at
+                  ? new Date(j.started_at).toLocaleDateString()
+                  : "—"}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <ArrowRight className="h-4 w-4 text-text-muted shrink-0 mt-4" />
+
+        <div className="flex flex-col gap-1 flex-1 min-w-36">
+          <label className="text-xs text-text-muted">Current (B)</label>
+          <select
+            value={runB}
+            onChange={(e) => onRunBChange(e.target.value)}
+            aria-label="Current run B"
+            className="bg-surface-raised border border-border rounded px-2 py-1.5 text-xs text-text-secondary focus:outline-none focus:border-accent"
+          >
+            <option value="">Select a run…</option>
+            {completedJobs.map((j) => (
+              <option key={j.id} value={j.id ?? ""}>
+                {j.name ?? j.networks?.join(", ") ?? j.id} ·{" "}
+                {j.started_at
+                  ? new Date(j.started_at).toLocaleDateString()
+                  : "—"}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Results */}
+      {isLoading && (
+        <p className="text-xs text-text-muted">Loading comparison…</p>
+      )}
+      {error && !isLoading && (
+        <p className="text-xs text-danger">
+          {error instanceof Error ? error.message : "Failed to compare runs."}
+        </p>
+      )}
+      {result && !isLoading && (
+        <div className="space-y-3">
+          {/* Summary counts */}
+          <div className="flex items-center gap-4 text-xs flex-wrap">
+            <span className="text-success">
+              ● {result.new_hosts.length} new
+            </span>
+            <span className="text-danger">
+              ● {result.gone_hosts.length} gone
+            </span>
+            <span
+              className={
+                result.changed_hosts.length > 0
+                  ? "text-warning"
+                  : "text-text-muted"
+              }
+            >
+              ○ {result.changed_hosts.length} changed
+            </span>
+            <span className="text-text-muted">
+              {result.unchanged_count} unchanged
+            </span>
+          </div>
+
+          {/* Diff sections */}
+          {result.new_hosts.length > 0 && (
+            <DiffSection
+              title="New"
+              count={result.new_hosts.length}
+              hosts={result.new_hosts}
+              headerClass="text-success"
+            />
+          )}
+          {result.gone_hosts.length > 0 && (
+            <DiffSection
+              title="Gone"
+              count={result.gone_hosts.length}
+              hosts={result.gone_hosts}
+              headerClass="text-danger"
+            />
+          )}
+          {result.changed_hosts.length > 0 && (
+            <DiffSection
+              title="Changed"
+              count={result.changed_hosts.length}
+              hosts={result.changed_hosts}
+              headerClass="text-warning"
+              showStatusChange
+            />
+          )}
+          {result.new_hosts.length === 0 &&
+            result.gone_hosts.length === 0 &&
+            result.changed_hosts.length === 0 && (
+              <p className="text-xs text-text-muted">
+                No differences between these two runs.
+              </p>
+            )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function DiscoveryPage() {
+  const search = useSearch({ from: "/discovery" });
+
   const [page, setPage] = useState(1);
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(
+    search.job ?? null,
+  );
   const [showCreate, setShowCreate] = useState(false);
+
+  // Compare state
+  const [showCompare, setShowCompare] = useState(false);
+  const [compareRunA, setCompareRunA] = useState("");
+  const [compareRunB, setCompareRunB] = useState("");
 
   const queryParams = { page, page_size: PAGE_SIZE };
   const { data, isLoading } = useDiscoveryJobs(queryParams);
@@ -405,11 +578,25 @@ export function DiscoveryPage() {
     ? (jobs.find((j) => j.id === selectedJobId) ?? null)
     : null;
 
+  const compareEnabled = showCompare && !!compareRunA && !!compareRunB;
+  const {
+    data: compareResult,
+    isLoading: compareLoading,
+    error: compareError,
+  } = useDiscoveryCompare(compareRunA, compareRunB, compareEnabled);
+
   return (
     <>
       <div className="space-y-4">
         {/* Toolbar */}
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setShowCompare((v) => !v)}
+            icon={<GitCompare className="h-3.5 w-3.5" />}
+          >
+            Compare runs
+          </Button>
           <Button
             onClick={() => setShowCreate(true)}
             icon={<Plus className="h-3.5 w-3.5" />}
@@ -417,6 +604,25 @@ export function DiscoveryPage() {
             New discovery job
           </Button>
         </div>
+
+        {/* Compare panel */}
+        {showCompare && (
+          <ComparePanel
+            jobs={jobs}
+            runA={compareRunA}
+            runB={compareRunB}
+            onRunAChange={setCompareRunA}
+            onRunBChange={setCompareRunB}
+            result={compareResult}
+            isLoading={compareLoading}
+            error={compareError}
+            onClose={() => {
+              setShowCompare(false);
+              setCompareRunA("");
+              setCompareRunB("");
+            }}
+          />
+        )}
 
         {/* Table card */}
         <div className="bg-surface rounded-lg border border-border overflow-hidden">
