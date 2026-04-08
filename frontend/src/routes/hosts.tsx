@@ -725,11 +725,18 @@ export function HostsPage() {
   const navigate = useNavigate();
 
   // Debounce search input ~300ms
+  // Use the functional updater form to compare against the previous debounced
+  // value — this prevents the timer from clearing selection on mount (when both
+  // searchInput and debouncedSearch are still "").
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearch(searchInput);
+      setDebouncedSearch((prev) => {
+        if (prev !== searchInput) {
+          setSelectedIds(new Set());
+        }
+        return searchInput;
+      });
       setPage(1);
-      setSelectedIds(new Set());
     }, 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
