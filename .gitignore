@@ -1,55 +1,29 @@
-# Binary
+# ── Build outputs ─────────────────────────────────────────────────────────────
 /scanorama
 build/
 
-# Frontend
-frontend/node_modules/
-frontend/dist/
-
-# Go specific
+# ── Go ────────────────────────────────────────────────────────────────────────
 *.test
 *.out
-
-# Coverage files and reports
-coverage*.out
-coverage*.html
-api_coverage.*
-handlers_coverage.*
 *.coverage
-websocket_coverage.html
+coverage-reports/
+coverage*.html
 
-# Scan results
-*.xml
-result.*
-scan_output.*
-scan_results.*
+# ── Frontend ──────────────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
 
-# Development and runtime files
+# ── Runtime / process files ───────────────────────────────────────────────────
 *.pid
-api-server.pid
-scanorama.pid
-config/environments/*.working.yaml
-docker/data/
+.backend.pid
 
-# Test artifacts
-coverage.out
-coverage.out.html
-coverage.html
-coverage_*.out
-coverage_*.html
-api_coverage.*
-handlers_coverage.*
-integration.test
-tmp/
-test_*.xml
-test_*.json
-test_*.html
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-
-# Configuration files with secrets
+# ── Secrets & local config ────────────────────────────────────────────────────
 .env
 .env.local
 .env.production
@@ -61,60 +35,59 @@ config/environments/*.local.yaml
 config/environments/*.local.yml
 config/environments/config.yaml
 config/environments/config.yml
-
-# Act (GitHub Actions local testing) files
-.secrets.local
-.env.local
-act-*
-.act-*
-
-# Secrets and sensitive data
 secrets/
 *.key
 *.pem
 *.crt
 
-# Docker test environment
+# ── Docker ────────────────────────────────────────────────────────────────────
+docker/data/
 .docker-compose-test-*
 .env.test
-test/docker/flask/__pycache__/
 
-# Node.js and documentation tooling
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-# package-lock.json should be committed for reproducible builds
-.npm
-.yarn-integrity
-
-# Documentation generation artifacts
-dist/
+# ── Documentation generation artifacts ───────────────────────────────────────
 docs/swagger/index.html
 docs/swagger/bundled.yaml
 docs/documentation-report.md
 *-client/
 /tmp/scanorama-docs-*/
 /tmp/test-client/
-
-# Documentation validation temporary files
 .redocly/
 .spectral/
 *.validation.json
 *.lint-report.*
 
-# IDE and OS
+# ── Scan output artifacts ─────────────────────────────────────────────────────
+*.xml
+result.*
+scan_output.*
+scan_results.*
+
+# ── Test infrastructure ───────────────────────────────────────────────────────
+tmp/
+test_*.xml
+test_*.json
+test_*.html
+test/docker/flask/__pycache__/
+integration.test
+
+# ── IDE & OS ──────────────────────────────────────────────────────────────────
 .idea/
 .vscode/
 .DS_Store
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
 
-# Additional npm artifacts (main Node.js section above)
+# ── GitHub Actions local testing ──────────────────────────────────────────────
+.secrets.local
+act-*
+.act-*
 
-# Claude development files (never commit)
+# ── Claude / AI assistant ─────────────────────────────────────────────────────
 .claude-*
-REFACTORING_COMPLETE.md
--e
-# Coverage reports
-coverage-reports/
-.backend.pid
 .claude/HANDOFF.md
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+config/environments/*.working.yaml
