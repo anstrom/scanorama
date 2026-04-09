@@ -26,6 +26,11 @@ Handler function (e.g., ScanHandler.CreateScan)
   │
   ├─ Parse and validate request body / path params
   ├─ Call db.* or service layer
+  │    Example — ListHosts with advanced filter:
+  │      getHostFilters() reads ?filter=<json>
+  │        → db.ParseFilterExpr([]byte(json))   validates structure, depth, fields
+  │        → db.TranslateFilterExpr(expr, idx)  produces SQL fragment + args
+  │        → appended to buildHostFilters() WHERE clause
   └─ writeJSON(w, statusCode, responseBody)
   │
   ▼
@@ -179,6 +184,52 @@ Scheduler.executeDiscoveryJob(ctx, jobConfig)
 
 ---
 
+## 3c. Discovery Diff and Compare
+
+After a discovery run completes, the diff is computed on demand when either endpoint is called — there is no pre-computed snapshot.
+
+```
+GET /api/v1/discovery/{id}/diff
+  │
+  ▼
+DiscoveryHandler.GetDiscoveryDiff
+  │
+  └─ db.GetDiscoveryDiff(ctx, jobID)
+          │
+          ├─ Load discovery job; return 404 if not found
+          ├─ Derive time boundary: COALESCE(completed_at, created_at)
+          ├─ New hosts:     SELECT hosts where first_seen >= boundary AND network matches
+          ├─ Gone hosts:    SELECT hosts where status = 'gone' AND status_changed_at >= boundary
+          └─ Changed hosts: SELECT hosts where status changed (up↔down) within the run window
+          │
+          └─ Returns DiscoveryDiff{NewHosts, GoneHosts, ChangedHosts}
+
+
+GET /api/v1/discovery/compare?run_a={id}&run_b={id}
+  │
+  ▼
+DiscoveryHandler.GetDiscoveryCompare
+  │
+  ├─ Parse and validate run_a / run_b UUIDs
+  ├─ Short-circuit: if run_a == run_b → return all-unchanged immediately
+  ├─ Load both jobs; return 404 if either missing
+  ├─ Return 422 if jobs are on different networks
+  │
+  └─ db.CompareDiscoveryRuns(ctx, jobA, jobB)
+          │
+          ├─ Uses COALESCE(completed_at, created_at) as the A-run boundary
+          ├─ New hosts:     present in B window, not in A window
+          ├─ Gone hosts:    present in A window, gone by B window
+          ├─ Changed hosts: status changed between A and B boundaries
+          └─ UnchangedCount = total − new − gone − changed  (clamped ≥ 0)
+          │
+          └─ Returns DiscoveryCompareDiff{RunAID, RunBID, NewHosts, GoneHosts, ChangedHosts, UnchangedCount}
+```
+
+When a scheduled discovery job completes, `BroadcastDiscoveryUpdate` is called with the diff summary so connected WebSocket clients receive it immediately without polling.
+
+---
+
 ## 4. WebSocket Update Flow
 
 The WebSocket hub in `internal/api/handlers/websocket.go` uses a hub-and-spoke pattern where a single goroutine (`run()`) owns all client maps and channels to avoid lock contention.
@@ -212,10 +263,22 @@ Updates are broadcast by any component that has access to the `WebSocketHandler`
 scanning.RunScanWithContext completes (or status changes)
   │
   └─ handler or scheduler calls:
+       // Scan update (from scan handler / scheduler):
        wsHandler.BroadcastScanUpdate(&ScanUpdateMessage{
-           ScanID:   id,
-           Status:   "completed",
-           Progress: 1.0,
+           ScanID:       id,
+           Status:       "completed",
+           Progress:     1.0,
+           ResultsCount: 42,
+       })
+
+       // Discovery update (on completion, includes diff summary):
+       wsHandler.BroadcastDiscoveryUpdate(&DiscoveryUpdateMessage{
+           JobID:        id,
+           Status:       "completed",
+           HostsFound:   47,
+           NewHosts:     2,
+           GoneHosts:    1,
+           ChangedHosts: 3,
        })
          │
          ├─ json.Marshal(WebSocketMessage{Type: "scan_update", ...})
@@ -247,7 +310,7 @@ All messages share a common envelope:
 | `type` value | `data` schema | Sent to |
 |---|---|---|
 | `scan_update` | `ScanUpdateMessage` (scan_id, status, progress, results_count, …) | scan clients + general clients |
-| `discovery_update` | `DiscoveryUpdateMessage` (job_id, status, progress, hosts_found, …) | discovery clients + general clients |
+| `discovery_update` | `DiscoveryUpdateMessage` (job_id, status, progress, hosts_found, new_hosts, gone_hosts, changed_hosts, message, error) | discovery clients + general clients |
 | `system_*` | `{"message": "..."}` | all clients |
 
 ---
@@ -270,11 +333,12 @@ daemon.Start()
                   ├─ fs.WalkDir(embed.FS, ".")           ← reads *.sql files
                   │   sorted lexicographically:
                   │   001_initial_schema.sql
-                  │   002_performance_improvements.sql
-                  │   003_networks_table.sql
-                  │   004_network_exclusions.sql
-                  │   005_fix_scan_types.sql
-                  │   006_api_keys_table.sql
+                  │   002_host_targets.sql
+                  │   003_discovery_network_link.sql
+                  │   004_host_status_model.sql
+                  │   005_response_time.sql
+                  │   006_scan_duration.sql
+                  │   007_timeout_events.sql
                   │
                   └─ for each pending file:
                        BEGIN TRANSACTION
@@ -351,6 +415,7 @@ config.Load(path)
 | Scheduled scan | cron trigger | `scheduler`, `scanning` | `scan_jobs`, `port_scans`, `hosts` |
 | Ad-hoc discovery | `POST /discovery/{id}/start` | `api/handlers`, `discovery` | `discovery_jobs`, `hosts` |
 | Scheduled discovery | cron trigger | `scheduler`, `discovery` | `discovery_jobs`, `hosts` |
+| Discovery diff/compare | `GET /discovery/{id}/diff`, `GET /discovery/compare` | `api/handlers`, `db` | PostgreSQL read-only |
 | WebSocket update | `GET /api/v1/ws` | `api/handlers/websocket` | In-memory broadcast only |
 | DB migration | daemon startup | `db/migrate` | `schema_migrations` |
 | Metrics scrape | `GET /metrics` | `metrics` | In-memory + Prometheus registry |

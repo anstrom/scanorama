@@ -64,7 +64,7 @@ logger.Info("Network scan complete", "hosts_found", 42)
 - Collect performance and operational metrics
 - Support standard metric types (counters, gauges, histograms)
 - Enable monitoring of scan performance and system health
-- Provide foundation for future Prometheus integration
+- Export metrics to Prometheus via the `/metrics` endpoint (using `prometheus/client_golang`)
 
 ### Architecture
 
@@ -82,6 +82,8 @@ type Metric struct {
     Timestamp time.Time
 }
 ```
+
+The `PrometheusMetrics` type wraps the same data and registers it with `prometheus/client_golang`, serving it at `GET /metrics` in Prometheus exposition format. A background goroutine refreshes system-level gauges (Go runtime memory stats) every 5 seconds.
 
 ### Predefined Metrics
 
@@ -308,24 +310,6 @@ scanning:
 - In-memory metrics collection has minimal overhead
 - Histogram calculations are simplified for performance
 - Metrics are collected in goroutine-safe manner with minimal locking
-
-## Future Enhancements
-
-### Logging
-- Log rotation for file outputs
-- Remote log shipping (syslog, fluentd)
-- Log sampling for high-volume operations
-
-### Metrics
-- Prometheus metrics endpoint
-- Histogram buckets for better latency analysis
-- Custom metric exporters
-
-### Worker Pools
-- Priority job queues
-- Dynamic worker scaling
-- Job persistence for restart recovery
-- Circuit breaker pattern integration
 
 ## Troubleshooting
 

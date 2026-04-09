@@ -1,50 +1,34 @@
-# Technical Documentation
+# Scanorama Documentation
 
-This directory contains technical documentation for the Scanorama network scanner project.
+## Reference
 
-## Documentation Structure
+| File | Description |
+|------|-------------|
+| [`CONFIGURATION.md`](CONFIGURATION.md) | Full configuration reference: every setting, environment variable, validation rule, hot-reload behaviour, and example configs for dev/staging/production |
+| [`DEPLOYMENT.md`](DEPLOYMENT.md) | Building from source, systemd service, database setup, security hardening, health endpoints, Prometheus scraping, troubleshooting |
 
-### `/technical/`
-Core technical documentation for developers and contributors.
+## Planning
 
-- **`testing.md`** - Testing framework, utilities, and best practices
-- **`api/`** - API documentation and specifications
-- **`architecture/`** - System architecture and design documents
-  - **`system-overview.md`** - High-level component diagram, package reference, and external dependencies
-  - **`data-flow.md`** - Request lifecycle, scan/discovery flows, WebSocket updates, and migration flow
-  - **`logging.md`** - Logging, metrics, and worker pool architecture
+| File | Description |
+|------|-------------|
+| [`planning/ROADMAP.md`](planning/ROADMAP.md) | Milestone roadmap: v0.23 (complete) through v1.0, feature scope, dependency graph, tool integrations reference |
 
-### `/`
-Top-level documentation.
+## Technical
 
-- **`DEPLOYMENT.md`** - Prerequisites, build instructions, environment variables, database setup, running modes, security, and troubleshooting
+| File | Description |
+|------|-------------|
+| [`technical/architecture/system-overview.md`](technical/architecture/system-overview.md) | Component diagram, package reference, external dependencies |
+| [`technical/architecture/data-flow.md`](technical/architecture/data-flow.md) | Request lifecycle, scan and discovery pipelines, WebSocket event flow, migration flow |
+| [`technical/architecture/scheduling-flow.md`](technical/architecture/scheduling-flow.md) | Cron → job → scan → results state machine, concurrency model |
+| [`technical/architecture/logging.md`](technical/architecture/logging.md) | Logging, metrics, and worker pool architecture |
+| [`technical/testing.md`](technical/testing.md) | Test structure, running tests, writing DB and scanning tests, CI integration |
 
-## Quick Start
+## API
 
-For basic usage information, see the main project README.
+The authoritative API reference is the live Swagger UI served by the backend:
 
-For development setup and contribution guidelines, refer to the files in this documentation tree.
+```
+http://localhost:8080/swagger/
+```
 
-## Documentation Standards
-
-- All documentation uses Markdown format
-- Code examples include language specifications
-- API documentation follows OpenAPI 3.0 standards where applicable
-- Architecture diagrams use Mermaid format when possible
-
-## Contributing to Documentation
-
-When adding new technical documentation:
-
-1. Place API docs in `technical/api/`
-2. Place architecture docs in `technical/architecture/`
-3. Update this index when adding new sections
-4. Follow existing formatting conventions
-5. Include code examples where helpful
-
-## Documentation Maintenance
-
-- Technical documentation is versioned with the codebase
-- Breaking API changes require documentation updates
-- Architecture changes must include diagram updates
-- All documentation changes go through code review
+The OpenAPI spec is generated from source annotations (`swag generate`) and lives in [`swagger/`](swagger/).

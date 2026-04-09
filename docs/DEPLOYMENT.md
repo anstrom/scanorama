@@ -10,7 +10,7 @@ This guide covers building Scanorama from source, configuring it for your enviro
 
 | Dependency | Minimum Version | Notes |
 |------------|-----------------|-------|
-| **Go** | 1.22+ | Required to build from source |
+| **Go** | 1.26+ | Required to build from source |
 | **nmap** | 7.80+ | Must be installed on the host running the daemon; required for all scans and discovery |
 | **PostgreSQL** | 14+ | Primary data store; must be accessible from the host running the daemon |
 

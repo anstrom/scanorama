@@ -106,19 +106,22 @@ REST API server built on `gorilla/mux`. Responsibilities:
 | File | Responsibility |
 |------|----------------|
 | `scan.go` | Scan CRUD, start/stop actions, result retrieval |
-| `host.go` | Host CRUD, host scan history |
-| `discovery.go` | Discovery job CRUD, start/stop |
-| `profile.go` | Scan profile CRUD |
-| `schedule.go` | Scheduled job CRUD, enable/disable |
-| `networks.go` | Network CRUD, enable/disable, exclusions |
+| `host.go` | Host CRUD, host scan history, bulk delete, `getHostFilters` (parses `?filter=` JSON) |
+| `discovery.go` | Discovery job CRUD, start/stop, diff (`GetDiscoveryDiff`), compare (`GetDiscoveryCompare`) |
+| `profile.go` | Scan profile CRUD and clone |
+| `schedule.go` | Scheduled job CRUD, enable/disable, next-run |
+| `networks.go` | Network CRUD, enable/disable, exclusions, per-network discovery and scan triggers |
 | `admin.go` | Admin status endpoint |
 | `admin_types.go` | Request/response types for admin endpoints |
 | `admin_config.go` | Config retrieval and parsing helpers |
 | `admin_validate.go` | Validation logic for admin operations |
-| `websocket.go` | WebSocket upgrade and broadcast hub |
+| `admin_workers.go` | Worker status endpoint |
+| `admin_logging.go` | Log streaming and ring-buffer endpoint |
+| `websocket.go` | WebSocket upgrade, hub goroutine, broadcast methods (`BroadcastScanUpdate`, `BroadcastDiscoveryUpdate`) |
 | `health.go` | Liveness and health check endpoints |
 | `common.go` | Shared helpers: `writeJSON`, `writeError`, pagination, request IDs |
-| `manager.go` | `HandlerManager` – owns the WebSocket handler, exposes `GeneralWebSocket` |
+| `manager.go` | `HandlerManager` — owns the WebSocket handler, exposes `GeneralWebSocket`, `ScanWebSocket`, `LogsWebSocket` |
+| `interfaces.go` | Narrow store interfaces (`ScanStore`, `HostStore`, `DiscoveryStore`, …) used by all handlers |
 
 ### `internal/api/middleware/`
 
@@ -141,12 +144,15 @@ Database access layer using `jmoiron/sqlx` on top of `database/sql`.
 | `database.go` | Connection management, `DB` type, error sanitization |
 | `migrate.go` | Embedded SQL migration runner (auto-runs at startup) |
 | `models.go` | Shared data model types |
+| `filter_expr.go` | `FilterExpr` type, `ParseFilterExpr`, `TranslateFilterExpr` — compound AND/OR filter expressions translated to parameterised SQL |
 | `hosts.go` | Host CRUD operations |
+| `repository_host.go` | Extended host queries, `HostFilters` with `Expr *FilterExpr` |
+| `repository_discovery.go` | Discovery diff and compare queries |
 | `scans.go` | Scan job and result operations |
 | `networks.go` | Network and exclusion operations |
 | `profiles.go` | Scan profile operations |
 | `scheduled_jobs.go` | Scheduled job persistence |
-| `001_initial_schema.sql` … `006_api_keys_table.sql` | Versioned SQL migrations (embedded via `//go:embed`) |
+| `001_initial_schema.sql` … `007_timeout_events.sql` | Versioned SQL migrations (embedded via `//go:embed`) |
 
 Migrations are applied automatically at startup via `ConnectAndMigrate`. A `schema_migrations` tracking table records each applied migration by name and SHA-256 checksum.
 
@@ -183,7 +189,7 @@ Network discovery engine. Also wraps nmap (ping/host-discovery mode, `-sn`):
 
 ### `internal/services/`
 
-Thin service layer between handlers and the database. Currently contains `NetworkService` (`networks.go`), which provides higher-level network management operations used by the network handler.
+Thin service layer between handlers and the database. Contains `NetworkService`, `HostService`, `ScanService`, `ProfileService`, and `ScheduleService` — one per resource group. Each service owns the business logic that sits between a handler and a repository (validation, default-setting, cross-cutting concerns).
 
 ### `internal/auth/`
 
@@ -226,6 +232,19 @@ Scan profile management. Profiles define reusable sets of scan parameters (scan 
 ### `internal/errors/`
 
 Typed error hierarchy. `DatabaseError`, `ScanError`, and other domain errors carry an `ErrorCode`, a user-safe message, and an internal `Cause`. Handlers use these to return appropriate HTTP status codes without leaking internal details.
+
+### `frontend/`
+
+A React 19 + Vite 6 + TypeScript single-page application served separately in development (Vite dev server at `:5173`, proxies `/api` and `/ws` to `:8080`) and built to `frontend/dist/` for production deployment.
+
+**Key libraries:** TanStack Router (type-safe routing), TanStack Query (data fetching and cache), Tailwind CSS 4, Recharts, Zod, Lucide React, Vitest + Testing Library.
+
+| Directory | Contents |
+|-----------|----------|
+| `src/api/` | Type-safe fetch client (`client.ts`) and TanStack Query hooks (`hooks/use-*.ts`) |
+| `src/components/` | Shared UI components — `FilterBuilder`, `StatusBadge`, `ColumnToggle`, `ToastProvider`, layout components |
+| `src/lib/` | Utilities — `filter-expr.ts` (serialise/deserialise filter expressions), `utils.ts`, WebSocket helpers |
+| `src/routes/` | One page component per route: `dashboard.tsx`, `hosts.tsx`, `scans.tsx`, `networks.tsx`, `discovery.tsx`, `schedules.tsx`, `profiles.tsx`, `exclusions.tsx`, `admin.tsx` |
 
 ---
 
@@ -302,4 +321,3 @@ Environment variables prefixed with `SCANORAMA_` override defaults for all setti
 - [`data-flow.md`](./data-flow.md) – request lifecycle and data flow diagrams
 - [`logging.md`](./logging.md) – logging, metrics, and worker pool details
 - [`../../DEPLOYMENT.md`](../../DEPLOYMENT.md) – deployment guide, environment variables, security
-- [`../../api/`](../../api/) – REST API reference
