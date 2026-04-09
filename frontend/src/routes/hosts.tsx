@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { isNotFound } from "../api/errors";
 import {
   Search,
@@ -11,6 +11,7 @@ import {
   Trash2,
   Activity,
   Play,
+  SlidersHorizontal,
 } from "lucide-react";
 import { SortHeader } from "../components/sort-header";
 import type { SortOrder } from "../components/sort-header";
@@ -36,6 +37,9 @@ import type { components } from "../api/types";
 import { ColumnToggle } from "../components/column-toggle";
 import type { ColumnDef } from "../components/column-toggle";
 import { useTableKeyNav } from "../hooks/use-table-key-nav";
+import { FilterBuilder } from "../components/filter-builder";
+import type { FilterGroup } from "../lib/filter-expr";
+import { deserializeFilter, serializeFilter } from "../lib/filter-expr";
 
 type HostResponse = components["schemas"]["docs.HostResponse"];
 
@@ -719,10 +723,27 @@ export function HostsPage() {
   const [colVis, setColVis] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(HOST_COLUMNS.map((c) => [c.key, true])),
   );
+  const [showFilterBuilder, setShowFilterBuilder] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<FilterGroup | null>(null);
   const { mutateAsync: bulkDeleteHosts, isPending: isBulkDeleting } =
     useBulkDeleteHosts();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const search = useSearch({ from: "/hosts" });
+
+  // Initialise active filter from the URL ?filter= param on first render
+  useEffect(() => {
+    const encoded = search.filter;
+    if (encoded) {
+      const expr = deserializeFilter(encoded);
+      if (expr && "op" in expr && "conditions" in expr) {
+        setActiveFilter(expr as FilterGroup);
+        setShowFilterBuilder(true);
+      }
+    }
+    // Only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Debounce search input ~300ms
   // Use the functional updater form to compare against the previous debounced
@@ -785,7 +806,24 @@ export function HostsPage() {
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(osFilter ? { os: osFilter } : {}),
     ...(vendorFilter ? { vendor: vendorFilter } : {}),
+    // Advanced filter — send the raw JSON expression to the backend
+    ...(activeFilter ? { filter: JSON.stringify(activeFilter) } : {}),
   };
+
+  const handleApplyFilter = useCallback(
+    (filter: FilterGroup | null) => {
+      setActiveFilter(filter);
+      setPage(1);
+      setSelectedIds(new Set());
+      // Persist to URL so the filter is shareable
+      void navigate({
+        to: "/hosts",
+        search: { filter: serializeFilter(filter) },
+        replace: true,
+      });
+    },
+    [navigate],
+  );
 
   const { data, isLoading, isError } = useHosts(queryParams);
 
@@ -939,6 +977,28 @@ export function HostsPage() {
           />
 
           <div className="flex items-center gap-2 sm:ml-auto">
+            {/* Advanced filter toggle */}
+            <button
+              type="button"
+              aria-label="Advanced filter"
+              aria-pressed={showFilterBuilder}
+              onClick={() => setShowFilterBuilder((s) => !s)}
+              className={cn(
+                "flex items-center gap-1 px-2 py-1.5 rounded border text-xs transition-colors",
+                showFilterBuilder || activeFilter
+                  ? "border-accent text-accent bg-accent/10"
+                  : "border-border text-text-muted hover:text-text-primary hover:bg-surface-raised",
+              )}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Filter</span>
+              {activeFilter && (
+                <span className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-white text-[10px] font-bold leading-none">
+                  {activeFilter.conditions.length}
+                </span>
+              )}
+            </button>
+
             <Button
               onClick={() => setScanIP("")}
               icon={<ScanLine className="h-3.5 w-3.5" />}
@@ -952,6 +1012,32 @@ export function HostsPage() {
             />
           </div>
         </div>
+
+        {/* Active filter chip */}
+        {activeFilter && !showFilterBuilder && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-text-muted">Active filter:</span>
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent/15 border border-accent/30 text-xs text-accent">
+              <span>
+                {activeFilter.op} — {activeFilter.conditions.length} condition
+                {activeFilter.conditions.length !== 1 ? "s" : ""}
+              </span>
+              <button
+                type="button"
+                aria-label="Clear filter"
+                onClick={() => handleApplyFilter(null)}
+                className="ml-1 hover:text-accent/60 transition-colors"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Filter builder panel */}
+        {showFilterBuilder && (
+          <FilterBuilder value={activeFilter} onApply={handleApplyFilter} />
+        )}
 
         {/* Bulk action bar */}
         {selectedIds.size > 0 && (

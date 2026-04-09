@@ -254,10 +254,11 @@ type HostFilters struct {
 	Status    string
 	OSFamily  string
 	Network   string
-	Search    string // searches ip_address and hostname
-	SortBy    string // column to sort by: ip_address, hostname, os_family, status, last_seen, first_seen
-	SortOrder string // asc or desc
-	Vendor    string // filter by vendor name (partial match)
+	Search    string      // searches ip_address and hostname
+	SortBy    string      // column to sort by: ip_address, hostname, os_family, status, last_seen, first_seen
+	SortOrder string      // asc or desc
+	Vendor    string      // filter by vendor name (partial match)
+	Expr      *FilterExpr // structured JSON filter expression (optional)
 }
 
 // validHostSortColumns is the allowlist of columns that may be used in ORDER BY.
@@ -998,6 +999,20 @@ func buildHostFilters(filters *HostFilters) (whereClause string, args []interfac
 			whereClause += fmt.Sprintf(" AND %s", vendorFragment)
 		}
 		args = append(args, pattern)
+	}
+
+	// Apply structured filter expression if present.
+	if filters.Expr != nil {
+		startIdx := len(args) + 1
+		exprSQL, exprArgs, err := TranslateFilterExpr(filters.Expr, startIdx)
+		if err == nil && exprSQL != "" {
+			if whereClause == "" {
+				whereClause = "WHERE (" + exprSQL + ")"
+			} else {
+				whereClause += " AND (" + exprSQL + ")"
+			}
+			args = append(args, exprArgs...)
+		}
 	}
 
 	return whereClause, args

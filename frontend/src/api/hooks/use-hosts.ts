@@ -12,6 +12,7 @@ interface HostListParams {
   vendor?: string;
   sort_by?: string;
   sort_order?: "asc" | "desc";
+  filter?: string; // structured JSON filter expression (advanced filter)
 }
 
 export function useHosts(params: HostListParams = {}) {

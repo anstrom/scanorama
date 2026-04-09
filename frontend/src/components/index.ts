@@ -23,3 +23,5 @@ export { SortHeader } from "./sort-header";
 export type { SortOrder, SortHeaderProps } from "./sort-header";
 export { ColumnToggle } from "./column-toggle";
 export type { ColumnDef, ColumnToggleProps } from "./column-toggle";
+export { FilterBuilder } from "./filter-builder";
+export type { FilterBuilderProps } from "./filter-builder";
