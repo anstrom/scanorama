@@ -1208,11 +1208,13 @@ Codecov enforces patch coverage on every PR. A PR with 0% patch coverage on new 
 
 ### When to write tests — the checklist
 Before opening or updating a PR, ask for every changed file:
-1. Is this a new file? → write a `*_test.go` for it in the same PR commit.
+1. Is this a new file? → write a `*_test.go` / `.test.ts(x)` for it in the same PR commit.
 2. Is this a new exported function/method? → add a test.
 3. Is this a new unexported function with logic (validation, state checks, error branches)? → add a test.
 4. Did you move code from one package to another? → ensure coverage moves with it.
 5. Did you add a new HTTP endpoint? → add a mock-based handler test.
+6. Did you add a new React component? → add a `.test.tsx` covering render, interactions, and loading/error states.
+7. Did you add a new TanStack Query hook? → add a `.test.ts` using `renderHookWithQuery` covering loading, success, error, and cache-key behaviour.
 
 ### Patterns by layer
 
@@ -1254,6 +1256,115 @@ func TestExampleService_GetByID_NotFound(t *testing.T) {
 #### DB / sqlmock layer (`internal/db/`, `internal/scanning/`)
 - For code that calls the database but has no live-DB integration test path reachable under `-short`, add a sqlmock test (see `internal/auth/db_operations_mock_test.go` for the pattern).
 
+#### Frontend — TanStack Query hooks (`frontend/src/api/hooks/`)
+- Mock `api` (the openapi-fetch client) at the module level with `vi.mock("../client", ...)`.
+- Use `renderHookWithQuery` from `src/test/utils.tsx` — it wraps the hook in a fresh `QueryClient` (no retries, no caching) and returns `{ result, queryClient, actHook }`.
+- Define `ok(data)` / `fail(message)` / `okPost(data)` / `failPost(message)` helpers that return the correct `Promise<{ data, error, response }>` shape.
+- Cover per hook: loading state, success (data shape + cache key), error state, correct path/query params passed to `api.GET`/`api.POST`, query invalidation on mutation success.
+- Raw-fetch hooks (those that call `fetch()` directly, e.g. `useDiscoveryDiff`) mock `global.fetch` instead of `api`.
+
+```scanorama/frontend/src/api/hooks/example.test.ts#L1-40
+import { waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHookWithQuery } from "../../test/utils";
+import { useDiscoveryJobs } from "./use-discovery";
+
+vi.mock("../client", () => ({ api: { GET: vi.fn(), POST: vi.fn() } }));
+import { api } from "../client";
+const mockGet = vi.mocked(api.GET);
+
+const ok = (data: unknown) =>
+  Promise.resolve({ data, error: undefined, response: new Response() }) as ReturnType<typeof mockGet>;
+const fail = (msg = "oops") =>
+  Promise.resolve({ data: undefined, error: { message: msg }, response: new Response() }) as ReturnType<typeof mockGet>;
+
+describe("useDiscoveryJobs", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("starts in a loading state", () => {
+    mockGet.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHookWithQuery(() => useDiscoveryJobs());
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  it("returns job list on success", async () => {
+    mockGet.mockResolvedValue(ok({ data: [{ id: "j1" }], pagination: {} }));
+    const { result } = renderHookWithQuery(() => useDiscoveryJobs());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.data?.data).toHaveLength(1);
+  });
+
+  it("enters error state on failure", async () => {
+    mockGet.mockResolvedValue(fail("not found"));
+    const { result } = renderHookWithQuery(() => useDiscoveryJobs());
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+});
+```
+
+#### Frontend — page/route components (`frontend/src/routes/`)
+- Mock every hook the component calls at the module level with `vi.mock(...)` before importing the component.
+- Use `vi.mocked(useXxx)` typed helpers and define factory functions (e.g. `makeUseXxxResult(overrides?)`) that return the full hook return shape with sane defaults — tests override only what they care about.
+- Mock TanStack Router hooks used in the component (`useSearch`, `useNavigate`, etc.) via `vi.mock("@tanstack/react-router", ...)`.
+- Render with plain `render(<Page />)` for components that don't use router hooks, or `await renderWithRouter(<Page />)` (from `src/test/utils.tsx`) when the component calls `useNavigate`, `useSearch`, or renders `<Link>`.
+- `renderWithRouter` wraps the UI in a minimal in-memory `RouterProvider` + `ToastProvider`; it returns a promise — always `await` it.
+- Use `beforeEach` to call `vi.clearAllMocks()` and reset every mock to its default state.
+- Cover: loading skeleton, empty state, populated state (row count, key fields), user interactions (clicks, form input), error states, modal open/close.
+
+```scanorama/frontend/src/routes/example.test.tsx#L1-50
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { DiscoveryPage } from "./discovery";
+
+vi.mock("../api/hooks/use-discovery", () => ({
+  useDiscoveryJobs: vi.fn(),
+  useStartDiscovery: vi.fn(),
+  useDiscoveryDiff: vi.fn(),
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  useSearch: vi.fn().mockReturnValue({}),
+}));
+
+import { useDiscoveryJobs, useStartDiscovery } from "../api/hooks/use-discovery";
+const mockJobs = vi.mocked(useDiscoveryJobs);
+const mockStart = vi.mocked(useStartDiscovery);
+
+function makeJobsResult(overrides = {}) {
+  return {
+    data: { data: [], pagination: { total_pages: 1 } },
+    isLoading: false,
+    ...overrides,
+  } as unknown as ReturnType<typeof useDiscoveryJobs>;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockJobs.mockReturnValue(makeJobsResult());
+  mockStart.mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
+});
+
+describe("DiscoveryPage", () => {
+  it("renders the New discovery job button", () => {
+    render(<DiscoveryPage />);
+    expect(screen.getByRole("button", { name: /new discovery job/i })).toBeInTheDocument();
+  });
+
+  it("shows skeleton rows while loading", () => {
+    mockJobs.mockReturnValue(makeJobsResult({ isLoading: true, data: undefined }));
+    render(<DiscoveryPage />);
+    expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+  });
+});
+```
+
+#### Frontend — isolated components (`frontend/src/components/`)
+- Render in isolation with plain `render(...)` unless the component uses router hooks.
+- Test with `@testing-library/user-event` for interactions (prefer `userEvent.setup()` over `fireEvent` for realistic event sequences).
+- For components that use `useToast`, wrap in `<ToastProvider>` directly.
+- Do not test implementation details (internal state, refs); test observable DOM output and ARIA roles.
+
 ### Coverage targets (from TODO.md)
 | Package | Target |
 |---|---|
@@ -1263,9 +1374,35 @@ func TestExampleService_GetByID_NotFound(t *testing.T) {
 | `internal/scanning` | >60% |
 | `internal/db` | >40% |
 
+Frontend has no hard numeric target enforced by Codecov, but every new hook and every new route component must have a corresponding test file in the same commit.
+
 ### Verifying before commit
+
+**Go:**
 ```
 go test -short -coverprofile=coverage.out ./...
 go tool cover -func=coverage.out | grep -v "100.0%"
 ```
-Any new file showing 0.0% on all functions is a blocker — add tests before committing.
+Any new Go file showing 0.0% on all functions is a blocker — add tests before committing.
+
+**Frontend:**
+```
+cd frontend && npx vitest run
+```
+All tests must pass. A new `.ts`/`.tsx` file with no corresponding `.test.ts(x)` is a blocker.
+
+### Frontend test file conventions
+| What you added | Test file location | Runner helper |
+|---|---|---|
+| `src/api/hooks/use-foo.ts` | `src/api/hooks/use-foo.test.ts` | `renderHookWithQuery` |
+| `src/routes/foo.tsx` | `src/routes/foo.test.tsx` | `render` or `renderWithRouter` |
+| `src/components/foo.tsx` | `src/components/foo.test.tsx` | `render` (+ `ToastProvider` if needed) |
+| `src/hooks/use-foo.ts` | `src/hooks/use-foo.test.ts` | `renderHook` from Testing Library |
+| `src/lib/foo.ts` | `src/lib/foo.test.ts` | plain function calls, no renderer |
+
+### Anti-patterns to avoid in frontend tests
+- **Do not** import from the real router instance (`src/router.tsx`) in tests — mock `@tanstack/react-router` instead.
+- **Do not** use `fireEvent` for user interactions that produce real browser event sequences (typing, clicking buttons) — use `userEvent.setup()`.
+- **Do not** assert on CSS class names to verify state — assert on visible text, ARIA roles, or `data-testid` attributes.
+- **Do not** share mutable mock state across `describe` blocks — reset with `vi.clearAllMocks()` in `beforeEach`.
+- **Do not** use `waitFor` polling loops for synchronous state — only use `waitFor` for async operations (data fetching, timers).
