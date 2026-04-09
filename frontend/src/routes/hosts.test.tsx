@@ -69,6 +69,47 @@ vi.mock("../components", async (importOriginal) => {
   };
 });
 
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@tanstack/react-router")>();
+  return {
+    ...actual,
+    useSearch: vi.fn().mockReturnValue({}),
+    useNavigate: vi.fn().mockReturnValue(vi.fn()),
+  };
+});
+
+vi.mock("../components/filter-builder", () => ({
+  FilterBuilder: ({
+    value,
+    onApply,
+  }: {
+    value: { op: string; conditions: unknown[] } | null;
+    onApply: (
+      filter: {
+        op: "AND";
+        conditions: [{ field: string; cmp: string; value: string }];
+      } | null,
+    ) => void;
+  }) => (
+    <div data-testid="filter-builder">
+      <button
+        onClick={() =>
+          onApply({
+            op: "AND",
+            conditions: [{ field: "status", cmp: "is", value: "up" }],
+          })
+        }
+      >
+        Apply filter
+      </button>
+      {value !== null && (
+        <button onClick={() => onApply(null)}>Clear filter in builder</button>
+      )}
+    </div>
+  ),
+}));
+
 const mockHosts = [
   {
     id: "host-1",
@@ -1031,5 +1072,38 @@ describe("HostsPage", () => {
     // containerProps mock sets tabIndex: 0 on the wrapping div
     const navDiv = document.querySelector('[tabindex="0"]');
     expect(navDiv).toBeInTheDocument();
+  });
+
+  it("renders the Advanced filter button", () => {
+    render(<HostsPage />);
+    expect(
+      screen.getByRole("button", { name: "Advanced filter" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows FilterBuilder when the Advanced filter button is clicked", async () => {
+    const user = userEvent.setup();
+    render(<HostsPage />);
+
+    expect(screen.queryByTestId("filter-builder")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Advanced filter" }));
+    expect(screen.getByTestId("filter-builder")).toBeInTheDocument();
+  });
+
+  it("shows the active filter chip after a filter is applied and builder is closed", async () => {
+    const user = userEvent.setup();
+    render(<HostsPage />);
+
+    // Open the filter builder
+    await user.click(screen.getByRole("button", { name: "Advanced filter" }));
+
+    // Apply a filter via the mock builder's Apply button
+    await user.click(screen.getByRole("button", { name: "Apply filter" }));
+
+    // Close the filter builder so the chip becomes visible
+    await user.click(screen.getByRole("button", { name: "Advanced filter" }));
+
+    // The active filter chip should now be visible
+    expect(screen.getByText("Active filter:")).toBeInTheDocument();
   });
 });

@@ -436,6 +436,12 @@ func (h *HostHandler) getHostFilters(r *http.Request) *db.HostFilters {
 		filters.Vendor = vendor
 	}
 
+	if filterJSON := r.URL.Query().Get("filter"); filterJSON != "" {
+		if expr, err := db.ParseFilterExpr([]byte(filterJSON)); err == nil {
+			filters.Expr = expr
+		}
+	}
+
 	return filters
 }
 

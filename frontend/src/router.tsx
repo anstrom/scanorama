@@ -32,10 +32,15 @@ const scansRoute = createRoute({
   component: ScansPage,
 });
 
+const hostsSearchSchema = z.object({
+  filter: z.string().optional(),
+});
+
 const hostsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/hosts",
   component: HostsPage,
+  validateSearch: hostsSearchSchema,
 });
 
 const networksRoute = createRoute({
