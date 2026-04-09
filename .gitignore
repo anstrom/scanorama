@@ -88,6 +88,7 @@ act-*
 # ── Claude / AI assistant ─────────────────────────────────────────────────────
 .claude-*
 .claude/HANDOFF.md
+HANDOFF.md
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 config/environments/*.working.yaml
