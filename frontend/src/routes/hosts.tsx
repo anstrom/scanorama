@@ -38,8 +38,10 @@ import { ColumnToggle } from "../components/column-toggle";
 import type { ColumnDef } from "../components/column-toggle";
 import { useTableKeyNav } from "../hooks/use-table-key-nav";
 import { FilterBuilder } from "../components/filter-builder";
+import { TagInput } from "../components/tag-input";
 import type { FilterGroup } from "../lib/filter-expr";
 import { deserializeFilter, serializeFilter } from "../lib/filter-expr";
+import { useTags, useUpdateHostTags } from "../api/hooks/use-tags";
 
 type HostResponse = components["schemas"]["docs.HostResponse"];
 
@@ -87,10 +89,14 @@ function HostDetailPanel({
   host,
   onClose,
   onScan,
+  allTags,
+  onTagFilter,
 }: {
   host: HostResponse;
   onClose: () => void;
   onScan: (ip: string) => void;
+  allTags: string[];
+  onTagFilter: (tag: string) => void;
 }) {
   const { data: full, isLoading, isError, error } = useHost(host.id ?? "");
   const h = (full ?? host) as HostWithDetails;
@@ -99,6 +105,21 @@ function HostDetailPanel({
   const [isEditingHostname, setIsEditingHostname] = useState(false);
   const [hostnameInput, setHostnameInput] = useState("");
   const [hostnameError, setHostnameError] = useState<string | null>(null);
+
+  // Tags
+  const [localTags, setLocalTags] = useState<string[] | null>(null);
+  const { mutateAsync: updateTags } = useUpdateHostTags();
+  const displayTags = localTags ?? (h.tags ?? []);
+
+  async function handleTagsChange(tags: string[]) {
+    setLocalTags(tags);
+    try {
+      await updateTags({ hostId: h.id ?? "", tags });
+    } catch {
+      setLocalTags(null);
+      toast.error("Failed to update tags.");
+    }
+  }
 
   // Delete
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -283,6 +304,7 @@ function HostDetailPanel({
                           if (e.key === "Escape") setIsEditingHostname(false);
                         }}
                         autoFocus
+                        aria-label="Edit hostname"
                         className="flex-1 px-2 py-0.5 text-xs rounded border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-border min-w-0"
                       />
                       <button
@@ -340,6 +362,42 @@ function HostDetailPanel({
                   label="Status"
                   value={<StatusBadge status={h.status ?? "unknown"} />}
                 />
+              </div>
+            )}
+          </section>
+
+          {/* Tags */}
+          <section>
+            <h3 className="text-xs font-medium text-text-primary mb-3">
+              Tags
+            </h3>
+            {isLoading ? (
+              <Skeleton className="h-7 w-full rounded" />
+            ) : (
+              <div className="space-y-2">
+                <TagInput
+                  tags={displayTags}
+                  allTags={allTags}
+                  onChange={(tags) => void handleTagsChange(tags)}
+                />
+                {displayTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {displayTags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onTagFilter(tag);
+                        }}
+                        title={`Filter by "${tag}"`}
+                        className="text-[11px] text-accent/70 hover:text-accent underline-offset-2 hover:underline transition-colors"
+                      >
+                        filter by {tag}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -675,6 +733,11 @@ function SkeletonRows({
               <Skeleton className="h-3.5 w-20" />
             </td>
           )}
+          {colVis.tags && (
+            <td className="py-3 pr-4">
+              <Skeleton className="h-3.5 w-24" />
+            </td>
+          )}
           {colVis.last_seen && (
             <td className="py-3 pr-4">
               <Skeleton className="h-3.5 w-8" />
@@ -703,6 +766,7 @@ const HOST_COLUMNS: ColumnDef[] = [
   { key: "mac", label: "MAC Address" },
   { key: "vendor", label: "Vendor" },
   { key: "ports", label: "Open Ports" },
+  { key: "tags", label: "Tags" },
   { key: "last_seen", label: "Last Seen" },
   { key: "scans", label: "Scans" },
 ];
@@ -727,6 +791,7 @@ export function HostsPage() {
   const [activeFilter, setActiveFilter] = useState<FilterGroup | null>(null);
   const { mutateAsync: bulkDeleteHosts, isPending: isBulkDeleting } =
     useBulkDeleteHosts();
+  const { data: allTags = [] } = useTags();
   const { toast } = useToast();
   const navigate = useNavigate();
   const search = useSearch({ from: "/hosts" });
@@ -1036,7 +1101,7 @@ export function HostsPage() {
 
         {/* Filter builder panel */}
         {showFilterBuilder && (
-          <FilterBuilder value={activeFilter} onApply={handleApplyFilter} />
+          <FilterBuilder value={activeFilter} onApply={handleApplyFilter} tagSuggestions={allTags} />
         )}
 
         {/* Bulk action bar */}
@@ -1157,6 +1222,11 @@ export function HostsPage() {
                         onSort={handleSort}
                       />
                     )}
+                    {colVis.tags && (
+                      <th className="text-left font-medium text-text-muted py-3 pr-4 whitespace-nowrap">
+                        Tags
+                      </th>
+                    )}
                     {colVis.last_seen && (
                       <SortHeader
                         label="Last Seen"
@@ -1276,6 +1346,40 @@ export function HostsPage() {
                             })()}
                           </td>
                         )}
+                        {colVis.tags && (
+                          <td
+                            className="py-3 pr-4"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex flex-wrap gap-1">
+                              {((host as HostWithDetails).tags ?? []).length === 0 ? (
+                                <span className="text-text-muted">—</span>
+                              ) : (
+                                ((host as HostWithDetails).tags ?? []).map((tag) => (
+                                  <button
+                                    key={tag}
+                                    type="button"
+                                    onClick={() =>
+                                      handleApplyFilter({
+                                        op: "AND",
+                                        conditions: [
+                                          {
+                                            field: "tags",
+                                            cmp: "contains",
+                                            value: tag,
+                                          },
+                                        ],
+                                      })
+                                    }
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-medium bg-accent/15 text-accent border border-accent/20 hover:bg-accent/25 transition-colors cursor-pointer"
+                                  >
+                                    {tag}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          </td>
+                        )}
                         {colVis.last_seen && (
                           <td className="py-3 pr-4 text-text-muted whitespace-nowrap">
                             {host.last_seen
@@ -1350,6 +1454,14 @@ export function HostsPage() {
           host={selectedHost}
           onClose={() => setSelectedHost(null)}
           onScan={(ip) => setScanIP(ip)}
+          allTags={allTags}
+          onTagFilter={(tag) => {
+            handleApplyFilter({
+              op: "AND",
+              conditions: [{ field: "tags", cmp: "contains", value: tag }],
+            });
+            setShowFilterBuilder(true);
+          }}
         />
       )}
     </>

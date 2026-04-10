@@ -40,12 +40,27 @@ function isGroup(expr: FilterExpr): expr is FilterGroup {
 interface ValueInputProps {
   condition: FilterCondition;
   onChange: (updates: Partial<FilterCondition>) => void;
+  tagSuggestions?: string[];
 }
 
-function ValueInput({ condition, onChange }: ValueInputProps) {
+function ValueInput({ condition, onChange, tagSuggestions = [] }: ValueInputProps) {
   const meta = getFieldMeta(condition.field);
   const type = meta?.type ?? "text";
   const isBetween = condition.cmp === "between";
+  const [tagDropOpen, setTagDropOpen] = useState(false);
+  const tagRef = useRef<HTMLDivElement>(null);
+
+  // Close tag dropdown on outside click
+  useEffect(() => {
+    if (!tagDropOpen) return;
+    function handler(e: MouseEvent) {
+      if (tagRef.current && !tagRef.current.contains(e.target as Node)) {
+        setTagDropOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [tagDropOpen]);
 
   const inputClass = cn(
     "px-2 py-1 text-xs rounded border border-border",
@@ -127,6 +142,51 @@ function ValueInput({ condition, onChange }: ValueInputProps) {
     );
   }
 
+  if (type === "tag") {
+    const filtered = tagSuggestions.filter(
+      (t) =>
+        condition.value === "" ||
+        t.toLowerCase().includes(condition.value.toLowerCase()),
+    );
+    return (
+      <div ref={tagRef} className="relative">
+        <input
+          type="text"
+          value={condition.value}
+          onChange={(e) => {
+            onChange({ value: e.target.value });
+            setTagDropOpen(true);
+          }}
+          onFocus={() => setTagDropOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setTagDropOpen(false);
+          }}
+          placeholder="tag name…"
+          className={cn(inputClass, "min-w-32")}
+          aria-label="Tag value"
+        />
+        {tagDropOpen && filtered.length > 0 && (
+          <div className="absolute left-0 top-full mt-1 z-30 w-48 bg-surface border border-border rounded-md shadow-lg py-1 max-h-40 overflow-y-auto">
+            {filtered.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onChange({ value: t });
+                  setTagDropOpen(false);
+                }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-raised text-text-primary"
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // text
   return (
     <input
@@ -147,6 +207,7 @@ interface ConditionRowProps {
   onChange: (c: FilterCondition) => void;
   onRemove: () => void;
   isOnly: boolean;
+  tagSuggestions?: string[];
 }
 
 function ConditionRow({
@@ -154,6 +215,7 @@ function ConditionRow({
   onChange,
   onRemove,
   isOnly,
+  tagSuggestions,
 }: ConditionRowProps) {
   const meta = getFieldMeta(condition.field);
   const ops = getOperatorsForType(meta?.type ?? "text");
@@ -214,7 +276,7 @@ function ConditionRow({
       </select>
 
       {/* Value input */}
-      <ValueInput condition={condition} onChange={handleValueChange} />
+      <ValueInput condition={condition} onChange={handleValueChange} tagSuggestions={tagSuggestions} />
 
       {/* Remove button */}
       <button
@@ -268,9 +330,10 @@ interface SubGroupProps {
   group: FilterGroup;
   onChange: (g: FilterGroup) => void;
   onRemove: () => void;
+  tagSuggestions?: string[];
 }
 
-function SubGroup({ group, onChange, onRemove }: SubGroupProps) {
+function SubGroup({ group, onChange, onRemove, tagSuggestions }: SubGroupProps) {
   function updateCondition(idx: number, cond: FilterCondition) {
     const conditions = group.conditions.map((c, i) => (i === idx ? cond : c));
     onChange({ ...group, conditions });
@@ -316,6 +379,7 @@ function SubGroup({ group, onChange, onRemove }: SubGroupProps) {
             onChange={(c) => updateCondition(idx, c)}
             onRemove={() => removeCondition(idx)}
             isOnly={group.conditions.length === 1}
+            tagSuggestions={tagSuggestions}
           />
         );
       })}
@@ -486,6 +550,7 @@ function PresetsDropdown({ onLoad, currentExpr }: PresetsDropdownProps) {
 export interface FilterBuilderProps {
   value: FilterGroup | null;
   onApply: (filter: FilterGroup | null) => void;
+  tagSuggestions?: string[];
 }
 
 function makeDefaultGroup(): FilterGroup {
@@ -495,10 +560,11 @@ function makeDefaultGroup(): FilterGroup {
   };
 }
 
-export function FilterBuilder({ value, onApply }: FilterBuilderProps) {
+export function FilterBuilder({ value, onApply, tagSuggestions = [] }: FilterBuilderProps) {
   const [draft, setDraft] = useState<FilterGroup>(
     () => value ?? makeDefaultGroup(),
   );
+  const allTags = tagSuggestions;
 
   // Sync draft when external value changes (e.g., cleared or loaded from URL)
   useEffect(() => {
@@ -615,6 +681,7 @@ export function FilterBuilder({ value, onApply }: FilterBuilderProps) {
                 group={expr}
                 onChange={(g) => updateTopCondition(idx, g)}
                 onRemove={() => removeTopCondition(idx)}
+                tagSuggestions={allTags}
               />
             );
           }
@@ -626,6 +693,7 @@ export function FilterBuilder({ value, onApply }: FilterBuilderProps) {
               onChange={(c) => updateTopCondition(idx, c)}
               onRemove={() => removeTopCondition(idx)}
               isOnly={topLeafCount <= 1 && draft.conditions.length === 1}
+              tagSuggestions={allTags}
             />
           );
         })}
