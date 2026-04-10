@@ -93,7 +93,7 @@ func TestHostTags_UpdateReplacesAll(t *testing.T) {
 	require.NoError(t, err)
 
 	sort.Strings(got.Tags)
-	assert.Equal(t, []string{"staging"}, got.Tags)
+	assert.Equal(t, []string{"staging"}, []string(got.Tags))
 }
 
 // TestHostTags_AddAppendsDeduplicates verifies that AddHostTags appends new
@@ -120,7 +120,7 @@ func TestHostTags_AddAppendsDeduplicates(t *testing.T) {
 	require.NoError(t, err)
 
 	sort.Strings(got.Tags)
-	assert.Equal(t, []string{"prod", "web"}, got.Tags)
+	assert.Equal(t, []string{"prod", "web"}, []string(got.Tags))
 }
 
 // TestHostTags_RemoveSpecific verifies that RemoveHostTags removes only the
@@ -147,7 +147,7 @@ func TestHostTags_RemoveSpecific(t *testing.T) {
 	require.NoError(t, err)
 
 	sort.Strings(got.Tags)
-	assert.Equal(t, []string{"prod", "staging"}, got.Tags)
+	assert.Equal(t, []string{"prod", "staging"}, []string(got.Tags))
 }
 
 // TestHostTags_GetAllTags verifies that GetAllTags returns the distinct union
@@ -216,12 +216,12 @@ func TestHostTags_BulkSet(t *testing.T) {
 	got1, err := repo.GetHost(ctx, host1.ID)
 	require.NoError(t, err)
 	sort.Strings(got1.Tags)
-	assert.Equal(t, []string{"new"}, got1.Tags)
+	assert.Equal(t, []string{"new"}, []string(got1.Tags))
 
 	got2, err := repo.GetHost(ctx, host2.ID)
 	require.NoError(t, err)
 	sort.Strings(got2.Tags)
-	assert.Equal(t, []string{"new"}, got2.Tags)
+	assert.Equal(t, []string{"new"}, []string(got2.Tags))
 }
 
 // TestHostTags_BulkAdd verifies that BulkUpdateTags with action "add" appends
@@ -256,12 +256,12 @@ func TestHostTags_BulkAdd(t *testing.T) {
 	got1, err := repo.GetHost(ctx, host1.ID)
 	require.NoError(t, err)
 	sort.Strings(got1.Tags)
-	assert.Equal(t, []string{"base", "extra"}, got1.Tags)
+	assert.Equal(t, []string{"base", "extra"}, []string(got1.Tags))
 
 	got2, err := repo.GetHost(ctx, host2.ID)
 	require.NoError(t, err)
 	sort.Strings(got2.Tags)
-	assert.Equal(t, []string{"base", "extra"}, got2.Tags)
+	assert.Equal(t, []string{"base", "extra"}, []string(got2.Tags))
 }
 
 // TestHostTags_BulkRemove verifies that BulkUpdateTags with action "remove"
@@ -296,12 +296,12 @@ func TestHostTags_BulkRemove(t *testing.T) {
 	got1, err := repo.GetHost(ctx, host1.ID)
 	require.NoError(t, err)
 	sort.Strings(got1.Tags)
-	assert.Equal(t, []string{"keep"}, got1.Tags)
+	assert.Equal(t, []string{"keep"}, []string(got1.Tags))
 
 	got2, err := repo.GetHost(ctx, host2.ID)
 	require.NoError(t, err)
 	sort.Strings(got2.Tags)
-	assert.Equal(t, []string{"keep"}, got2.Tags)
+	assert.Equal(t, []string{"keep"}, []string(got2.Tags))
 }
 
 // TestHostTags_UpdateNotFound verifies that UpdateHostTags returns a non-nil

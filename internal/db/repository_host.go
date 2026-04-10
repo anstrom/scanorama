@@ -412,9 +412,15 @@ func (r *HostRepository) CreateHost(ctx context.Context, input CreateHostInput) 
 	addStr("status", input.Status)
 
 	// Always include tags (defaults to empty array if nil/empty).
+	// Always include tags. Guard against nil so pq.Array does not serialize
+	// to SQL NULL, which would violate the NOT NULL constraint on the column.
+	tagsToInsert := input.Tags
+	if tagsToInsert == nil {
+		tagsToInsert = []string{}
+	}
 	columns = append(columns, "tags")
 	placeholders = append(placeholders, fmt.Sprintf("$%d", argIndex))
-	args = append(args, pq.Array(input.Tags))
+	args = append(args, pq.Array(tagsToInsert))
 	argIndex++
 
 	query := fmt.Sprintf(
@@ -1288,7 +1294,7 @@ func (r *HostRepository) GetHostGroups(ctx context.Context, hostID uuid.UUID) ([
 		}
 	}()
 
-	var groups []HostGroupSummary
+	groups := []HostGroupSummary{}
 	for rows.Next() {
 		var g HostGroupSummary
 		if err := rows.Scan(&g.ID, &g.Name, &g.Color); err != nil {
