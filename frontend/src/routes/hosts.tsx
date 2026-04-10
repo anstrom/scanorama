@@ -12,6 +12,7 @@ import {
   Activity,
   Play,
   SlidersHorizontal,
+  Plus,
 } from "lucide-react";
 import { SortHeader } from "../components/sort-header";
 import type { SortOrder } from "../components/sort-header";
@@ -42,6 +43,7 @@ import { TagInput } from "../components/tag-input";
 import type { FilterGroup } from "../lib/filter-expr";
 import { deserializeFilter, serializeFilter } from "../lib/filter-expr";
 import { useTags, useUpdateHostTags } from "../api/hooks/use-tags";
+import { useGroups, useAddHostsToGroup } from "../api/hooks/use-groups";
 
 type HostResponse = components["schemas"]["docs.HostResponse"];
 
@@ -68,6 +70,7 @@ type HostWithDetails = HostResponse & {
   response_time_max_ms?: number | null;
   response_time_avg_ms?: number | null;
   timeout_count?: number;
+  groups?: Array<{ id: string; name: string; color?: string }>;
 };
 
 const PAGE_SIZE = 25;
@@ -91,12 +94,14 @@ function HostDetailPanel({
   onScan,
   allTags,
   onTagFilter,
+  allGroups,
 }: {
   host: HostResponse;
   onClose: () => void;
   onScan: (ip: string) => void;
   allTags: string[];
   onTagFilter: (tag: string) => void;
+  allGroups: Array<{ id: string; name: string; color?: string }>;
 }) {
   const { data: full, isLoading, isError, error } = useHost(host.id ?? "");
   const h = (full ?? host) as HostWithDetails;
@@ -111,6 +116,12 @@ function HostDetailPanel({
   const { mutateAsync: updateTags } = useUpdateHostTags();
   const displayTags = localTags ?? (h.tags ?? []);
 
+  // Groups
+  const { mutateAsync: addToGroup, isPending: isAddingToGroup } = useAddHostsToGroup();
+  const [addGroupOpen, setAddGroupOpen] = useState(false);
+  const hostGroupIds = new Set((h.groups ?? []).map((g) => g.id));
+  const availableGroups = allGroups.filter((g) => !hostGroupIds.has(g.id));
+
   async function handleTagsChange(tags: string[]) {
     setLocalTags(tags);
     try {
@@ -118,6 +129,16 @@ function HostDetailPanel({
     } catch {
       setLocalTags(null);
       toast.error("Failed to update tags.");
+    }
+  }
+
+  async function handleAddToGroup(groupId: string) {
+    setAddGroupOpen(false);
+    try {
+      await addToGroup({ groupId, hostIds: [h.id ?? ""] });
+      toast.success("Host added to group.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add to group.");
     }
   }
 
@@ -398,6 +419,64 @@ function HostDetailPanel({
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+          </section>
+
+          {/* Groups */}
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-medium text-text-primary">Groups</h3>
+              {availableGroups.length > 0 && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setAddGroupOpen((o) => !o)}
+                    disabled={isAddingToGroup}
+                    className="text-[11px] text-text-muted hover:text-text-primary transition-colors flex items-center gap-1"
+                  >
+                    <Plus className="h-3 w-3" /> Add to group
+                  </button>
+                  {addGroupOpen && (
+                    <div className="absolute right-0 top-full mt-1 z-30 w-44 bg-surface border border-border rounded-md shadow-lg py-1 max-h-40 overflow-y-auto">
+                      {availableGroups.map((g) => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => void handleAddToGroup(g.id)}
+                          className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-raised flex items-center gap-2"
+                        >
+                          <span
+                            className="h-2 w-2 rounded-full shrink-0"
+                            style={{ backgroundColor: g.color ?? "#64748b" }}
+                          />
+                          <span className="truncate">{g.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {isLoading ? (
+              <Skeleton className="h-5 w-32 rounded" />
+            ) : (h.groups ?? []).length === 0 ? (
+              <p className="text-xs text-text-muted">Not in any group.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {(h.groups ?? []).map((g) => (
+                  <span
+                    key={g.id}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border"
+                    style={{
+                      backgroundColor: g.color ? `${g.color}20` : undefined,
+                      borderColor: g.color ? `${g.color}50` : undefined,
+                      color: g.color ?? undefined,
+                    }}
+                  >
+                    {g.name}
+                  </span>
+                ))}
               </div>
             )}
           </section>
@@ -784,6 +863,7 @@ export function HostsPage() {
   const [selectedHost, setSelectedHost] = useState<HostResponse | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkScanIPs, setBulkScanIPs] = useState<string[] | null>(null);
+  const [bulkGroupOpen, setBulkGroupOpen] = useState(false);
   const [colVis, setColVis] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(HOST_COLUMNS.map((c) => [c.key, true])),
   );
@@ -791,7 +871,10 @@ export function HostsPage() {
   const [activeFilter, setActiveFilter] = useState<FilterGroup | null>(null);
   const { mutateAsync: bulkDeleteHosts, isPending: isBulkDeleting } =
     useBulkDeleteHosts();
+  const { mutateAsync: bulkAddToGroup, isPending: isBulkAddingToGroup } =
+    useAddHostsToGroup();
   const { data: allTags = [] } = useTags();
+  const { data: allGroups = [] } = useGroups();
   const { toast } = useToast();
   const navigate = useNavigate();
   const search = useSearch({ from: "/hosts" });
@@ -962,6 +1045,17 @@ export function HostsPage() {
     }
   }
 
+  async function handleBulkAddToGroup(groupId: string) {
+    setBulkGroupOpen(false);
+    const ids = Array.from(selectedIds);
+    try {
+      const result = await bulkAddToGroup({ groupId, hostIds: ids });
+      toast.success(`Added ${result?.added ?? ids.length} host${ids.length !== 1 ? "s" : ""} to group.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add hosts to group.");
+    }
+  }
+
   return (
     <>
       <div className="space-y-4">
@@ -1101,12 +1195,17 @@ export function HostsPage() {
 
         {/* Filter builder panel */}
         {showFilterBuilder && (
-          <FilterBuilder value={activeFilter} onApply={handleApplyFilter} tagSuggestions={allTags} />
+          <FilterBuilder
+            value={activeFilter}
+            onApply={handleApplyFilter}
+            tagSuggestions={allTags}
+            groupOptions={allGroups.map((g) => ({ id: g.id, name: g.name }))}
+          />
         )}
 
         {/* Bulk action bar */}
         {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3 px-4 py-2 rounded-lg border border-border bg-surface-raised text-xs">
+          <div className="flex items-center gap-3 px-4 py-2 rounded-lg border border-border bg-surface-raised text-xs flex-wrap">
             <span className="text-text-secondary font-medium">
               {selectedIds.size} selected
             </span>
@@ -1117,6 +1216,36 @@ export function HostsPage() {
             >
               Scan selected
             </Button>
+            {allGroups.length > 0 && (
+              <div className="relative">
+                <Button
+                  icon={<Plus className="h-3.5 w-3.5" />}
+                  onClick={() => setBulkGroupOpen((o) => !o)}
+                  loading={isBulkAddingToGroup}
+                  className="text-xs h-7 px-2"
+                >
+                  Add to group
+                </Button>
+                {bulkGroupOpen && (
+                  <div className="absolute left-0 top-full mt-1 z-30 w-44 bg-surface border border-border rounded-md shadow-lg py-1 max-h-48 overflow-y-auto">
+                    {allGroups.map((g) => (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() => void handleBulkAddToGroup(g.id)}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-raised flex items-center gap-2"
+                      >
+                        <span
+                          className="h-2 w-2 rounded-full shrink-0"
+                          style={{ backgroundColor: g.color ?? "#64748b" }}
+                        />
+                        <span className="truncate">{g.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <Button
               variant="danger"
               icon={<Trash2 className="h-3.5 w-3.5" />}
@@ -1462,6 +1591,7 @@ export function HostsPage() {
             });
             setShowFilterBuilder(true);
           }}
+          allGroups={allGroups}
         />
       )}
     </>

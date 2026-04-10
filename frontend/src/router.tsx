@@ -15,6 +15,7 @@ import { DiscoveryPage } from "./routes/discovery";
 import { ProfilesPage } from "./routes/profiles";
 import { SchedulesPage } from "./routes/schedules";
 import { AdminPage } from "./routes/admin";
+import { GroupsPage } from "./routes/groups";
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -84,6 +85,12 @@ const adminRoute = createRoute({
   component: AdminPage,
 });
 
+const groupsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/groups",
+  component: GroupsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   scansRoute,
@@ -93,6 +100,7 @@ const routeTree = rootRoute.addChildren([
   discoveryRoute,
   profilesRoute,
   schedulesRoute,
+  groupsRoute,
   adminRoute,
 ]);
 
