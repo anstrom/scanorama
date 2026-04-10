@@ -17,6 +17,11 @@ vi.mock("../api/hooks/use-tags", () => ({
   useUpdateHostTags: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 
+vi.mock("../api/hooks/use-groups", () => ({
+  useGroups: vi.fn(() => ({ data: [] })),
+  useAddHostsToGroup: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+}));
+
 import {
   useHosts,
   useHost,

@@ -46,7 +46,8 @@ export type FilterFieldType =
   | "number_count"
   | "date"
   | "port"
-  | "tag";
+  | "tag"
+  | "group";
 
 export interface FilterFieldMeta {
   field: string;
@@ -66,6 +67,7 @@ export const FILTER_FIELDS: FilterFieldMeta[] = [
   { field: "open_port", label: "Open Port", type: "port" },
   { field: "scan_count", label: "Scan Count", type: "number_count" },
   { field: "tags", label: "Tags", type: "tag" },
+  { field: "group", label: "Group", type: "group" },
 ];
 
 export function getFieldMeta(field: string): FilterFieldMeta | undefined {
@@ -81,6 +83,7 @@ export function getOperatorsForType(type: FilterFieldType): FilterCmp[] {
     case "date":   return ["gt", "lt", "between"];
     case "port":   return ["is", "is_not"];
     case "tag":    return ["contains", "is_not"];
+    case "group":  return ["is", "is_not"];
   }
 }
 

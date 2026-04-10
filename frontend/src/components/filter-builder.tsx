@@ -37,13 +37,19 @@ function isGroup(expr: FilterExpr): expr is FilterGroup {
 
 // ── Value input ───────────────────────────────────────────────────────────────
 
+interface GroupOption {
+  id: string;
+  name: string;
+}
+
 interface ValueInputProps {
   condition: FilterCondition;
   onChange: (updates: Partial<FilterCondition>) => void;
   tagSuggestions?: string[];
+  groupOptions?: GroupOption[];
 }
 
-function ValueInput({ condition, onChange, tagSuggestions = [] }: ValueInputProps) {
+function ValueInput({ condition, onChange, tagSuggestions = [], groupOptions = [] }: ValueInputProps) {
   const meta = getFieldMeta(condition.field);
   const type = meta?.type ?? "text";
   const isBetween = condition.cmp === "between";
@@ -142,6 +148,24 @@ function ValueInput({ condition, onChange, tagSuggestions = [] }: ValueInputProp
     );
   }
 
+  if (type === "group") {
+    return (
+      <select
+        value={condition.value}
+        onChange={(e) => onChange({ value: e.target.value })}
+        className={cn(inputClass, "min-w-36")}
+        aria-label="Filter value"
+      >
+        <option value="">Select group…</option>
+        {groupOptions.map((g) => (
+          <option key={g.id} value={g.name}>
+            {g.name}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
   if (type === "tag") {
     const filtered = tagSuggestions.filter(
       (t) =>
@@ -208,6 +232,7 @@ interface ConditionRowProps {
   onRemove: () => void;
   isOnly: boolean;
   tagSuggestions?: string[];
+  groupOptions?: GroupOption[];
 }
 
 function ConditionRow({
@@ -216,6 +241,7 @@ function ConditionRow({
   onRemove,
   isOnly,
   tagSuggestions,
+  groupOptions,
 }: ConditionRowProps) {
   const meta = getFieldMeta(condition.field);
   const ops = getOperatorsForType(meta?.type ?? "text");
@@ -276,7 +302,7 @@ function ConditionRow({
       </select>
 
       {/* Value input */}
-      <ValueInput condition={condition} onChange={handleValueChange} tagSuggestions={tagSuggestions} />
+      <ValueInput condition={condition} onChange={handleValueChange} tagSuggestions={tagSuggestions} groupOptions={groupOptions} />
 
       {/* Remove button */}
       <button
@@ -331,9 +357,10 @@ interface SubGroupProps {
   onChange: (g: FilterGroup) => void;
   onRemove: () => void;
   tagSuggestions?: string[];
+  groupOptions?: GroupOption[];
 }
 
-function SubGroup({ group, onChange, onRemove, tagSuggestions }: SubGroupProps) {
+function SubGroup({ group, onChange, onRemove, tagSuggestions, groupOptions }: SubGroupProps) {
   function updateCondition(idx: number, cond: FilterCondition) {
     const conditions = group.conditions.map((c, i) => (i === idx ? cond : c));
     onChange({ ...group, conditions });
@@ -380,6 +407,7 @@ function SubGroup({ group, onChange, onRemove, tagSuggestions }: SubGroupProps) 
             onRemove={() => removeCondition(idx)}
             isOnly={group.conditions.length === 1}
             tagSuggestions={tagSuggestions}
+            groupOptions={groupOptions}
           />
         );
       })}
@@ -551,6 +579,7 @@ export interface FilterBuilderProps {
   value: FilterGroup | null;
   onApply: (filter: FilterGroup | null) => void;
   tagSuggestions?: string[];
+  groupOptions?: GroupOption[];
 }
 
 function makeDefaultGroup(): FilterGroup {
@@ -560,7 +589,7 @@ function makeDefaultGroup(): FilterGroup {
   };
 }
 
-export function FilterBuilder({ value, onApply, tagSuggestions = [] }: FilterBuilderProps) {
+export function FilterBuilder({ value, onApply, tagSuggestions = [], groupOptions = [] }: FilterBuilderProps) {
   const [draft, setDraft] = useState<FilterGroup>(
     () => value ?? makeDefaultGroup(),
   );
@@ -682,6 +711,7 @@ export function FilterBuilder({ value, onApply, tagSuggestions = [] }: FilterBui
                 onChange={(g) => updateTopCondition(idx, g)}
                 onRemove={() => removeTopCondition(idx)}
                 tagSuggestions={allTags}
+                groupOptions={groupOptions}
               />
             );
           }
@@ -694,6 +724,7 @@ export function FilterBuilder({ value, onApply, tagSuggestions = [] }: FilterBui
               onRemove={() => removeTopCondition(idx)}
               isOnly={topLeafCount <= 1 && draft.conditions.length === 1}
               tagSuggestions={allTags}
+              groupOptions={groupOptions}
             />
           );
         })}
