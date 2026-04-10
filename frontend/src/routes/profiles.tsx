@@ -1,9 +1,9 @@
 import { useState, useCallback } from "react";
-import { Plus, Pencil, Trash2, X, SlidersHorizontal } from "lucide-react";
+import { Plus, Pencil, Trash2, X, SlidersHorizontal, Copy } from "lucide-react";
 import { SortHeader } from "../components/sort-header";
 import type { SortOrder } from "../components/sort-header";
 import { Button } from "../components/button";
-import { useProfiles, useDeleteProfile } from "../api/hooks/use-profiles";
+import { useProfiles, useDeleteProfile, useCloneProfile } from "../api/hooks/use-profiles";
 import { useToast } from "../components/toast-provider";
 import { Skeleton, PaginationBar } from "../components";
 import { ProfileFormModal } from "../components/profile-form-modal";
@@ -105,9 +105,12 @@ function ProfileDetailPanel({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showCloneDialog, setShowCloneDialog] = useState(false);
+  const [cloneName, setCloneName] = useState("");
 
   const { mutateAsync: deleteProfile, isPending: isDeleting } =
     useDeleteProfile();
+  const { mutateAsync: cloneProfile, isPending: isCloning } = useCloneProfile();
 
   const { toast } = useToast();
   const p = initialProfile;
@@ -122,6 +125,31 @@ function ProfileDetailPanel({
       const msg = err instanceof Error ? err.message : "Delete failed.";
       setActionError(msg);
       setShowDeleteConfirm(false);
+      toast.error(msg);
+    }
+  }
+
+  function openCloneDialog() {
+    setCloneName(`Copy of ${p.name ?? ""}`);
+    setShowCloneDialog(true);
+    setActionError(null);
+  }
+
+  async function handleClone(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = cloneName.trim();
+    if (!trimmed) return;
+    setActionError(null);
+    try {
+      await cloneProfile({ id: p.id ?? "", name: trimmed });
+      toast.success("Profile cloned successfully");
+      setShowCloneDialog(false);
+      onClose();
+    } catch (err) {
+      const apiErr = err as { message?: string; error?: string };
+      const msg =
+        apiErr.message ?? apiErr.error ?? "Failed to clone profile.";
+      setActionError(msg);
       toast.error(msg);
     }
   }
@@ -180,6 +208,46 @@ function ProfileDetailPanel({
             <Pencil className="h-3 w-3 mr-1" />
             Edit
           </Button>
+
+          <Button
+            variant="secondary"
+            onClick={openCloneDialog}
+            className="text-xs h-7 px-3"
+          >
+            <Copy className="h-3 w-3 mr-1" />
+            Clone
+          </Button>
+
+          {showCloneDialog && (
+            <form
+              onSubmit={(e) => void handleClone(e)}
+              className="flex items-center gap-2 w-full mt-1"
+            >
+              <input
+                type="text"
+                value={cloneName}
+                onChange={(e) => setCloneName(e.target.value)}
+                autoFocus
+                placeholder="New profile name"
+                className="flex-1 px-2 py-1 text-xs rounded border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-border"
+              />
+              <Button
+                type="submit"
+                loading={isCloning}
+                className="text-xs h-7 px-3"
+                disabled={!cloneName.trim()}
+              >
+                Clone
+              </Button>
+              <button
+                type="button"
+                onClick={() => setShowCloneDialog(false)}
+                className="text-xs text-text-muted hover:text-text-secondary"
+              >
+                Cancel
+              </button>
+            </form>
+          )}
 
           {showDeleteConfirm ? (
             <div className="flex items-center gap-2 ml-auto">
