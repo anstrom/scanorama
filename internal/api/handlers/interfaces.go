@@ -80,6 +80,12 @@ type HostServicer interface {
 	DeleteHost(ctx context.Context, id uuid.UUID) error
 	BulkDeleteHosts(ctx context.Context, ids []uuid.UUID) (int64, error)
 	GetHostScans(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*db.Scan, int64, error)
+	ListTags(ctx context.Context) ([]string, error)
+	UpdateHostTags(ctx context.Context, id uuid.UUID, tags []string) error
+	AddHostTags(ctx context.Context, id uuid.UUID, tags []string) error
+	RemoveHostTags(ctx context.Context, id uuid.UUID, tags []string) error
+	BulkUpdateTags(ctx context.Context, ids []uuid.UUID, tags []string, action string) error
+	GetHostGroups(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error)
 }
 
 // ProfileServicer is the service-level interface consumed by ProfileHandler.
@@ -115,4 +121,18 @@ type NetworkServicer interface {
 	GetNetworkExclusions(ctx context.Context, networkID uuid.UUID) ([]*db.NetworkExclusion, error)
 	GetGlobalExclusions(ctx context.Context) ([]*db.NetworkExclusion, error)
 	GetNetworkStats(ctx context.Context) (map[string]interface{}, error)
+}
+
+// GroupServicer is the service-level interface consumed by GroupHandler.
+//
+//go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_group_servicer.go -package mocks github.com/anstrom/scanorama/internal/api/handlers GroupServicer
+type GroupServicer interface {
+	ListGroups(ctx context.Context) ([]*db.HostGroup, error)
+	CreateGroup(ctx context.Context, input db.CreateGroupInput) (*db.HostGroup, error)
+	GetGroup(ctx context.Context, id uuid.UUID) (*db.HostGroup, error)
+	UpdateGroup(ctx context.Context, id uuid.UUID, input db.UpdateGroupInput) (*db.HostGroup, error)
+	DeleteGroup(ctx context.Context, id uuid.UUID) error
+	AddHostsToGroup(ctx context.Context, groupID uuid.UUID, hostIDs []uuid.UUID) error
+	RemoveHostsFromGroup(ctx context.Context, groupID uuid.UUID, hostIDs []uuid.UUID) error
+	GetGroupMembers(ctx context.Context, groupID uuid.UUID, offset, limit int) ([]*db.Host, int64, error)
 }

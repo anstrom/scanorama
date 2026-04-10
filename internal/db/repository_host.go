@@ -310,6 +310,7 @@ func (r *HostRepository) ListHosts(
 			h.status_changed_at,
 			h.previous_status,
 			h.timeout_count,
+			h.tags,
 			CASE WHEN COUNT(DISTINCT ps.id) = 0 THEN NULL
 			     ELSE COUNT(DISTINCT ps.id) FILTER (WHERE ps.state = 'open')
 			END AS open_ports,
@@ -339,7 +340,7 @@ func (r *HostRepository) ListHosts(
 			h.os_details, h.discovery_method,
 			h.response_time_ms, h.response_time_min_ms, h.response_time_max_ms, h.response_time_avg_ms,
 			h.ignore_scanning, h.first_seen, h.last_seen, h.status,
-			h.status_changed_at, h.previous_status, h.timeout_count
+			h.status_changed_at, h.previous_status, h.timeout_count, h.tags
 	`
 
 	// Resolve ORDER BY clause from validated sort parameters.
@@ -409,6 +410,12 @@ func (r *HostRepository) CreateHost(ctx context.Context, input CreateHostInput) 
 	addStr("os_name", input.OSName)
 	addStr("os_version", input.OSVersion)
 	addStr("status", input.Status)
+
+	// Always include tags (defaults to empty array if nil/empty).
+	columns = append(columns, "tags")
+	placeholders = append(placeholders, fmt.Sprintf("$%d", argIndex))
+	args = append(args, pq.Array(input.Tags))
+	argIndex++
 
 	query := fmt.Sprintf(
 		"INSERT INTO hosts (%s) VALUES (%s)",
@@ -559,7 +566,8 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 			h.status,
 			h.status_changed_at,
 			h.previous_status,
-			h.timeout_count
+			h.timeout_count,
+			h.tags
 		FROM hosts h
 		WHERE h.id = $1
 	`
@@ -592,6 +600,7 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 		&vars.statusChangedAt,
 		&vars.previousStatus,
 		&vars.timeoutCount,
+		&host.Tags,
 	)
 	if err != nil {
 		if stderrors.Is(err, sql.ErrNoRows) {
@@ -609,6 +618,11 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 	}
 
 	r.fetchHostScanCount(ctx, id, host)
+
+	groups, err := r.GetHostGroups(ctx, id)
+	if err == nil {
+		host.Groups = groups
+	}
 
 	return host, nil
 }
@@ -660,6 +674,12 @@ func (r *HostRepository) UpdateHost(ctx context.Context, id uuid.UUID, input Upd
 	if input.IgnoreScanning != nil {
 		setParts = append(setParts, fmt.Sprintf("ignore_scanning = $%d", argIndex))
 		args = append(args, *input.IgnoreScanning)
+		argIndex++
+	}
+
+	if input.Tags != nil {
+		setParts = append(setParts, fmt.Sprintf("tags = $%d", argIndex))
+		args = append(args, pq.Array(*input.Tags))
 		argIndex++
 	}
 
@@ -1052,6 +1072,7 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 		var statusChangedAt *time.Time
 		var previousStatus *string
 		var timeoutCount int
+
 		var openPorts sql.NullInt64
 		var totalPortsScanned int64
 		var scanCount sql.NullInt64
@@ -1081,6 +1102,7 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 			&statusChangedAt,
 			&previousStatus,
 			&timeoutCount,
+			&host.Tags,
 			&openPorts,
 			&totalPortsScanned,
 			&scanCount,
@@ -1133,4 +1155,149 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 	}
 
 	return hosts, nil
+}
+
+// GetAllTags returns a deduplicated, sorted list of all tags in use across all hosts.
+func (r *HostRepository) GetAllTags(ctx context.Context) ([]string, error) {
+	const query = `
+		SELECT DISTINCT unnest(tags) AS tag
+		FROM hosts
+		WHERE tags != '{}'
+		ORDER BY tag
+	`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, sanitizeDBError("get all tags", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			slog.Warn("failed to close rows", "error", closeErr)
+		}
+	}()
+
+	var tags []string
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, fmt.Errorf("scan tag: %w", err)
+		}
+		tags = append(tags, tag)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate tags: %w", err)
+	}
+	return tags, nil
+}
+
+// UpdateHostTags replaces the tags on a host with the provided list.
+func (r *HostRepository) UpdateHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE hosts SET tags = $1 WHERE id = $2`,
+		pq.Array(tags), id,
+	)
+	if err != nil {
+		return sanitizeDBError("update host tags", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return errors.ErrNotFoundWithID("host", id.String())
+	}
+	return nil
+}
+
+// AddHostTags appends tags to a host's tag list, deduplicating the result.
+func (r *HostRepository) AddHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
+	const query = `
+		UPDATE hosts
+		SET tags = (SELECT array_agg(DISTINCT t) FROM unnest(tags || $1::text[]) t)
+		WHERE id = $2
+	`
+	result, err := r.db.ExecContext(ctx, query, pq.Array(tags), id)
+	if err != nil {
+		return sanitizeDBError("add host tags", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return errors.ErrNotFoundWithID("host", id.String())
+	}
+	return nil
+}
+
+// RemoveHostTags removes the given tags from a host's tag list.
+func (r *HostRepository) RemoveHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
+	const query = `
+		UPDATE hosts
+		SET tags = array(SELECT unnest(tags) EXCEPT ALL SELECT unnest($1::text[]))
+		WHERE id = $2
+	`
+	result, err := r.db.ExecContext(ctx, query, pq.Array(tags), id)
+	if err != nil {
+		return sanitizeDBError("remove host tags", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return errors.ErrNotFoundWithID("host", id.String())
+	}
+	return nil
+}
+
+// BulkUpdateTags applies a tag operation to multiple hosts in one query.
+// action must be "add", "remove", or "set".
+func (r *HostRepository) BulkUpdateTags(ctx context.Context, ids []uuid.UUID, tags []string, action string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	var query string
+	switch action {
+	case "set":
+		query = `UPDATE hosts SET tags = $1::text[] WHERE id = ANY($2::uuid[])`
+	case "add":
+		query = `UPDATE hosts
+                 SET tags = (SELECT array_agg(DISTINCT t) FROM unnest(tags || $1::text[]) t)
+                 WHERE id = ANY($2::uuid[])`
+	case "remove":
+		query = `UPDATE hosts
+                 SET tags = array(SELECT unnest(tags) EXCEPT ALL SELECT unnest($1::text[]))
+                 WHERE id = ANY($2::uuid[])`
+	default:
+		return fmt.Errorf("unknown bulk tag action %q: must be add, remove, or set", action)
+	}
+	_, err := r.db.ExecContext(ctx, query, pq.Array(tags), pq.Array(ids))
+	if err != nil {
+		return sanitizeDBError("bulk update tags", err)
+	}
+	return nil
+}
+
+// GetHostGroups returns the group summaries for all groups the host belongs to.
+func (r *HostRepository) GetHostGroups(ctx context.Context, hostID uuid.UUID) ([]HostGroupSummary, error) {
+	const query = `
+		SELECT hg.id, hg.name, COALESCE(hg.color, '') AS color
+		FROM host_groups hg
+		JOIN host_group_members hgm ON hg.id = hgm.group_id
+		WHERE hgm.host_id = $1
+		ORDER BY hg.name
+	`
+	rows, err := r.db.QueryContext(ctx, query, hostID)
+	if err != nil {
+		return nil, sanitizeDBError("get host groups", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			slog.Warn("failed to close rows", "error", closeErr)
+		}
+	}()
+
+	var groups []HostGroupSummary
+	for rows.Next() {
+		var g HostGroupSummary
+		if err := rows.Scan(&g.ID, &g.Name, &g.Color); err != nil {
+			return nil, fmt.Errorf("scan host group: %w", err)
+		}
+		groups = append(groups, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate host groups: %w", err)
+	}
+	return groups, nil
 }

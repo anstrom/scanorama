@@ -63,6 +63,11 @@ const (
 	filterFieldScanCount = "scan_count"
 )
 
+const (
+	filterFieldTags  = "tags"
+	filterFieldGroup = "group"
+)
+
 // scanCountSubquery is the correlated subquery used for the "scan_count" aggregate field.
 // Split across multiple string constants to stay within the 120-character line limit.
 const scanCountSubquery = "(SELECT COUNT(DISTINCT sj_f.id)" +
@@ -133,7 +138,10 @@ func validateLeafExpr(expr *FilterExpr) error {
 	}
 
 	_, isSimple := filterFieldSQL[expr.Field]
-	isAggregate := expr.Field == filterFieldOpenPort || expr.Field == filterFieldScanCount
+	isAggregate := expr.Field == filterFieldOpenPort ||
+		expr.Field == filterFieldScanCount ||
+		expr.Field == filterFieldTags ||
+		expr.Field == filterFieldGroup
 	if !isSimple && !isAggregate {
 		return fmt.Errorf("unknown filter field %q", expr.Field)
 	}
@@ -147,6 +155,26 @@ func validateLeafExpr(expr *FilterExpr) error {
 
 // validateLeafOperator checks that the operator is valid for the leaf's field type.
 func validateLeafOperator(expr *FilterExpr) error {
+	// tags field: only supports "contains" and "is_not".
+	if expr.Field == filterFieldTags {
+		if expr.Cmp != filterCmpContains && expr.Cmp != filterCmpIsNot {
+			return fmt.Errorf(
+				"operator %q is not valid for %q: use contains or is_not",
+				expr.Cmp, filterFieldTags,
+			)
+		}
+		return nil
+	}
+	// group field: only supports "is" and "is_not".
+	if expr.Field == filterFieldGroup {
+		if expr.Cmp != filterCmpIs && expr.Cmp != filterCmpIsNot {
+			return fmt.Errorf(
+				"operator %q is not valid for %q: use is or is_not",
+				expr.Cmp, filterFieldGroup,
+			)
+		}
+		return nil
+	}
 	switch expr.Cmp {
 	case filterCmpIs, filterCmpIsNot:
 		// Valid for all fields — no additional check needed.
@@ -238,9 +266,43 @@ func translateLeafExpr(
 		return translateOpenPortExpr(expr, startIdx)
 	case filterFieldScanCount:
 		return translateScanCountExpr(expr, startIdx)
+	case filterFieldTags:
+		return translateTagsExpr(expr, startIdx)
+	case filterFieldGroup:
+		return translateGroupMembershipExpr(expr, startIdx)
 	default:
 		return translateSimpleExpr(expr, startIdx)
 	}
+}
+
+// translateTagsExpr handles the tags array-containment field.
+// "contains" checks that the host has the given tag; "is_not" inverts it.
+func translateTagsExpr(
+	expr *FilterExpr,
+	startIdx int,
+) (sqlFrag string, args []interface{}, err error) {
+	subquery := fmt.Sprintf("h.tags @> ARRAY[$%d]::text[]", startIdx)
+	if expr.Cmp == filterCmpIsNot {
+		subquery = "NOT (" + subquery + ")"
+	}
+	return subquery, []interface{}{expr.Value}, nil
+}
+
+// translateGroupMembershipExpr handles the group membership field via a correlated EXISTS subquery.
+// "is" checks that the host is a member of the given group; "is_not" inverts it.
+func translateGroupMembershipExpr(
+	expr *FilterExpr,
+	startIdx int,
+) (sqlFrag string, args []interface{}, err error) {
+	subquery := fmt.Sprintf(
+		"EXISTS (SELECT 1 FROM host_group_members hgm_f"+
+			" WHERE hgm_f.host_id = h.id AND hgm_f.group_id = $%d::uuid)",
+		startIdx,
+	)
+	if expr.Cmp == filterCmpIsNot {
+		subquery = "NOT " + subquery
+	}
+	return subquery, []interface{}{expr.Value}, nil
 }
 
 // translateOpenPortExpr handles the open_port aggregate field via a correlated EXISTS subquery.

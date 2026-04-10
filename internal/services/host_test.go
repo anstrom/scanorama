@@ -27,6 +27,12 @@ type mockHostRepo struct {
 	deleteHostFn      func(ctx context.Context, id uuid.UUID) error
 	bulkDeleteHostsFn func(ctx context.Context, ids []uuid.UUID) (int64, error)
 	getHostScansFn    func(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*db.Scan, int64, error)
+	getAllTagsFn      func(ctx context.Context) ([]string, error)
+	updateHostTagsFn  func(ctx context.Context, id uuid.UUID, tags []string) error
+	addHostTagsFn     func(ctx context.Context, id uuid.UUID, tags []string) error
+	removeHostTagsFn  func(ctx context.Context, id uuid.UUID, tags []string) error
+	bulkUpdateTagsFn  func(ctx context.Context, ids []uuid.UUID, tags []string, action string) error
+	getHostGroupsFn   func(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error)
 }
 
 func (m *mockHostRepo) ListHosts(
@@ -62,6 +68,48 @@ func (m *mockHostRepo) GetHostScans(
 	ctx context.Context, hostID uuid.UUID, offset, limit int,
 ) ([]*db.Scan, int64, error) {
 	return m.getHostScansFn(ctx, hostID, offset, limit)
+}
+
+func (m *mockHostRepo) GetAllTags(ctx context.Context) ([]string, error) {
+	if m.getAllTagsFn != nil {
+		return m.getAllTagsFn(ctx)
+	}
+	return []string{}, nil
+}
+
+func (m *mockHostRepo) UpdateHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
+	if m.updateHostTagsFn != nil {
+		return m.updateHostTagsFn(ctx, id, tags)
+	}
+	return nil
+}
+
+func (m *mockHostRepo) AddHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
+	if m.addHostTagsFn != nil {
+		return m.addHostTagsFn(ctx, id, tags)
+	}
+	return nil
+}
+
+func (m *mockHostRepo) RemoveHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
+	if m.removeHostTagsFn != nil {
+		return m.removeHostTagsFn(ctx, id, tags)
+	}
+	return nil
+}
+
+func (m *mockHostRepo) BulkUpdateTags(ctx context.Context, ids []uuid.UUID, tags []string, action string) error {
+	if m.bulkUpdateTagsFn != nil {
+		return m.bulkUpdateTagsFn(ctx, ids, tags, action)
+	}
+	return nil
+}
+
+func (m *mockHostRepo) GetHostGroups(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error) {
+	if m.getHostGroupsFn != nil {
+		return m.getHostGroupsFn(ctx, hostID)
+	}
+	return []db.HostGroupSummary{}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -278,4 +326,256 @@ func TestGetHostScans_Delegates(t *testing.T) {
 	assert.Equal(t, hostID, gotHostID)
 	assert.Equal(t, 10, gotOffset)
 	assert.Equal(t, 50, gotLimit)
+}
+
+// ---------------------------------------------------------------------------
+// ListTags
+// ---------------------------------------------------------------------------
+
+func TestListTags_ReturnsSortedTags(t *testing.T) {
+	ctx := context.Background()
+	want := []string{"web", "prod", "db"}
+
+	repo := &mockHostRepo{
+		getAllTagsFn: func(ctx context.Context) ([]string, error) {
+			return want, nil
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	got, err := svc.ListTags(ctx)
+
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+}
+
+func TestListTags_EmptyWhenNoTags(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &mockHostRepo{
+		getAllTagsFn: func(ctx context.Context) ([]string, error) {
+			return []string{}, nil
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	got, err := svc.ListTags(ctx)
+
+	require.NoError(t, err)
+	assert.NotNil(t, got)
+	assert.Empty(t, got)
+}
+
+func TestListTags_PropagatesError(t *testing.T) {
+	ctx := context.Background()
+	wantErr := fmt.Errorf("db error")
+
+	repo := &mockHostRepo{
+		getAllTagsFn: func(ctx context.Context) ([]string, error) {
+			return nil, wantErr
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	got, err := svc.ListTags(ctx)
+
+	require.Error(t, err)
+	assert.Equal(t, wantErr, err)
+	assert.Nil(t, got)
+}
+
+// ---------------------------------------------------------------------------
+// UpdateHostTags
+// ---------------------------------------------------------------------------
+
+func TestUpdateHostTags_PassesTagsAndID(t *testing.T) {
+	ctx := context.Background()
+	hostID := uuid.New()
+	tags := []string{"prod", "web"}
+
+	var gotID uuid.UUID
+	var gotTags []string
+
+	repo := &mockHostRepo{
+		updateHostTagsFn: func(ctx context.Context, id uuid.UUID, ts []string) error {
+			gotID = id
+			gotTags = ts
+			return nil
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	err := svc.UpdateHostTags(ctx, hostID, tags)
+
+	require.NoError(t, err)
+	assert.Equal(t, hostID, gotID)
+	assert.Equal(t, tags, gotTags)
+}
+
+func TestUpdateHostTags_PropagatesNotFoundError(t *testing.T) {
+	ctx := context.Background()
+	wantErr := fmt.Errorf("host not found")
+
+	repo := &mockHostRepo{
+		updateHostTagsFn: func(ctx context.Context, id uuid.UUID, tags []string) error {
+			return wantErr
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	err := svc.UpdateHostTags(ctx, uuid.New(), []string{"prod"})
+
+	assert.Equal(t, wantErr, err)
+}
+
+// ---------------------------------------------------------------------------
+// AddHostTags
+// ---------------------------------------------------------------------------
+
+func TestAddHostTags_PassesCorrectArgs(t *testing.T) {
+	ctx := context.Background()
+	hostID := uuid.New()
+	tags := []string{"staging", "api"}
+
+	var gotID uuid.UUID
+	var gotTags []string
+
+	repo := &mockHostRepo{
+		addHostTagsFn: func(ctx context.Context, id uuid.UUID, ts []string) error {
+			gotID = id
+			gotTags = ts
+			return nil
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	err := svc.AddHostTags(ctx, hostID, tags)
+
+	require.NoError(t, err)
+	assert.Equal(t, hostID, gotID)
+	assert.Equal(t, tags, gotTags)
+}
+
+// ---------------------------------------------------------------------------
+// RemoveHostTags
+// ---------------------------------------------------------------------------
+
+func TestRemoveHostTags_PassesCorrectArgs(t *testing.T) {
+	ctx := context.Background()
+	hostID := uuid.New()
+	tags := []string{"old-tag", "deprecated"}
+
+	var gotID uuid.UUID
+	var gotTags []string
+
+	repo := &mockHostRepo{
+		removeHostTagsFn: func(ctx context.Context, id uuid.UUID, ts []string) error {
+			gotID = id
+			gotTags = ts
+			return nil
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	err := svc.RemoveHostTags(ctx, hostID, tags)
+
+	require.NoError(t, err)
+	assert.Equal(t, hostID, gotID)
+	assert.Equal(t, tags, gotTags)
+}
+
+// ---------------------------------------------------------------------------
+// BulkUpdateTags
+// ---------------------------------------------------------------------------
+
+func TestBulkUpdateTags_PassesActionAndIDs(t *testing.T) {
+	ctx := context.Background()
+	ids := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
+	tags := []string{"prod"}
+	action := "add"
+
+	var gotIDs []uuid.UUID
+	var gotTags []string
+	var gotAction string
+
+	repo := &mockHostRepo{
+		bulkUpdateTagsFn: func(ctx context.Context, is []uuid.UUID, ts []string, a string) error {
+			gotIDs = is
+			gotTags = ts
+			gotAction = a
+			return nil
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	err := svc.BulkUpdateTags(ctx, ids, tags, action)
+
+	require.NoError(t, err)
+	assert.Equal(t, ids, gotIDs)
+	assert.Equal(t, tags, gotTags)
+	assert.Equal(t, action, gotAction)
+}
+
+func TestBulkUpdateTags_PropagatesError(t *testing.T) {
+	ctx := context.Background()
+	wantErr := fmt.Errorf("bulk operation failed")
+
+	repo := &mockHostRepo{
+		bulkUpdateTagsFn: func(ctx context.Context, ids []uuid.UUID, tags []string, action string) error {
+			return wantErr
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	err := svc.BulkUpdateTags(ctx, []uuid.UUID{uuid.New()}, []string{"prod"}, "add")
+
+	assert.Equal(t, wantErr, err)
+}
+
+// ---------------------------------------------------------------------------
+// GetHostGroups
+// ---------------------------------------------------------------------------
+
+func TestGetHostGroups_ReturnsGroupSummaries(t *testing.T) {
+	ctx := context.Background()
+	hostID := uuid.New()
+	id1 := uuid.New()
+	id2 := uuid.New()
+	want := []db.HostGroupSummary{
+		{ID: id1, Name: "production"},
+		{ID: id2, Name: "web-tier"},
+	}
+
+	repo := &mockHostRepo{
+		getHostGroupsFn: func(ctx context.Context, hID uuid.UUID) ([]db.HostGroupSummary, error) {
+			return want, nil
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	got, err := svc.GetHostGroups(ctx, hostID)
+
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	assert.Equal(t, id1, got[0].ID)
+	assert.Equal(t, "production", got[0].Name)
+	assert.Equal(t, id2, got[1].ID)
+	assert.Equal(t, "web-tier", got[1].Name)
+}
+
+func TestGetHostGroups_ReturnsEmptySliceForHostWithNoGroups(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &mockHostRepo{
+		getHostGroupsFn: func(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error) {
+			return []db.HostGroupSummary{}, nil
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	got, err := svc.GetHostGroups(ctx, uuid.New())
+
+	require.NoError(t, err)
+	assert.NotNil(t, got)
+	assert.Empty(t, got)
 }

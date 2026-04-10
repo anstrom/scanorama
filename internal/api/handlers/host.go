@@ -74,28 +74,29 @@ type HostResponse struct {
 	// OSVersion is the OS generation / version string returned by nmap.
 	OSVersion string `json:"os_version_detail,omitempty"`
 	// OSConfidence is the nmap detection confidence percentage (0–100).
-	OSConfidence      *int              `json:"os_confidence,omitempty"`
-	Tags              []string          `json:"tags,omitempty"`
-	Metadata          map[string]string `json:"metadata,omitempty"`
-	Status            string            `json:"status"`
-	MACAddress        string            `json:"mac_address,omitempty"`
-	Ports             []db.PortInfo     `json:"ports,omitempty"`
-	FirstSeen         time.Time         `json:"first_seen"`
-	LastSeen          *time.Time        `json:"last_seen,omitempty"`
-	LastScanID        *int64            `json:"last_scan_id,omitempty"`
-	ScanCount         int               `json:"scan_count"`
-	TotalPorts        int               `json:"total_ports"`
-	CreatedAt         time.Time         `json:"created_at"`
-	UpdatedAt         time.Time         `json:"updated_at"`
-	DiscoveredBy      string            `json:"discovered_by,omitempty"`
-	StatusChangedAt   *time.Time        `json:"status_changed_at,omitempty"`
-	PreviousStatus    string            `json:"previous_status,omitempty"`
-	Vendor            string            `json:"vendor,omitempty"`
-	ResponseTimeMS    *int              `json:"response_time_ms,omitempty"`
-	ResponseTimeMinMS *int              `json:"response_time_min_ms,omitempty"`
-	ResponseTimeMaxMS *int              `json:"response_time_max_ms,omitempty"`
-	ResponseTimeAvgMS *int              `json:"response_time_avg_ms,omitempty"`
-	TimeoutCount      int               `json:"timeout_count"`
+	OSConfidence      *int                  `json:"os_confidence,omitempty"`
+	Tags              []string              `json:"tags,omitempty"`
+	Groups            []db.HostGroupSummary `json:"groups,omitempty"`
+	Metadata          map[string]string     `json:"metadata,omitempty"`
+	Status            string                `json:"status"`
+	MACAddress        string                `json:"mac_address,omitempty"`
+	Ports             []db.PortInfo         `json:"ports,omitempty"`
+	FirstSeen         time.Time             `json:"first_seen"`
+	LastSeen          *time.Time            `json:"last_seen,omitempty"`
+	LastScanID        *int64                `json:"last_scan_id,omitempty"`
+	ScanCount         int                   `json:"scan_count"`
+	TotalPorts        int                   `json:"total_ports"`
+	CreatedAt         time.Time             `json:"created_at"`
+	UpdatedAt         time.Time             `json:"updated_at"`
+	DiscoveredBy      string                `json:"discovered_by,omitempty"`
+	StatusChangedAt   *time.Time            `json:"status_changed_at,omitempty"`
+	PreviousStatus    string                `json:"previous_status,omitempty"`
+	Vendor            string                `json:"vendor,omitempty"`
+	ResponseTimeMS    *int                  `json:"response_time_ms,omitempty"`
+	ResponseTimeMinMS *int                  `json:"response_time_min_ms,omitempty"`
+	ResponseTimeMaxMS *int                  `json:"response_time_max_ms,omitempty"`
+	ResponseTimeAvgMS *int                  `json:"response_time_avg_ms,omitempty"`
+	TimeoutCount      int                   `json:"timeout_count"`
 }
 
 // HostScanResponse represents a scan associated with a host.
@@ -478,6 +479,7 @@ func (h *HostHandler) requestToCreateHost(req *HostRequest) db.CreateHostInput {
 		IPAddress:      req.IP,
 		Status:         "up",
 		IgnoreScanning: !req.Active,
+		Tags:           req.Tags,
 	}
 	if req.Hostname != "" {
 		input.Hostname = req.Hostname
@@ -506,6 +508,9 @@ func (h *HostHandler) requestToUpdateHost(req *HostRequest) db.UpdateHostInput {
 	// Always propagate the active/ignore_scanning flag.
 	ignoreScanning := !req.Active
 	input.IgnoreScanning = &ignoreScanning
+	if req.Tags != nil {
+		input.Tags = &req.Tags
+	}
 	return input
 }
 
@@ -584,7 +589,12 @@ func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 	} else {
 		response.Ports = []db.PortInfo{}
 	}
-	response.Tags = []string{}
+	if len(host.Tags) > 0 {
+		response.Tags = host.Tags
+	} else {
+		response.Tags = []string{}
+	}
+	response.Groups = host.Groups
 	response.Metadata = map[string]string{}
 
 	if host.StatusChangedAt != nil {

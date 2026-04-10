@@ -161,6 +161,24 @@ func (nilHostServicer) BulkDeleteHosts(_ context.Context, _ []uuid.UUID) (int64,
 func (nilHostServicer) GetHostScans(_ context.Context, _ uuid.UUID, _, _ int) ([]*db.Scan, int64, error) {
 	panic("nilHostServicer: GetHostScans called unexpectedly")
 }
+func (nilHostServicer) ListTags(_ context.Context) ([]string, error) {
+	panic("nilHostServicer: ListTags called unexpectedly")
+}
+func (nilHostServicer) UpdateHostTags(_ context.Context, _ uuid.UUID, _ []string) error {
+	panic("nilHostServicer: UpdateHostTags called unexpectedly")
+}
+func (nilHostServicer) AddHostTags(_ context.Context, _ uuid.UUID, _ []string) error {
+	panic("nilHostServicer: AddHostTags called unexpectedly")
+}
+func (nilHostServicer) RemoveHostTags(_ context.Context, _ uuid.UUID, _ []string) error {
+	panic("nilHostServicer: RemoveHostTags called unexpectedly")
+}
+func (nilHostServicer) BulkUpdateTags(_ context.Context, _ []uuid.UUID, _ []string, _ string) error {
+	panic("nilHostServicer: BulkUpdateTags called unexpectedly")
+}
+func (nilHostServicer) GetHostGroups(_ context.Context, _ uuid.UUID) ([]db.HostGroupSummary, error) {
+	panic("nilHostServicer: GetHostGroups called unexpectedly")
+}
 
 // nilProfileServicer is a ProfileServicer that panics if any method is called.
 type nilProfileServicer struct{}
