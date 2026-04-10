@@ -12,6 +12,11 @@ vi.mock("../api/hooks/use-hosts", () => ({
   useBulkDeleteHosts: vi.fn(),
 }));
 
+vi.mock("../api/hooks/use-tags", () => ({
+  useTags: vi.fn(() => ({ data: [] })),
+  useUpdateHostTags: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+}));
+
 import {
   useHosts,
   useHost,
@@ -892,7 +897,7 @@ describe("HostsPage", () => {
       await userEvent.click(
         within(panel).getByRole("button", { name: /edit hostname/i }),
       );
-      expect(within(panel).getByRole("textbox")).toBeInTheDocument();
+      expect(within(panel).getByRole("textbox", { name: /edit hostname/i })).toBeInTheDocument();
     });
 
     it("calls updateHost with the new hostname when saved", async () => {
@@ -903,7 +908,7 @@ describe("HostsPage", () => {
       await userEvent.click(
         within(panel).getByRole("button", { name: /edit hostname/i }),
       );
-      const input = within(panel).getByRole("textbox");
+      const input = within(panel).getByRole("textbox", { name: /edit hostname/i });
       await userEvent.clear(input);
       await userEvent.type(input, "new-hostname");
       await userEvent.click(
@@ -930,7 +935,7 @@ describe("HostsPage", () => {
       );
 
       expect(mutateAsync).not.toHaveBeenCalled();
-      expect(within(panel).queryByRole("textbox")).not.toBeInTheDocument();
+      expect(within(panel).queryByRole("textbox", { name: /edit hostname/i })).not.toBeInTheDocument();
     });
 
     // ── Delete flow ───────────────────────────────────────────────
