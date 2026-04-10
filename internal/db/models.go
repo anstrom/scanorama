@@ -335,12 +335,19 @@ type Host struct {
 	ResponseTimeMinMS *int       `db:"response_time_min_ms" json:"response_time_min_ms,omitempty"`
 	ResponseTimeMaxMS *int       `db:"response_time_max_ms" json:"response_time_max_ms,omitempty"`
 	ResponseTimeAvgMS *int       `db:"response_time_avg_ms" json:"response_time_avg_ms,omitempty"`
+	// Tags is the list of user-defined labels assigned to this host.
+	// Populated from the hosts.tags column (TEXT[] array).
+	// pq.StringArray (not []string) is required so sqlx SELECT * auto-mapping
+	// can scan a PostgreSQL TEXT[] value via its sql.Scanner implementation.
+	Tags pq.StringArray `db:"tags" json:"tags,omitempty"`
 	// Computed from port_scans — latest known state per (port, protocol).
 	// Ports holds the full PortInfo for every distinct (port, protocol) seen.
 	// TotalPorts is the count of distinct (port, protocol) pairs ever seen.
 	Ports      []PortInfo `db:"-" json:"-"`
 	TotalPorts int        `db:"-" json:"-"`
 	ScanCount  int        `db:"-" json:"-"`
+	// Groups the host belongs to. Populated by GetHost (detail view only, not list).
+	Groups []HostGroupSummary `db:"-" json:"groups,omitempty"`
 }
 
 // GetOSFingerprint returns the OS fingerprint information.
@@ -554,6 +561,25 @@ type NetworkSummary struct {
 	TotalHosts  int         `db:"total_hosts" json:"total_hosts"`
 	OpenPorts   int         `db:"open_ports" json:"open_ports"`
 	LastScan    *time.Time  `db:"last_scan" json:"last_scan,omitempty"`
+}
+
+// HostGroupSummary is a lightweight representation of a group embedded in host responses.
+type HostGroupSummary struct {
+	ID    uuid.UUID `json:"id"`
+	Name  string    `json:"name"`
+	Color string    `json:"color,omitempty"`
+}
+
+// HostGroup is the full host group record returned by group endpoints.
+type HostGroup struct {
+	ID          uuid.UUID `json:"id"                    db:"id"`
+	Name        string    `json:"name"                  db:"name"`
+	Description string    `json:"description"           db:"description"`
+	FilterRule  JSONB     `json:"filter_rule,omitempty" db:"filter_rule"`
+	Color       string    `json:"color,omitempty"       db:"color"`
+	MemberCount int       `json:"member_count"          db:"-"` // computed via COUNT JOIN
+	CreatedAt   time.Time `json:"created_at"            db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"            db:"updated_at"`
 }
 
 // ScanJobStatus constants.

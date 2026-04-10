@@ -46,6 +46,8 @@ type CreateHostInput struct {
 	OSVersion      string
 	IgnoreScanning bool
 	Status         string
+	// Tags is the initial list of labels to assign to this host.
+	Tags []string
 }
 
 // UpdateHostInput holds the optional fields that may be changed on an existing
@@ -58,6 +60,9 @@ type UpdateHostInput struct {
 	OSVersion      *string
 	IgnoreScanning *bool
 	Status         *string
+	// Tags replaces the host's entire tag list when non-nil.
+	// A pointer to an empty slice clears all tags; nil means "leave unchanged".
+	Tags *[]string
 }
 
 // ── Profile inputs ────────────────────────────────────────────────────────────
@@ -131,4 +136,24 @@ type UpdateDiscoveryJobInput struct {
 	HostsResponsive *int
 	StartedAt       *time.Time
 	CompletedAt     *time.Time
+}
+
+// ── Group inputs ──────────────────────────────────────────────────────────────
+
+// CreateGroupInput holds the data required to create a new host group.
+type CreateGroupInput struct {
+	Name        string
+	Description string
+	FilterRule  *JSONB // optional stored FilterExpr (not enforced in v0.24)
+	Color       string // hex color, e.g. "#3b82f6"
+}
+
+// UpdateGroupInput holds the optional fields that may be changed on an existing
+// host group. A nil pointer means "leave this field unchanged".
+type UpdateGroupInput struct {
+	Name        *string
+	Description *string
+	FilterRule  *JSONB // set to non-nil to update; ignored unless ClearFilter is true or non-nil
+	ClearFilter bool   // when true, sets filter_rule to NULL regardless of FilterRule value
+	Color       *string
 }

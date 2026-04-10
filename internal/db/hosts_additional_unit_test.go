@@ -11,6 +11,7 @@ import (
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -472,7 +473,7 @@ func TestListHosts_WithVendorFilter(t *testing.T) {
 
 // ── GetHost success path (exercises applyHostScanVars) ────────────────────────
 
-// getHostColumns lists the 24 columns returned by the GetHost SELECT in the
+// getHostColumns lists the 25 columns returned by the GetHost SELECT in the
 // same order they are scanned into hostScanVars / Host fields.
 var getHostColumns = []string{
 	"id", "ip_address", "hostname", "mac_address", "vendor",
@@ -483,6 +484,7 @@ var getHostColumns = []string{
 	"ignore_scanning",
 	"first_seen", "last_seen", "status",
 	"status_changed_at", "previous_status", "timeout_count",
+	"tags",
 }
 
 func TestGetHost_Success(t *testing.T) {
@@ -506,7 +508,7 @@ func TestGetHost_Success(t *testing.T) {
 
 	db, mock := newMockDB(t)
 
-	// Main SELECT — one fully-populated row.
+	// Main SELECT — one fully-populated row (includes tags column).
 	mock.ExpectQuery(`SELECT`).
 		WillReturnRows(sqlmock.NewRows(getHostColumns).AddRow(
 			id, "10.0.0.1", &hostname, nil, &vendor,
@@ -517,6 +519,7 @@ func TestGetHost_Success(t *testing.T) {
 			&ignore,
 			now, now, "up",
 			&now, &prevStatus, 3,
+			pq.StringArray{},
 		))
 
 	// fetchHostPorts — return empty result set (no ports for this host).
@@ -526,6 +529,10 @@ func TestGetHost_Success(t *testing.T) {
 	// fetchHostScanCount — return a scan count.
 	mock.ExpectQuery(`SELECT COUNT`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+
+	// GetHostGroups — return empty result set (host belongs to no groups).
+	mock.ExpectQuery(`SELECT hg.id`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "color"}))
 
 	host, err := NewHostRepository(db).GetHost(context.Background(), id)
 

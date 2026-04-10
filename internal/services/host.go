@@ -24,6 +24,12 @@ type hostRepository interface {
 	DeleteHost(ctx context.Context, id uuid.UUID) error
 	BulkDeleteHosts(ctx context.Context, ids []uuid.UUID) (int64, error)
 	GetHostScans(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*db.Scan, int64, error)
+	GetAllTags(ctx context.Context) ([]string, error)
+	UpdateHostTags(ctx context.Context, id uuid.UUID, tags []string) error
+	AddHostTags(ctx context.Context, id uuid.UUID, tags []string) error
+	RemoveHostTags(ctx context.Context, id uuid.UUID, tags []string) error
+	BulkUpdateTags(ctx context.Context, ids []uuid.UUID, tags []string, action string) error
+	GetHostGroups(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error)
 }
 
 // HostService handles business logic for host management.
@@ -82,4 +88,34 @@ func (s *HostService) GetHostScans(
 	ctx context.Context, hostID uuid.UUID, offset, limit int,
 ) ([]*db.Scan, int64, error) {
 	return s.repo.GetHostScans(ctx, hostID, offset, limit)
+}
+
+// ListTags returns a deduplicated, sorted list of all tags in use across all hosts.
+func (s *HostService) ListTags(ctx context.Context) ([]string, error) {
+	return s.repo.GetAllTags(ctx)
+}
+
+// UpdateHostTags replaces the entire tag list for the given host.
+func (s *HostService) UpdateHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
+	return s.repo.UpdateHostTags(ctx, id, tags)
+}
+
+// AddHostTags appends tags to the host's tag list, deduplicating the result.
+func (s *HostService) AddHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
+	return s.repo.AddHostTags(ctx, id, tags)
+}
+
+// RemoveHostTags removes the specified tags from the host's tag list.
+func (s *HostService) RemoveHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
+	return s.repo.RemoveHostTags(ctx, id, tags)
+}
+
+// BulkUpdateTags applies an add/remove/set tag operation to multiple hosts at once.
+func (s *HostService) BulkUpdateTags(ctx context.Context, ids []uuid.UUID, tags []string, action string) error {
+	return s.repo.BulkUpdateTags(ctx, ids, tags, action)
+}
+
+// GetHostGroups returns the groups the given host belongs to.
+func (s *HostService) GetHostGroups(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error) {
+	return s.repo.GetHostGroups(ctx, hostID)
 }

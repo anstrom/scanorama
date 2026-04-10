@@ -36,6 +36,8 @@ func (s *Server) setupRoutes() {
 		WithDiscovery(db.NewDiscoveryRepository(s.database), s.discoveryEngine).
 		WithHostService(services.NewHostService(db.NewHostRepository(s.database), s.logger)).
 		WithScanService(services.NewScanService(db.NewScanRepository(s.database), s.logger))
+	groupHandler := apihandlers.NewGroupHandler(
+		services.NewGroupService(db.NewGroupRepository(s.database), s.logger), s.logger, s.metrics)
 	handlerManager := apihandlers.New(s.database, s.logger, s.metrics).
 		WithRingBuffer(s.ringBuffer)
 	if s.scanQueue != nil {
@@ -46,6 +48,8 @@ func (s *Server) setupRoutes() {
 
 	s.setupScanRoutes(api, scanHandler)
 	s.setupHostRoutes(api, hostHandler)
+	s.setupTagRoutes(api, hostHandler)
+	s.setupGroupRoutes(api, groupHandler)
 	s.setupDiscoveryRoutes(api, discoveryHandler)
 	s.setupProfileRoutes(api, profileHandler)
 	s.setupScheduleRoutes(api, scheduleHandler)
@@ -147,6 +151,28 @@ func (s *Server) setupNetworkRoutes(api *mux.Router, h *apihandlers.NetworkHandl
 	api.HandleFunc("/exclusions", h.ListGlobalExclusions).Methods("GET")
 	api.HandleFunc("/exclusions", h.CreateGlobalExclusion).Methods("POST")
 	api.HandleFunc("/exclusions/{id}", h.DeleteExclusion).Methods("DELETE")
+}
+
+// setupTagRoutes registers tag management endpoints.
+func (s *Server) setupTagRoutes(api *mux.Router, h *apihandlers.HostHandler) {
+	api.HandleFunc("/tags", h.ListTags).Methods("GET")
+	// Bulk tag endpoint must be registered BEFORE the {id} pattern to avoid mux ambiguity.
+	api.HandleFunc("/hosts/bulk/tags", h.BulkUpdateTags).Methods("POST")
+	api.HandleFunc("/hosts/{id}/tags", h.ReplaceHostTags).Methods("PUT")
+	api.HandleFunc("/hosts/{id}/tags", h.AddHostTags).Methods("POST")
+	api.HandleFunc("/hosts/{id}/tags", h.DeleteHostTags).Methods("DELETE")
+}
+
+// setupGroupRoutes registers host group CRUD and membership endpoints.
+func (s *Server) setupGroupRoutes(api *mux.Router, h *apihandlers.GroupHandler) {
+	api.HandleFunc("/groups", h.ListGroups).Methods("GET")
+	api.HandleFunc("/groups", h.CreateGroup).Methods("POST")
+	api.HandleFunc("/groups/{id}", h.GetGroup).Methods("GET")
+	api.HandleFunc("/groups/{id}", h.UpdateGroup).Methods("PUT")
+	api.HandleFunc("/groups/{id}", h.DeleteGroup).Methods("DELETE")
+	api.HandleFunc("/groups/{id}/hosts", h.ListGroupMembers).Methods("GET")
+	api.HandleFunc("/groups/{id}/hosts", h.AddGroupMembers).Methods("POST")
+	api.HandleFunc("/groups/{id}/hosts", h.RemoveGroupMembers).Methods("DELETE")
 }
 
 // setupDocRoutes registers Swagger documentation and alias endpoints.

@@ -20,6 +20,7 @@ import (
 
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/services"
 	"github.com/anstrom/scanorama/test/helpers"
 )
 
@@ -42,7 +43,7 @@ func setupHostHandlerTest(t *testing.T) (*HostHandler, *db.DB, func()) {
 
 	logger := createTestLogger()
 	metricsRegistry := metrics.NewRegistry()
-	handler := NewHostHandler(db.NewHostRepository(database), logger, metricsRegistry)
+	handler := NewHostHandler(services.NewHostService(db.NewHostRepository(database), logger), logger, metricsRegistry)
 
 	// Clean up any leftover test data (hostname-based and hardcoded IPs used in integration tests)
 	_, _ = database.Exec(`DELETE FROM hosts WHERE hostname LIKE 'HostTest%'`)

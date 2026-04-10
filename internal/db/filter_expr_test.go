@@ -683,6 +683,199 @@ func TestValidateFilterExpr(t *testing.T) {
 	})
 }
 
+// ── Tags and Group filter fields ───────────────────────────────────────────────
+
+func TestFilterExprParse_TagsField(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expectError bool
+		errorMsg    string
+		checkExpr   func(t *testing.T, expr *FilterExpr)
+	}{
+		{
+			name:  "valid_contains",
+			input: `{"field":"tags","cmp":"contains","value":"prod"}`,
+			checkExpr: func(t *testing.T, expr *FilterExpr) {
+				assert.Equal(t, "tags", expr.Field)
+				assert.Equal(t, "contains", expr.Cmp)
+				assert.Equal(t, "prod", expr.Value)
+			},
+		},
+		{
+			name:  "valid_is_not",
+			input: `{"field":"tags","cmp":"is_not","value":"dev"}`,
+			checkExpr: func(t *testing.T, expr *FilterExpr) {
+				assert.Equal(t, "tags", expr.Field)
+				assert.Equal(t, "is_not", expr.Cmp)
+			},
+		},
+		{
+			name:        "invalid_op_is",
+			input:       `{"field":"tags","cmp":"is","value":"prod"}`,
+			expectError: true,
+			errorMsg:    "not valid for",
+		},
+		{
+			name:        "invalid_op_gt",
+			input:       `{"field":"tags","cmp":"gt","value":"prod"}`,
+			expectError: true,
+		},
+		{
+			name:        "invalid_op_between",
+			input:       `{"field":"tags","cmp":"between","value":"a","value2":"b"}`,
+			expectError: true,
+		},
+		{
+			name:        "missing_value",
+			input:       `{"field":"tags","cmp":"contains"}`,
+			expectError: true,
+			errorMsg:    "value",
+		},
+		{
+			name: "inside_and_group",
+			input: `{"op":"AND","conditions":[` +
+				`{"field":"tags","cmp":"contains","value":"prod"},` +
+				`{"field":"status","cmp":"is","value":"up"}]}`,
+			checkExpr: func(t *testing.T, expr *FilterExpr) {
+				assert.Equal(t, "AND", expr.Op)
+				require.Len(t, expr.Conditions, 2)
+				assert.Equal(t, "tags", expr.Conditions[0].Field)
+				assert.Equal(t, "status", expr.Conditions[1].Field)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr, err := ParseFilterExpr([]byte(tt.input))
+			if tt.expectError {
+				require.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, expr)
+			if tt.checkExpr != nil {
+				tt.checkExpr(t, expr)
+			}
+		})
+	}
+}
+
+func TestFilterExprParse_GroupField(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:  "valid_is",
+			input: `{"field":"group","cmp":"is","value":"some-uuid"}`,
+		},
+		{
+			name:  "valid_is_not",
+			input: `{"field":"group","cmp":"is_not","value":"some-uuid"}`,
+		},
+		{
+			name:        "invalid_op_contains",
+			input:       `{"field":"group","cmp":"contains","value":"x"}`,
+			expectError: true,
+			errorMsg:    "not valid for",
+		},
+		{
+			name:        "invalid_op_gt",
+			input:       `{"field":"group","cmp":"gt","value":"x"}`,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr, err := ParseFilterExpr([]byte(tt.input))
+			if tt.expectError {
+				require.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, expr)
+		})
+	}
+}
+
+func TestFilterExprTranslate_TagsField(t *testing.T) {
+	t.Run("contains", func(t *testing.T) {
+		expr := &FilterExpr{Field: "tags", Cmp: "contains", Value: "prod"}
+		sql, args, err := TranslateFilterExpr(expr, 1)
+		require.NoError(t, err)
+		assert.Equal(t, "h.tags @> ARRAY[$1]::text[]", sql)
+		require.Len(t, args, 1)
+		assert.Equal(t, "prod", args[0])
+	})
+
+	t.Run("is_not", func(t *testing.T) {
+		expr := &FilterExpr{Field: "tags", Cmp: "is_not", Value: "dev"}
+		sql, args, err := TranslateFilterExpr(expr, 1)
+		require.NoError(t, err)
+		assert.Equal(t, "NOT (h.tags @> ARRAY[$1]::text[])", sql)
+		require.Len(t, args, 1)
+		assert.Equal(t, "dev", args[0])
+	})
+
+	t.Run("and_with_status", func(t *testing.T) {
+		expr := &FilterExpr{
+			Op: "AND",
+			Conditions: []FilterExpr{
+				{Field: "tags", Cmp: "contains", Value: "prod"},
+				{Field: "status", Cmp: "is", Value: "up"},
+			},
+		}
+		sql, args, err := TranslateFilterExpr(expr, 1)
+		require.NoError(t, err)
+		assert.True(t, strings.Contains(sql, "h.tags @> ARRAY[$1]::text[]"),
+			"expected tags fragment in: %s", sql)
+		assert.True(t, strings.Contains(sql, "h.status = $2"),
+			"expected status fragment in: %s", sql)
+		require.Len(t, args, 2)
+		assert.Equal(t, "prod", args[0])
+		assert.Equal(t, "up", args[1])
+	})
+}
+
+func TestFilterExprTranslate_GroupField(t *testing.T) {
+	const groupID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+	t.Run("is_member", func(t *testing.T) {
+		expr := &FilterExpr{Field: "group", Cmp: "is", Value: groupID}
+		sql, args, err := TranslateFilterExpr(expr, 1)
+		require.NoError(t, err)
+		assert.True(t, strings.HasPrefix(sql, "EXISTS (SELECT 1 FROM host_group_members"),
+			"expected EXISTS subquery, got: %s", sql)
+		assert.True(t, strings.Contains(sql, "hgm_f.host_id = h.id"),
+			"expected host_id join condition in: %s", sql)
+		require.Len(t, args, 1)
+		assert.Equal(t, groupID, args[0])
+	})
+
+	t.Run("is_not_member", func(t *testing.T) {
+		expr := &FilterExpr{Field: "group", Cmp: "is_not", Value: groupID}
+		sql, args, err := TranslateFilterExpr(expr, 1)
+		require.NoError(t, err)
+		assert.True(t, strings.HasPrefix(sql, "NOT EXISTS"),
+			"expected NOT EXISTS subquery, got: %s", sql)
+		assert.True(t, strings.Contains(sql, "host_group_members"),
+			"expected host_group_members in: %s", sql)
+		require.Len(t, args, 1)
+		assert.Equal(t, groupID, args[0])
+	})
+}
+
 // ── parseDateTimeValue (direct) ────────────────────────────────────────────────
 
 func TestParseDateTimeValue(t *testing.T) {
