@@ -19,6 +19,7 @@ export function TagInput({
 }: TagInputProps) {
   const [input, setInput] = useState("");
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -28,6 +29,14 @@ export function TagInput({
       !tags.includes(t),
   );
 
+  // All selectable items in the dropdown: "create" option first, then suggestions.
+  const dropdownItems: string[] = [
+    ...(input.trim() !== "" && !tags.includes(input.trim().toLowerCase())
+      ? [input.trim().toLowerCase()]
+      : []),
+    ...suggestions,
+  ];
+
   const addTag = useCallback(
     (tag: string) => {
       const trimmed = tag.trim().toLowerCase();
@@ -35,6 +44,7 @@ export function TagInput({
       onChange([...tags, trimmed]);
       setInput("");
       setOpen(false);
+      setActiveIndex(-1);
     },
     [tags, onChange],
   );
@@ -47,13 +57,25 @@ export function TagInput({
   );
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" || e.key === ",") {
+    if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (input.trim()) addTag(input);
+      if (!open) setOpen(true);
+      setActiveIndex((i) => Math.min(i + 1, dropdownItems.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, -1));
+    } else if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      if (activeIndex >= 0 && dropdownItems[activeIndex]) {
+        addTag(dropdownItems[activeIndex]!);
+      } else if (input.trim()) {
+        addTag(input);
+      }
     } else if (e.key === "Backspace" && input === "" && tags.length > 0) {
       removeTag(tags[tags.length - 1]!);
     } else if (e.key === "Escape") {
       setOpen(false);
+      setActiveIndex(-1);
     }
   }
 
@@ -111,6 +133,7 @@ export function TagInput({
             onChange={(e) => {
               setInput(e.target.value);
               setOpen(true);
+              setActiveIndex(-1);
             }}
             onFocus={() => setOpen(true)}
             onKeyDown={handleKeyDown}
@@ -120,39 +143,42 @@ export function TagInput({
         )}
       </div>
 
-      {open && (input.trim() !== "" || suggestions.length > 0) && (
-        <div className="absolute left-0 top-full mt-1 z-30 w-full bg-surface border border-border rounded-md shadow-lg py-1 max-h-40 overflow-y-auto">
-          {/* Create new tag option */}
-          {input.trim() !== "" && !tags.includes(input.trim().toLowerCase()) && (
-            <button
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                addTag(input);
-              }}
-              className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-raised flex items-center gap-1.5"
-            >
-              <span className="text-text-muted">Create</span>
-              <span className="font-medium text-accent">
-                "{input.trim().toLowerCase()}"
-              </span>
-            </button>
-          )}
-
-          {/* Existing tag suggestions */}
-          {suggestions.map((t) => (
-            <button
-              key={t}
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                addTag(t);
-              }}
-              className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-raised text-text-primary"
-            >
-              {t}
-            </button>
-          ))}
+      {open && dropdownItems.length > 0 && (
+        <div
+          role="listbox"
+          className="absolute left-0 top-full mt-1 z-30 w-full bg-surface border border-border rounded-md shadow-lg py-1 max-h-40 overflow-y-auto"
+        >
+          {dropdownItems.map((item, idx) => {
+            const isCreate = idx === 0 && input.trim() !== "" && !tags.includes(input.trim().toLowerCase()) && item === input.trim().toLowerCase();
+            const isActive = idx === activeIndex;
+            return (
+              <button
+                key={`${isCreate ? "create" : "suggest"}-${item}`}
+                type="button"
+                role="option"
+                aria-selected={isActive}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  addTag(item);
+                }}
+                onMouseEnter={() => setActiveIndex(idx)}
+                className={cn(
+                  "w-full text-left px-3 py-1.5 text-xs",
+                  isActive ? "bg-surface-raised" : "hover:bg-surface-raised",
+                  isCreate ? "flex items-center gap-1.5" : "text-text-primary",
+                )}
+              >
+                {isCreate ? (
+                  <>
+                    <span className="text-text-muted">Create</span>
+                    <span className="font-medium text-accent">"{item}"</span>
+                  </>
+                ) : (
+                  item
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
