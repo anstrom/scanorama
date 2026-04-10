@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -486,4 +487,88 @@ func TestRemoveGroupMembers_InvalidUUID(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateGroup_InvalidBody(t *testing.T) {
+	h, _, ctrl := newGroupHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	id := uuid.New()
+	req := httptest.NewRequest(http.MethodPut, "/groups/"+id.String(),
+		strings.NewReader("{not valid json}"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	newGroupRouter(h).ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateGroup_ServiceError(t *testing.T) {
+	h, mock, ctrl := newGroupHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	id := uuid.New()
+	mock.EXPECT().UpdateGroup(gomock.Any(), id, gomock.Any()).
+		Return(nil, fmt.Errorf("db timeout"))
+
+	body := strings.NewReader(`{"name":"new-name"}`)
+	req := httptest.NewRequest(http.MethodPut, "/groups/"+id.String(), body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	newGroupRouter(h).ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestListGroupMembers_ServiceError(t *testing.T) {
+	h, mock, ctrl := newGroupHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	id := uuid.New()
+	mock.EXPECT().GetGroupMembers(gomock.Any(), id, gomock.Any(), gomock.Any()).
+		Return(nil, int64(0), fmt.Errorf("db timeout"))
+
+	req := httptest.NewRequest(http.MethodGet, "/groups/"+id.String()+"/hosts", nil)
+	w := httptest.NewRecorder()
+	newGroupRouter(h).ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestAddGroupMembers_ServiceError(t *testing.T) {
+	h, mock, ctrl := newGroupHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	groupID := uuid.New()
+	hostID := uuid.New()
+	mock.EXPECT().AddHostsToGroup(gomock.Any(), groupID, gomock.Any()).
+		Return(fmt.Errorf("db timeout"))
+
+	body := fmt.Sprintf(`{"host_ids":[%q]}`, hostID)
+	req := httptest.NewRequest(http.MethodPost, "/groups/"+groupID.String()+"/hosts",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	newGroupRouter(h).ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestRemoveGroupMembers_ServiceError(t *testing.T) {
+	h, mock, ctrl := newGroupHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	groupID := uuid.New()
+	hostID := uuid.New()
+	mock.EXPECT().RemoveHostsFromGroup(gomock.Any(), groupID, gomock.Any()).
+		Return(fmt.Errorf("db timeout"))
+
+	body := fmt.Sprintf(`{"host_ids":[%q]}`, hostID)
+	req := httptest.NewRequest(http.MethodDelete, "/groups/"+groupID.String()+"/hosts",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	newGroupRouter(h).ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }

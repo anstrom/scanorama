@@ -526,3 +526,88 @@ func TestBulkUpdateTags_SetAction(t *testing.T) {
 	assert.Equal(t, float64(3), resp["updated"])
 	assert.Equal(t, "set", resp["action"])
 }
+
+func TestListTags_NilResultBecomesEmptyArray(t *testing.T) {
+	h, mock, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	// Service returns nil (no tags in DB yet) — handler must serialize as [].
+	mock.EXPECT().ListTags(gomock.Any()).Return(nil, nil)
+
+	r := httptest.NewRequest(http.MethodGet, "/tags", nil)
+	w := httptest.NewRecorder()
+	newTagsRouter(h).ServeHTTP(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	tags, ok := resp["tags"].([]interface{})
+	require.True(t, ok, "tags must be a JSON array, got: %T", resp["tags"])
+	assert.Empty(t, tags)
+}
+
+func TestDeleteHostTags_InvalidBody(t *testing.T) {
+	h, _, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	id := uuid.New()
+	r := httptest.NewRequest(http.MethodDelete, "/hosts/"+id.String()+"/tags",
+		strings.NewReader("{not valid json}"))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	newTagsRouter(h).ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestDeleteHostTags_ServiceError(t *testing.T) {
+	h, mock, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	id := uuid.New()
+	mock.EXPECT().RemoveHostTags(gomock.Any(), id, gomock.Any()).
+		Return(fmt.Errorf("db timeout"))
+
+	body := strings.NewReader(`{"tags":["prod"]}`)
+	r := httptest.NewRequest(http.MethodDelete, "/hosts/"+id.String()+"/tags", body)
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	newTagsRouter(h).ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestBulkUpdateTags_ServiceError(t *testing.T) {
+	h, mock, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	id := uuid.New()
+	mock.EXPECT().BulkUpdateTags(gomock.Any(), gomock.Any(), gomock.Any(), "set").
+		Return(fmt.Errorf("bulk update failed"))
+
+	body := fmt.Sprintf(`{"host_ids":[%q],"tags":["prod"],"action":"set"}`, id)
+	r := httptest.NewRequest(http.MethodPost, "/hosts/bulk/tags", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	newTagsRouter(h).ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestApplyTagsOp_GetHostFailsAfterSuccessfulUpdate(t *testing.T) {
+	h, mock, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	id := uuid.New()
+	// Tag update succeeds but GetHost fails (e.g. race condition / DB issue).
+	mock.EXPECT().UpdateHostTags(gomock.Any(), id, gomock.Any()).Return(nil)
+	mock.EXPECT().GetHost(gomock.Any(), id).Return(nil, fmt.Errorf("db error"))
+
+	body := strings.NewReader(`{"tags":["prod"]}`)
+	r := httptest.NewRequest(http.MethodPut, "/hosts/"+id.String()+"/tags", body)
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	newTagsRouter(h).ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}

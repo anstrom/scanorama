@@ -369,3 +369,52 @@ func TestGetGroupMembers_ReturnsPaginatedResults(t *testing.T) {
 	assert.Equal(t, 0, gotOffset)
 	assert.Equal(t, 2, gotLimit)
 }
+
+// ---------------------------------------------------------------------------
+// UpdateGroup
+// ---------------------------------------------------------------------------
+
+func TestUpdateGroup_Delegates(t *testing.T) {
+	ctx := context.Background()
+	id := uuid.New()
+	name := "renamed"
+	input := db.UpdateGroupInput{Name: &name}
+	want := &db.HostGroup{ID: id, Name: name}
+
+	var gotID uuid.UUID
+	var gotInput db.UpdateGroupInput
+	repo := &mockGroupRepo{
+		updateGroupFn: func(ctx context.Context, in uuid.UUID, inp db.UpdateGroupInput) (*db.HostGroup, error) {
+			gotID = in
+			gotInput = inp
+			return want, nil
+		},
+	}
+
+	svc := NewGroupService(repo, slog.Default())
+	got, err := svc.UpdateGroup(ctx, id, input)
+
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+	assert.Equal(t, id, gotID)
+	assert.Equal(t, input, gotInput)
+}
+
+func TestUpdateGroup_PropagatesError(t *testing.T) {
+	ctx := context.Background()
+	wantErr := fmt.Errorf("group not found")
+	name := "x"
+
+	repo := &mockGroupRepo{
+		updateGroupFn: func(ctx context.Context, id uuid.UUID, input db.UpdateGroupInput) (*db.HostGroup, error) {
+			return nil, wantErr
+		},
+	}
+
+	svc := NewGroupService(repo, slog.Default())
+	got, err := svc.UpdateGroup(ctx, uuid.New(), db.UpdateGroupInput{Name: &name})
+
+	require.Error(t, err)
+	assert.Equal(t, wantErr, err)
+	assert.Nil(t, got)
+}
