@@ -8,6 +8,7 @@ import { ProfilesPage } from "./profiles";
 vi.mock("../api/hooks/use-profiles", () => ({
   useProfiles: vi.fn(),
   useDeleteProfile: vi.fn(),
+  useCloneProfile: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 
 vi.mock("../components/profile-form-modal", () => ({

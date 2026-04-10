@@ -93,3 +93,25 @@ export function useDeleteProfile() {
     },
   });
 }
+
+export function useCloneProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+      const res = await fetch(`${baseUrl}/profiles/${id}/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new ApiError(res.status, body);
+      }
+      return res.json() as Promise<components["schemas"]["docs.ProfileResponse"]>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["profiles"] });
+    },
+  });
+}
