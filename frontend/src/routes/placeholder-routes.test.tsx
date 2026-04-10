@@ -29,16 +29,24 @@ vi.mock("../api/hooks/use-system", () => ({
   useLogs: vi.fn(),
 }));
 
+vi.mock("../api/hooks/use-dashboard", () => ({
+  useSettings: vi.fn(),
+  useUpdateSetting: vi.fn(),
+}));
+
 import {
   useAdminStatus,
   useWorkers,
   useVersion,
   useLogs,
 } from "../api/hooks/use-system";
+import { useSettings, useUpdateSetting } from "../api/hooks/use-dashboard";
 const mockUseAdminStatus = vi.mocked(useAdminStatus);
 const mockUseWorkers = vi.mocked(useWorkers);
 const mockUseVersion = vi.mocked(useVersion);
 const mockUseLogs = vi.mocked(useLogs);
+const mockUseSettings = vi.mocked(useSettings);
+const mockUseUpdateSetting = vi.mocked(useUpdateSetting);
 
 beforeEach(() => {
   // Default: not loading, no data — SystemStatusCard renders real UI (including "System Status" heading)
@@ -60,6 +68,11 @@ beforeEach(() => {
     },
     isLoading: false,
     isError: false,
+  } as any);
+  mockUseSettings.mockReturnValue({ data: [], isLoading: false } as any);
+  mockUseUpdateSetting.mockReturnValue({
+    mutateAsync: vi.fn(),
+    isPending: false,
   } as any);
 });
 

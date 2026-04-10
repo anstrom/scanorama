@@ -62,6 +62,14 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/admin/status", s.adminStatusHandler).Methods("GET")
 	api.HandleFunc("/admin/workers", handlerManager.GetWorkerStatus).Methods("GET")
 
+	statsHandler := apihandlers.NewStatsHandler(s.database, s.logger)
+	settingsHandler := apihandlers.NewSettingsHandler(
+		db.NewSettingsRepository(s.database), s.logger)
+
+	api.HandleFunc("/stats/summary", statsHandler.GetStatsSummary).Methods("GET")
+	api.HandleFunc("/admin/settings", settingsHandler.GetSettings).Methods("GET")
+	api.HandleFunc("/admin/settings", settingsHandler.UpdateSettings).Methods("PUT")
+
 	s.setupDocRoutes()
 	s.router.HandleFunc("/", s.redirectToAPI).Methods("GET")
 }

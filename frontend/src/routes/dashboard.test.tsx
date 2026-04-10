@@ -26,11 +26,20 @@ vi.mock("../api/hooks/use-discovery", () => ({
   useDiscoveryDiff: vi.fn(),
 }));
 
+vi.mock("../api/hooks/use-dashboard", () => ({
+  useStatsSummary: vi.fn(),
+}));
+
+vi.mock("../components/activity-feed", () => ({
+  ActivityFeed: () => null,
+}));
+
 import { useVersion } from "../api/hooks/use-system";
 import { useNetworkStats } from "../api/hooks/use-networks";
 import { useRecentScans, useScanActivity } from "../api/hooks/use-scans";
 import { useActiveHostCount } from "../api/hooks/use-hosts";
 import { useDiscoveryJobs, useDiscoveryDiff } from "../api/hooks/use-discovery";
+import { useStatsSummary } from "../api/hooks/use-dashboard";
 
 const mockUseVersion = vi.mocked(useVersion);
 const mockUseNetworkStats = vi.mocked(useNetworkStats);
@@ -39,6 +48,7 @@ const mockUseScanActivity = vi.mocked(useScanActivity);
 const mockUseActiveHostCount = vi.mocked(useActiveHostCount);
 const mockUseDiscoveryJobs = vi.mocked(useDiscoveryJobs);
 const mockUseDiscoveryDiff = vi.mocked(useDiscoveryDiff);
+const mockUseStatsSummary = vi.mocked(useStatsSummary);
 
 function setupDefaultMocks() {
   mockUseVersion.mockReturnValue({
@@ -97,6 +107,11 @@ function setupDefaultMocks() {
     isLoading: false,
     isError: false,
   } as unknown as ReturnType<typeof useDiscoveryDiff>);
+
+  mockUseStatsSummary.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+  } as unknown as ReturnType<typeof useStatsSummary>);
 }
 
 beforeEach(() => {
