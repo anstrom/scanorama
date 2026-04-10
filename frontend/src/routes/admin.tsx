@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Server,
   Activity,
@@ -8,15 +9,20 @@ import {
   GitCommit,
   Package,
   AlertCircle,
+  Save,
+  AlertTriangle,
 } from "lucide-react";
 import {
   useAdminStatus,
   useWorkers,
   useVersion,
 } from "../api/hooks/use-system";
+import { useSettings, useUpdateSetting } from "../api/hooks/use-dashboard";
 import { StatusBadge, Skeleton } from "../components";
 import { cn, formatRelativeTime } from "../lib/utils";
 import { LogViewer } from "../components/log-viewer";
+import { Button } from "../components/button";
+import { useToast } from "../components/toast-provider";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -366,23 +372,192 @@ function WorkersCard() {
   );
 }
 
-// ── Section 3 — Stub cards ─────────────────────────────────────────────────────
+// ── Section 3 — Settings editor ───────────────────────────────────────────────
 
-function StubCard({
-  icon: Icon,
-  title,
+const SETTING_SECTIONS: Record<string, { label: string; keys: string[] }> = {
+  scanning: {
+    label: "Scanning",
+    keys: ["scan.default_timing", "scan.max_concurrent"],
+  },
+  discovery: {
+    label: "Discovery",
+    keys: ["discovery.ping_timeout_ms", "discovery.methods"],
+  },
+  retention: {
+    label: "Data Retention",
+    keys: ["retention.auto_purge_days", "retention.max_scan_history"],
+  },
+  notifications: {
+    label: "Notifications",
+    keys: [
+      "notifications.scan_complete",
+      "notifications.host_down",
+      "notifications.new_host",
+    ],
+  },
+};
+
+// Keys that require server restart to take effect
+const RESTART_REQUIRED = new Set<string>([]);
+
+function SettingField({
+  setting,
 }: {
-  icon: React.ElementType;
-  title: string;
+  setting: { key: string; value: string; type: string; description: string };
 }) {
+  const { toast } = useToast();
+  const [localValue, setLocalValue] = useState(setting.value);
+  const [dirty, setDirty] = useState(false);
+  const { mutateAsync: updateSetting, isPending } = useUpdateSetting();
+
+  const needsRestart = RESTART_REQUIRED.has(setting.key);
+
+  function handleChange(v: string) {
+    setLocalValue(v);
+    setDirty(v !== setting.value);
+  }
+
+  async function handleSave() {
+    // Serialize value correctly
+    let jsonValue: string;
+    if (setting.type === "bool") {
+      jsonValue = localValue === "true" ? "true" : "false";
+    } else if (setting.type === "int") {
+      const n = parseInt(localValue, 10);
+      jsonValue = isNaN(n) ? setting.value : String(n);
+    } else {
+      jsonValue = localValue;
+    }
+    try {
+      await updateSetting({ key: setting.key, value: jsonValue });
+      setDirty(false);
+      toast.success("Setting saved.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save setting.");
+    }
+  }
+
+  const label = setting.key.split(".").pop()!.replace(/_/g, " ");
+
   return (
-    <div className="bg-surface rounded-lg border border-border p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <Icon className="h-4 w-4 text-text-muted" />
-        <span className="text-xs font-medium text-text-primary">{title}</span>
+    <div className="flex items-start gap-3 py-2.5 border-b border-border/40 last:border-0">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 mb-0.5">
+          <span className="text-xs font-medium text-text-primary capitalize">
+            {label}
+          </span>
+          {needsRestart && (
+            <span
+              title="Requires server restart"
+              className="inline-flex items-center gap-0.5 text-[10px] text-warning"
+            >
+              <AlertTriangle className="h-3 w-3" />
+              restart required
+            </span>
+          )}
+        </div>
+        {setting.description && (
+          <p className="text-[11px] text-text-muted">{setting.description}</p>
+        )}
       </div>
-      <div className="h-px bg-border mb-3" />
-      <p className="text-xs text-text-muted">Coming soon</p>
+      <div className="flex items-center gap-2 shrink-0">
+        {setting.type === "bool" ? (
+          <select
+            value={localValue}
+            onChange={(e) => handleChange(e.target.value)}
+            className={cn(
+              "px-2 py-1 text-xs rounded border border-border",
+              "bg-surface text-text-primary",
+              "focus:outline-none focus:ring-1 focus:ring-border",
+            )}
+          >
+            <option value="true">Enabled</option>
+            <option value="false">Disabled</option>
+          </select>
+        ) : (
+          <input
+            type={setting.type === "int" ? "number" : "text"}
+            value={localValue}
+            onChange={(e) => handleChange(e.target.value)}
+            className={cn(
+              "px-2 py-1 text-xs rounded border border-border w-28",
+              "bg-surface text-text-primary placeholder:text-text-muted",
+              "focus:outline-none focus:ring-1 focus:ring-border",
+            )}
+          />
+        )}
+        <Button
+          onClick={() => void handleSave()}
+          loading={isPending}
+          disabled={!dirty}
+          icon={<Save className="h-3 w-3" />}
+          className="text-xs h-7 px-2"
+        >
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsCard() {
+  const { data: settings = [], isLoading } = useSettings();
+  const [activeTab, setActiveTab] = useState("scanning");
+  const tabs = Object.entries(SETTING_SECTIONS);
+  const activeSection = SETTING_SECTIONS[activeTab]!;
+  const sectionSettings = settings.filter((s) =>
+    activeSection.keys.includes(s.key),
+  );
+
+  return (
+    <div className="bg-surface rounded-lg border border-border overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+        <Settings className="h-4 w-4 text-text-muted" />
+        <span className="text-xs font-medium text-text-primary">
+          Configuration
+        </span>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-border overflow-x-auto">
+        {tabs.map(([key, { label }]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setActiveTab(key)}
+            className={cn(
+              "px-4 py-2 text-xs whitespace-nowrap transition-colors",
+              activeTab === key
+                ? "border-b-2 border-accent text-accent font-medium"
+                : "text-text-muted hover:text-text-primary",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="px-4 py-2">
+        {isLoading ? (
+          <div className="space-y-3 py-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center justify-between">
+                <Skeleton className="h-3 w-40" />
+                <Skeleton className="h-6 w-24" />
+              </div>
+            ))}
+          </div>
+        ) : sectionSettings.length === 0 ? (
+          <p className="text-xs text-text-muted py-4 text-center">
+            No settings available. Settings are loaded from the database.
+          </p>
+        ) : (
+          sectionSettings.map((s) => (
+            <SettingField key={s.key} setting={s} />
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -406,8 +581,8 @@ export function AdminPage() {
       {/* Section 2 — Workers */}
       <WorkersCard />
 
-      {/* Section 3 — Configuration (stub) */}
-      <StubCard icon={Settings} title="Configuration" />
+      {/* Section 3 — Configuration */}
+      <SettingsCard />
 
       {/* Section 4 — Log Viewer */}
       <div className="bg-surface rounded-lg border border-border overflow-hidden">

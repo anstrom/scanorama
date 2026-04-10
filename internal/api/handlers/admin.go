@@ -4,10 +4,13 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 
+	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/anstrom/scanorama/internal/scanning"
@@ -124,4 +127,85 @@ func (h *AdminHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	// Configuration persistence is not yet implemented.
 	writeError(w, r, http.StatusNotImplemented,
 		fmt.Errorf("update config is not yet implemented"))
+}
+
+// SettingsHandler handles the /api/v1/admin/settings endpoints.
+type SettingsHandler struct {
+	repo   *db.SettingsRepository
+	logger *slog.Logger
+}
+
+// NewSettingsHandler creates a new SettingsHandler.
+func NewSettingsHandler(repo *db.SettingsRepository, logger *slog.Logger) *SettingsHandler {
+	return &SettingsHandler{
+		repo:   repo,
+		logger: logger.With("handler", "settings"),
+	}
+}
+
+// settingsListResponse is the envelope for GET /admin/settings.
+type settingsListResponse struct {
+	Settings []db.Setting `json:"settings"`
+}
+
+// settingsUpdateRequest is the body for PUT /admin/settings.
+type settingsUpdateRequest struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// settingsUpdateResponse is the response body for PUT /admin/settings.
+type settingsUpdateResponse struct {
+	Key     string `json:"key"`
+	Updated bool   `json:"updated"`
+}
+
+// GetSettings handles GET /api/v1/admin/settings.
+func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
+	h.logger.Info("Listing settings", "request_id", requestID)
+
+	settings, err := h.repo.ListSettings(r.Context())
+	if err != nil {
+		h.logger.Error("Failed to list settings", "error", err, "request_id", requestID)
+		writeError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, settingsListResponse{Settings: settings})
+}
+
+// UpdateSettings handles PUT /api/v1/admin/settings.
+func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
+	h.logger.Info("Updating setting", "request_id", requestID)
+
+	var req settingsUpdateRequest
+	if err := parseJSON(r, &req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	if req.Key == "" {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("key is required"))
+		return
+	}
+
+	// Validate that value is valid JSON.
+	if !json.Valid([]byte(req.Value)) {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("value must be valid JSON"))
+		return
+	}
+
+	if err := h.repo.SetSetting(r.Context(), req.Key, req.Value); err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, fmt.Errorf("setting %q not found", req.Key))
+			return
+		}
+		h.logger.Error("Failed to update setting", "key", req.Key, "error", err, "request_id", requestID)
+		writeError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, settingsUpdateResponse{Key: req.Key, Updated: true})
 }
