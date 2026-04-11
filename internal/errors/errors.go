@@ -4,6 +4,7 @@
 package errors
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -262,17 +263,23 @@ func WrapConfigError(code ErrorCode, message string, err error) *ConfigError {
 
 // Utility functions for common error operations
 
-// IsCode checks if an error has a specific error code.
+// IsCode checks if an error has a specific error code, unwrapping through error chains.
 func IsCode(err error, code ErrorCode) bool {
-	switch e := err.(type) {
-	case *ScanError:
-		return e.Code == code
-	case *DatabaseError:
-		return e.Code == code
-	case *DiscoveryError:
-		return e.Code == code
-	case *ConfigError:
-		return e.Code == code
+	var scanErr *ScanError
+	if errors.As(err, &scanErr) {
+		return scanErr.Code == code
+	}
+	var dbErr *DatabaseError
+	if errors.As(err, &dbErr) {
+		return dbErr.Code == code
+	}
+	var discErr *DiscoveryError
+	if errors.As(err, &discErr) {
+		return discErr.Code == code
+	}
+	var cfgErr *ConfigError
+	if errors.As(err, &cfgErr) {
+		return cfgErr.Code == code
 	}
 	return false
 }
