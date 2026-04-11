@@ -25,7 +25,8 @@ func (s *Server) setupRoutes() {
 		scanHandler.SetScanQueue(s.scanQueue)
 	}
 	hostHandler := apihandlers.NewHostHandler(
-		services.NewHostService(db.NewHostRepository(s.database), s.logger), s.logger, s.metrics)
+		services.NewHostService(db.NewHostRepository(s.database), s.logger), s.logger, s.metrics).
+		WithBannerRepository(db.NewBannerRepository(s.database))
 	discoveryHandler := apihandlers.NewDiscoveryHandler(db.NewDiscoveryRepository(s.database), s.logger, s.metrics).
 		WithEngine(s.discoveryEngine)
 	profileHandler := apihandlers.NewProfileHandler(

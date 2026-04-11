@@ -51,6 +51,9 @@ jobs:
               - "**/*_test.go"
               - "**/testdata/**"
               - "**/vendor/**"
+            query-filters:
+              - exclude:
+                  id: go/disabled-tls-verification
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4

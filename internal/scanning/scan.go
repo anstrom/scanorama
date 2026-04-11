@@ -8,19 +8,21 @@ import (
 	"database/sql"
 	stderrors "errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Ullaakut/nmap/v3"
+	"github.com/google/uuid"
+
 	"github.com/anstrom/scanorama/internal/db"
 	internaldns "github.com/anstrom/scanorama/internal/dns"
 	"github.com/anstrom/scanorama/internal/enrichment"
 	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
-	"github.com/google/uuid"
 )
 
 // Constants for scan configuration validation.
@@ -638,6 +640,9 @@ func storeScanResults(
 		go runDNSEnrichment(database, storedHosts)
 	}
 
+	// Launch banner enrichment in the background — best-effort, non-blocking.
+	go runBannerEnrichment(database, result.Hosts)
+
 	return nil
 }
 
@@ -893,4 +898,62 @@ func runDNSEnrichment(database *db.DB, hosts []*db.Host) {
 	hostRepo := db.NewHostRepository(database)
 	enricher := enrichment.NewDNSEnricher(resolver, dnsRepo, hostRepo)
 	enricher.EnrichHosts(ctx, hosts)
+}
+
+// bannerEnrichmentTimeout is the maximum wall-clock time allowed for a full
+// banner-grabbing pass after a scan completes.
+const bannerEnrichmentTimeout = 5 * time.Minute
+
+// runBannerEnrichment looks up host IDs for all scanned hosts with open ports
+// and runs banner grabbing asynchronously. Errors are logged, not propagated.
+func runBannerEnrichment(database *db.DB, hosts []Host) {
+	defer func() {
+		if r := recover(); r != nil {
+			logging.Error("panic in banner enrichment goroutine", "error", r)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), bannerEnrichmentTimeout)
+	defer cancel()
+
+	hostRepo := db.NewHostRepository(database)
+	bannerRepo := db.NewBannerRepository(database)
+	grabber := enrichment.NewBannerGrabber(bannerRepo, slog.Default())
+
+	var targets []enrichment.BannerTarget
+	for _, h := range hosts {
+		if h.Status != "up" {
+			continue
+		}
+
+		var openPorts []int
+		for _, p := range h.Ports {
+			if p.State == portStateOpen && p.Protocol == db.ProtocolTCP {
+				openPorts = append(openPorts, int(p.Number))
+			}
+		}
+		if len(openPorts) == 0 {
+			continue
+		}
+
+		ip := net.ParseIP(h.Address)
+		if ip == nil {
+			continue
+		}
+		dbHost, err := hostRepo.GetByIP(ctx, db.IPAddr{IP: ip})
+		if err != nil {
+			logging.Warn("banner enrichment: host not found by IP", "ip", h.Address, "error", err)
+			continue
+		}
+
+		targets = append(targets, enrichment.BannerTarget{
+			HostID: dbHost.ID,
+			IP:     h.Address,
+			Ports:  openPorts,
+		})
+	}
+
+	if len(targets) > 0 {
+		grabber.EnrichHosts(ctx, targets)
+	}
 }
