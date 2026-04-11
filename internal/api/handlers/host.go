@@ -121,8 +121,8 @@ type HostResponse struct {
 	ResponseTimeAvgMS *int                  `json:"response_time_avg_ms,omitempty"`
 	TimeoutCount      int                   `json:"timeout_count"`
 	DNSRecords        []db.DNSRecord        `json:"dns_records,omitempty"`
-	Banners           []*db.PortBanner      `json:"banners,omitempty"`
-	Certificates      []*db.Certificate     `json:"certificates,omitempty"`
+	Banners           []*db.PortBanner      `json:"banners"`
+	Certificates      []*db.Certificate     `json:"certificates"`
 	SNMPData          *db.HostSNMPData      `json:"snmp_data,omitempty"`
 }
 
@@ -228,11 +228,13 @@ func (h *HostHandler) GetHost(w http.ResponseWriter, r *http.Request) {
 					h.logger.Warn("failed to fetch DNS records", "host_id", hostID, "error", dnsErr)
 				}
 			}
+			resp.Banners = []*db.PortBanner{}
+			resp.Certificates = []*db.Certificate{}
 			if h.bannerRepo != nil {
-				if banners, bErr := h.bannerRepo.ListPortBanners(r.Context(), hostID); bErr == nil {
+				if banners, bErr := h.bannerRepo.ListPortBanners(r.Context(), hostID); bErr == nil && banners != nil {
 					resp.Banners = banners
 				}
-				if certs, cErr := h.bannerRepo.ListCertificates(r.Context(), hostID); cErr == nil {
+				if certs, cErr := h.bannerRepo.ListCertificates(r.Context(), hostID); cErr == nil && certs != nil {
 					resp.Certificates = certs
 				}
 			}

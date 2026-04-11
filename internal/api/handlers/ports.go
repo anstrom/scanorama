@@ -58,6 +58,10 @@ func (h *PortHandler) ListPorts(w http.ResponseWriter, r *http.Request) {
 		SortBy:    q.Get("sort_by"),
 		SortOrder: q.Get("sort_order"),
 	}
+	if s := q.Get("is_standard"); s != "" {
+		v := s == "true"
+		filters.IsStandard = &v
+	}
 
 	ports, total, err := h.repo.ListPortDefinitions(r.Context(), filters, params.Offset, params.PageSize)
 	if err != nil {

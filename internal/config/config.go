@@ -133,6 +133,10 @@ type ScanningConfig struct {
 
 	// Rate limiting
 	RateLimit RateLimitConfig `yaml:"rate_limit" json:"rate_limit"`
+
+	// SNMPCommunity is the SNMPv2c community string used for post-scan SNMP
+	// enrichment. Defaults to "public".
+	SNMPCommunity string `yaml:"snmp_community" json:"snmp_community"`
 }
 
 // RetryConfig holds retry settings for failed scans.
@@ -373,6 +377,7 @@ func defaultScanningConfig() ScanningConfig {
 			RequestsPerSecond: defaultRequestsPerSecond,
 			BurstSize:         defaultBurstSize,
 		},
+		SNMPCommunity: "public",
 	}
 }
 

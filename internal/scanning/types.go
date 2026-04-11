@@ -62,6 +62,9 @@ type ScanConfig struct {
 	// linked to the same UUID exposed to the API client via GetScanResults.
 	// When nil a fresh UUID is generated (CLI / legacy path).
 	ScanID *uuid.UUID
+	// SNMPCommunity is the SNMPv2c community string used during post-scan SNMP
+	// enrichment. When empty the enricher falls back to "public".
+	SNMPCommunity string
 }
 
 // Validate checks if the scan configuration is valid.

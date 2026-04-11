@@ -44,6 +44,17 @@ const (
 	oidIfPhysAddr   = ".1.3.6.1.2.1.2.2.1.6"
 )
 
+// IF-MIB ifOperStatus values (RFC 2863).
+const (
+	ifOperStatusUp             = 1
+	ifOperStatusDown           = 2
+	ifOperStatusTesting        = 3
+	ifOperStatusUnknown        = 4
+	ifOperStatusDormant        = 5
+	ifOperStatusNotPresent     = 6
+	ifOperStatusLowerLayerDown = 7
+)
+
 var systemOIDs = []string{
 	oidSysDescr,
 	oidSysUptime,
@@ -222,10 +233,23 @@ func applyIfPDU(entry *ifData, v gosnmp.SnmpPDU) {
 			entry.name = s
 		}
 	case strings.HasPrefix(v.Name, oidIfOperStatus+"."):
-		if gosnmp.ToBigInt(v.Value).Int64() == 1 {
+		switch gosnmp.ToBigInt(v.Value).Int64() {
+		case ifOperStatusUp:
 			entry.status = "up"
-		} else {
+		case ifOperStatusDown:
 			entry.status = "down"
+		case ifOperStatusTesting:
+			entry.status = "testing"
+		case ifOperStatusUnknown:
+			entry.status = "unknown"
+		case ifOperStatusDormant:
+			entry.status = "dormant"
+		case ifOperStatusNotPresent:
+			entry.status = "notPresent"
+		case ifOperStatusLowerLayerDown:
+			entry.status = "lowerLayerDown"
+		default:
+			entry.status = "unknown"
 		}
 	case strings.HasPrefix(v.Name, oidIfSpeed+"."):
 		bps := gosnmp.ToBigInt(v.Value).Uint64()
