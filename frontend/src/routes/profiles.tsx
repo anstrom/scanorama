@@ -99,11 +99,13 @@ function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
 interface ProfileDetailPanelProps {
   profile: ProfileResponse;
   onClose: () => void;
+  onForked?: (profile: ProfileResponse) => void;
 }
 
 function ProfileDetailPanel({
   profile: initialProfile,
   onClose,
+  onForked,
 }: ProfileDetailPanelProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -144,10 +146,11 @@ function ProfileDetailPanel({
     if (!trimmed) return;
     setActionError(null);
     try {
-      await cloneProfile({ id: p.id ?? "", name: trimmed });
-      toast.success("Profile cloned successfully");
+      const forked = await cloneProfile({ id: p.id ?? "", name: trimmed });
+      toast.success("Profile forked successfully");
       setShowCloneDialog(false);
       onClose();
+      if (forked && onForked) onForked(forked);
     } catch (err) {
       const apiErr = err as { message?: string; error?: string };
       const msg =
@@ -615,6 +618,7 @@ export function ProfilesPage() {
         <ProfileDetailPanel
           profile={selectedProfile}
           onClose={() => setSelectedProfile(null)}
+          onForked={(forked) => setSelectedProfile(forked)}
         />
       )}
 
