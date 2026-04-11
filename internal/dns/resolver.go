@@ -136,6 +136,20 @@ func WithLogger(l *slog.Logger) Option {
 	return func(r *Resolver) { r.logger = l }
 }
 
+// WithLookupAddrFn replaces the reverse-lookup function used by LookupAddr.
+// Intended for testing so callers outside the dns package can inject a fake
+// resolver without hitting the network.
+func WithLookupAddrFn(fn func(ctx context.Context, ip string) ([]string, error)) Option {
+	return func(r *Resolver) { r.lookupAddrFn = fn }
+}
+
+// WithLookupHostFn replaces the forward-lookup function used by LookupHost.
+// Intended for testing so callers outside the dns package can inject a fake
+// resolver without hitting the network.
+func WithLookupHostFn(fn func(ctx context.Context, host string) ([]string, error)) Option {
+	return func(r *Resolver) { r.lookupHostFn = fn }
+}
+
 // New creates a Resolver backed by the given database connection.
 func New(database *db.DB, opts ...Option) *Resolver {
 	r := &Resolver{
