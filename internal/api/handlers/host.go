@@ -31,10 +31,18 @@ const (
 
 // HostHandler handles host-related API endpoints.
 type HostHandler struct {
-	service HostServicer
-	logger  *slog.Logger
-	metrics *metrics.Registry
-	dnsRepo *db.DNSRepository // optional; nil = DNS records not included in responses
+	service    HostServicer
+	logger     *slog.Logger
+	metrics    *metrics.Registry
+	dnsRepo    *db.DNSRepository    // optional; nil = DNS records not included in responses
+	bannerRepo *db.BannerRepository // optional; nil = banners/certs not included in responses
+}
+
+// WithBannerRepository sets an optional banner/certificate repository for
+// enriched host detail responses. Safe to call with nil.
+func (h *HostHandler) WithBannerRepository(repo *db.BannerRepository) *HostHandler {
+	h.bannerRepo = repo
+	return h
 }
 
 // NewHostHandler creates a new host handler.
@@ -106,6 +114,8 @@ type HostResponse struct {
 	ResponseTimeAvgMS *int                  `json:"response_time_avg_ms,omitempty"`
 	TimeoutCount      int                   `json:"timeout_count"`
 	DNSRecords        []db.DNSRecord        `json:"dns_records,omitempty"`
+	Banners           []*db.PortBanner      `json:"banners,omitempty"`
+	Certificates      []*db.Certificate     `json:"certificates,omitempty"`
 }
 
 // HostScanResponse represents a scan associated with a host.
@@ -208,6 +218,15 @@ func (h *HostHandler) GetHost(w http.ResponseWriter, r *http.Request) {
 			resp.DNSRecords = dnsRecords
 		} else {
 			h.logger.Warn("failed to fetch DNS records", "host_id", hostID, "error", dnsErr)
+		}
+	}
+
+	if h.bannerRepo != nil {
+		if banners, bErr := h.bannerRepo.ListPortBanners(r.Context(), hostID); bErr == nil {
+			resp.Banners = banners
+		}
+		if certs, cErr := h.bannerRepo.ListCertificates(r.Context(), hostID); cErr == nil {
+			resp.Certificates = certs
 		}
 	}
 

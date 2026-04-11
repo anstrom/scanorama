@@ -56,6 +56,32 @@ interface PortInfo {
 }
 
 /** Extended host shape — includes fields the API returns but the generated schema omits */
+type PortBanner = {
+  id: string;
+  host_id: string;
+  port: number;
+  protocol: string;
+  raw_banner?: string;
+  service?: string;
+  version?: string;
+  scanned_at: string;
+};
+
+type TLSCertificate = {
+  id: string;
+  host_id: string;
+  port: number;
+  subject_cn?: string;
+  sans?: string[];
+  issuer?: string;
+  not_before?: string;
+  not_after?: string;
+  key_type?: string;
+  tls_version?: string;
+  raw_banner?: string;
+  scanned_at: string;
+};
+
 type HostWithDetails = HostResponse & {
   ports?: PortInfo[];
   /** Open port count from the list query (not populated in detail view). */
@@ -78,6 +104,8 @@ type HostWithDetails = HostResponse & {
     ttl?: number;
     resolved_at: string;
   }>;
+  banners?: PortBanner[];
+  certificates?: TLSCertificate[];
 };
 
 const PAGE_SIZE = 25;
@@ -665,6 +693,114 @@ function HostDetailPanel({
               </div>
             </section>
           )}
+
+          {/* Port Banners */}
+          {(h as HostWithDetails).banners &&
+            (h as HostWithDetails).banners!.length > 0 && (
+              <section>
+                <h3 className="text-xs font-medium text-text-primary mb-3">
+                  Port Banners
+                </h3>
+                <div className="space-y-1">
+                  {(h as HostWithDetails).banners!.map((b) => (
+                    <div
+                      key={b.id}
+                      className="text-xs border border-border/50 rounded p-2 space-y-0.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-semibold text-foreground">
+                          {b.port}/{b.protocol}
+                        </span>
+                        {b.service && (
+                          <span className="text-text-secondary">{b.service}</span>
+                        )}
+                        {b.version && (
+                          <span className="text-text-muted">{b.version}</span>
+                        )}
+                      </div>
+                      {b.raw_banner && (
+                        <p className="text-text-muted font-mono break-all whitespace-pre-wrap text-[11px]">
+                          {b.raw_banner}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+          {/* TLS Certificates */}
+          {(h as HostWithDetails).certificates &&
+            (h as HostWithDetails).certificates!.length > 0 && (
+              <section>
+                <h3 className="text-xs font-medium text-text-primary mb-3">
+                  TLS Certificates
+                </h3>
+                <div className="space-y-2">
+                  {(h as HostWithDetails).certificates!.map((cert) => {
+                    const expiry = cert.not_after
+                      ? new Date(cert.not_after)
+                      : null;
+                    const daysLeft = expiry
+                      ? Math.ceil(
+                          (expiry.getTime() - Date.now()) / 86400000,
+                        )
+                      : null;
+                    const expiryClass =
+                      daysLeft === null
+                        ? ""
+                        : daysLeft < 0
+                          ? "text-danger"
+                          : daysLeft < 30
+                            ? "text-warning"
+                            : "text-text-secondary";
+
+                    return (
+                      <div
+                        key={cert.id}
+                        className="text-xs border border-border/50 rounded p-2 space-y-1"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono font-semibold text-foreground">
+                            Port {cert.port}
+                          </span>
+                          {cert.tls_version && (
+                            <span className="text-text-muted">
+                              {cert.tls_version}
+                            </span>
+                          )}
+                        </div>
+                        {cert.subject_cn && (
+                          <div className="text-text-secondary">
+                            CN: {cert.subject_cn}
+                          </div>
+                        )}
+                        {cert.issuer && (
+                          <div className="text-text-muted">
+                            Issuer: {cert.issuer}
+                          </div>
+                        )}
+                        {cert.not_after && (
+                          <div className={expiryClass}>
+                            Expires:{" "}
+                            {new Date(cert.not_after).toLocaleDateString()}
+                            {daysLeft !== null &&
+                              (daysLeft < 0
+                                ? " (expired)"
+                                : ` (${daysLeft}d)`)}
+                          </div>
+                        )}
+                        {cert.sans && cert.sans.length > 0 && (
+                          <div className="text-text-muted break-all">
+                            SANs: {cert.sans.join(", ")}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
           {/* Scan History */}
           <section>

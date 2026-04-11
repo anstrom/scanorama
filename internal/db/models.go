@@ -699,3 +699,31 @@ type PortFilters struct {
 	SortBy    string
 	SortOrder string
 }
+
+// Certificate is a TLS certificate record captured from a host/port.
+type Certificate struct {
+	ID         uuid.UUID  `db:"id"          json:"id"`
+	HostID     uuid.UUID  `db:"host_id"     json:"host_id"`
+	Port       int        `db:"port"        json:"port"`
+	SubjectCN  *string    `db:"subject_cn"  json:"subject_cn,omitempty"`
+	SANs       []string   `db:"sans"        json:"sans,omitempty"`
+	Issuer     *string    `db:"issuer"      json:"issuer,omitempty"`
+	NotBefore  *time.Time `db:"not_before"  json:"not_before,omitempty"`
+	NotAfter   *time.Time `db:"not_after"   json:"not_after,omitempty"`
+	KeyType    *string    `db:"key_type"    json:"key_type,omitempty"`
+	TLSVersion *string    `db:"tls_version" json:"tls_version,omitempty"`
+	RawBanner  *string    `db:"raw_banner"  json:"raw_banner,omitempty"`
+	ScannedAt  time.Time  `db:"scanned_at"  json:"scanned_at"`
+}
+
+// PortBanner is a raw service banner captured from a host/port.
+type PortBanner struct {
+	ID        uuid.UUID `db:"id"         json:"id"`
+	HostID    uuid.UUID `db:"host_id"    json:"host_id"`
+	Port      int       `db:"port"       json:"port"`
+	Protocol  string    `db:"protocol"   json:"protocol"`
+	RawBanner *string   `db:"raw_banner" json:"raw_banner,omitempty"`
+	Service   *string   `db:"service"    json:"service,omitempty"`
+	Version   *string   `db:"version"    json:"version,omitempty"`
+	ScannedAt time.Time `db:"scanned_at" json:"scanned_at"`
+}
