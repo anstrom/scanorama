@@ -205,13 +205,13 @@ type HostResponse struct {
 	OpenPorts []int    `json:"open_ports" example:"22,80,443"`
 	Tags      []string `json:"tags,omitempty" example:"web,production"`
 	// NetworkID is the network this host belongs to, if any.
-	NetworkID          *string   `json:"network_id,omitempty"`
-	Status             string    `json:"status" example:"up" enums:"up,down,unknown"`
-	ResponseTimeMs     *float64  `json:"response_time_ms,omitempty" example:"1.23"`
-	ResponseTimeAvgMs  *float64  `json:"response_time_avg_ms,omitempty" example:"1.5"`
-	LastSeen           time.Time `json:"last_seen"`
-	FirstSeen          time.Time `json:"first_seen"`
-	ScanCount          int       `json:"scan_count" example:"5"`
+	NetworkID         *string   `json:"network_id,omitempty"`
+	Status            string    `json:"status" example:"up" enums:"up,down,unknown"`
+	ResponseTimeMs    *float64  `json:"response_time_ms,omitempty" example:"1.23"`
+	ResponseTimeAvgMs *float64  `json:"response_time_avg_ms,omitempty" example:"1.5"`
+	LastSeen          time.Time `json:"last_seen"`
+	FirstSeen         time.Time `json:"first_seen"`
+	ScanCount         int       `json:"scan_count" example:"5"`
 	// DNSRecords are populated when DNS enrichment has run for this host.
 	DNSRecords []DNSRecordResponse `json:"dns_records,omitempty"`
 	// Banners are populated when banner grabbing has run for this host.
