@@ -123,7 +123,7 @@ type HostResponse struct {
 	DNSRecords        []db.DNSRecord        `json:"dns_records,omitempty"`
 	Banners           []*db.PortBanner      `json:"banners"`
 	Certificates      []*db.Certificate     `json:"certificates"`
-	SNMPData          *db.HostSNMPData      `json:"snmp_data,omitempty"`
+	SNMPData          *db.HostSNMPData      `json:"snmp_data"`
 	KnowledgeScore    int                   `json:"knowledge_score"`
 }
 
