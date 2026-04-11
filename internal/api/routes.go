@@ -26,7 +26,8 @@ func (s *Server) setupRoutes() {
 	}
 	hostHandler := apihandlers.NewHostHandler(
 		services.NewHostService(db.NewHostRepository(s.database), s.logger), s.logger, s.metrics).
-		WithBannerRepository(db.NewBannerRepository(s.database))
+		WithBannerRepository(db.NewBannerRepository(s.database)).
+		WithSNMPRepository(db.NewSNMPRepository(s.database))
 	discoveryHandler := apihandlers.NewDiscoveryHandler(db.NewDiscoveryRepository(s.database), s.logger, s.metrics).
 		WithEngine(s.discoveryEngine)
 	profileHandler := apihandlers.NewProfileHandler(

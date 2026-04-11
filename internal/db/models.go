@@ -727,3 +727,26 @@ type PortBanner struct {
 	Version   *string   `db:"version"    json:"version,omitempty"`
 	ScannedAt time.Time `db:"scanned_at" json:"scanned_at"`
 }
+
+// SNMPInterface describes a single network interface collected via SNMP.
+type SNMPInterface struct {
+	Name   string `json:"name,omitempty"`
+	Status string `json:"status,omitempty"`
+	Speed  uint   `json:"speed_mbps,omitempty"`
+	MAC    string `json:"mac,omitempty"`
+	IP     string `json:"ip,omitempty"`
+}
+
+// HostSNMPData holds SNMP data collected from a network device.
+type HostSNMPData struct {
+	HostID      uuid.UUID `db:"host_id"      json:"host_id"`
+	SysName     *string   `db:"sys_name"     json:"sys_name,omitempty"`
+	SysDescr    *string   `db:"sys_descr"    json:"sys_descr,omitempty"`
+	SysLocation *string   `db:"sys_location" json:"sys_location,omitempty"`
+	SysContact  *string   `db:"sys_contact"  json:"sys_contact,omitempty"`
+	SysUptime   *int64    `db:"sys_uptime"   json:"sys_uptime_cs,omitempty"`
+	IfCount     *int      `db:"if_count"     json:"if_count,omitempty"`
+	Interfaces  JSONB     `db:"interfaces"   json:"interfaces,omitempty"`
+	Community   *string   `db:"community"    json:"-"`
+	CollectedAt time.Time `db:"collected_at" json:"collected_at"`
+}
