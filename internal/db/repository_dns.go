@@ -47,8 +47,8 @@ func (r *DNSRepository) UpsertDNSRecords(ctx context.Context, hostID uuid.UUID, 
 			}
 			b := i * argsPerRow
 			placeholders = append(placeholders,
-				fmt.Sprintf("($%d,$%d,$%d,$%d,$%d,NOW())", //nolint:mnd
-					b+1, b+2, b+3, b+4, b+5))
+				fmt.Sprintf("($%d,$%d,$%d,$%d,$%d,NOW())",
+					b+1, b+2, b+3, b+4, b+5)) //nolint:mnd
 			args = append(args,
 				records[i].ID, records[i].HostID,
 				records[i].RecordType, records[i].Value, records[i].TTL)
