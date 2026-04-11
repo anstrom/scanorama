@@ -1,4 +1,4 @@
--- Migration 010: SNMP data captured from network devices.
+-- Migration 015: SNMP data captured from network devices.
 -- Populated by SNMP enrichment when port 161 is open post-scan.
 
 CREATE TABLE IF NOT EXISTS host_snmp_data (

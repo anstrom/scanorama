@@ -4,6 +4,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -33,18 +34,23 @@ func (r *DNSRepository) UpsertDNSRecords(ctx context.Context, hostID uuid.UUID, 
 		return fmt.Errorf("dns records: delete existing: %w", err)
 	}
 
-	for i := range records {
-		records[i].HostID = hostID
-		if records[i].ID == uuid.Nil {
-			records[i].ID = uuid.New()
+	if len(records) > 0 {
+		// Batch insert all records in a single statement to avoid N+1 round-trips.
+		placeholders := make([]string, 0, len(records))
+		args := make([]interface{}, 0, len(records)*5)
+		for i := range records {
+			records[i].HostID = hostID
+			if records[i].ID == uuid.Nil {
+				records[i].ID = uuid.New()
+			}
+			base := i * 5
+			placeholders = append(placeholders, fmt.Sprintf("($%d,$%d,$%d,$%d,$%d,NOW())", base+1, base+2, base+3, base+4, base+5))
+			args = append(args, records[i].ID, records[i].HostID, records[i].RecordType, records[i].Value, records[i].TTL)
 		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO host_dns_records (id, host_id, record_type, value, ttl, resolved_at)
-			VALUES ($1, $2, $3, $4, $5, NOW())`,
-			records[i].ID, records[i].HostID, records[i].RecordType,
-			records[i].Value, records[i].TTL,
-		); err != nil {
-			return fmt.Errorf("dns records: insert %s record: %w", records[i].RecordType, err)
+		query := `INSERT INTO host_dns_records (id, host_id, record_type, value, ttl, resolved_at) VALUES ` +
+			strings.Join(placeholders, ",")
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+			return fmt.Errorf("dns records: batch insert: %w", err)
 		}
 	}
 

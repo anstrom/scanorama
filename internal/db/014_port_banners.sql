@@ -1,4 +1,4 @@
--- Migration 011: port banner and service version records per host/port
+-- Migration 014: port banner and service version records per host/port
 -- Populated by banner enrichment after scans with open ports.
 
 CREATE TABLE IF NOT EXISTS port_banners (

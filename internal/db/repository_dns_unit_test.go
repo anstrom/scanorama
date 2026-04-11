@@ -51,16 +51,15 @@ func TestDNSRepository_UpsertDNSRecords_MultipleRecords(t *testing.T) {
 		{ID: uuid.New(), RecordType: "A", Value: "192.0.2.1"},
 	}
 
+	// Batch insert: all records in a single INSERT statement.
 	mock.ExpectBegin()
 	mock.ExpectExec("DELETE FROM host_dns_records").
 		WithArgs(hostID).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO host_dns_records").
-		WithArgs(records[0].ID, hostID, "PTR", "host.example.com", (*int)(nil)).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec("INSERT INTO host_dns_records").
-		WithArgs(records[1].ID, hostID, "A", "192.0.2.1", (*int)(nil)).
-		WillReturnResult(sqlmock.NewResult(1, 1))
+		WithArgs(records[0].ID, hostID, "PTR", "host.example.com", (*int)(nil),
+			records[1].ID, hostID, "A", "192.0.2.1", (*int)(nil)).
+		WillReturnResult(sqlmock.NewResult(2, 2))
 	mock.ExpectCommit()
 
 	err := NewDNSRepository(db).UpsertDNSRecords(context.Background(), hostID, records)

@@ -3272,6 +3272,56 @@ const docTemplate = `{
                 }
             }
         },
+        "docs.CertificateResponse": {
+            "type": "object",
+            "properties": {
+                "host_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "issuer": {
+                    "type": "string",
+                    "example": "Let's Encrypt Authority X3"
+                },
+                "key_type": {
+                    "type": "string",
+                    "example": "RSA-2048"
+                },
+                "not_after": {
+                    "type": "string"
+                },
+                "not_before": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer",
+                    "example": 443
+                },
+                "sans": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "server01.local",
+                        "www.server01.local"
+                    ]
+                },
+                "scanned_at": {
+                    "type": "string"
+                },
+                "subject_cn": {
+                    "type": "string",
+                    "example": "server01.local"
+                },
+                "tls_version": {
+                    "type": "string",
+                    "example": "TLS 1.3"
+                }
+            }
+        },
         "docs.CreateDiscoveryJobRequest": {
             "type": "object",
             "properties": {
@@ -3477,6 +3527,41 @@ const docTemplate = `{
                 }
             }
         },
+        "docs.DNSRecordResponse": {
+            "type": "object",
+            "properties": {
+                "host_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "record_type": {
+                    "type": "string",
+                    "enum": [
+                        "A",
+                        "AAAA",
+                        "PTR",
+                        "CNAME",
+                        "MX",
+                        "TXT",
+                        "SRV"
+                    ],
+                    "example": "PTR"
+                },
+                "resolved_at": {
+                    "type": "string"
+                },
+                "ttl": {
+                    "type": "integer",
+                    "example": 300
+                },
+                "value": {
+                    "type": "string",
+                    "example": "server01.local"
+                }
+            }
+        },
         "docs.DiscoveryJobResponse": {
             "type": "object",
             "properties": {
@@ -3599,6 +3684,31 @@ const docTemplate = `{
         "docs.HostResponse": {
             "type": "object",
             "properties": {
+                "banners": {
+                    "description": "Banners are populated when banner grabbing has run for this host.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.PortBannerResponse"
+                    }
+                },
+                "certificates": {
+                    "description": "Certificates are populated when TLS banner grabbing has run for this host.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.CertificateResponse"
+                    }
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Primary web server"
+                },
+                "dns_records": {
+                    "description": "DNSRecords are populated when DNS enrichment has run for this host.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.DNSRecordResponse"
+                    }
+                },
                 "first_seen": {
                     "type": "string"
                 },
@@ -3621,6 +3731,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "00:1B:44:11:3A:B7"
                 },
+                "network_id": {
+                    "description": "NetworkID is the network this host belongs to, if any.",
+                    "type": "string"
+                },
                 "open_ports": {
                     "type": "array",
                     "items": {
@@ -3632,9 +3746,39 @@ const docTemplate = `{
                         443
                     ]
                 },
+                "os_family": {
+                    "description": "OSFamily is the broad OS family detected by nmap (e.g. \"Linux\", \"Windows\").",
+                    "type": "string",
+                    "example": "Linux"
+                },
+                "os_name": {
+                    "description": "OSName is the full OS name returned by nmap (e.g. \"Linux 5.15\").",
+                    "type": "string",
+                    "example": "Ubuntu 22.04"
+                },
+                "os_version": {
+                    "type": "string",
+                    "example": "22.04"
+                },
+                "response_time_avg_ms": {
+                    "type": "number",
+                    "example": 1.5
+                },
+                "response_time_ms": {
+                    "type": "number",
+                    "example": 1.23
+                },
                 "scan_count": {
                     "type": "integer",
                     "example": 5
+                },
+                "snmp_data": {
+                    "description": "SNMPData is populated when SNMP enrichment has run for this host.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/docs.SNMPDataResponse"
+                        }
+                    ]
                 },
                 "status": {
                     "type": "string",
@@ -3644,6 +3788,20 @@ const docTemplate = `{
                         "unknown"
                     ],
                     "example": "up"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "web",
+                        "production"
+                    ]
+                },
+                "vendor": {
+                    "type": "string",
+                    "example": "Dell Inc."
                 }
             }
         },
@@ -3907,6 +4065,44 @@ const docTemplate = `{
                 }
             }
         },
+        "docs.PortBannerResponse": {
+            "type": "object",
+            "properties": {
+                "host_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer",
+                    "example": 80
+                },
+                "protocol": {
+                    "type": "string",
+                    "enum": [
+                        "tcp",
+                        "udp"
+                    ],
+                    "example": "tcp"
+                },
+                "raw_banner": {
+                    "type": "string",
+                    "example": "HTTP/1.1 200 OK"
+                },
+                "scanned_at": {
+                    "type": "string"
+                },
+                "service": {
+                    "type": "string",
+                    "example": "nginx"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "1.24.0"
+                }
+            }
+        },
         "docs.ProfileResponse": {
             "type": "object",
             "properties": {
@@ -3958,6 +4154,78 @@ const docTemplate = `{
                 "new_name": {
                     "type": "string",
                     "example": "New Office Network"
+                }
+            }
+        },
+        "docs.SNMPDataResponse": {
+            "type": "object",
+            "properties": {
+                "collected_at": {
+                    "type": "string"
+                },
+                "if_count": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "interfaces": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.SNMPInterfaceResponse"
+                    }
+                },
+                "sys_contact": {
+                    "type": "string",
+                    "example": "admin@example.com"
+                },
+                "sys_descr": {
+                    "type": "string",
+                    "example": "Cisco IOS XE"
+                },
+                "sys_location": {
+                    "type": "string",
+                    "example": "Server Room A"
+                },
+                "sys_name": {
+                    "type": "string",
+                    "example": "router01"
+                },
+                "sys_uptime_cs": {
+                    "type": "integer",
+                    "example": 123456789
+                }
+            }
+        },
+        "docs.SNMPInterfaceResponse": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "ip": {
+                    "type": "string",
+                    "example": "192.168.1.1"
+                },
+                "mac": {
+                    "type": "string",
+                    "example": "00:1B:44:11:3A:B7"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "eth0"
+                },
+                "speed_mbps": {
+                    "type": "number",
+                    "example": 1000
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "up",
+                        "down",
+                        "unknown"
+                    ],
+                    "example": "up"
                 }
             }
         },

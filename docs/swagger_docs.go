@@ -130,17 +130,96 @@ type CreateScanRequest struct {
 	Tags        []string          `json:"tags,omitempty"`
 }
 
+// DNSRecordResponse represents a single DNS record for a host.
+type DNSRecordResponse struct {
+	ID         string    `json:"id"`
+	HostID     string    `json:"host_id"`
+	RecordType string    `json:"record_type" example:"PTR" enums:"A,AAAA,PTR,CNAME,MX,TXT,SRV"`
+	Value      string    `json:"value" example:"server01.local"`
+	TTL        *int      `json:"ttl,omitempty" example:"300"`
+	ResolvedAt time.Time `json:"resolved_at"`
+}
+
+// PortBannerResponse represents a service banner captured on a host port.
+type PortBannerResponse struct {
+	ID        string    `json:"id"`
+	HostID    string    `json:"host_id"`
+	Port      int       `json:"port" example:"80"`
+	Protocol  string    `json:"protocol" example:"tcp" enums:"tcp,udp"`
+	RawBanner *string   `json:"raw_banner,omitempty" example:"HTTP/1.1 200 OK"`
+	Service   *string   `json:"service,omitempty" example:"nginx"`
+	Version   *string   `json:"version,omitempty" example:"1.24.0"`
+	ScannedAt time.Time `json:"scanned_at"`
+}
+
+// CertificateResponse represents a TLS certificate captured from a host.
+type CertificateResponse struct {
+	ID        string    `json:"id"`
+	HostID    string    `json:"host_id"`
+	Port      int       `json:"port" example:"443"`
+	SubjectCN *string   `json:"subject_cn,omitempty" example:"server01.local"`
+	SANs      []string  `json:"sans,omitempty" example:"server01.local,www.server01.local"`
+	Issuer    *string   `json:"issuer,omitempty" example:"Let's Encrypt Authority X3"`
+	NotBefore *string   `json:"not_before,omitempty"`
+	NotAfter  *string   `json:"not_after,omitempty"`
+	KeyType   *string   `json:"key_type,omitempty" example:"RSA-2048"`
+	TLSVer    *string   `json:"tls_version,omitempty" example:"TLS 1.3"`
+	ScannedAt time.Time `json:"scanned_at"`
+}
+
+// SNMPInterfaceResponse represents a single network interface reported by SNMP.
+type SNMPInterfaceResponse struct {
+	Index     int     `json:"index" example:"1"`
+	Name      string  `json:"name" example:"eth0"`
+	Status    string  `json:"status" example:"up" enums:"up,down,unknown"`
+	SpeedMbps float64 `json:"speed_mbps" example:"1000"`
+	MAC       string  `json:"mac,omitempty" example:"00:1B:44:11:3A:B7"`
+	IP        string  `json:"ip,omitempty" example:"192.168.1.1"`
+}
+
+// SNMPDataResponse represents SNMP device information for a host.
+type SNMPDataResponse struct {
+	SysName     *string                 `json:"sys_name,omitempty" example:"router01"`
+	SysDescr    *string                 `json:"sys_descr,omitempty" example:"Cisco IOS XE"`
+	SysLocation *string                 `json:"sys_location,omitempty" example:"Server Room A"`
+	SysContact  *string                 `json:"sys_contact,omitempty" example:"admin@example.com"`
+	SysUptime   *int64                  `json:"sys_uptime_cs,omitempty" example:"123456789"`
+	IfCount     *int                    `json:"if_count,omitempty" example:"4"`
+	Interfaces  []SNMPInterfaceResponse `json:"interfaces,omitempty"`
+	CollectedAt time.Time               `json:"collected_at"`
+}
+
 // HostResponse represents a discovered host
 type HostResponse struct {
-	ID         string    `json:"id" example:"550e8400-e29b-41d4-a716-446655440002"`
-	IPAddress  string    `json:"ip_address" example:"192.168.1.100"`
-	Hostname   *string   `json:"hostname,omitempty" example:"server01.local"`
-	MACAddress *string   `json:"mac_address,omitempty" example:"00:1B:44:11:3A:B7"`
-	OpenPorts  []int     `json:"open_ports" example:"22,80,443"`
-	Status     string    `json:"status" example:"up" enums:"up,down,unknown"`
-	LastSeen   time.Time `json:"last_seen"`
-	FirstSeen  time.Time `json:"first_seen"`
-	ScanCount  int       `json:"scan_count" example:"5"`
+	ID          string  `json:"id" example:"550e8400-e29b-41d4-a716-446655440002"`
+	IPAddress   string  `json:"ip_address" example:"192.168.1.100"`
+	Hostname    *string `json:"hostname,omitempty" example:"server01.local"`
+	Description *string `json:"description,omitempty" example:"Primary web server"`
+	MACAddress  *string `json:"mac_address,omitempty" example:"00:1B:44:11:3A:B7"`
+	Vendor      *string `json:"vendor,omitempty" example:"Dell Inc."`
+	// OSFamily is the broad OS family detected by nmap (e.g. "Linux", "Windows").
+	OSFamily *string `json:"os_family,omitempty" example:"Linux"`
+	// OSName is the full OS name returned by nmap (e.g. "Linux 5.15").
+	OSName    *string  `json:"os_name,omitempty" example:"Ubuntu 22.04"`
+	OSVersion *string  `json:"os_version,omitempty" example:"22.04"`
+	OpenPorts []int    `json:"open_ports" example:"22,80,443"`
+	Tags      []string `json:"tags,omitempty" example:"web,production"`
+	// NetworkID is the network this host belongs to, if any.
+	NetworkID          *string   `json:"network_id,omitempty"`
+	Status             string    `json:"status" example:"up" enums:"up,down,unknown"`
+	ResponseTimeMs     *float64  `json:"response_time_ms,omitempty" example:"1.23"`
+	ResponseTimeAvgMs  *float64  `json:"response_time_avg_ms,omitempty" example:"1.5"`
+	LastSeen           time.Time `json:"last_seen"`
+	FirstSeen          time.Time `json:"first_seen"`
+	ScanCount          int       `json:"scan_count" example:"5"`
+	// DNSRecords are populated when DNS enrichment has run for this host.
+	DNSRecords []DNSRecordResponse `json:"dns_records,omitempty"`
+	// Banners are populated when banner grabbing has run for this host.
+	Banners []PortBannerResponse `json:"banners,omitempty"`
+	// Certificates are populated when TLS banner grabbing has run for this host.
+	Certificates []CertificateResponse `json:"certificates,omitempty"`
+	// SNMPData is populated when SNMP enrichment has run for this host.
+	SNMPData *SNMPDataResponse `json:"snmp_data,omitempty"`
 }
 
 // ProfileResponse represents a scan profile
