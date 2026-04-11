@@ -984,6 +984,7 @@ make lint-fix && make lint && make test
 6. **Batch similar fixes**: Group lint fixes, type fixes, etc. before squashing
 7. **Precise commit messages**: Avoid adjectives, use technical descriptions
 8. **Imperative mood**: "fix timeout" not "fixed timeout" or "fixes timeout"
+9. **No PR/issue references in commit messages**: Never include PR numbers, issue numbers, or tracking identifiers (e.g. "#647", "PR C", "issue #123") in commit message subjects or bodies. The git history must be self-contained and readable without a project tracker.
 
 ### Anti-Patterns (Avoid Yak Shaving):
 ```bash
