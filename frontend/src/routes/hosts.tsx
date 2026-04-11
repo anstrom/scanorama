@@ -106,13 +106,46 @@ type HostWithDetails = HostResponse & {
   }>;
   banners?: PortBanner[];
   certificates?: TLSCertificate[];
+  snmp_data?: SNMPData | null;
 };
+
+interface SNMPInterface {
+  name?: string;
+  status?: string;
+  speed_mbps?: number;
+  mac?: string;
+  ip?: string;
+}
+
+interface SNMPData {
+  sys_name?: string;
+  sys_descr?: string;
+  sys_location?: string;
+  sys_contact?: string;
+  sys_uptime_cs?: number;
+  if_count?: number;
+  interfaces?: SNMPInterface[];
+  collected_at?: string;
+}
 
 const PAGE_SIZE = 25;
 
 // ──────────────────────────────────────────────
 // Host detail panel
 // ──────────────────────────────────────────────
+
+/** Converts SNMP sysUptime centiseconds to a human-readable string. */
+function formatSNMPUptime(cs: number): string {
+  const totalSeconds = Math.floor(cs / 100);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  parts.push(`${minutes}m`);
+  return parts.join(" ");
+}
 
 function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -801,6 +834,75 @@ function HostDetailPanel({
                 </div>
               </section>
             )}
+
+          {/* SNMP Data */}
+          {h.snmp_data && (
+            <section>
+              <h3 className="text-xs font-medium text-text-primary mb-3">
+                SNMP Device Info
+              </h3>
+              <div className="space-y-1.5">
+                {h.snmp_data.sys_name && (
+                  <MetaRow label="System Name" value={h.snmp_data.sys_name} />
+                )}
+                {h.snmp_data.sys_descr && (
+                  <MetaRow label="Description" value={h.snmp_data.sys_descr} />
+                )}
+                {h.snmp_data.sys_location && (
+                  <MetaRow label="Location" value={h.snmp_data.sys_location} />
+                )}
+                {h.snmp_data.sys_contact && (
+                  <MetaRow label="Contact" value={h.snmp_data.sys_contact} />
+                )}
+                {h.snmp_data.sys_uptime_cs != null && (
+                  <MetaRow
+                    label="Uptime"
+                    value={formatSNMPUptime(h.snmp_data.sys_uptime_cs)}
+                  />
+                )}
+              </div>
+              {h.snmp_data.interfaces && h.snmp_data.interfaces.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs text-text-muted mb-2">
+                    Interfaces ({h.snmp_data.if_count ?? h.snmp_data.interfaces.length})
+                  </p>
+                  <div className="space-y-1">
+                    {h.snmp_data.interfaces.map((iface, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between gap-2 py-0.5 text-xs"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`shrink-0 w-1.5 h-1.5 rounded-full ${
+                              iface.status === "up"
+                                ? "bg-green-500"
+                                : "bg-surface-raised border border-border"
+                            }`}
+                          />
+                          <span className="font-mono text-text-primary truncate">
+                            {iface.name || `if${idx + 1}`}
+                          </span>
+                          {iface.mac && (
+                            <span className="font-mono text-text-muted shrink-0">
+                              {iface.mac}
+                            </span>
+                          )}
+                        </div>
+                        {iface.speed_mbps != null && iface.speed_mbps > 0 && (
+                          <span className="text-text-muted shrink-0">
+                            {iface.speed_mbps >= 1000
+                              ? `${iface.speed_mbps / 1000} Gbps`
+                              : `${iface.speed_mbps} Mbps`}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Scan History */}
           <section>

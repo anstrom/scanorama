@@ -36,6 +36,7 @@ type HostHandler struct {
 	metrics    *metrics.Registry
 	dnsRepo    *db.DNSRepository    // optional; nil = DNS records not included in responses
 	bannerRepo *db.BannerRepository // optional; nil = banners/certs not included in responses
+	snmpRepo   *db.SNMPRepository   // optional; nil = SNMP data not included in responses
 }
 
 // WithBannerRepository sets an optional banner/certificate repository for
@@ -58,6 +59,12 @@ func NewHostHandler(service HostServicer, logger *slog.Logger, metricsManager *m
 // host's DNS records in its response. Returns the handler for chaining.
 func (h *HostHandler) WithDNSRepository(repo *db.DNSRepository) *HostHandler {
 	h.dnsRepo = repo
+	return h
+}
+
+// WithSNMPRepository attaches a SNMPRepository for enriching host detail responses.
+func (h *HostHandler) WithSNMPRepository(repo *db.SNMPRepository) *HostHandler {
+	h.snmpRepo = repo
 	return h
 }
 
@@ -116,6 +123,7 @@ type HostResponse struct {
 	DNSRecords        []db.DNSRecord        `json:"dns_records,omitempty"`
 	Banners           []*db.PortBanner      `json:"banners,omitempty"`
 	Certificates      []*db.Certificate     `json:"certificates,omitempty"`
+	SNMPData          *db.HostSNMPData      `json:"snmp_data,omitempty"`
 }
 
 // HostScanResponse represents a scan associated with a host.
@@ -204,34 +212,38 @@ func (h *HostHandler) GetHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host, err := h.service.GetHost(r.Context(), hostID)
-	if err != nil {
-		handleDatabaseError(w, r, err, "get", "host", h.logger)
-		return
+	crudOp := &CRUDOperation[db.Host]{
+		EntityType: "host",
+		Logger:     h.logger,
+		Metrics:    h.metrics,
 	}
-
-	resp := h.hostToResponse(host)
-
-	// Attach DNS records when the repository is wired in.
-	if h.dnsRepo != nil {
-		if dnsRecords, dnsErr := h.dnsRepo.ListDNSRecords(r.Context(), hostID); dnsErr == nil {
-			resp.DNSRecords = dnsRecords
-		} else {
-			h.logger.Warn("failed to fetch DNS records", "host_id", hostID, "error", dnsErr)
-		}
-	}
-
-	if h.bannerRepo != nil {
-		if banners, bErr := h.bannerRepo.ListPortBanners(r.Context(), hostID); bErr == nil {
-			resp.Banners = banners
-		}
-		if certs, cErr := h.bannerRepo.ListCertificates(r.Context(), hostID); cErr == nil {
-			resp.Certificates = certs
-		}
-	}
-
-	writeJSON(w, r, http.StatusOK, resp)
-	recordCRUDMetric(h.metrics, "api_hosts_retrieved_total", nil)
+	crudOp.ExecuteGet(w, r, hostID,
+		h.service.GetHost,
+		func(host *db.Host) interface{} {
+			resp := h.hostToResponse(host)
+			if h.dnsRepo != nil {
+				if dnsRecords, dnsErr := h.dnsRepo.ListDNSRecords(r.Context(), hostID); dnsErr == nil {
+					resp.DNSRecords = dnsRecords
+				} else {
+					h.logger.Warn("failed to fetch DNS records", "host_id", hostID, "error", dnsErr)
+				}
+			}
+			if h.bannerRepo != nil {
+				if banners, bErr := h.bannerRepo.ListPortBanners(r.Context(), hostID); bErr == nil {
+					resp.Banners = banners
+				}
+				if certs, cErr := h.bannerRepo.ListCertificates(r.Context(), hostID); cErr == nil {
+					resp.Certificates = certs
+				}
+			}
+			if h.snmpRepo != nil {
+				if snmpData, sErr := h.snmpRepo.GetSNMPData(r.Context(), hostID); sErr == nil {
+					resp.SNMPData = snmpData
+				}
+			}
+			return resp
+		},
+		"api_hosts_retrieved_total")
 }
 
 // UpdateHost handles PUT /api/v1/hosts/{id} - update a host.

@@ -642,6 +642,7 @@ func storeScanResults(
 
 	// Launch banner enrichment in the background — best-effort, non-blocking.
 	go runBannerEnrichment(database, result.Hosts)
+	go runSNMPEnrichment(database, result.Hosts)
 
 	return nil
 }
@@ -956,4 +957,55 @@ func runBannerEnrichment(database *db.DB, hosts []Host) {
 	if len(targets) > 0 {
 		grabber.EnrichHosts(ctx, targets)
 	}
+}
+
+const (
+	snmpEnrichmentTimeout = 5 * time.Minute
+	snmpPort              = 161
+)
+
+// runSNMPEnrichment probes hosts that had port 161 open during the scan.
+// Runs in a goroutine; errors are logged but not propagated.
+func runSNMPEnrichment(database *db.DB, hosts []Host) {
+	defer func() {
+		if r := recover(); r != nil {
+			logging.Error("panic in SNMP enrichment goroutine", "error", r)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), snmpEnrichmentTimeout)
+	defer cancel()
+
+	hostRepo := db.NewHostRepository(database)
+	snmpRepo := db.NewSNMPRepository(database)
+	enricher := enrichment.NewSNMPEnricher(snmpRepo, slog.Default())
+
+	for i := range hosts {
+		h := &hosts[i]
+		if !hasSNMPPort(h.Ports) {
+			continue
+		}
+		dbHost, err := hostRepo.GetByIP(ctx, db.IPAddr{IP: net.ParseIP(h.Address)})
+		if err != nil {
+			slog.Default().Warn("snmp enrichment: host lookup failed", "ip", h.Address, "err", err)
+			continue
+		}
+		target := enrichment.SNMPTarget{
+			HostID: dbHost.ID,
+			IP:     h.Address,
+		}
+		if err := enricher.EnrichHost(ctx, target); err != nil {
+			slog.Default().Warn("snmp enrichment failed", "ip", h.Address, "err", err)
+		}
+	}
+}
+
+// hasSNMPPort reports whether port 161 UDP is open in a port list.
+func hasSNMPPort(ports []Port) bool {
+	for _, p := range ports {
+		if p.Number == snmpPort && p.Protocol == "udp" && p.State == portStateOpen {
+			return true
+		}
+	}
+	return false
 }
