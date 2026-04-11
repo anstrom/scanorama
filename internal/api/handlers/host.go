@@ -34,6 +34,7 @@ type HostHandler struct {
 	service HostServicer
 	logger  *slog.Logger
 	metrics *metrics.Registry
+	dnsRepo *db.DNSRepository // optional; nil = DNS records not included in responses
 }
 
 // NewHostHandler creates a new host handler.
@@ -43,6 +44,13 @@ func NewHostHandler(service HostServicer, logger *slog.Logger, metricsManager *m
 		logger:  logger.With("handler", "host"),
 		metrics: metricsManager,
 	}
+}
+
+// WithDNSRepository attaches a DNS repository so that GetHost includes the
+// host's DNS records in its response. Returns the handler for chaining.
+func (h *HostHandler) WithDNSRepository(repo *db.DNSRepository) *HostHandler {
+	h.dnsRepo = repo
+	return h
 }
 
 // HostRequest represents a host creation/update request.
@@ -97,6 +105,7 @@ type HostResponse struct {
 	ResponseTimeMaxMS *int                  `json:"response_time_max_ms,omitempty"`
 	ResponseTimeAvgMS *int                  `json:"response_time_avg_ms,omitempty"`
 	TimeoutCount      int                   `json:"timeout_count"`
+	DNSRecords        []db.DNSRecord        `json:"dns_records,omitempty"`
 }
 
 // HostScanResponse represents a scan associated with a host.
@@ -185,18 +194,25 @@ func (h *HostHandler) GetHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	crudOp := &CRUDOperation[db.Host]{
-		EntityType: "host",
-		Logger:     h.logger,
-		Metrics:    h.metrics,
+	host, err := h.service.GetHost(r.Context(), hostID)
+	if err != nil {
+		handleDatabaseError(w, r, err, "get", "host", h.logger)
+		return
 	}
 
-	crudOp.ExecuteGet(w, r, hostID,
-		h.service.GetHost,
-		func(host *db.Host) interface{} {
-			return h.hostToResponse(host)
-		},
-		"api_hosts_retrieved_total")
+	resp := h.hostToResponse(host)
+
+	// Attach DNS records when the repository is wired in.
+	if h.dnsRepo != nil {
+		if dnsRecords, dnsErr := h.dnsRepo.ListDNSRecords(r.Context(), hostID); dnsErr == nil {
+			resp.DNSRecords = dnsRecords
+		} else {
+			h.logger.Warn("failed to fetch DNS records", "host_id", hostID, "error", dnsErr)
+		}
+	}
+
+	writeJSON(w, r, http.StatusOK, resp)
+	recordCRUDMetric(h.metrics, "api_hosts_retrieved_total", nil)
 }
 
 // UpdateHost handles PUT /api/v1/hosts/{id} - update a host.

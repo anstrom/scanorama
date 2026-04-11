@@ -15,6 +15,8 @@ import (
 
 	"github.com/Ullaakut/nmap/v3"
 	"github.com/anstrom/scanorama/internal/db"
+	internaldns "github.com/anstrom/scanorama/internal/dns"
+	"github.com/anstrom/scanorama/internal/enrichment"
 	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
@@ -624,11 +626,18 @@ func storeScanResults(
 
 	// Store host and port scan results.
 	logging.Debug("Storing host results", "host_count", len(result.Hosts))
-	if err := storeHostResults(ctx, database, jobID, result.Hosts); err != nil {
+	storedHosts, err := storeHostResults(ctx, database, jobID, result.Hosts)
+	if err != nil {
 		logging.Error("Failed to store host results", "error", err)
 		return err
 	}
 	logging.Debug("Successfully stored all scan results")
+
+	// Run DNS enrichment in the background — failures are non-fatal.
+	if len(storedHosts) > 0 {
+		go runDNSEnrichment(database, storedHosts)
+	}
+
 	return nil
 }
 
@@ -746,12 +755,12 @@ func parseTargetAddress(target string) (db.NetworkAddr, error) {
 // processHostForScan processes a single host for scanning, preserving discovery data.
 // Uses transaction-safe approach to handle race conditions between discovery and scan.
 func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostRepository,
-	host *Host, jobID uuid.UUID) ([]*db.PortScan, error) {
+	host *Host, jobID uuid.UUID) (*db.Host, []*db.PortScan, error) {
 	ipAddr := db.IPAddr{IP: net.ParseIP(host.Address)}
 
 	dbHost, err := getOrCreateHostSafely(ctx, database, hostRepo, ipAddr, host)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get or create host %s: %w", host.Address, err)
+		return nil, nil, fmt.Errorf("failed to get or create host %s: %w", host.Address, err)
 	}
 
 	// Persist OS detection data when nmap returned results.
@@ -795,7 +804,7 @@ func processHostForScan(ctx context.Context, database *db.DB, hostRepo *db.HostR
 		portScans = append(portScans, portScan)
 	}
 
-	return portScans, nil
+	return dbHost, portScans, nil
 }
 
 // persistOSData writes OS detection fields from a scan Host onto the db.Host record.
@@ -835,27 +844,53 @@ func getOrCreateHostSafely(ctx context.Context, _ *db.DB, hostRepo *db.HostRepos
 // storeHostResults stores host and port scan results in the database.
 // storeHostResults stores host and port scan results in the database,
 // updating OS fields on the host record when OS detection data is present.
-func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hosts []Host) error {
+// It returns the slice of db.Host records that were successfully stored,
+// so callers can run post-scan enrichment on them.
+func storeHostResults(ctx context.Context, database *db.DB, jobID uuid.UUID, hosts []Host) ([]*db.Host, error) {
 	hostRepo := db.NewHostRepository(database)
 	portRepo := db.NewPortScanRepository(database)
 
 	var allPortScans []*db.PortScan
+	var storedHosts []*db.Host
 
 	for i := range hosts {
-		portScans, err := processHostForScan(ctx, database, hostRepo, &hosts[i], jobID)
+		dbHost, portScans, err := processHostForScan(ctx, database, hostRepo, &hosts[i], jobID)
 		if err != nil {
 			logging.Error("Failed to process host", "address", hosts[i].Address, "error", err)
 			continue
 		}
 		allPortScans = append(allPortScans, portScans...)
+		if dbHost != nil {
+			storedHosts = append(storedHosts, dbHost)
+		}
 	}
 
 	// Batch insert all port scans
 	if len(allPortScans) > 0 {
 		if err := portRepo.CreateBatch(ctx, allPortScans); err != nil {
-			return fmt.Errorf("failed to store port scan results: %w", err)
+			return nil, fmt.Errorf("failed to store port scan results: %w", err)
 		}
 	}
 
-	return nil
+	return storedHosts, nil
+}
+
+// runDNSEnrichment creates a short-lived DNS enricher and enriches the given
+// hosts. It is intended to be called in a goroutine after scan results are
+// stored. Any error is only logged, never returned.
+func runDNSEnrichment(database *db.DB, hosts []*db.Host) {
+	defer func() {
+		if r := recover(); r != nil {
+			logging.Error("panic in DNS enrichment goroutine", "error", r)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	resolver := internaldns.New(database)
+	dnsRepo := db.NewDNSRepository(database)
+	hostRepo := db.NewHostRepository(database)
+	enricher := enrichment.NewDNSEnricher(resolver, dnsRepo, hostRepo)
+	enricher.EnrichHosts(ctx, hosts)
 }

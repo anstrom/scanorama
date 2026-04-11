@@ -71,6 +71,13 @@ type HostWithDetails = HostResponse & {
   response_time_avg_ms?: number | null;
   timeout_count?: number;
   groups?: Array<{ id: string; name: string; color?: string }>;
+  dns_records?: Array<{
+    id: string;
+    record_type: string;
+    value: string;
+    ttl?: number;
+    resolved_at: string;
+  }>;
 };
 
 const PAGE_SIZE = 25;
@@ -634,6 +641,30 @@ function HostDetailPanel({
               );
             })()}
           </section>
+
+          {/* DNS Records */}
+          {(h.dns_records ?? []).length > 0 && (
+            <section>
+              <h3 className="text-xs font-medium text-text-primary mb-3">
+                DNS Records
+              </h3>
+              <div className="space-y-1">
+                {(h.dns_records ?? []).map((rec) => (
+                  <div
+                    key={rec.id}
+                    className="flex items-start gap-2 text-xs py-0.5"
+                  >
+                    <span className="text-text-muted w-10 shrink-0 font-mono">
+                      {rec.record_type}
+                    </span>
+                    <span className="text-text-secondary font-mono break-all">
+                      {rec.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Scan History */}
           <section>

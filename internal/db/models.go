@@ -662,6 +662,16 @@ const (
 	ProtocolUDP = "udp"
 )
 
+// DNSRecord represents one resolved DNS record for a host.
+type DNSRecord struct {
+	ID         uuid.UUID `db:"id"          json:"id"`
+	HostID     uuid.UUID `db:"host_id"     json:"host_id"`
+	RecordType string    `db:"record_type" json:"record_type"`
+	Value      string    `db:"value"       json:"value"`
+	TTL        *int      `db:"ttl"         json:"ttl,omitempty"`
+	ResolvedAt time.Time `db:"resolved_at" json:"resolved_at"`
+}
+
 // HostHistoryEvent constants.
 const (
 	HostEventDiscovered   = "discovered"

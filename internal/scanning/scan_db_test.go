@@ -357,7 +357,7 @@ func TestStoreHostResults_EmptyHosts(t *testing.T) {
 	ctx := context.Background()
 	jobID := uuid.New()
 
-	err := storeHostResults(ctx, database, jobID, []Host{})
+	_, err := storeHostResults(ctx, database, jobID, []Host{})
 	assert.NoError(t, err, "should handle empty host list gracefully")
 }
 
@@ -381,7 +381,7 @@ func TestStoreHostResults_HostWithNoPorts(t *testing.T) {
 		},
 	}
 
-	err := storeHostResults(ctx, database, jobID, hosts)
+	_, err := storeHostResults(ctx, database, jobID, hosts)
 	assert.NoError(t, err, "should handle host with no ports")
 
 	// Verify host was still created
