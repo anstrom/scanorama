@@ -43,9 +43,7 @@ func New(database *db.DB, logger *slog.Logger, metricsManager *metrics.Registry)
 	hm.health = NewHealthHandler(database, logger, metricsManager)
 	hm.scan = NewScanHandler(services.NewScanService(db.NewScanRepository(database), logger), logger, metricsManager)
 	hm.host = NewHostHandler(services.NewHostService(db.NewHostRepository(database), logger), logger, metricsManager).
-		WithDNSRepository(db.NewDNSRepository(database)).
-		WithBannerRepository(db.NewBannerRepository(database)).
-		WithSNMPRepository(db.NewSNMPRepository(database))
+		WithDNSRepository(db.NewDNSRepository(database))
 	hm.discovery = NewDiscoveryHandler(db.NewDiscoveryRepository(database), logger, metricsManager)
 	hm.profile = NewProfileHandler(
 		services.NewProfileService(db.NewProfileRepository(database), logger), logger, metricsManager)

@@ -369,7 +369,7 @@ func TestHostRepository_GetHost_PopulatesTags(t *testing.T) {
 				now, now, "up", // first_seen, last_seen, status
 				nil, nil, 0, // status_changed_at, previous_status, timeout_count
 				pq.StringArray{"prod", "web"}, // tags
-				0, // knowledge_score
+				0,                             // knowledge_score
 			))
 
 	// fetchHostPorts — no ports.

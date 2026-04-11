@@ -60,6 +60,16 @@ type PortCount struct {
 }
 
 // GetStatsSummary handles GET /api/v1/stats/summary.
+//
+//	@Summary		Get statistics summary
+//	@Description	Returns aggregated statistics including host counts by status and OS family,
+//	@Description	top open ports, stale host count, average scan duration, average knowledge
+//	@Description	score, and the distribution of knowledge scores across four bands.
+//	@Tags			stats
+//	@Produce		json
+//	@Success		200	{object}	StatsSummaryResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Router			/stats/summary [get]
 func (h *StatsHandler) GetStatsSummary(w http.ResponseWriter, r *http.Request) {
 	response := StatsSummaryResponse{
 		HostsByStatus:   make(map[string]int),
