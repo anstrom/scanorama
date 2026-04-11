@@ -1305,3 +1305,124 @@ func StartNetworkDiscovery(_ http.ResponseWriter, _ *http.Request) {}
 // @Router /networks/{networkId}/discovery [get]
 // @ID listNetworkDiscoveryJobs
 func ListNetworkDiscoveryJobs(_ http.ResponseWriter, _ *http.Request) {}
+
+// GetSmartScanSuggestions godoc
+// @Summary Get Smart Scan suggestions
+// @Description Returns fleet-wide counts of hosts in each knowledge-gap category.
+// @Tags Smart Scan
+// @Produce json
+// @Success 200 {object} SuggestionSummaryResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /smart-scan/suggestions [get]
+// @ID getSmartScanSuggestions
+func GetSmartScanSuggestions(_ http.ResponseWriter, _ *http.Request) {}
+
+// EvaluateHostStage godoc
+// @Summary Evaluate next scan stage for a host
+// @Description Returns the recommended next scan stage for the specified host.
+// @Tags Smart Scan
+// @Produce json
+// @Param id path string true "Host UUID" format(uuid)
+// @Success 200 {object} ScanStageResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /smart-scan/hosts/{id}/stage [get]
+// @ID evaluateHostStage
+func EvaluateHostStage(_ http.ResponseWriter, _ *http.Request) {}
+
+// TriggerSmartScan godoc
+// @Summary Trigger Smart Scan for a host
+// @Description Evaluates the host's knowledge gaps and queues the appropriate scan.
+// @Tags Smart Scan
+// @Produce json
+// @Param id path string true "Host UUID" format(uuid)
+// @Success 202 {object} TriggerHostResponse
+// @Success 200 {object} TriggerHostResponse "No action needed"
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 429 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /smart-scan/hosts/{id}/trigger [post]
+// @ID triggerSmartScan
+func TriggerSmartScan(_ http.ResponseWriter, _ *http.Request) {}
+
+// TriggerSmartScanBatch godoc
+// @Summary Batch trigger Smart Scan
+// @Description Queues smart scans for all eligible hosts matching the filter.
+// @Tags Smart Scan
+// @Accept json
+// @Produce json
+// @Param body body TriggerBatchRequest false "Batch filter"
+// @Success 202 {object} BatchResultResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /smart-scan/trigger-batch [post]
+// @ID triggerSmartScanBatch
+func TriggerSmartScanBatch(_ http.ResponseWriter, _ *http.Request) {}
+
+// ScanStageResponse is the response body for EvaluateHostStage.
+type ScanStageResponse struct {
+	Stage       string  `json:"stage" example:"os_detection" enums:"os_detection,port_expansion,service_scan,refresh,skip"`
+	ScanType    string  `json:"scan_type" example:"syn"`
+	Ports       string  `json:"ports" example:"1-1024"`
+	OSDetection bool    `json:"os_detection" example:"true"`
+	ProfileID   *string `json:"profile_id,omitempty" example:"linux-common"`
+	Reason      string  `json:"reason" example:"no OS information recorded"`
+}
+
+// SuggestionGroupResponse represents a count of hosts sharing a knowledge gap.
+type SuggestionGroupResponse struct {
+	Count       int    `json:"count" example:"12"`
+	Description string `json:"description" example:"Hosts with no OS information"`
+	Action      string `json:"action" example:"os_detection"`
+}
+
+// SuggestionSummaryResponse is the response body for GetSmartScanSuggestions.
+type SuggestionSummaryResponse struct {
+	NoOSInfo    SuggestionGroupResponse `json:"no_os_info"`
+	NoPorts     SuggestionGroupResponse `json:"no_ports"`
+	NoServices  SuggestionGroupResponse `json:"no_services"`
+	Stale       SuggestionGroupResponse `json:"stale"`
+	WellKnown   SuggestionGroupResponse `json:"well_known"`
+	TotalHosts  int                     `json:"total_hosts" example:"1082"`
+	GeneratedAt time.Time               `json:"generated_at"`
+}
+
+// TriggerHostResponse is the response body for TriggerSmartScan.
+type TriggerHostResponse struct {
+	HostID  string `json:"host_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Queued  bool   `json:"queued" example:"true"`
+	ScanID  string `json:"scan_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
+	Message string `json:"message,omitempty" example:"no scan needed — host knowledge is sufficient"`
+}
+
+// TriggerBatchRequest is the request body for TriggerSmartScanBatch.
+type TriggerBatchRequest struct {
+	Stage   string   `json:"stage,omitempty" example:"os_detection" enums:"os_detection,port_expansion,service_scan,refresh,skip"`
+	HostIDs []string `json:"host_ids,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Limit   int      `json:"limit,omitempty" example:"50"`
+}
+
+// BatchDetailEntryResponse records the outcome for one host in a batch.
+type BatchDetailEntryResponse struct {
+	HostID string `json:"host_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Stage  string `json:"stage" example:"os_detection"`
+	ScanID string `json:"scan_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
+	Reason string `json:"reason,omitempty" example:"skip: host knowledge is sufficient"`
+}
+
+// BatchResultResponse is the response body for TriggerSmartScanBatch.
+type BatchResultResponse struct {
+	Queued  int                        `json:"queued" example:"15"`
+	Skipped int                        `json:"skipped" example:"51"`
+	Details []BatchDetailEntryResponse `json:"details"`
+}
