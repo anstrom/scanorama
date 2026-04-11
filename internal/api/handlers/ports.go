@@ -68,9 +68,6 @@ func (h *PortHandler) ListPorts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to list ports: %w", err))
 		return
 	}
-	if ports == nil {
-		ports = []*db.PortDefinition{}
-	}
 
 	type listResponse struct {
 		Ports      []*db.PortDefinition `json:"ports"`
