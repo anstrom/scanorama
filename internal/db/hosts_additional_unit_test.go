@@ -473,7 +473,7 @@ func TestListHosts_WithVendorFilter(t *testing.T) {
 
 // ── GetHost success path (exercises applyHostScanVars) ────────────────────────
 
-// getHostColumns lists the 25 columns returned by the GetHost SELECT in the
+// getHostColumns lists the 26 columns returned by the GetHost SELECT in the
 // same order they are scanned into hostScanVars / Host fields.
 var getHostColumns = []string{
 	"id", "ip_address", "hostname", "mac_address", "vendor",
@@ -485,6 +485,7 @@ var getHostColumns = []string{
 	"first_seen", "last_seen", "status",
 	"status_changed_at", "previous_status", "timeout_count",
 	"tags",
+	"knowledge_score",
 }
 
 func TestGetHost_Success(t *testing.T) {
@@ -520,6 +521,7 @@ func TestGetHost_Success(t *testing.T) {
 			now, now, "up",
 			&now, &prevStatus, 3,
 			pq.StringArray{},
+			60, // knowledge_score
 		))
 
 	// fetchHostPorts — return empty result set (no ports for this host).

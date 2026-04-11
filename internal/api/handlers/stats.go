@@ -28,13 +28,23 @@ func NewStatsHandler(database *db.DB, logger *slog.Logger) *StatsHandler {
 	}
 }
 
+// KnowledgeScoreDistribution holds host counts across four score bands.
+type KnowledgeScoreDistribution struct {
+	Band0to25   int `json:"0_25"`
+	Band25to50  int `json:"25_50"`
+	Band50to75  int `json:"50_75"`
+	Band75to100 int `json:"75_100"`
+}
+
 // StatsSummaryResponse holds the aggregated statistics summary.
 type StatsSummaryResponse struct {
-	HostsByStatus    map[string]int  `json:"hosts_by_status"`
-	HostsByOSFamily  []OSFamilyCount `json:"hosts_by_os_family"`
-	TopPorts         []PortCount     `json:"top_ports"`
-	StaleHostCount   int             `json:"stale_host_count"`
-	AvgScanDurationS float64         `json:"avg_scan_duration_s"`
+	HostsByStatus              map[string]int             `json:"hosts_by_status"`
+	HostsByOSFamily            []OSFamilyCount            `json:"hosts_by_os_family"`
+	TopPorts                   []PortCount                `json:"top_ports"`
+	StaleHostCount             int                        `json:"stale_host_count"`
+	AvgScanDurationS           float64                    `json:"avg_scan_duration_s"`
+	AvgKnowledgeScore          float64                    `json:"avg_knowledge_score"`
+	KnowledgeScoreDistribution KnowledgeScoreDistribution `json:"knowledge_score_distribution"`
 }
 
 // OSFamilyCount holds a count for a given OS family.
@@ -50,6 +60,16 @@ type PortCount struct {
 }
 
 // GetStatsSummary handles GET /api/v1/stats/summary.
+//
+//	@Summary		Get statistics summary
+//	@Description	Returns aggregated statistics including host counts by status and OS family,
+//	@Description	top open ports, stale host count, average scan duration, average knowledge
+//	@Description	score, and the distribution of knowledge scores across four bands.
+//	@Tags			stats
+//	@Produce		json
+//	@Success		200	{object}	StatsSummaryResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Router			/stats/summary [get]
 func (h *StatsHandler) GetStatsSummary(w http.ResponseWriter, r *http.Request) {
 	response := StatsSummaryResponse{
 		HostsByStatus:   make(map[string]int),
@@ -88,6 +108,14 @@ func (h *StatsHandler) GetStatsSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.AvgScanDurationS = avgDuration
+
+	avgScore, dist, err := h.queryKnowledgeScoreStats(r.Context())
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	response.AvgKnowledgeScore = avgScore
+	response.KnowledgeScoreDistribution = dist
 
 	writeJSON(w, r, http.StatusOK, response)
 }
@@ -204,4 +232,36 @@ func (h *StatsHandler) queryAvgScanDuration(ctx context.Context) (float64, error
 		return avg.Float64, nil
 	}
 	return 0, nil
+}
+
+func (h *StatsHandler) queryKnowledgeScoreStats(
+	ctx context.Context,
+) (float64, KnowledgeScoreDistribution, error) {
+	ctx, cancel := context.WithTimeout(ctx, statsQueryTimeout)
+	defer cancel()
+
+	var avg sql.NullFloat64
+	var d0, d25, d50, d75 int
+	row := h.db.QueryRowContext(ctx, `
+		SELECT
+			AVG(knowledge_score),
+			COUNT(*) FILTER (WHERE knowledge_score < 25),
+			COUNT(*) FILTER (WHERE knowledge_score >= 25 AND knowledge_score < 50),
+			COUNT(*) FILTER (WHERE knowledge_score >= 50 AND knowledge_score < 75),
+			COUNT(*) FILTER (WHERE knowledge_score >= 75)
+		FROM hosts
+	`)
+	if err := row.Scan(&avg, &d0, &d25, &d50, &d75); err != nil {
+		return 0, KnowledgeScoreDistribution{}, err
+	}
+	var avgScore float64
+	if avg.Valid {
+		avgScore = avg.Float64
+	}
+	return avgScore, KnowledgeScoreDistribution{
+		Band0to25:   d0,
+		Band25to50:  d25,
+		Band50to75:  d50,
+		Band75to100: d75,
+	}, nil
 }

@@ -311,6 +311,7 @@ func (r *HostRepository) ListHosts(
 			h.previous_status,
 			h.timeout_count,
 			h.tags,
+			h.knowledge_score,
 			CASE WHEN COUNT(DISTINCT ps.id) = 0 THEN NULL
 			     ELSE COUNT(DISTINCT ps.id) FILTER (WHERE ps.state = 'open')
 			END AS open_ports,
@@ -340,7 +341,7 @@ func (r *HostRepository) ListHosts(
 			h.os_details, h.discovery_method,
 			h.response_time_ms, h.response_time_min_ms, h.response_time_max_ms, h.response_time_avg_ms,
 			h.ignore_scanning, h.first_seen, h.last_seen, h.status,
-			h.status_changed_at, h.previous_status, h.timeout_count, h.tags
+			h.status_changed_at, h.previous_status, h.timeout_count, h.tags, h.knowledge_score
 	`
 
 	// Resolve ORDER BY clause from validated sort parameters.
@@ -573,7 +574,8 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 			h.status_changed_at,
 			h.previous_status,
 			h.timeout_count,
-			h.tags
+			h.tags,
+			h.knowledge_score
 		FROM hosts h
 		WHERE h.id = $1
 	`
@@ -607,6 +609,7 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 		&vars.previousStatus,
 		&vars.timeoutCount,
 		&host.Tags,
+		&host.KnowledgeScore,
 	)
 	if err != nil {
 		if stderrors.Is(err, sql.ErrNoRows) {
@@ -1109,6 +1112,7 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 			&previousStatus,
 			&timeoutCount,
 			&host.Tags,
+			&host.KnowledgeScore,
 			&openPorts,
 			&totalPortsScanned,
 			&scanCount,
@@ -1306,4 +1310,38 @@ func (r *HostRepository) GetHostGroups(ctx context.Context, hostID uuid.UUID) ([
 		return nil, fmt.Errorf("iterate host groups: %w", err)
 	}
 	return groups, nil
+}
+
+// RecalculateKnowledgeScore recomputes the knowledge_score for a single host
+// using a SQL expression that joins enrichment tables directly. The score is
+// a 0–100 integer awarded in five 20-point increments:
+//   - OS family is known
+//   - At least one open port has been observed
+//   - At least one port banner with a service name exists
+//   - Host was seen within the last 7 days (freshness)
+//   - Banner or SNMP data is present
+func (r *HostRepository) RecalculateKnowledgeScore(ctx context.Context, hostID uuid.UUID) error {
+	const query = `
+		UPDATE hosts h
+		SET knowledge_score = (
+			CASE WHEN h.os_family IS NOT NULL AND h.os_family != '' THEN 20 ELSE 0 END +
+			CASE WHEN EXISTS(
+				SELECT 1 FROM port_scans ps WHERE ps.host_id = h.id AND ps.state = 'open'
+			) THEN 20 ELSE 0 END +
+			CASE WHEN EXISTS(
+				SELECT 1 FROM port_banners pb WHERE pb.host_id = h.id AND pb.service IS NOT NULL
+			) THEN 20 ELSE 0 END +
+			CASE WHEN h.last_seen > NOW() - INTERVAL '7 days' THEN 20 ELSE 0 END +
+			CASE WHEN (
+				EXISTS(SELECT 1 FROM port_banners pb2 WHERE pb2.host_id = h.id) OR
+				EXISTS(SELECT 1 FROM host_snmp_data sd WHERE sd.host_id = h.id)
+			) THEN 20 ELSE 0 END
+		)
+		WHERE h.id = $1
+	`
+	_, err := r.db.ExecContext(ctx, query, hostID)
+	if err != nil {
+		return sanitizeDBError("recalculate knowledge score", err)
+	}
+	return nil
 }

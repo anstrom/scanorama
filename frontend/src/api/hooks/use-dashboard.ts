@@ -23,12 +23,21 @@ export interface PortCount {
   count: number;
 }
 
+export interface KnowledgeScoreDistribution {
+  '0_25': number;
+  '25_50': number;
+  '50_75': number;
+  '75_100': number;
+}
+
 export interface StatsSummary {
   hosts_by_status: Record<string, number>;
   hosts_by_os_family: OSFamilyCount[];
   top_ports: PortCount[];
   stale_host_count: number;
   avg_scan_duration_s: number;
+  avg_knowledge_score: number;
+  knowledge_score_distribution: KnowledgeScoreDistribution;
 }
 
 export function useStatsSummary() {

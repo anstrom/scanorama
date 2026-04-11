@@ -220,6 +220,8 @@ type HostResponse struct {
 	Certificates []CertificateResponse `json:"certificates,omitempty"`
 	// SNMPData is populated when SNMP enrichment has run for this host.
 	SNMPData *SNMPDataResponse `json:"snmp_data,omitempty"`
+	// KnowledgeScore is a 0-100 integer indicating how much is known about this host.
+	KnowledgeScore int `json:"knowledge_score" example:"60"`
 }
 
 // ProfileResponse represents a scan profile

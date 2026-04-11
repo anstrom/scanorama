@@ -995,6 +995,11 @@ export interface components {
             id?: string;
             /** @example 192.168.1.100 */
             ip_address?: string;
+            /**
+             * @description KnowledgeScore is a 0-100 integer indicating how much is known about this host.
+             * @example 60
+             */
+            knowledge_score?: number;
             last_seen?: string;
             /** @example 00:1B:44:11:3A:B7 */
             mac_address?: string;

@@ -124,6 +124,7 @@ type HostResponse struct {
 	Banners           []*db.PortBanner      `json:"banners"`
 	Certificates      []*db.Certificate     `json:"certificates"`
 	SNMPData          *db.HostSNMPData      `json:"snmp_data,omitempty"`
+	KnowledgeScore    int                   `json:"knowledge_score"`
 }
 
 // HostScanResponse represents a scan associated with a host.
@@ -656,6 +657,8 @@ func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 		response.Vendor = *host.Vendor
 	}
 	populateResponseTimeFields(&response, host)
+
+	response.KnowledgeScore = host.KnowledgeScore
 
 	return response
 }

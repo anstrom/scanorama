@@ -36,7 +36,7 @@ func statsRequest(t *testing.T) *http.Request {
 	return req.WithContext(context.WithValue(req.Context(), ContextKey("request_id"), "test-id"))
 }
 
-// expectAllStatsQueries registers all five stats queries in order with happy-path defaults.
+// expectAllStatsQueries registers all six stats queries in order with happy-path defaults.
 func expectAllStatsQueries(mock sqlmock.Sqlmock) {
 	mock.ExpectQuery("SELECT status, COUNT").
 		WillReturnRows(sqlmock.NewRows([]string{"status", "count"}).
@@ -59,6 +59,10 @@ func expectAllStatsQueries(mock sqlmock.Sqlmock) {
 
 	mock.ExpectQuery("SELECT AVG").
 		WillReturnRows(sqlmock.NewRows([]string{"avg"}).AddRow(45.5))
+
+	mock.ExpectQuery("SELECT").
+		WillReturnRows(sqlmock.NewRows([]string{"avg", "d0", "d25", "d50", "d75"}).
+			AddRow(60.0, 2, 3, 5, 3))
 }
 
 // ── GetStatsSummary ────────────────────────────────────────────────────────────
@@ -103,6 +107,9 @@ func TestStatsHandler_GetStatsSummary_EmptyDB(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectQuery("SELECT AVG").
 		WillReturnRows(sqlmock.NewRows([]string{"avg"}).AddRow(nil)) // NULL avg
+	mock.ExpectQuery("SELECT").
+		WillReturnRows(sqlmock.NewRows([]string{"avg", "d0", "d25", "d50", "d75"}).
+			AddRow(nil, 0, 0, 0, 0)) // empty DB
 
 	rr := httptest.NewRecorder()
 	h.GetStatsSummary(rr, statsRequest(t))
@@ -194,6 +201,27 @@ func TestStatsHandler_GetStatsSummary_AvgDurationQueryError(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestStatsHandler_GetStatsSummary_KnowledgeQueryError(t *testing.T) {
+	h, mock := newStatsHandlerWithMock(t)
+	mock.ExpectQuery("SELECT status, COUNT").
+		WillReturnRows(sqlmock.NewRows([]string{"status", "count"}))
+	mock.ExpectQuery("SELECT os_family").
+		WillReturnRows(sqlmock.NewRows([]string{"os_family", "cnt"}))
+	mock.ExpectQuery("SELECT port").
+		WillReturnRows(sqlmock.NewRows([]string{"port", "cnt"}))
+	mock.ExpectQuery("SELECT COUNT").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery("SELECT AVG").
+		WillReturnRows(sqlmock.NewRows([]string{"avg"}).AddRow(0))
+	mock.ExpectQuery("SELECT").WillReturnError(fmt.Errorf("db error"))
+
+	rr := httptest.NewRecorder()
+	h.GetStatsSummary(rr, statsRequest(t))
+
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestStatsHandler_GetStatsSummary_ResponseShape(t *testing.T) {
 	h, mock := newStatsHandlerWithMock(t)
 	expectAllStatsQueries(mock)
@@ -211,6 +239,8 @@ func TestStatsHandler_GetStatsSummary_ResponseShape(t *testing.T) {
 	assert.Contains(t, raw, "top_ports")
 	assert.Contains(t, raw, "stale_host_count")
 	assert.Contains(t, raw, "avg_scan_duration_s")
+	assert.Contains(t, raw, "avg_knowledge_score")
+	assert.Contains(t, raw, "knowledge_score_distribution")
 }
 
 // ── NewStatsHandler ────────────────────────────────────────────────────────────
