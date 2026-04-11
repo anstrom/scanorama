@@ -338,6 +338,11 @@ definitions:
       ip_address:
         example: 192.168.1.100
         type: string
+      knowledge_score:
+        description: KnowledgeScore is a 0-100 integer indicating how much is known
+          about this host.
+        example: 60
+        type: integer
       last_seen:
         type: string
       mac_address:

@@ -354,7 +354,7 @@ func TestHostRepository_GetHost_PopulatesTags(t *testing.T) {
 	id := uuid.New()
 	now := time.Now().UTC()
 
-	// Main host SELECT — includes the tags column as the 25th column.
+	// Main host SELECT — includes the tags column and knowledge_score column.
 	mock.ExpectQuery("SELECT").
 		WillReturnRows(sqlmock.NewRows(getHostColumns).
 			AddRow(
@@ -369,6 +369,7 @@ func TestHostRepository_GetHost_PopulatesTags(t *testing.T) {
 				now, now, "up", // first_seen, last_seen, status
 				nil, nil, 0, // status_changed_at, previous_status, timeout_count
 				pq.StringArray{"prod", "web"}, // tags
+				0, // knowledge_score
 			))
 
 	// fetchHostPorts — no ports.
@@ -411,6 +412,7 @@ func TestHostRepository_GetHost_EmptyTags(t *testing.T) {
 				now, now, "up",
 				nil, nil, 0,
 				pq.StringArray{},
+				0, // knowledge_score
 			))
 
 	mock.ExpectQuery("SELECT DISTINCT").
@@ -460,6 +462,7 @@ func TestHostRepository_ScanHostRows_PopulatesTags(t *testing.T) {
 				now, now, "up",
 				nil, nil, 0,
 				pq.StringArray{"staging"},
+				0,                                    // knowledge_score
 				sql.NullInt64{Int64: 2, Valid: true}, // open_ports
 				int64(3),                             // total_ports_scanned
 				sql.NullInt64{Int64: 1, Valid: true}, // scan_count

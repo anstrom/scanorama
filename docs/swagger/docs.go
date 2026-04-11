@@ -3724,6 +3724,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "192.168.1.100"
                 },
+                "knowledge_score": {
+                    "description": "KnowledgeScore is a 0-100 integer indicating how much is known about this host.",
+                    "type": "integer",
+                    "example": 60
+                },
                 "last_seen": {
                     "type": "string"
                 },

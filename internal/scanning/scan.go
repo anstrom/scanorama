@@ -638,6 +638,12 @@ func storeScanResults(
 	// Run DNS enrichment in the background — failures are non-fatal.
 	if len(storedHosts) > 0 {
 		go runDNSEnrichment(database, storedHosts)
+		// Initial knowledge score update captures OS + ports + freshness.
+		hostIDs := make([]uuid.UUID, 0, len(storedHosts))
+		for _, h := range storedHosts {
+			hostIDs = append(hostIDs, h.ID)
+		}
+		go runKnowledgeScoreUpdate(database, hostIDs)
 	}
 
 	// Launch banner enrichment in the background — best-effort, non-blocking.
@@ -956,6 +962,14 @@ func runBannerEnrichment(database *db.DB, hosts []Host) {
 
 	if len(targets) > 0 {
 		grabber.EnrichHosts(ctx, targets)
+		// Update knowledge scores now that banners (service + enrichment factors) are stored.
+		hostRepo2 := db.NewHostRepository(database)
+		for _, t := range targets {
+			if err := hostRepo2.RecalculateKnowledgeScore(ctx, t.HostID); err != nil {
+				logging.Warn("knowledge score update failed after banner enrichment",
+					"host_id", t.HostID, "error", err)
+			}
+		}
 	}
 }
 
@@ -997,6 +1011,32 @@ func runSNMPEnrichment(database *db.DB, hosts []Host, community string) {
 		}
 		if err := enricher.EnrichHost(ctx, target); err != nil {
 			slog.Default().Warn("snmp enrichment failed", "ip", h.Address, "err", err)
+			continue
+		}
+		// Update knowledge score now that SNMP data is stored.
+		if err := hostRepo.RecalculateKnowledgeScore(ctx, dbHost.ID); err != nil {
+			slog.Default().Warn("knowledge score update failed after SNMP enrichment",
+				"host_id", dbHost.ID, "err", err)
+		}
+	}
+}
+
+// runKnowledgeScoreUpdate recalculates knowledge scores for a list of hosts.
+// Intended to be called in a goroutine after scan results are stored.
+func runKnowledgeScoreUpdate(database *db.DB, hostIDs []uuid.UUID) {
+	defer func() {
+		if r := recover(); r != nil {
+			logging.Error("panic in knowledge score update goroutine", "error", r)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	hostRepo := db.NewHostRepository(database)
+	for _, id := range hostIDs {
+		if err := hostRepo.RecalculateKnowledgeScore(ctx, id); err != nil {
+			logging.Warn("knowledge score update failed", "host_id", id, "error", err)
 		}
 	}
 }

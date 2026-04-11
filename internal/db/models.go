@@ -340,6 +340,9 @@ type Host struct {
 	// pq.StringArray (not []string) is required so sqlx SELECT * auto-mapping
 	// can scan a PostgreSQL TEXT[] value via its sql.Scanner implementation.
 	Tags pq.StringArray `db:"tags" json:"tags,omitempty"`
+	// KnowledgeScore is a 0-100 integer indicating how much is known about this
+	// host. Recomputed by the knowledge service after each enrichment pass.
+	KnowledgeScore int `db:"knowledge_score" json:"knowledge_score"`
 	// Computed from port_scans — latest known state per (port, protocol).
 	// Ports holds the full PortInfo for every distinct (port, protocol) seen.
 	// TotalPorts is the count of distinct (port, protocol) pairs ever seen.
