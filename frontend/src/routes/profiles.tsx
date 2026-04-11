@@ -12,7 +12,10 @@ import type { components } from "../api/types";
 import { ColumnToggle } from "../components/column-toggle";
 import type { ColumnDef } from "../components/column-toggle";
 
-type ProfileResponse = components["schemas"]["docs.ProfileResponse"];
+type ProfileResponse = components["schemas"]["docs.ProfileResponse"] & {
+  /** true when this is a built-in template profile (read-only, cannot be edited or deleted) */
+  default?: boolean;
+};
 
 const PAGE_SIZE = 25;
 
@@ -130,7 +133,7 @@ function ProfileDetailPanel({
   }
 
   function openCloneDialog() {
-    setCloneName(`Copy of ${p.name ?? ""}`);
+    setCloneName(p.default ? (p.name ?? "") : `Copy of ${p.name ?? ""}`);
     setShowCloneDialog(true);
     setActionError(null);
   }
@@ -182,11 +185,18 @@ function ProfileDetailPanel({
             <p className="text-sm font-medium text-text-primary truncate">
               {p.name ?? "\u2014"}
             </p>
-            {p.scan_type && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-accent/15 text-accent w-fit">
-                {SCAN_TYPE_SHORT_LABELS[p.scan_type] ?? p.scan_type}
-              </span>
-            )}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {p.scan_type && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-accent/15 text-accent">
+                  {SCAN_TYPE_SHORT_LABELS[p.scan_type] ?? p.scan_type}
+                </span>
+              )}
+              {p.default && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-surface-raised text-text-muted border border-border">
+                  Template
+                </span>
+              )}
+            </div>
           </div>
           <button
             type="button"
@@ -200,23 +210,38 @@ function ProfileDetailPanel({
 
         {/* Action bar */}
         <div className="flex items-center gap-2 px-5 py-3 border-b border-border shrink-0 flex-wrap">
-          <Button
-            variant="secondary"
-            onClick={() => setShowEditModal(true)}
-            className="text-xs h-7 px-3"
-          >
-            <Pencil className="h-3 w-3 mr-1" />
-            Edit
-          </Button>
+          {p.default ? (
+            /* Template profiles: Fork only (no edit or delete) */
+            <Button
+              variant="secondary"
+              onClick={openCloneDialog}
+              className="text-xs h-7 px-3"
+            >
+              <Copy className="h-3 w-3 mr-1" />
+              Fork
+            </Button>
+          ) : (
+            /* User profiles: Edit, Clone, Delete */
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => setShowEditModal(true)}
+                className="text-xs h-7 px-3"
+              >
+                <Pencil className="h-3 w-3 mr-1" />
+                Edit
+              </Button>
 
-          <Button
-            variant="secondary"
-            onClick={openCloneDialog}
-            className="text-xs h-7 px-3"
-          >
-            <Copy className="h-3 w-3 mr-1" />
-            Clone
-          </Button>
+              <Button
+                variant="secondary"
+                onClick={openCloneDialog}
+                className="text-xs h-7 px-3"
+              >
+                <Copy className="h-3 w-3 mr-1" />
+                Clone
+              </Button>
+            </>
+          )}
 
           {showCloneDialog && (
             <form
@@ -237,7 +262,7 @@ function ProfileDetailPanel({
                 className="text-xs h-7 px-3"
                 disabled={!cloneName.trim()}
               >
-                Clone
+                {p.default ? "Fork" : "Clone"}
               </Button>
               <button
                 type="button"
@@ -249,36 +274,38 @@ function ProfileDetailPanel({
             </form>
           )}
 
-          {showDeleteConfirm ? (
-            <div className="flex items-center gap-2 ml-auto">
-              <span className="text-xs text-text-muted">
-                Delete this profile?
-              </span>
+          {!p.default && (
+            showDeleteConfirm ? (
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-xs text-text-muted">
+                  Delete this profile?
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="text-xs text-text-muted hover:text-text-secondary"
+                >
+                  Cancel
+                </button>
+                <Button
+                  variant="danger"
+                  onClick={() => void handleDelete()}
+                  loading={isDeleting}
+                  className="text-xs h-7 px-3"
+                >
+                  Delete
+                </Button>
+              </div>
+            ) : (
               <button
                 type="button"
-                onClick={() => setShowDeleteConfirm(false)}
-                className="text-xs text-text-muted hover:text-text-secondary"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="ml-auto flex items-center gap-1 text-xs text-text-muted hover:text-danger transition-colors"
               >
-                Cancel
-              </button>
-              <Button
-                variant="danger"
-                onClick={() => void handleDelete()}
-                loading={isDeleting}
-                className="text-xs h-7 px-3"
-              >
+                <Trash2 className="h-3 w-3" />
                 Delete
-              </Button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowDeleteConfirm(true)}
-              className="ml-auto flex items-center gap-1 text-xs text-text-muted hover:text-danger transition-colors"
-            >
-              <Trash2 className="h-3 w-3" />
-              Delete
-            </button>
+              </button>
+            )
           )}
 
           {actionError && (
