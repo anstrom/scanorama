@@ -38,6 +38,7 @@ func (s *Server) setupRoutes() {
 		WithScanService(services.NewScanService(db.NewScanRepository(s.database), s.logger))
 	groupHandler := apihandlers.NewGroupHandler(
 		services.NewGroupService(db.NewGroupRepository(s.database), s.logger), s.logger, s.metrics)
+	portHandler := apihandlers.NewPortHandler(db.NewPortRepository(s.database), s.logger, s.metrics)
 	handlerManager := apihandlers.New(s.database, s.logger, s.metrics).
 		WithRingBuffer(s.ringBuffer)
 	if s.scanQueue != nil {
@@ -54,6 +55,7 @@ func (s *Server) setupRoutes() {
 	s.setupProfileRoutes(api, profileHandler)
 	s.setupScheduleRoutes(api, scheduleHandler)
 	s.setupNetworkRoutes(api, networkHandler)
+	s.setupPortRoutes(api, portHandler)
 
 	api.HandleFunc("/ws", handlerManager.GeneralWebSocket).Methods("GET")
 	api.HandleFunc("/ws/scans", handlerManager.ScanWebSocket).Methods("GET")
@@ -182,6 +184,14 @@ func (s *Server) setupGroupRoutes(api *mux.Router, h *apihandlers.GroupHandler) 
 	api.HandleFunc("/groups/{id}/hosts", h.ListGroupMembers).Methods("GET")
 	api.HandleFunc("/groups/{id}/hosts", h.AddGroupMembers).Methods("POST")
 	api.HandleFunc("/groups/{id}/hosts", h.RemoveGroupMembers).Methods("DELETE")
+}
+
+// setupPortRoutes registers port definition lookup and browsing endpoints.
+func (s *Server) setupPortRoutes(api *mux.Router, h *apihandlers.PortHandler) {
+	// /ports/categories must be registered before /ports/{port} to avoid mux ambiguity.
+	api.HandleFunc("/ports/categories", h.ListPortCategories).Methods("GET")
+	api.HandleFunc("/ports", h.ListPorts).Methods("GET")
+	api.HandleFunc("/ports/{port}", h.GetPort).Methods("GET")
 }
 
 // setupDocRoutes registers Swagger documentation and alias endpoints.
