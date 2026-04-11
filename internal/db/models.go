@@ -679,3 +679,23 @@ const (
 	HostEventPortsChanged = "ports_changed"
 	HostEventServiceFound = "service_found"
 )
+
+// PortDefinition is a curated port/protocol entry with service metadata.
+type PortDefinition struct {
+	Port        int      `db:"port"        json:"port"`
+	Protocol    string   `db:"protocol"    json:"protocol"`
+	Service     string   `db:"service"     json:"service"`
+	Description string   `db:"description" json:"description,omitempty"`
+	Category    string   `db:"category"    json:"category,omitempty"`
+	OSFamilies  []string `db:"os_families" json:"os_families,omitempty"`
+	IsStandard  bool     `db:"is_standard" json:"is_standard"`
+}
+
+// PortFilters holds query parameters for listing port definitions.
+type PortFilters struct {
+	Search    string
+	Category  string
+	Protocol  string
+	SortBy    string
+	SortOrder string
+}

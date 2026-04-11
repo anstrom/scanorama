@@ -11,6 +11,7 @@ import {
   Shield,
   ShieldOff,
   Layers,
+  Database,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const mainNav: NavItem[] = [
   { label: "Groups", href: "#/groups", icon: Layers },
   { label: "Profiles", href: "#/profiles", icon: SlidersHorizontal },
   { label: "Schedules", href: "#/schedules", icon: Clock },
+  { label: "Port Database", href: "#/ports", icon: Database },
 ];
 
 const adminNav: NavItem[] = [{ label: "Admin", href: "#/admin", icon: Shield }];
