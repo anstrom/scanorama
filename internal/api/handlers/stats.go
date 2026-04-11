@@ -30,21 +30,21 @@ func NewStatsHandler(database *db.DB, logger *slog.Logger) *StatsHandler {
 
 // KnowledgeScoreDistribution holds host counts across four score bands.
 type KnowledgeScoreDistribution struct {
-	Band0to25  int `json:"0_25"`
-	Band25to50 int `json:"25_50"`
-	Band50to75 int `json:"50_75"`
+	Band0to25   int `json:"0_25"`
+	Band25to50  int `json:"25_50"`
+	Band50to75  int `json:"50_75"`
 	Band75to100 int `json:"75_100"`
 }
 
 // StatsSummaryResponse holds the aggregated statistics summary.
 type StatsSummaryResponse struct {
-	HostsByStatus               map[string]int             `json:"hosts_by_status"`
-	HostsByOSFamily             []OSFamilyCount            `json:"hosts_by_os_family"`
-	TopPorts                    []PortCount                `json:"top_ports"`
-	StaleHostCount              int                        `json:"stale_host_count"`
-	AvgScanDurationS            float64                    `json:"avg_scan_duration_s"`
-	AvgKnowledgeScore           float64                    `json:"avg_knowledge_score"`
-	KnowledgeScoreDistribution  KnowledgeScoreDistribution `json:"knowledge_score_distribution"`
+	HostsByStatus              map[string]int             `json:"hosts_by_status"`
+	HostsByOSFamily            []OSFamilyCount            `json:"hosts_by_os_family"`
+	TopPorts                   []PortCount                `json:"top_ports"`
+	StaleHostCount             int                        `json:"stale_host_count"`
+	AvgScanDurationS           float64                    `json:"avg_scan_duration_s"`
+	AvgKnowledgeScore          float64                    `json:"avg_knowledge_score"`
+	KnowledgeScoreDistribution KnowledgeScoreDistribution `json:"knowledge_score_distribution"`
 }
 
 // OSFamilyCount holds a count for a given OS family.

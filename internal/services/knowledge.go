@@ -52,10 +52,10 @@ func (s *KnowledgeService) RecalculateScores(ctx context.Context, hostIDs []uuid
 // ScoreInput holds the boolean inputs used in the pure score calculation.
 // This type is exposed for testing without database access.
 type ScoreInput struct {
-	HasOSFamily  bool
-	HasOpenPorts bool
-	HasServices  bool
-	IsFresh      bool // last_seen within 7 days
+	HasOSFamily   bool
+	HasOpenPorts  bool
+	HasServices   bool
+	IsFresh       bool // last_seen within 7 days
 	HasEnrichment bool // banners or SNMP data present
 }
 
