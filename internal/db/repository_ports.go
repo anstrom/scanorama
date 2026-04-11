@@ -63,12 +63,9 @@ func scanPortRow(rows *sql.Rows) (*PortDefinition, error) {
 	return p, nil
 }
 
-// ListPortDefinitions returns port definitions filtered by the given criteria.
-func (r *PortRepository) ListPortDefinitions(
-	ctx context.Context, filters PortFilters, offset, limit int,
-) ([]*PortDefinition, int64, error) {
+// buildPortFilterClause constructs the WHERE clause and args for port filters.
+func buildPortFilterClause(filters PortFilters) (whereClause string, args []interface{}) {
 	var where []string
-	var args []interface{}
 	argIdx := 1
 
 	if filters.Search != "" {
@@ -90,11 +87,22 @@ func (r *PortRepository) ListPortDefinitions(
 		args = append(args, filters.Protocol)
 		argIdx++
 	}
+	if filters.IsStandard != nil {
+		where = append(where, fmt.Sprintf("is_standard = $%d", argIdx))
+		args = append(args, *filters.IsStandard)
+	}
 
-	whereClause := ""
 	if len(where) > 0 {
 		whereClause = "WHERE " + strings.Join(where, " AND ")
 	}
+	return whereClause, args
+}
+
+// ListPortDefinitions returns port definitions filtered by the given criteria.
+func (r *PortRepository) ListPortDefinitions(
+	ctx context.Context, filters PortFilters, offset, limit int,
+) ([]*PortDefinition, int64, error) {
+	whereClause, args := buildPortFilterClause(filters)
 
 	var total int64
 	countQ := fmt.Sprintf("SELECT COUNT(*) FROM port_definitions %s", whereClause)
@@ -113,10 +121,11 @@ func (r *PortRepository) ListPortDefinitions(
 		}
 	}
 
+	limitIdx := len(args) + 1
 	listQ := fmt.Sprintf(
 		`SELECT port, protocol, service, description, category, os_families, is_standard
 		 FROM port_definitions %s %s LIMIT $%d OFFSET $%d`,
-		whereClause, orderBy, argIdx, argIdx+1)
+		whereClause, orderBy, limitIdx, limitIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := r.db.QueryContext(ctx, listQ, args...)

@@ -642,7 +642,7 @@ func storeScanResults(
 
 	// Launch banner enrichment in the background — best-effort, non-blocking.
 	go runBannerEnrichment(database, result.Hosts)
-	go runSNMPEnrichment(database, result.Hosts)
+	go runSNMPEnrichment(database, result.Hosts, config.SNMPCommunity)
 
 	return nil
 }
@@ -966,7 +966,7 @@ const (
 
 // runSNMPEnrichment probes hosts that had port 161 open during the scan.
 // Runs in a goroutine; errors are logged but not propagated.
-func runSNMPEnrichment(database *db.DB, hosts []Host) {
+func runSNMPEnrichment(database *db.DB, hosts []Host, community string) {
 	defer func() {
 		if r := recover(); r != nil {
 			logging.Error("panic in SNMP enrichment goroutine", "error", r)
@@ -991,8 +991,9 @@ func runSNMPEnrichment(database *db.DB, hosts []Host) {
 			continue
 		}
 		target := enrichment.SNMPTarget{
-			HostID: dbHost.ID,
-			IP:     h.Address,
+			HostID:    dbHost.ID,
+			IP:        h.Address,
+			Community: community,
 		}
 		if err := enricher.EnrichHost(ctx, target); err != nil {
 			slog.Default().Warn("snmp enrichment failed", "ip", h.Address, "err", err)

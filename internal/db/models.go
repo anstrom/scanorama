@@ -687,17 +687,18 @@ type PortDefinition struct {
 	Service     string   `db:"service"     json:"service"`
 	Description string   `db:"description" json:"description,omitempty"`
 	Category    string   `db:"category"    json:"category,omitempty"`
-	OSFamilies  []string `db:"os_families" json:"os_families,omitempty"`
+	OSFamilies  []string `db:"os_families" json:"os_families"`
 	IsStandard  bool     `db:"is_standard" json:"is_standard"`
 }
 
 // PortFilters holds query parameters for listing port definitions.
 type PortFilters struct {
-	Search    string
-	Category  string
-	Protocol  string
-	SortBy    string
-	SortOrder string
+	Search     string
+	Category   string
+	Protocol   string
+	IsStandard *bool
+	SortBy     string
+	SortOrder  string
 }
 
 // Certificate is a TLS certificate record captured from a host/port.

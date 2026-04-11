@@ -91,6 +91,9 @@ scanning:
     requests_per_second: 100
     burst_size: 200
 
+  # SNMPv2c community string used for post-scan SNMP enrichment
+  snmp_community: "public"
+
 # API Server Configuration
 api:
   # Enable REST API server
