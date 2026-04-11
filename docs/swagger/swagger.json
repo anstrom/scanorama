@@ -3182,6 +3182,233 @@
                 }
             }
         },
+        "/smart-scan/hosts/{id}/stage": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns the recommended next scan stage for the specified host.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Smart Scan"
+                ],
+                "summary": "Evaluate next scan stage for a host",
+                "operationId": "evaluateHostStage",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Host UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ScanStageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/smart-scan/hosts/{id}/trigger": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Evaluates the host's knowledge gaps and queues the appropriate scan.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Smart Scan"
+                ],
+                "summary": "Trigger Smart Scan for a host",
+                "operationId": "triggerSmartScan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Host UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No action needed",
+                        "schema": {
+                            "$ref": "#/definitions/docs.TriggerHostResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/docs.TriggerHostResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/smart-scan/suggestions": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns fleet-wide counts of hosts in each knowledge-gap category.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Smart Scan"
+                ],
+                "summary": "Get Smart Scan suggestions",
+                "operationId": "getSmartScanSuggestions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.SuggestionSummaryResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/smart-scan/trigger-batch": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Queues smart scans for all eligible hosts matching the filter.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Smart Scan"
+                ],
+                "summary": "Batch trigger Smart Scan",
+                "operationId": "triggerSmartScanBatch",
+                "parameters": [
+                    {
+                        "description": "Batch filter",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/docs.TriggerBatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/docs.BatchResultResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/status": {
             "get": {
                 "description": "Returns detailed system status information",
@@ -3263,6 +3490,46 @@
                 },
                 "timestamp": {
                     "type": "string"
+                }
+            }
+        },
+        "docs.BatchDetailEntryResponse": {
+            "type": "object",
+            "properties": {
+                "host_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "reason": {
+                    "type": "string",
+                    "example": "skip: host knowledge is sufficient"
+                },
+                "scan_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                },
+                "stage": {
+                    "type": "string",
+                    "example": "os_detection"
+                }
+            }
+        },
+        "docs.BatchResultResponse": {
+            "type": "object",
+            "properties": {
+                "details": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.BatchDetailEntryResponse"
+                    }
+                },
+                "queued": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "skipped": {
+                    "type": "integer",
+                    "example": 51
                 }
             }
         },
@@ -4325,6 +4592,42 @@
                 }
             }
         },
+        "docs.ScanStageResponse": {
+            "type": "object",
+            "properties": {
+                "os_detection": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "ports": {
+                    "type": "string",
+                    "example": "1-1024"
+                },
+                "profile_id": {
+                    "type": "string",
+                    "example": "linux-common"
+                },
+                "reason": {
+                    "type": "string",
+                    "example": "no OS information recorded"
+                },
+                "scan_type": {
+                    "type": "string",
+                    "example": "syn"
+                },
+                "stage": {
+                    "type": "string",
+                    "enum": [
+                        "os_detection",
+                        "port_expansion",
+                        "service_scan",
+                        "refresh",
+                        "skip"
+                    ],
+                    "example": "os_detection"
+                }
+            }
+        },
         "docs.ScheduleResponse": {
             "type": "object",
             "properties": {
@@ -4412,6 +4715,100 @@
                 "version": {
                     "type": "string",
                     "example": "0.7.0"
+                }
+            }
+        },
+        "docs.SuggestionGroupResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "example": "os_detection"
+                },
+                "count": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Hosts with no OS information"
+                }
+            }
+        },
+        "docs.SuggestionSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "generated_at": {
+                    "type": "string"
+                },
+                "no_os_info": {
+                    "$ref": "#/definitions/docs.SuggestionGroupResponse"
+                },
+                "no_ports": {
+                    "$ref": "#/definitions/docs.SuggestionGroupResponse"
+                },
+                "no_services": {
+                    "$ref": "#/definitions/docs.SuggestionGroupResponse"
+                },
+                "stale": {
+                    "$ref": "#/definitions/docs.SuggestionGroupResponse"
+                },
+                "total_hosts": {
+                    "type": "integer",
+                    "example": 1082
+                },
+                "well_known": {
+                    "$ref": "#/definitions/docs.SuggestionGroupResponse"
+                }
+            }
+        },
+        "docs.TriggerBatchRequest": {
+            "type": "object",
+            "properties": {
+                "host_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "550e8400-e29b-41d4-a716-446655440000"
+                    ]
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "stage": {
+                    "type": "string",
+                    "enum": [
+                        "os_detection",
+                        "port_expansion",
+                        "service_scan",
+                        "refresh",
+                        "skip"
+                    ],
+                    "example": "os_detection"
+                }
+            }
+        },
+        "docs.TriggerHostResponse": {
+            "type": "object",
+            "properties": {
+                "host_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "no scan needed — host knowledge is sufficient"
+                },
+                "queued": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "scan_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440001"
                 }
             }
         },

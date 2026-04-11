@@ -11,6 +11,34 @@ definitions:
       timestamp:
         type: string
     type: object
+  docs.BatchDetailEntryResponse:
+    properties:
+      host_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      reason:
+        example: 'skip: host knowledge is sufficient'
+        type: string
+      scan_id:
+        example: 550e8400-e29b-41d4-a716-446655440001
+        type: string
+      stage:
+        example: os_detection
+        type: string
+    type: object
+  docs.BatchResultResponse:
+    properties:
+      details:
+        items:
+          $ref: '#/definitions/docs.BatchDetailEntryResponse'
+        type: array
+      queued:
+        example: 15
+        type: integer
+      skipped:
+        example: 51
+        type: integer
+    type: object
   docs.CertificateResponse:
     properties:
       host_id:
@@ -772,6 +800,33 @@ definitions:
       updated_at:
         type: string
     type: object
+  docs.ScanStageResponse:
+    properties:
+      os_detection:
+        example: true
+        type: boolean
+      ports:
+        example: 1-1024
+        type: string
+      profile_id:
+        example: linux-common
+        type: string
+      reason:
+        example: no OS information recorded
+        type: string
+      scan_type:
+        example: syn
+        type: string
+      stage:
+        enum:
+        - os_detection
+        - port_expansion
+        - service_scan
+        - refresh
+        - skip
+        example: os_detection
+        type: string
+    type: object
   docs.ScheduleResponse:
     properties:
       created_at:
@@ -834,6 +889,72 @@ definitions:
         type: string
       version:
         example: 0.7.0
+        type: string
+    type: object
+  docs.SuggestionGroupResponse:
+    properties:
+      action:
+        example: os_detection
+        type: string
+      count:
+        example: 12
+        type: integer
+      description:
+        example: Hosts with no OS information
+        type: string
+    type: object
+  docs.SuggestionSummaryResponse:
+    properties:
+      generated_at:
+        type: string
+      no_os_info:
+        $ref: '#/definitions/docs.SuggestionGroupResponse'
+      no_ports:
+        $ref: '#/definitions/docs.SuggestionGroupResponse'
+      no_services:
+        $ref: '#/definitions/docs.SuggestionGroupResponse'
+      stale:
+        $ref: '#/definitions/docs.SuggestionGroupResponse'
+      total_hosts:
+        example: 1082
+        type: integer
+      well_known:
+        $ref: '#/definitions/docs.SuggestionGroupResponse'
+    type: object
+  docs.TriggerBatchRequest:
+    properties:
+      host_ids:
+        example:
+        - 550e8400-e29b-41d4-a716-446655440000
+        items:
+          type: string
+        type: array
+      limit:
+        example: 50
+        type: integer
+      stage:
+        enum:
+        - os_detection
+        - port_expansion
+        - service_scan
+        - refresh
+        - skip
+        example: os_detection
+        type: string
+    type: object
+  docs.TriggerHostResponse:
+    properties:
+      host_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      message:
+        example: no scan needed — host knowledge is sufficient
+        type: string
+      queued:
+        example: true
+        type: boolean
+      scan_id:
+        example: 550e8400-e29b-41d4-a716-446655440001
         type: string
     type: object
   docs.UpdateNetworkRequest:
@@ -3017,6 +3138,153 @@ paths:
       summary: Enable schedule
       tags:
       - Schedules
+  /smart-scan/hosts/{id}/stage:
+    get:
+      description: Returns the recommended next scan stage for the specified host.
+      operationId: evaluateHostStage
+      parameters:
+      - description: Host UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.ScanStageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Evaluate next scan stage for a host
+      tags:
+      - Smart Scan
+  /smart-scan/hosts/{id}/trigger:
+    post:
+      description: Evaluates the host's knowledge gaps and queues the appropriate
+        scan.
+      operationId: triggerSmartScan
+      parameters:
+      - description: Host UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: No action needed
+          schema:
+            $ref: '#/definitions/docs.TriggerHostResponse'
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/docs.TriggerHostResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Trigger Smart Scan for a host
+      tags:
+      - Smart Scan
+  /smart-scan/suggestions:
+    get:
+      description: Returns fleet-wide counts of hosts in each knowledge-gap category.
+      operationId: getSmartScanSuggestions
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.SuggestionSummaryResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get Smart Scan suggestions
+      tags:
+      - Smart Scan
+  /smart-scan/trigger-batch:
+    post:
+      consumes:
+      - application/json
+      description: Queues smart scans for all eligible hosts matching the filter.
+      operationId: triggerSmartScanBatch
+      parameters:
+      - description: Batch filter
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/docs.TriggerBatchRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/docs.BatchResultResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Batch trigger Smart Scan
+      tags:
+      - Smart Scan
   /status:
     get:
       description: Returns detailed system status information

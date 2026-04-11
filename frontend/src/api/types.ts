@@ -736,6 +736,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/smart-scan/hosts/{id}/stage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Evaluate next scan stage for a host
+         * @description Returns the recommended next scan stage for the specified host.
+         */
+        get: operations["evaluateHostStage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/smart-scan/hosts/{id}/trigger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Smart Scan for a host
+         * @description Evaluates the host's knowledge gaps and queues the appropriate scan.
+         */
+        post: operations["triggerSmartScan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/smart-scan/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Smart Scan suggestions
+         * @description Returns fleet-wide counts of hosts in each knowledge-gap category.
+         */
+        get: operations["getSmartScanSuggestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/smart-scan/trigger-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch trigger Smart Scan
+         * @description Queues smart scans for all eligible hosts matching the filter.
+         */
+        post: operations["triggerSmartScanBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/status": {
         parameters: {
             query?: never;
@@ -787,6 +867,23 @@ export interface components {
                 [key: string]: unknown;
             };
             timestamp?: string;
+        };
+        "docs.BatchDetailEntryResponse": {
+            /** @example 550e8400-e29b-41d4-a716-446655440000 */
+            host_id?: string;
+            /** @example skip: host knowledge is sufficient */
+            reason?: string;
+            /** @example 550e8400-e29b-41d4-a716-446655440001 */
+            scan_id?: string;
+            /** @example os_detection */
+            stage?: string;
+        };
+        "docs.BatchResultResponse": {
+            details?: components["schemas"]["docs.BatchDetailEntryResponse"][];
+            /** @example 15 */
+            queued?: number;
+            /** @example 51 */
+            skipped?: number;
         };
         "docs.CertificateResponse": {
             host_id?: string;
@@ -1274,6 +1371,23 @@ export interface components {
             targets?: string[];
             updated_at?: string;
         };
+        "docs.ScanStageResponse": {
+            /** @example true */
+            os_detection?: boolean;
+            /** @example 1-1024 */
+            ports?: string;
+            /** @example linux-common */
+            profile_id?: string;
+            /** @example no OS information recorded */
+            reason?: string;
+            /** @example syn */
+            scan_type?: string;
+            /**
+             * @example os_detection
+             * @enum {string}
+             */
+            stage?: "os_detection" | "port_expansion" | "service_scan" | "refresh" | "skip";
+        };
         "docs.ScheduleResponse": {
             created_at?: string;
             created_by?: string;
@@ -1314,6 +1428,49 @@ export interface components {
             uptime?: string;
             /** @example 0.7.0 */
             version?: string;
+        };
+        "docs.SuggestionGroupResponse": {
+            /** @example os_detection */
+            action?: string;
+            /** @example 12 */
+            count?: number;
+            /** @example Hosts with no OS information */
+            description?: string;
+        };
+        "docs.SuggestionSummaryResponse": {
+            generated_at?: string;
+            no_os_info?: components["schemas"]["docs.SuggestionGroupResponse"];
+            no_ports?: components["schemas"]["docs.SuggestionGroupResponse"];
+            no_services?: components["schemas"]["docs.SuggestionGroupResponse"];
+            stale?: components["schemas"]["docs.SuggestionGroupResponse"];
+            /** @example 1082 */
+            total_hosts?: number;
+            well_known?: components["schemas"]["docs.SuggestionGroupResponse"];
+        };
+        "docs.TriggerBatchRequest": {
+            /**
+             * @example [
+             *       "550e8400-e29b-41d4-a716-446655440000"
+             *     ]
+             */
+            host_ids?: string[];
+            /** @example 50 */
+            limit?: number;
+            /**
+             * @example os_detection
+             * @enum {string}
+             */
+            stage?: "os_detection" | "port_expansion" | "service_scan" | "refresh" | "skip";
+        };
+        "docs.TriggerHostResponse": {
+            /** @example 550e8400-e29b-41d4-a716-446655440000 */
+            host_id?: string;
+            /** @example no scan needed — host knowledge is sufficient */
+            message?: string;
+            /** @example true */
+            queued?: boolean;
+            /** @example 550e8400-e29b-41d4-a716-446655440001 */
+            scan_id?: string;
         };
         "docs.UpdateNetworkRequest": {
             /** @example 192.168.1.0/24 */
@@ -4416,6 +4573,232 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    evaluateHostStage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Host UUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ScanStageResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    triggerSmartScan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Host UUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No action needed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.TriggerHostResponse"];
+                };
+            };
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.TriggerHostResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getSmartScanSuggestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.SuggestionSummaryResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    triggerSmartScanBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Batch filter */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["docs.TriggerBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.BatchResultResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

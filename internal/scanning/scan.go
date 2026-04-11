@@ -643,7 +643,13 @@ func storeScanResults(
 		for _, h := range storedHosts {
 			hostIDs = append(hostIDs, h.ID)
 		}
-		go runKnowledgeScoreUpdate(database, hostIDs)
+		// When a PostScanHook is registered it owns knowledge-score
+		// recalculation; otherwise fall back to the built-in updater.
+		if hasPostScanHook() {
+			go callPostScanHook(database, hostIDs)
+		} else {
+			go runKnowledgeScoreUpdate(database, hostIDs)
+		}
 	}
 
 	// Launch banner enrichment in the background — best-effort, non-blocking.

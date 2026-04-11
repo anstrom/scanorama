@@ -9,6 +9,8 @@ import (
 	_ "github.com/anstrom/scanorama/docs/swagger" // Import generated swagger docs
 	apihandlers "github.com/anstrom/scanorama/internal/api/handlers"
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/profiles"
+	"github.com/anstrom/scanorama/internal/scanning"
 	"github.com/anstrom/scanorama/internal/services"
 )
 
@@ -41,6 +43,10 @@ func (s *Server) setupRoutes() {
 	groupHandler := apihandlers.NewGroupHandler(
 		services.NewGroupService(db.NewGroupRepository(s.database), s.logger), s.logger, s.metrics)
 	portHandler := apihandlers.NewPortHandler(db.NewPortRepository(s.database), s.logger, s.metrics)
+	profileManager := profiles.NewManager(s.database)
+	smartScanSvc := services.NewSmartScanService(s.database, profileManager, s.scanQueue, s.logger)
+	scanning.SetPostScanHook(smartScanSvc.ReEvaluateHosts)
+	smartScanHandler := apihandlers.NewSmartScanHandler(smartScanSvc, s.logger)
 	handlerManager := apihandlers.New(s.database, s.logger, s.metrics).
 		WithRingBuffer(s.ringBuffer)
 	if s.scanQueue != nil {
@@ -49,6 +55,7 @@ func (s *Server) setupRoutes() {
 		networkHandler = networkHandler.WithScanQueue(s.scanQueue)
 	}
 
+	s.setupSmartScanRoutes(api, smartScanHandler)
 	s.setupScanRoutes(api, scanHandler)
 	s.setupHostRoutes(api, hostHandler)
 	s.setupTagRoutes(api, hostHandler)
@@ -86,6 +93,14 @@ func (s *Server) setupSystemRoutes(api *mux.Router) {
 	api.HandleFunc("/version", s.versionHandler).Methods("GET")
 	api.HandleFunc("/metrics", s.metricsHandler).Methods("GET")
 	s.router.Handle("/metrics", promhttp.HandlerFor(s.prom.GetRegistry(), promhttp.HandlerOpts{})).Methods("GET")
+}
+
+// setupSmartScanRoutes registers Smart Scan evaluation and trigger endpoints.
+func (s *Server) setupSmartScanRoutes(api *mux.Router, h *apihandlers.SmartScanHandler) {
+	api.HandleFunc("/smart-scan/suggestions", h.GetSuggestions).Methods("GET")
+	api.HandleFunc("/smart-scan/hosts/{id}/stage", h.EvaluateHost).Methods("GET")
+	api.HandleFunc("/smart-scan/hosts/{id}/trigger", h.TriggerHost).Methods("POST")
+	api.HandleFunc("/smart-scan/trigger-batch", h.TriggerBatch).Methods("POST")
 }
 
 // setupScanRoutes registers scan CRUD and action endpoints.
