@@ -146,6 +146,7 @@ func (g *BannerGrabber) grabTLS(ctx context.Context, t BannerTarget, port int, a
 		InsecureSkipVerify: true, //nolint:gosec // scanner needs certs from self-signed/expired endpoints
 		ServerName:         t.IP,
 	})
+	defer tlsConn.Close() //nolint:errcheck
 	if err := tlsConn.SetDeadline(time.Now().Add(bannerDialTimeout)); err != nil {
 		return
 	}

@@ -1,4 +1,4 @@
--- Migration 010: TLS certificate records per host/port
+-- Migration 013: TLS certificate records per host/port
 -- Populated by banner enrichment after scans with open HTTPS ports.
 
 CREATE TABLE IF NOT EXISTS certificates (
