@@ -21,10 +21,11 @@ type mockProfileRepo struct {
 	listProfilesFn func(
 		ctx context.Context, filters db.ProfileFilters, offset, limit int,
 	) ([]*db.ScanProfile, int64, error)
-	createProfileFn func(ctx context.Context, input db.CreateProfileInput) (*db.ScanProfile, error)
-	getProfileFn    func(ctx context.Context, id string) (*db.ScanProfile, error)
-	updateProfileFn func(ctx context.Context, id string, input db.UpdateProfileInput) (*db.ScanProfile, error)
-	deleteProfileFn func(ctx context.Context, id string) error
+	createProfileFn   func(ctx context.Context, input db.CreateProfileInput) (*db.ScanProfile, error)
+	getProfileFn      func(ctx context.Context, id string) (*db.ScanProfile, error)
+	updateProfileFn   func(ctx context.Context, id string, input db.UpdateProfileInput) (*db.ScanProfile, error)
+	deleteProfileFn   func(ctx context.Context, id string) error
+	getProfileStatsFn func(ctx context.Context, id string) (*db.ProfileStats, error)
 }
 
 func (m *mockProfileRepo) ListProfiles(
@@ -49,6 +50,13 @@ func (m *mockProfileRepo) UpdateProfile(
 
 func (m *mockProfileRepo) DeleteProfile(ctx context.Context, id string) error {
 	return m.deleteProfileFn(ctx, id)
+}
+
+func (m *mockProfileRepo) GetProfileStats(ctx context.Context, id string) (*db.ProfileStats, error) {
+	if m.getProfileStatsFn != nil {
+		return m.getProfileStatsFn(ctx, id)
+	}
+	panic("mockProfileRepo: GetProfileStats called unexpectedly")
 }
 
 // ---------------------------------------------------------------------------
@@ -309,4 +317,37 @@ func TestCloneProfile_SourceFoundWithEmptyOptions_Success(t *testing.T) {
 	assert.Equal(t, "1-1024", gotInput.Ports)
 	assert.Equal(t, db.ScanTimingPolite, gotInput.Timing)
 	assert.Nil(t, gotInput.Options, "Options should be nil when source has no options")
+}
+
+// ---------------------------------------------------------------------------
+// GetProfileStats
+// ---------------------------------------------------------------------------
+
+func TestGetProfileStats_Delegates(t *testing.T) {
+	ctx := context.Background()
+	want := &db.ProfileStats{
+		ProfileID:  "quick-scan",
+		TotalScans: 5,
+	}
+	repo := &mockProfileRepo{
+		getProfileStatsFn: func(_ context.Context, id string) (*db.ProfileStats, error) {
+			return want, nil
+		},
+	}
+	svc := NewProfileService(repo, slog.Default())
+	got, err := svc.GetProfileStats(ctx, "quick-scan")
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+}
+
+func TestGetProfileStats_PropagatesError(t *testing.T) {
+	ctx := context.Background()
+	repo := &mockProfileRepo{
+		getProfileStatsFn: func(_ context.Context, _ string) (*db.ProfileStats, error) {
+			return nil, fmt.Errorf("db error")
+		},
+	}
+	svc := NewProfileService(repo, slog.Default())
+	_, err := svc.GetProfileStats(ctx, "quick-scan")
+	require.Error(t, err)
 }

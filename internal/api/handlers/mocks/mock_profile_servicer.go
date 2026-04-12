@@ -274,3 +274,42 @@ func (c *MockProfileServicerUpdateProfileCall) DoAndReturn(f func(context.Contex
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
+
+// GetProfileStats mocks base method.
+func (m *MockProfileServicer) GetProfileStats(ctx context.Context, id string) (*db.ProfileStats, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProfileStats", ctx, id)
+	ret0, _ := ret[0].(*db.ProfileStats)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetProfileStats indicates an expected call of GetProfileStats.
+func (mr *MockProfileServicerMockRecorder) GetProfileStats(ctx, id any) *MockProfileServicerGetProfileStatsCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProfileStats", reflect.TypeOf((*MockProfileServicer)(nil).GetProfileStats), ctx, id)
+	return &MockProfileServicerGetProfileStatsCall{Call: call}
+}
+
+// MockProfileServicerGetProfileStatsCall wrap *gomock.Call
+type MockProfileServicerGetProfileStatsCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockProfileServicerGetProfileStatsCall) Return(arg0 *db.ProfileStats, arg1 error) *MockProfileServicerGetProfileStatsCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockProfileServicerGetProfileStatsCall) Do(f func(context.Context, string) (*db.ProfileStats, error)) *MockProfileServicerGetProfileStatsCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockProfileServicerGetProfileStatsCall) DoAndReturn(f func(context.Context, string) (*db.ProfileStats, error)) *MockProfileServicerGetProfileStatsCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}

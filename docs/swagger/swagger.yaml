@@ -731,6 +731,23 @@ definitions:
       updated_at:
         type: string
     type: object
+  docs.ProfileStatsResponse:
+    properties:
+      avg_hosts_found:
+        example: 12.5
+        type: number
+      last_used:
+        type: string
+      profile_id:
+        example: web-full
+        type: string
+      total_scans:
+        example: 42
+        type: integer
+      unique_hosts:
+        example: 7
+        type: integer
+    type: object
   docs.RenameNetworkRequest:
     properties:
       new_name:
@@ -2713,6 +2730,44 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Update profile
+      tags:
+      - Profiles
+  /profiles/{profileId}/stats:
+    get:
+      description: Get scan effectiveness statistics for a profile
+      operationId: getProfileStats
+      parameters:
+      - description: Profile ID
+        in: path
+        name: profileId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.ProfileStatsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get profile stats
       tags:
       - Profiles
   /scans:

@@ -295,6 +295,46 @@ func (h *ProfileHandler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ProfileStatsResponse represents effectiveness statistics for a scan profile.
+type ProfileStatsResponse struct {
+	ProfileID     string     `json:"profile_id"`
+	TotalScans    int        `json:"total_scans"`
+	UniqueHosts   int        `json:"unique_hosts"`
+	LastUsed      *time.Time `json:"last_used"`
+	AvgHostsFound *float64   `json:"avg_hosts_found"`
+}
+
+// GetProfileStats handles GET /api/v1/profiles/{id}/stats — scan effectiveness stats.
+func (h *ProfileHandler) GetProfileStats(w http.ResponseWriter, r *http.Request) {
+	profileID, err := extractStringFromPath(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	requestID := getRequestIDFromContext(r.Context())
+	h.logger.Info("Getting profile stats", "request_id", requestID, "profile_id", profileID)
+
+	stats, err := h.service.GetProfileStats(r.Context(), profileID)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, fmt.Errorf("profile not found"))
+			return
+		}
+		h.logger.Error("Failed to get profile stats", "request_id", requestID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to get profile stats: %w", err))
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, ProfileStatsResponse{
+		ProfileID:     stats.ProfileID,
+		TotalScans:    stats.TotalScans,
+		UniqueHosts:   stats.UniqueHosts,
+		LastUsed:      stats.LastUsed,
+		AvgHostsFound: stats.AvgHostsFound,
+	})
+}
+
 // CloneProfile handles POST /api/v1/profiles/{id}/clone — create a copy of an existing profile.
 // The JSON body must contain {"name": "<new name>"}.
 func (h *ProfileHandler) CloneProfile(w http.ResponseWriter, r *http.Request) {

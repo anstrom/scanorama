@@ -19,6 +19,7 @@ type profileRepository interface {
 	GetProfile(ctx context.Context, id string) (*db.ScanProfile, error)
 	UpdateProfile(ctx context.Context, id string, input db.UpdateProfileInput) (*db.ScanProfile, error)
 	DeleteProfile(ctx context.Context, id string) error
+	GetProfileStats(ctx context.Context, id string) (*db.ProfileStats, error)
 }
 
 // ProfileService handles business logic for scan profile management.
@@ -62,6 +63,11 @@ func (s *ProfileService) UpdateProfile(
 // DeleteProfile removes a scan profile by its ID.
 func (s *ProfileService) DeleteProfile(ctx context.Context, id string) error {
 	return s.repo.DeleteProfile(ctx, id)
+}
+
+// GetProfileStats returns scan effectiveness statistics for a profile.
+func (s *ProfileService) GetProfileStats(ctx context.Context, id string) (*db.ProfileStats, error) {
+	return s.repo.GetProfileStats(ctx, id)
 }
 
 // CloneProfile creates a new scan profile based on an existing one, using newName
