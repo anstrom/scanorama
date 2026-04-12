@@ -13,6 +13,32 @@ Run the full agent team review on $ARGUMENTS.
 4. Identify the PR title, description, and current CI status if a PR exists: `gh pr view <num> --json title,body,statusCheckRollup`.
 5. Briefly summarize the scope to the user: branch, base, file count, lines changed, PR number (if any).
 
+## Round detection (do this before pre-flight)
+
+Determine whether this is a **first review** or a **re-review** of a branch that was already reviewed:
+
+```bash
+# Look for a previous review summary in the PR conversation (posted by Claude)
+PREV_REVIEW=$(gh api repos/anstrom/scanorama/issues/<PR>/comments \
+  --jq '[.[] | select(.body | test("## PR Review:"))] | last | .body' 2>/dev/null)
+```
+
+If `PREV_REVIEW` is non-empty, this is a **re-review**. Extract:
+- The list of **blockers** that were flagged (lines under `### 🔴 Blockers`)
+- The list of **should-fix** items
+- The **"Verified" section** (what already passed in round 1)
+
+Pass this context to both Phase A agents so they know:
+1. What was already verified and should be treated as a **regression baseline** (only re-test if those subsystems changed)
+2. Which specific blockers must now be confirmed fixed (highest priority)
+3. What is genuinely new since the last review commit
+
+**If no previous review comment exists** (first review): run the full review as normal.
+
+**For re-reviews**, scope each agent accordingly:
+- **code-quality-reviewer**: Focus on (a) verifying each prior blocker/should-fix is now resolved, (b) any new code in commits added since the last review, (c) regressions in previously-clean code. Do NOT re-audit code that was already clean and hasn't changed.
+- **integration-tester**: Skip smoke tests for subsystems that passed in round 1 and have no new commits touching them. Focus on: (a) verifying the specific fixes for previously-flagged blockers, (b) regression spot-check of the changed subsystems only, (c) any new subsystems added since round 1.
+
 ## Pre-flight: swagger drift + test coverage audit (do this before Phase A)
 
 Before launching agents, run `git diff --stat origin/main...HEAD` to get the file list, then:
@@ -55,12 +81,14 @@ Launch **two agents in a single message** (parallel tool calls). Each gets a sel
 
 **Agent 1: `code-quality-reviewer`**
 - Task description: "Code quality review of <branch> vs <base>"
-- Prompt should include: base branch, PR number (if any), the file list from `git diff --stat`, the user's stated intent (from PR title/body or a 1-line note), and an explicit instruction to focus on the diff only (not the whole codebase). Tell it to write its report as the final message and not to commit anything.
+- Prompt must include: base branch, PR number (if any), the file list from `git diff --stat`, the user's stated intent (from PR title/body or a 1-line note), and an explicit instruction to focus on the diff only (not the whole codebase). Tell it to write its report as the final message and not to commit anything.
 - Explicitly ask it to audit test coverage: for each new exported function/method/handler in the diff, check whether the diff contains tests covering the happy path and key error cases. Tautological tests (asserting language invariants or restating constants) do not count as coverage.
+- **For re-reviews**: include the previous review's blocker/should-fix list and instruct the agent to: (1) confirm each prior item is fixed or still open, (2) review only code changed since the last review for new issues, (3) skip re-auditing previously-clean code that has not changed.
 
 **Agent 2: `integration-tester`**
 - Task description: "Integration test of <branch> against live dev env"
-- Prompt should include: base branch, PR number, the file list, which subsystems the diff touches (so it knows which CLI commands and API endpoints to prioritize), and an explicit instruction NOT to run `make dev-nuke` or destructive cleanup. Tell it to use the existing dev environment if one is already running.
+- Prompt must include: base branch, PR number, the file list, which subsystems the diff touches (so it knows which CLI commands and API endpoints to prioritize), and an explicit instruction NOT to run `make dev-nuke` or destructive cleanup. Tell it to use the existing dev environment if one is already running.
+- **For re-reviews**: include the previous round's "Verified" section and instruct the agent to skip re-testing those items unless the relevant subsystem has new commits. The agent should focus on: (a) verifying previously-flagged blockers are fixed, (b) regression spot-check of changed subsystems only. State explicitly which tests to skip to avoid re-running what already passed.
 - **Cleanup requirement — include this verbatim in the prompt:** Before starting, record the current counts of scan jobs, profiles, and any other mutable resources that the tests will touch (e.g. `SELECT status, COUNT(*) FROM scan_jobs GROUP BY status`). After all tests complete, delete every resource the test session created: scan jobs queued during the session, profiles created during the session, discovery jobs, etc. Report the before/after counts to confirm cleanup. If a resource cannot be deleted via API (e.g. the DELETE endpoint doesn't exist), delete it directly via the database. Leaving test artifacts in the dev environment is a bug in the test run, not acceptable collateral.
 - **Scan failure reporting — include this verbatim in the prompt:** If scans fail, report the *specific error message* from the database (`error_message` column in `scan_jobs`), not just "expected without sudo". Distinguish between: (a) permission failures (raw socket / sudo required — acceptable in dev), (b) queue-full failures (means the test hammered the queue — flag as a test design issue), and (c) any other error. Never describe failures as "expected" without quoting the actual error and confirming it matches the known dev limitation.
 
@@ -123,3 +151,4 @@ Then print a one-line pointer to where the user can read each agent's full repor
 - **Test plan items that describe automatable behaviour must have tests.** If a test plan item says "endpoint X returns Y for input Z" or "function handles edge case W", that behaviour belongs in a unit or integration test — not just a manual checkbox. Flag any such item that has no corresponding test in the diff as a blocker.
 - **Swagger drift is a blocker.** Run `make docs` and `git diff --exit-code docs/swagger/ frontend/src/api/types.ts` — any diff means the spec is stale. The pre-push hook catches this locally; a CI failure here means the author skipped the hook.
 - **Thorough test coverage is required, not optional.** Low coverage is a blocker. Every new handler, service method, and repository method needs tests. "We'll add tests later" is not accepted.
+- **Do not re-verify in round 2+ what was already clean in round 1 and has not changed.** The cost of a review is proportional to how much it teaches — re-running identical tests that already passed adds noise without signal. Each round should advance the review, not repeat it.
