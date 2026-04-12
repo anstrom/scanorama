@@ -530,7 +530,10 @@ func (s *SmartScanService) resolveHosts(ctx context.Context, filter BatchFilter)
 			}
 			hosts = append(hosts, h)
 		}
-		return hosts, nil
+		if filter.ScoreThreshold <= 0 && filter.MaxStalenessHours <= 0 {
+			return hosts, nil
+		}
+		return applyKnowledgeFilter(hosts, filter), nil
 	}
 
 	// Fetch only up hosts to avoid wasting the query budget on gone/ignored entries.

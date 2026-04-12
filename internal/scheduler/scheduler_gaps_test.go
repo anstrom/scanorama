@@ -42,6 +42,7 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/profiles"
 	"github.com/anstrom/scanorama/internal/scanning"
+	"github.com/anstrom/scanorama/internal/services"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1264,4 +1265,240 @@ func TestProcessHostsForScanning_WaitGroupCompletes(t *testing.T) {
 // newCron returns a fresh *cron.Cron, matching the one used inside NewScheduler.
 func newCron() *cron.Cron {
 	return cron.New()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// mockSmartScanBatcher
+// ─────────────────────────────────────────────────────────────────────────────
+
+// mockSmartScanBatcher implements smartScanBatcher for unit tests.
+// It records the last BatchFilter received by QueueBatch.
+type mockSmartScanBatcher struct {
+	queueBatchFn func(ctx context.Context, filter services.BatchFilter) (*services.BatchResult, error)
+	lastFilter   services.BatchFilter
+}
+
+func (m *mockSmartScanBatcher) QueueBatch(
+	ctx context.Context, filter services.BatchFilter,
+) (*services.BatchResult, error) {
+	m.lastFilter = filter
+	if m.queueBatchFn != nil {
+		return m.queueBatchFn(ctx, filter)
+	}
+	return &services.BatchResult{}, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WithSmartScanService
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestWithSmartScanService_SetsField(t *testing.T) {
+	s := NewScheduler(nil, nil, nil)
+	mock := &mockSmartScanBatcher{}
+
+	got := s.WithSmartScanService(mock)
+
+	assert.Same(t, s, got, "must return receiver for chaining")
+	assert.Equal(t, mock, s.smartScan)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// executeSmartScanJob
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestExecuteSmartScanJob_NilService_IsNoOp(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s := &Scheduler{
+		jobs:   make(map[uuid.UUID]*ScheduledJob),
+		mu:     sync.RWMutex{},
+		ctx:    ctx,
+		cancel: cancel,
+		// smartScan intentionally nil
+	}
+	jobID := uuid.New()
+	cfgJSON, _ := json.Marshal(SmartScanJobConfig{ScoreThreshold: 70})
+	s.jobs[jobID] = &ScheduledJob{
+		ID: jobID,
+		Config: &db.ScheduledJob{
+			ID:      jobID,
+			Name:    "ss-nil",
+			Enabled: true,
+			Config:  db.JSONB(cfgJSON),
+		},
+	}
+
+	// Must not panic when smartScan == nil.
+	assert.NotPanics(t, func() {
+		s.executeSmartScanJob(jobID, SmartScanJobConfig{ScoreThreshold: 70})
+	})
+}
+
+func TestExecuteSmartScanJob_PassesCorrectBatchFilter(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	batcher := &mockSmartScanBatcher{}
+	s := &Scheduler{
+		jobs:      make(map[uuid.UUID]*ScheduledJob),
+		mu:        sync.RWMutex{},
+		ctx:       ctx,
+		cancel:    cancel,
+		smartScan: batcher,
+	}
+	jobID := uuid.New()
+	config := SmartScanJobConfig{
+		ScoreThreshold:    65,
+		MaxStalenessHours: 48,
+		NetworkCIDR:       "10.0.0.0/8",
+		Limit:             25,
+	}
+	cfgJSON, _ := json.Marshal(config)
+	s.jobs[jobID] = &ScheduledJob{
+		ID: jobID,
+		Config: &db.ScheduledJob{
+			ID:      jobID,
+			Name:    "ss-filter",
+			Enabled: true,
+			Config:  db.JSONB(cfgJSON),
+		},
+	}
+
+	s.executeSmartScanJob(jobID, config)
+
+	assert.Equal(t, db.ScanSourceScheduled, batcher.lastFilter.Source)
+	assert.Equal(t, 65, batcher.lastFilter.ScoreThreshold)
+	assert.Equal(t, 48, batcher.lastFilter.MaxStalenessHours)
+	assert.Equal(t, "10.0.0.0/8", batcher.lastFilter.NetworkCIDR)
+	assert.Equal(t, 25, batcher.lastFilter.Limit)
+}
+
+func TestExecuteSmartScanJob_QueueBatchError_IsLogged(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	batcher := &mockSmartScanBatcher{
+		queueBatchFn: func(_ context.Context, _ services.BatchFilter) (*services.BatchResult, error) {
+			return nil, errors.New("batch failed")
+		},
+	}
+	s := &Scheduler{
+		jobs:      make(map[uuid.UUID]*ScheduledJob),
+		mu:        sync.RWMutex{},
+		ctx:       ctx,
+		cancel:    cancel,
+		smartScan: batcher,
+	}
+	jobID := uuid.New()
+	cfgJSON, _ := json.Marshal(SmartScanJobConfig{})
+	s.jobs[jobID] = &ScheduledJob{
+		ID: jobID,
+		Config: &db.ScheduledJob{
+			ID: jobID, Name: "ss-err", Enabled: true, Config: db.JSONB(cfgJSON),
+		},
+	}
+
+	// QueueBatch error must not panic.
+	assert.NotPanics(t, func() {
+		s.executeSmartScanJob(jobID, SmartScanJobConfig{})
+	})
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// addSmartScanJobToCron
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestAddSmartScanJobToCron_Succeeds(t *testing.T) {
+	s := NewScheduler(nil, nil, nil)
+	s.smartScan = &mockSmartScanBatcher{}
+
+	cfgJSON, _ := json.Marshal(SmartScanJobConfig{ScoreThreshold: 80, Limit: 10})
+	job := &db.ScheduledJob{
+		ID:             uuid.New(),
+		Name:           "ss-cron",
+		Type:           db.ScheduledJobTypeSmartScan,
+		CronExpression: "0 * * * *",
+		Config:         db.JSONB(cfgJSON),
+	}
+
+	cronID, err := s.addSmartScanJobToCron(job)
+	require.NoError(t, err)
+	assert.NotZero(t, cronID)
+}
+
+func TestAddSmartScanJobToCron_UnmarshalError(t *testing.T) {
+	s := NewScheduler(nil, nil, nil)
+
+	job := &db.ScheduledJob{
+		ID:             uuid.New(),
+		Name:           "bad-ss",
+		Type:           db.ScheduledJobTypeSmartScan,
+		CronExpression: "0 * * * *",
+		Config:         db.JSONB(`not-valid-json{{{`),
+	}
+
+	_, err := s.addSmartScanJobToCron(job)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to unmarshal smart scan config")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AddSmartScanJob
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestAddSmartScanJob_InvalidCron_ReturnsError(t *testing.T) {
+	s := &Scheduler{
+		jobs: make(map[uuid.UUID]*ScheduledJob),
+		mu:   sync.RWMutex{},
+		cron: newCron(),
+	}
+
+	err := s.AddSmartScanJob(
+		context.Background(), "test", "not-a-cron", SmartScanJobConfig{},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid cron expression")
+}
+
+func TestAddSmartScanJob_CreateScheduledJobError(t *testing.T) {
+	database, mock := newMockDB(t)
+	mock.ExpectExec("INSERT INTO scheduled_jobs").
+		WillReturnError(errors.New("insert failed"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s := &Scheduler{
+		db:        database,
+		jobs:      make(map[uuid.UUID]*ScheduledJob),
+		mu:        sync.RWMutex{},
+		ctx:       ctx,
+		cron:      newCron(),
+		smartScan: &mockSmartScanBatcher{},
+	}
+
+	err := s.AddSmartScanJob(ctx, "test", "0 * * * *", SmartScanJobConfig{ScoreThreshold: 80})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to save scheduled job")
+}
+
+// TestAddJobToCronScheduler_SmartScanType confirms that addJobToCronScheduler
+// dispatches smart_scan jobs to addSmartScanJobToCron correctly.
+func TestAddJobToCronScheduler_SmartScanType_Succeeds(t *testing.T) {
+	s := NewScheduler(nil, nil, nil)
+	s.smartScan = &mockSmartScanBatcher{}
+
+	cfgJSON, _ := json.Marshal(SmartScanJobConfig{Limit: 5})
+	job := &db.ScheduledJob{
+		ID:             uuid.New(),
+		Name:           "ss-dispatch",
+		Type:           db.ScheduledJobTypeSmartScan,
+		CronExpression: "0 * * * *",
+		Config:         db.JSONB(cfgJSON),
+	}
+
+	cronID, err := s.addJobToCronScheduler(job)
+	require.NoError(t, err)
+	assert.NotZero(t, cronID)
 }

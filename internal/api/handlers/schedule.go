@@ -6,6 +6,7 @@ package handlers
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -429,6 +430,11 @@ func (h *ScheduleHandler) validateSmartScanScheduleRequest(req *SmartScanSchedul
 	}
 	if req.Limit < 0 {
 		return fmt.Errorf("limit cannot be negative")
+	}
+	if req.NetworkCIDR != "" {
+		if _, _, err := net.ParseCIDR(req.NetworkCIDR); err != nil {
+			return fmt.Errorf("network_cidr is not a valid CIDR: %w", err)
+		}
 	}
 	return nil
 }

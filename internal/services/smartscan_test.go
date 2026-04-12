@@ -4,6 +4,7 @@ package services
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -342,4 +345,352 @@ func TestQueueBatch_StageFilter(t *testing.T) {
 	assert.Equal(t, 1, result.Skipped, "the os_detection host should be skipped by stage filter")
 	require.Len(t, result.Details, 1)
 	assert.Equal(t, "port_expansion", result.Details[0].Stage)
+}
+
+// ── applyKnowledgeFilter ─────────────────────────────────────────────────────
+
+func TestApplyKnowledgeFilter(t *testing.T) {
+	now := time.Now()
+	highScore := &db.Host{ID: uuid.New(), KnowledgeScore: 90, LastSeen: now, IPAddress: mustParseIP("10.0.0.1")}
+	lowScore := &db.Host{ID: uuid.New(), KnowledgeScore: 50, LastSeen: now, IPAddress: mustParseIP("10.0.0.2")}
+	staleHost := &db.Host{
+		ID:             uuid.New(),
+		KnowledgeScore: 90,
+		LastSeen:       now.Add(-50 * time.Hour),
+		IPAddress:      mustParseIP("10.0.0.3"),
+	}
+	lowScoreAndStale := &db.Host{
+		ID:             uuid.New(),
+		KnowledgeScore: 40,
+		LastSeen:       now.Add(-50 * time.Hour),
+		IPAddress:      mustParseIP("10.0.0.4"),
+	}
+	all := []*db.Host{highScore, lowScore, staleHost, lowScoreAndStale}
+
+	tests := []struct {
+		name      string
+		filter    BatchFilter
+		wantIDs   []uuid.UUID
+		wantCount int
+	}{
+		{
+			name:      "score threshold only — includes low-score hosts",
+			filter:    BatchFilter{ScoreThreshold: 80},
+			wantIDs:   []uuid.UUID{lowScore.ID, lowScoreAndStale.ID},
+			wantCount: 2,
+		},
+		{
+			name:      "staleness only — includes hosts not seen within 24h",
+			filter:    BatchFilter{MaxStalenessHours: 24},
+			wantIDs:   []uuid.UUID{staleHost.ID, lowScoreAndStale.ID},
+			wantCount: 2,
+		},
+		{
+			name:      "OR logic — score OR staleness",
+			filter:    BatchFilter{ScoreThreshold: 80, MaxStalenessHours: 24},
+			wantIDs:   []uuid.UUID{lowScore.ID, staleHost.ID, lowScoreAndStale.ID},
+			wantCount: 3,
+		},
+		{
+			name:      "both zero — no filter applied, all hosts returned",
+			filter:    BatchFilter{},
+			wantCount: 0, // applyKnowledgeFilter is not called when both zero; passing here to show empty result
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.filter.ScoreThreshold == 0 && tt.filter.MaxStalenessHours == 0 {
+				// Both zero: guard in resolveHosts prevents the call; verify contract
+				got := applyKnowledgeFilter(all, tt.filter)
+				assert.Empty(t, got, "both-zero filter should return no hosts (caller guards this)")
+				return
+			}
+			got := applyKnowledgeFilter(all, tt.filter)
+			assert.Equal(t, tt.wantCount, len(got))
+			gotIDs := make(map[uuid.UUID]bool, len(got))
+			for _, h := range got {
+				gotIDs[h.ID] = true
+			}
+			for _, id := range tt.wantIDs {
+				assert.True(t, gotIDs[id], "expected host %s in result", id)
+			}
+		})
+	}
+}
+
+// ── WithAutoProgression ───────────────────────────────────────────────────────
+
+func TestWithAutoProgression_DefaultValues(t *testing.T) {
+	svc := &SmartScanService{logger: discardLogger()}
+	// Pass zero for all optional parameters — should fall back to defaults.
+	got := svc.WithAutoProgression(0, 0, 0)
+
+	assert.Same(t, svc, got, "must return receiver for chaining")
+	assert.True(t, svc.autoProgressEnabled)
+	assert.Equal(t, AutoProgressDefaultThreshold, svc.autoProgressThreshold)
+	assert.Equal(t, AutoProgressDefaultMaxPerWindow, svc.autoProgressMaxPerWin)
+	assert.Equal(t, time.Duration(AutoProgressDefaultWindowHours)*time.Hour, svc.autoProgressWindow)
+}
+
+func TestWithAutoProgression_ExplicitValues(t *testing.T) {
+	svc := &SmartScanService{logger: discardLogger()}
+	got := svc.WithAutoProgression(60, 5, 48)
+
+	assert.Same(t, svc, got)
+	assert.True(t, svc.autoProgressEnabled)
+	assert.Equal(t, 60, svc.autoProgressThreshold)
+	assert.Equal(t, 5, svc.autoProgressMaxPerWin)
+	assert.Equal(t, 48*time.Hour, svc.autoProgressWindow)
+}
+
+// ── QueueBatch with ScoreThreshold / MaxStalenessHours ───────────────────────
+
+func TestQueueBatch_ScoreThresholdFilter(t *testing.T) {
+	createCalls := 0
+	scanRepo := &mockSmartScanRepo{
+		createScanFn: func(_ context.Context, _ db.CreateScanInput) (*db.Scan, error) {
+			createCalls++
+			return &db.Scan{ID: uuid.New()}, nil
+		},
+	}
+
+	// Two hosts: one high-score (should be skipped), one low-score (should be queued).
+	// Both have no OS so EvaluateHost → os_detection.
+	highScore := &db.Host{
+		ID: uuid.New(), KnowledgeScore: 90,
+		Status:    "up",
+		LastSeen:  time.Now(),
+		IPAddress: mustParseIP("10.0.0.1"),
+	}
+	lowScore := &db.Host{
+		ID: uuid.New(), KnowledgeScore: 30,
+		Status:    "up",
+		LastSeen:  time.Now(),
+		IPAddress: mustParseIP("10.0.0.2"),
+	}
+
+	hostRepo := &mockSmartHostRepo{
+		listHostsFn: func(_ context.Context, _ *db.HostFilters, _, _ int) ([]*db.Host, int64, error) {
+			return []*db.Host{highScore, lowScore}, 2, nil
+		},
+	}
+	svc := &SmartScanService{
+		hostRepo:       hostRepo,
+		scanRepo:       scanRepo,
+		logger:         discardLogger(),
+		hasOpenPortsFn: func(_ context.Context, _ uuid.UUID) (bool, error) { return false, nil },
+		hasServicesFn:  func(_ context.Context, _ uuid.UUID) (bool, error) { return false, nil },
+	}
+
+	result, err := svc.QueueBatch(context.Background(), BatchFilter{ScoreThreshold: 80, Limit: 10})
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Queued, "only low-score host should be queued")
+	assert.Equal(t, 1, createCalls)
+}
+
+func TestQueueBatch_StalenessFilter(t *testing.T) {
+	createCalls := 0
+	scanRepo := &mockSmartScanRepo{
+		createScanFn: func(_ context.Context, _ db.CreateScanInput) (*db.Scan, error) {
+			createCalls++
+			return &db.Scan{ID: uuid.New()}, nil
+		},
+	}
+
+	recent := &db.Host{
+		ID:        uuid.New(),
+		Status:    "up",
+		LastSeen:  time.Now(),
+		IPAddress: mustParseIP("10.0.0.1"),
+	}
+	stale := &db.Host{
+		ID:        uuid.New(),
+		Status:    "up",
+		LastSeen:  time.Now().Add(-72 * time.Hour),
+		IPAddress: mustParseIP("10.0.0.2"),
+	}
+
+	hostRepo := &mockSmartHostRepo{
+		listHostsFn: func(_ context.Context, _ *db.HostFilters, _, _ int) ([]*db.Host, int64, error) {
+			return []*db.Host{recent, stale}, 2, nil
+		},
+	}
+	svc := &SmartScanService{
+		hostRepo:       hostRepo,
+		scanRepo:       scanRepo,
+		logger:         discardLogger(),
+		hasOpenPortsFn: func(_ context.Context, _ uuid.UUID) (bool, error) { return false, nil },
+		hasServicesFn:  func(_ context.Context, _ uuid.UUID) (bool, error) { return false, nil },
+	}
+
+	result, err := svc.QueueBatch(context.Background(), BatchFilter{MaxStalenessHours: 48, Limit: 10})
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Queued, "only stale host should be queued")
+	assert.Equal(t, 1, createCalls)
+}
+
+// ── ReEvaluateHosts auto-progression paths ────────────────────────────────────
+
+func newAutoProgressSvc(
+	t *testing.T, threshold, maxPerWin int,
+	createFn func(context.Context, db.CreateScanInput) (*db.Scan, error),
+) *SmartScanService {
+	t.Helper()
+	scanRepo := &mockSmartScanRepo{createScanFn: createFn}
+	svc := &SmartScanService{
+		logger:                discardLogger(),
+		scanRepo:              scanRepo,
+		autoProgressEnabled:   true,
+		autoProgressThreshold: threshold,
+		autoProgressMaxPerWin: maxPerWin,
+		autoProgressWindow:    24 * time.Hour,
+		hasOpenPortsFn:        func(_ context.Context, _ uuid.UUID) (bool, error) { return false, nil },
+		hasServicesFn:         func(_ context.Context, _ uuid.UUID) (bool, error) { return false, nil },
+	}
+	return svc
+}
+
+func TestReEvaluateHosts_AutoProgressionDisabled(t *testing.T) {
+	queued := 0
+	scanRepo := &mockSmartScanRepo{
+		createScanFn: func(_ context.Context, _ db.CreateScanInput) (*db.Scan, error) {
+			queued++
+			return &db.Scan{ID: uuid.New()}, nil
+		},
+	}
+	host := hostUp("10.0.1.1")
+	hostRepo := &mockSmartHostRepo{
+		getHostFn: func(_ context.Context, _ uuid.UUID) (*db.Host, error) { return host, nil },
+	}
+	svc := &SmartScanService{
+		logger:              discardLogger(),
+		hostRepo:            hostRepo,
+		scanRepo:            scanRepo,
+		autoProgressEnabled: false, // disabled
+		hasOpenPortsFn:      func(_ context.Context, _ uuid.UUID) (bool, error) { return false, nil },
+		hasServicesFn:       func(_ context.Context, _ uuid.UUID) (bool, error) { return false, nil },
+	}
+
+	svc.ReEvaluateHosts(nil, []uuid.UUID{host.ID})
+	assert.Equal(t, 0, queued, "no scan should be created when auto-progression is disabled")
+}
+
+func TestReEvaluateHosts_AutoProgressionSkipsHighScoreHost(t *testing.T) {
+	queued := 0
+	host := hostUp("10.0.1.2")
+	host.KnowledgeScore = 95 // above threshold
+
+	hostRepo := &mockSmartHostRepo{
+		getHostFn: func(_ context.Context, _ uuid.UUID) (*db.Host, error) { return host, nil },
+	}
+	svc := newAutoProgressSvc(t, 80, 0, func(_ context.Context, _ db.CreateScanInput) (*db.Scan, error) {
+		queued++
+		return &db.Scan{ID: uuid.New()}, nil
+	})
+	svc.hostRepo = hostRepo
+
+	svc.ReEvaluateHosts(nil, []uuid.UUID{host.ID})
+	assert.Equal(t, 0, queued, "host with score >= threshold must not be re-queued")
+}
+
+func TestReEvaluateHosts_AutoProgressionSkipsSkipStage(t *testing.T) {
+	queued := 0
+	// A host that evaluates to skip: all knowledge present and not stale.
+	host := hostUp("10.0.1.3")
+	host.KnowledgeScore = 30
+	host.OSFamily = strPtr("linux")
+
+	hostRepo := &mockSmartHostRepo{
+		getHostFn: func(_ context.Context, _ uuid.UUID) (*db.Host, error) { return host, nil },
+	}
+	svc := newAutoProgressSvc(t, 80, 0, func(_ context.Context, _ db.CreateScanInput) (*db.Scan, error) {
+		queued++
+		return &db.Scan{ID: uuid.New()}, nil
+	})
+	svc.hostRepo = hostRepo
+	// Force EvaluateHost to return skip by making port and service checks return true.
+	svc.hasOpenPortsFn = func(_ context.Context, _ uuid.UUID) (bool, error) { return true, nil }
+	svc.hasServicesFn = func(_ context.Context, _ uuid.UUID) (bool, error) { return true, nil }
+
+	svc.ReEvaluateHosts(nil, []uuid.UUID{host.ID})
+	assert.Equal(t, 0, queued, "skip stage must not trigger a re-queue")
+}
+
+func TestReEvaluateHosts_AutoProgressionQueuesLowScoreHost(t *testing.T) {
+	queued := 0
+	host := hostUp("10.0.1.4")
+	host.KnowledgeScore = 30 // below threshold
+
+	hostRepo := &mockSmartHostRepo{
+		getHostFn: func(_ context.Context, _ uuid.UUID) (*db.Host, error) { return host, nil },
+	}
+	// maxPerWin=0 skips the exceedsAutoQueueLimit DB query so no real DB needed.
+	svc := newAutoProgressSvc(t, 80, 0, func(_ context.Context, _ db.CreateScanInput) (*db.Scan, error) {
+		queued++
+		return &db.Scan{ID: uuid.New()}, nil
+	})
+	svc.hostRepo = hostRepo
+
+	svc.ReEvaluateHosts(nil, []uuid.UUID{host.ID})
+	assert.Equal(t, 1, queued, "low-score host below threshold must be re-queued")
+}
+
+// ── exceedsAutoQueueLimit ─────────────────────────────────────────────────────
+
+// newSmartScanMockDB returns a *db.DB backed by sqlmock for exceedsAutoQueueLimit tests.
+func newSmartScanMockDB(t *testing.T) (*db.DB, sqlmock.Sqlmock) {
+	t.Helper()
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	return &db.DB{DB: sqlx.NewDb(sqlDB, "sqlmock")}, mock
+}
+
+func TestExceedsAutoQueueLimit_BelowLimit(t *testing.T) {
+	database, mock := newSmartScanMockDB(t)
+	mock.ExpectQuery("SELECT COUNT").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	svc := &SmartScanService{
+		database:              database,
+		autoProgressMaxPerWin: 3,
+		autoProgressWindow:    24 * time.Hour,
+	}
+
+	exceeded := svc.exceedsAutoQueueLimit(context.Background(), "10.0.0.1")
+	assert.False(t, exceeded, "count 1 < limit 3: must not be exceeded")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestExceedsAutoQueueLimit_AtOrAboveLimit(t *testing.T) {
+	database, mock := newSmartScanMockDB(t)
+	mock.ExpectQuery("SELECT COUNT").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
+
+	svc := &SmartScanService{
+		database:              database,
+		autoProgressMaxPerWin: 3,
+		autoProgressWindow:    24 * time.Hour,
+	}
+
+	exceeded := svc.exceedsAutoQueueLimit(context.Background(), "10.0.0.1")
+	assert.True(t, exceeded, "count 3 == limit 3: must be exceeded")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestExceedsAutoQueueLimit_DBErrorFailsOpen(t *testing.T) {
+	database, mock := newSmartScanMockDB(t)
+	mock.ExpectQuery("SELECT COUNT").
+		WillReturnError(sql.ErrConnDone)
+
+	svc := &SmartScanService{
+		database:              database,
+		autoProgressMaxPerWin: 3,
+		autoProgressWindow:    24 * time.Hour,
+	}
+
+	exceeded := svc.exceedsAutoQueueLimit(context.Background(), "10.0.0.1")
+	assert.False(t, exceeded, "DB error must fail open (allow the queue)")
+	assert.NoError(t, mock.ExpectationsWereMet())
 }

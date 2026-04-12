@@ -983,6 +983,17 @@ func TestScheduleHandler_validateSmartScanScheduleRequest(t *testing.T) {
 			req:         SmartScanScheduleRequest{Name: "test", CronExpr: "0 * * * *", ScoreThreshold: 100},
 			expectError: false,
 		},
+		{
+			name:        "invalid network cidr",
+			req:         SmartScanScheduleRequest{Name: "test", CronExpr: "0 * * * *", NetworkCIDR: "not-a-cidr"},
+			expectError: true,
+			errorMsg:    "network_cidr is not a valid CIDR",
+		},
+		{
+			name:        "valid network cidr",
+			req:         SmartScanScheduleRequest{Name: "test", CronExpr: "0 * * * *", NetworkCIDR: "192.168.0.0/24"},
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {
