@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/metrics"
@@ -896,6 +899,234 @@ func TestScheduleHandler_scheduleToResponse_NilJobConfig(t *testing.T) {
 	assert.Equal(t, 0, result.MaxRetries)
 	assert.Nil(t, result.Tags)
 	assert.Nil(t, result.Options)
+}
+
+func TestScheduleHandler_validateSmartScanScheduleRequest(t *testing.T) {
+	handler := createTestScheduleHandler(t)
+
+	tests := []struct {
+		name        string
+		req         SmartScanScheduleRequest
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "valid minimal request",
+			req:         SmartScanScheduleRequest{Name: "weekly", CronExpr: "0 2 * * 0"},
+			expectError: false,
+		},
+		{
+			name: "valid full request",
+			req: SmartScanScheduleRequest{
+				Name:              "daily smart scan",
+				CronExpr:          "0 3 * * *",
+				Enabled:           true,
+				ScoreThreshold:    75,
+				MaxStalenessHours: 24,
+				NetworkCIDR:       "10.0.0.0/8",
+				Limit:             50,
+			},
+			expectError: false,
+		},
+		{
+			name:        "missing name",
+			req:         SmartScanScheduleRequest{CronExpr: "0 * * * *"},
+			expectError: true,
+			errorMsg:    "schedule name is required",
+		},
+		{
+			name: "name too long",
+			req: SmartScanScheduleRequest{
+				Name:     string(make([]byte, maxScheduleNameLength+1)),
+				CronExpr: "0 * * * *",
+			},
+			expectError: true,
+			errorMsg:    "schedule name too long",
+		},
+		{
+			name:        "invalid cron expression",
+			req:         SmartScanScheduleRequest{Name: "test", CronExpr: "not-a-cron"},
+			expectError: true,
+			errorMsg:    "invalid cron expression",
+		},
+		{
+			name:        "score threshold below zero",
+			req:         SmartScanScheduleRequest{Name: "test", CronExpr: "0 * * * *", ScoreThreshold: -1},
+			expectError: true,
+			errorMsg:    "score_threshold must be between 0 and 100",
+		},
+		{
+			name:        "score threshold above 100",
+			req:         SmartScanScheduleRequest{Name: "test", CronExpr: "0 * * * *", ScoreThreshold: 101},
+			expectError: true,
+			errorMsg:    "score_threshold must be between 0 and 100",
+		},
+		{
+			name:        "negative max staleness hours",
+			req:         SmartScanScheduleRequest{Name: "test", CronExpr: "0 * * * *", MaxStalenessHours: -1},
+			expectError: true,
+			errorMsg:    "max_staleness_hours cannot be negative",
+		},
+		{
+			name:        "negative limit",
+			req:         SmartScanScheduleRequest{Name: "test", CronExpr: "0 * * * *", Limit: -1},
+			expectError: true,
+			errorMsg:    "limit cannot be negative",
+		},
+		{
+			name:        "score threshold boundary 0",
+			req:         SmartScanScheduleRequest{Name: "test", CronExpr: "0 * * * *", ScoreThreshold: 0},
+			expectError: false,
+		},
+		{
+			name:        "score threshold boundary 100",
+			req:         SmartScanScheduleRequest{Name: "test", CronExpr: "0 * * * *", ScoreThreshold: 100},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := handler.validateSmartScanScheduleRequest(&tt.req)
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestScheduleHandler_CreateSmartScanSchedule(t *testing.T) {
+	now := time.Now().UTC()
+	scheduleID := uuid.New()
+	createdSchedule := &db.Schedule{
+		ID:             scheduleID,
+		Name:           "weekly smart scan",
+		CronExpression: "0 2 * * 0",
+		JobType:        db.ScheduledJobTypeSmartScan,
+		JobConfig: map[string]interface{}{
+			"score_threshold":     float64(75),
+			"max_staleness_hours": float64(168),
+			"network_cidr":        "10.0.0.0/8",
+			"limit":               float64(50),
+		},
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	t.Run("creates smart scan schedule successfully", func(t *testing.T) {
+		h, store, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		store.EXPECT().
+			CreateSchedule(gomock.Any(), gomock.Any()).
+			Return(createdSchedule, nil)
+
+		body, _ := json.Marshal(SmartScanScheduleRequest{
+			Name:              "weekly smart scan",
+			CronExpr:          "0 2 * * 0",
+			Enabled:           true,
+			ScoreThreshold:    75,
+			MaxStalenessHours: 168,
+			NetworkCIDR:       "10.0.0.0/8",
+			Limit:             50,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/schedules/smart-scan", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		h.CreateSmartScanSchedule(w, req)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+		var resp ScheduleResponse
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+		assert.Equal(t, scheduleID, resp.ID)
+		assert.Equal(t, db.ScheduledJobTypeSmartScan, resp.Type)
+	})
+
+	t.Run("returns 400 on invalid json", func(t *testing.T) {
+		h, _, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/schedules/smart-scan",
+			bytes.NewBufferString("{not-valid-json"))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		h.CreateSmartScanSchedule(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 400 when name is missing", func(t *testing.T) {
+		h, _, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		body, _ := json.Marshal(SmartScanScheduleRequest{CronExpr: "0 * * * *"})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/schedules/smart-scan", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		h.CreateSmartScanSchedule(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 500 when service fails", func(t *testing.T) {
+		h, store, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		store.EXPECT().
+			CreateSchedule(gomock.Any(), gomock.Any()).
+			Return(nil, fmt.Errorf("db error"))
+
+		body, _ := json.Marshal(SmartScanScheduleRequest{Name: "test", CronExpr: "0 * * * *"})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/schedules/smart-scan", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		h.CreateSmartScanSchedule(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("job_config contains smart scan fields", func(t *testing.T) {
+		h, store, ctrl := newScheduleHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		var captured db.CreateScheduleInput
+		store.EXPECT().
+			CreateSchedule(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, input db.CreateScheduleInput) (*db.Schedule, error) {
+				captured = input
+				return createdSchedule, nil
+			})
+
+		body, _ := json.Marshal(SmartScanScheduleRequest{
+			Name:              "cidr scan",
+			CronExpr:          "0 4 * * *",
+			ScoreThreshold:    80,
+			MaxStalenessHours: 48,
+			NetworkCIDR:       "192.168.0.0/24",
+			Limit:             20,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/schedules/smart-scan", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		h.CreateSmartScanSchedule(w, req)
+
+		require.Equal(t, http.StatusCreated, w.Code)
+		assert.Equal(t, db.ScheduledJobTypeSmartScan, captured.JobType)
+		assert.Equal(t, "cidr scan", captured.Name)
+		assert.Equal(t, 80, captured.JobConfig["score_threshold"])
+		assert.Equal(t, 48, captured.JobConfig["max_staleness_hours"])
+		assert.Equal(t, "192.168.0.0/24", captured.JobConfig["network_cidr"])
+		assert.Equal(t, 20, captured.JobConfig["limit"])
+	})
 }
 
 func TestScheduleRequest_JSONMarshaling(t *testing.T) {
