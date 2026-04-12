@@ -1509,21 +1509,28 @@ export interface components {
             sys_uptime_cs?: number;
         };
         "docs.SNMPInterfaceResponse": {
+            /**
+             * @example up
+             * @enum {string}
+             */
+            admin_status?: "up" | "down" | "testing" | "unknown" | "dormant" | "notPresent" | "lowerLayerDown";
             /** @example 1 */
             index?: number;
-            /** @example 192.168.1.1 */
-            ip?: string;
             /** @example 00:1B:44:11:3A:B7 */
             mac?: string;
             /** @example eth0 */
             name?: string;
+            /** @example 1048576 */
+            rx_bytes?: number;
             /** @example 1000 */
             speed_mbps?: number;
             /**
              * @example up
              * @enum {string}
              */
-            status?: "up" | "down" | "unknown";
+            status?: "up" | "down" | "testing" | "unknown" | "dormant" | "notPresent" | "lowerLayerDown";
+            /** @example 524288 */
+            tx_bytes?: number;
         };
         "docs.ScanResponse": {
             completed_at?: string;

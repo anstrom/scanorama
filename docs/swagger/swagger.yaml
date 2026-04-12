@@ -821,18 +821,29 @@ definitions:
     type: object
   docs.SNMPInterfaceResponse:
     properties:
+      admin_status:
+        enum:
+        - up
+        - down
+        - testing
+        - unknown
+        - dormant
+        - notPresent
+        - lowerLayerDown
+        example: up
+        type: string
       index:
         example: 1
         type: integer
-      ip:
-        example: 192.168.1.1
-        type: string
       mac:
         example: 00:1B:44:11:3A:B7
         type: string
       name:
         example: eth0
         type: string
+      rx_bytes:
+        example: 1048576
+        type: integer
       speed_mbps:
         example: 1000
         type: number
@@ -840,9 +851,16 @@ definitions:
         enum:
         - up
         - down
+        - testing
         - unknown
+        - dormant
+        - notPresent
+        - lowerLayerDown
         example: up
         type: string
+      tx_bytes:
+        example: 524288
+        type: integer
     type: object
   docs.ScanResponse:
     properties:
