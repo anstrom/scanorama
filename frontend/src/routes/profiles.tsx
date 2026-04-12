@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, X, SlidersHorizontal, Copy } from "lucide-react";
 import { SortHeader } from "../components/sort-header";
 import type { SortOrder } from "../components/sort-header";
 import { Button } from "../components/button";
-import { useProfiles, useDeleteProfile, useCloneProfile } from "../api/hooks/use-profiles";
+import { useProfiles, useDeleteProfile, useCloneProfile, useProfileStats } from "../api/hooks/use-profiles";
 import { useToast } from "../components/toast-provider";
 import { Skeleton, PaginationBar } from "../components";
 import { ProfileFormModal } from "../components/profile-form-modal";
@@ -26,6 +26,7 @@ const PROFILE_COLUMNS: ColumnDef[] = [
   { key: "scan_type", label: "Scan Type", alwaysVisible: true },
   { key: "ports", label: "Ports" },
   { key: "description", label: "Description" },
+  { key: "last_used", label: "Last Used" },
   { key: "updated", label: "Updated" },
 ];
 
@@ -72,6 +73,11 @@ function SkeletonRows({ colVis }: { colVis: Record<string, boolean> }) {
               <Skeleton className="h-3 w-40" />
             </td>
           )}
+          {colVis.last_used && (
+            <td className="px-4 py-2.5">
+              <Skeleton className="h-3 w-16" />
+            </td>
+          )}
           {colVis.updated && (
             <td className="px-4 py-2.5">
               <Skeleton className="h-3 w-16" />
@@ -94,6 +100,15 @@ function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+// ── Per-row last-used cell ────────────────────────────────────────────────────
+
+function ProfileLastUsedCell({ profileId }: { profileId: string }) {
+  const { data: stats, isLoading } = useProfileStats(profileId);
+  if (isLoading) return <span className="text-text-muted">…</span>;
+  if (!stats || !stats.last_used) return <span className="text-text-muted">\u2014</span>;
+  return <span>{formatRelativeTime(stats.last_used)}</span>;
+}
+
 // ── Profile detail panel ──────────────────────────────────────────────────────
 
 interface ProfileDetailPanelProps {
@@ -111,6 +126,7 @@ function ProfileDetailPanel({
   const [actionError, setActionError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
+  const { data: stats } = useProfileStats(initialProfile.id);
   const [cloneName, setCloneName] = useState("");
 
   const { mutateAsync: deleteProfile, isPending: isDeleting } =
@@ -348,6 +364,39 @@ function ProfileDetailPanel({
             </div>
           </section>
 
+          {/* Usage stats */}
+          <section>
+            <h3 className="text-xs font-medium text-text-primary mb-3">
+              Usage
+            </h3>
+            <div className="space-y-2">
+              <MetaRow
+                label="Total scans"
+                value={stats ? String(stats.total_scans) : undefined}
+              />
+              <MetaRow
+                label="Unique networks"
+                value={stats ? String(stats.unique_hosts) : undefined}
+              />
+              <MetaRow
+                label="Last used"
+                value={
+                  stats?.last_used
+                    ? formatRelativeTime(stats.last_used)
+                    : stats
+                      ? "Never"
+                      : undefined
+                }
+              />
+              {stats?.avg_hosts_found != null && (
+                <MetaRow
+                  label="Avg hosts found"
+                  value={stats.avg_hosts_found.toFixed(1)}
+                />
+              )}
+            </div>
+          </section>
+
           {/* Timestamps */}
           <section>
             <h3 className="text-xs font-medium text-text-primary mb-3">
@@ -535,6 +584,11 @@ export function ProfilesPage() {
                   Description
                 </th>
               )}
+              {colVis.last_used && (
+                <th className="px-4 py-2.5 font-medium text-text-secondary whitespace-nowrap">
+                  Last Used
+                </th>
+              )}
               {colVis.updated && (
                 <SortHeader
                   label="Updated"
@@ -587,6 +641,11 @@ export function ProfilesPage() {
                   {colVis.description && (
                     <td className="px-4 py-2.5 text-text-secondary truncate max-w-50">
                       {profile.description ?? "\u2014"}
+                    </td>
+                  )}
+                  {colVis.last_used && (
+                    <td className="px-4 py-2.5 text-text-muted whitespace-nowrap">
+                      <ProfileLastUsedCell profileId={profile.id ?? ""} />
                     </td>
                   )}
                   {colVis.updated && (
