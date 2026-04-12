@@ -1092,9 +1092,11 @@ func (s *Scheduler) executeSmartScanJob(jobID uuid.UUID, config SmartScanJobConf
 	defer cancel()
 
 	filter := services.BatchFilter{
-		NetworkCIDR: config.NetworkCIDR,
-		Limit:       config.Limit,
-		Source:      db.ScanSourceScheduled,
+		NetworkCIDR:       config.NetworkCIDR,
+		Limit:             config.Limit,
+		Source:            db.ScanSourceScheduled,
+		ScoreThreshold:    config.ScoreThreshold,
+		MaxStalenessHours: config.MaxStalenessHours,
 	}
 
 	result, err := s.smartScan.QueueBatch(ctx, filter)

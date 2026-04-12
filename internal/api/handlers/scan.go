@@ -602,6 +602,7 @@ func (h *ScanHandler) getScanFilters(r *http.Request) db.ScanFilters {
 
 // requestToCreateScan converts a ScanRequest to a typed CreateScanInput for the DB layer.
 func (h *ScanHandler) requestToCreateScan(req *ScanRequest) db.CreateScanInput {
+	src := db.ScanSourceAPI
 	return db.CreateScanInput{
 		Name:        req.Name,
 		Description: req.Description,
@@ -610,6 +611,7 @@ func (h *ScanHandler) requestToCreateScan(req *ScanRequest) db.CreateScanInput {
 		Ports:       req.Ports,
 		ProfileID:   req.ProfileID,
 		OSDetection: req.OSDetection,
+		Source:      &src,
 	}
 }
 
