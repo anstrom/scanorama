@@ -21,4 +21,20 @@ if ! (cd frontend && npx vitest run --reporter=dot 2>&1); then
     exit 1
 fi
 
+echo "  swagger drift..."
+if ! make docs > /dev/null 2>&1; then
+    echo "make docs failed — fix before pushing."
+    exit 1
+fi
+if ! git diff --exit-code docs/swagger/ frontend/src/api/types.ts > /dev/null 2>&1; then
+    echo ""
+    echo "Swagger spec is out of sync with code annotations."
+    echo "Run 'make docs' and commit the updated files before pushing:"
+    echo "  docs/swagger/swagger.json"
+    echo "  docs/swagger/swagger.yaml"
+    echo "  docs/swagger/docs.go"
+    echo "  frontend/src/api/types.ts"
+    exit 1
+fi
+
 echo "Pre-push checks passed."
