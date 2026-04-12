@@ -652,14 +652,24 @@ func TestScanHandler_EdgeCases(t *testing.T) {
 		err := handler.validateScanRequest(req)
 		assert.NoError(t, err)
 
-		// Hostname targets are not valid — must be IP or CIDR.
+		// Hostnames are valid targets; invalid strings (spaces, special chars) are not.
 		reqHostname := &ScanRequest{
 			Name:     "Test",
 			Targets:  []string{"192.168.1.1", "example.com"},
 			ScanType: "connect",
+			Ports:    "80",
 		}
 		err = handler.validateScanRequest(reqHostname)
-		assert.Error(t, err, "hostname targets should be rejected")
+		assert.NoError(t, err, "hostname targets should now be accepted")
+
+		reqInvalid := &ScanRequest{
+			Name:     "Test",
+			Targets:  []string{"192.168.1.1", "not valid!"},
+			ScanType: "connect",
+			Ports:    "80",
+		}
+		err = handler.validateScanRequest(reqInvalid)
+		assert.Error(t, err, "invalid target strings should be rejected")
 	})
 }
 
@@ -983,8 +993,8 @@ func TestValidateScanRequest_CIDRTarget(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "invalid CIDR and not plain IP",
-			targets:     []string{"not-a-cidr"},
+			name:        "invalid target — contains space",
+			targets:     []string{"not a target"},
 			expectError: true,
 		},
 	}

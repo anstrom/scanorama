@@ -376,7 +376,7 @@ func TestValidateScanRequest_NewRules(t *testing.T) {
 	})
 
 	t.Run("too many targets rejected", func(t *testing.T) {
-		targets := make([]string, maxTargetCount+1)
+		targets := make([]string, services.MaxTargetCount+1)
 		for i := range targets {
 			targets[i] = "10.0.0.1"
 		}
@@ -386,8 +386,8 @@ func TestValidateScanRequest_NewRules(t *testing.T) {
 		assert.Contains(t, err.Error(), "too many targets")
 	})
 
-	t.Run("exactly maxTargetCount targets accepted", func(t *testing.T) {
-		targets := make([]string, maxTargetCount)
+	t.Run("exactly services.MaxTargetCount targets accepted", func(t *testing.T) {
+		targets := make([]string, services.MaxTargetCount)
 		for i := range targets {
 			targets[i] = "10.0.0.1"
 		}

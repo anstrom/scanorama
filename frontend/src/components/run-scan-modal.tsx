@@ -322,7 +322,7 @@ export function RunScanModal({
                     type="text"
                     value={target}
                     onChange={(e) => setTarget(e.target.value)}
-                    placeholder="192.168.1.1, 10.0.0.0/24…"
+                    placeholder="192.168.1.1, 10.0.0.0/24, myserver.local…"
                     autoFocus
                     className={cn(
                       "w-full px-3 py-1.5 text-xs rounded border border-border font-mono",
@@ -331,7 +331,7 @@ export function RunScanModal({
                     )}
                   />
                   <p className="text-xs text-text-muted">
-                    Comma-separated IPs, ranges, or CIDR blocks.
+                    Comma-separated IPs, CIDR ranges, or hostnames.
                   </p>
                 </div>
               )}
