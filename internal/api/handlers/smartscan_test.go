@@ -135,10 +135,18 @@ func TestSmartScan_EvaluateHost_ReturnsValidStage(t *testing.T) {
 		"/api/v1/smart-scan/hosts/"+hostID.String()+"/stage", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var stage services.ScanStage
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&stage))
-	assert.NotEmpty(t, stage.Stage)
-	assert.NotEmpty(t, stage.Reason)
+	// Decode into a raw map so we assert on the actual JSON key names, not Go
+	// field names. Decoding into services.ScanStage would mask missing json tags
+	// because Go's decoder maps PascalCase JSON keys to PascalCase fields.
+	var raw map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&raw))
+	assert.Equal(t, "os_detection", raw["stage"])
+	assert.Equal(t, "syn", raw["scan_type"])
+	assert.Equal(t, "22,80,443", raw["ports"])
+	assert.Equal(t, "no OS information", raw["reason"])
+	assert.NotContains(t, raw, "Stage", "response keys must be snake_case")
+	assert.NotContains(t, raw, "ScanType", "response keys must be snake_case")
+	assert.NotContains(t, raw, "OSDetection", "response keys must be snake_case")
 }
 
 func TestSmartScan_EvaluateHost_NotFound_Returns404(t *testing.T) {
