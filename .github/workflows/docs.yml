@@ -88,6 +88,19 @@ jobs:
       - name: Generate API documentation
         run: make docs
 
+      - name: Check for swagger drift
+        run: |
+          if ! git diff --exit-code docs/swagger/ frontend/src/api/types.ts; then
+            echo ""
+            echo "❌ Swagger spec is out of sync with code annotations."
+            echo "Run 'make docs' locally and commit the updated files:"
+            echo "  docs/swagger/swagger.json"
+            echo "  docs/swagger/swagger.yaml"
+            echo "  docs/swagger/docs.go"
+            echo "  frontend/src/api/types.ts"
+            exit 1
+          fi
+
       - name: Build HTML documentation
         run: npm run docs:build
 
