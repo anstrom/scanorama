@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -96,6 +97,7 @@ func startTLSServer(t *testing.T) (string, *x509.Certificate) {
 
 	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
 		Certificates: []tls.Certificate{tlsCert},
+		MinVersion:   tls.VersionTLS12,
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
@@ -133,7 +135,7 @@ func TestParseServiceFromBanner_Unknown(t *testing.T) {
 func TestNewBannerGrabber(t *testing.T) {
 	database, _ := newBannerMockDB(t)
 	repo := db.NewBannerRepository(database)
-	g := NewBannerGrabber(repo, newTestLogger())
+	g := NewBannerGrabber(repo, newTestLogger(), "")
 	require.NotNil(t, g)
 }
 
@@ -142,7 +144,7 @@ func TestNewBannerGrabber(t *testing.T) {
 func TestEnrichHosts_EmptyTargets(t *testing.T) {
 	database, mock := newBannerMockDB(t)
 	repo := db.NewBannerRepository(database)
-	g := NewBannerGrabber(repo, newTestLogger())
+	g := NewBannerGrabber(repo, newTestLogger(), "")
 
 	// No DB calls should happen.
 	g.EnrichHosts(context.Background(), []BannerTarget{})
@@ -152,7 +154,7 @@ func TestEnrichHosts_EmptyTargets(t *testing.T) {
 func TestEnrichHosts_NilTargets(t *testing.T) {
 	database, mock := newBannerMockDB(t)
 	repo := db.NewBannerRepository(database)
-	g := NewBannerGrabber(repo, newTestLogger())
+	g := NewBannerGrabber(repo, newTestLogger(), "")
 
 	g.EnrichHosts(context.Background(), nil)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -171,7 +173,7 @@ func TestGrabPlain_ReturnsBanner(t *testing.T) {
 	hostID := uuid.New()
 	database, mock := newBannerMockDB(t)
 	repo := db.NewBannerRepository(database)
-	g := NewBannerGrabber(repo, newTestLogger())
+	g := NewBannerGrabber(repo, newTestLogger(), "")
 
 	mock.ExpectExec("INSERT INTO port_banners").
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -197,7 +199,7 @@ func TestGrabPlain_NoData_NoUpsert(t *testing.T) {
 
 	database, mock := newBannerMockDB(t)
 	repo := db.NewBannerRepository(database)
-	g := NewBannerGrabber(repo, newTestLogger())
+	g := NewBannerGrabber(repo, newTestLogger(), "")
 
 	host, portStr, _ := net.SplitHostPort(addr)
 	var port int
@@ -213,7 +215,7 @@ func TestGrabPlain_NoData_NoUpsert(t *testing.T) {
 func TestGrabPlain_UnreachableHost(t *testing.T) {
 	database, mock := newBannerMockDB(t)
 	repo := db.NewBannerRepository(database)
-	g := NewBannerGrabber(repo, newTestLogger())
+	g := NewBannerGrabber(repo, newTestLogger(), "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -238,9 +240,11 @@ func TestGrabTLS_StoresCertificate(t *testing.T) {
 	hostID := uuid.New()
 	database, mock := newBannerMockDB(t)
 	repo := db.NewBannerRepository(database)
-	g := NewBannerGrabber(repo, newTestLogger())
+	g := NewBannerGrabber(repo, newTestLogger(), "")
 
 	mock.ExpectExec("INSERT INTO certificates").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO port_banners").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	target := BannerTarget{HostID: hostID, IP: host, Ports: []int{port}}
@@ -250,10 +254,53 @@ func TestGrabTLS_StoresCertificate(t *testing.T) {
 	assert.Equal(t, "test.local", leaf.Subject.CommonName)
 }
 
+// TestGrabPlain_NoBanner_PortOnlyServiceDetected verifies that port-only
+// fingerprint rules fire even when the server sends no banner bytes (binary
+// protocols that wait for the client to speak first, e.g. SMB, RDP).
+func TestGrabPlain_NoBanner_PortOnlyServiceDetected(t *testing.T) {
+	// Server closes without sending anything.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := ln.Addr().String()
+	go func() {
+		conn, _ := ln.Accept()
+		if conn != nil {
+			conn.Close()
+		}
+		_ = ln.Close()
+	}()
+
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+
+	// Use a custom fingerprinter with a port-only rule for the test port.
+	host, portStr, _ := net.SplitHostPort(addr)
+	var port int
+	parsePort(portStr, &port)
+
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+	// Inject a port-only rule for the dynamic test port via a temp file.
+	extra := `[{"port":` + portStr + `,"pattern":"","service":"TestBinaryProto"}]`
+	f, tmpErr := os.CreateTemp(t.TempDir(), "fp-*.json")
+	require.NoError(t, tmpErr)
+	_, _ = f.WriteString(extra)
+	f.Close()
+	g.fingerprint = NewFingerprinter(f.Name())
+
+	// Even with no banner, the port-only rule should fire and trigger an upsert.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	target := BannerTarget{HostID: uuid.New(), IP: host, Ports: []int{port}}
+	g.grabPlain(context.Background(), target, port, addr)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestGrabTLS_UnreachableHost(t *testing.T) {
 	database, mock := newBannerMockDB(t)
 	repo := db.NewBannerRepository(database)
-	g := NewBannerGrabber(repo, newTestLogger())
+	g := NewBannerGrabber(repo, newTestLogger(), "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -277,7 +324,7 @@ func TestEnrichHosts_WithTCPTarget(t *testing.T) {
 	hostID := uuid.New()
 	database, mock := newBannerMockDB(t)
 	repo := db.NewBannerRepository(database)
-	g := NewBannerGrabber(repo, newTestLogger())
+	g := NewBannerGrabber(repo, newTestLogger(), "")
 
 	mock.ExpectExec("INSERT INTO port_banners").
 		WillReturnResult(sqlmock.NewResult(1, 1))

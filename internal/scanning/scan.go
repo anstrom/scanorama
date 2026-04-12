@@ -931,7 +931,7 @@ func runBannerEnrichment(database *db.DB, hosts []Host) {
 
 	hostRepo := db.NewHostRepository(database)
 	bannerRepo := db.NewBannerRepository(database)
-	grabber := enrichment.NewBannerGrabber(bannerRepo, slog.Default())
+	grabber := enrichment.NewBannerGrabber(bannerRepo, slog.Default(), "")
 
 	var targets []enrichment.BannerTarget
 	for _, h := range hosts {
