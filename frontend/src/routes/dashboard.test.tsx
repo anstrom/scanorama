@@ -30,6 +30,10 @@ vi.mock("../api/hooks/use-dashboard", () => ({
   useStatsSummary: vi.fn(),
 }));
 
+vi.mock("../api/hooks/use-expiring-certs", () => ({
+  useExpiringCerts: vi.fn(),
+}));
+
 vi.mock("../components/activity-feed", () => ({
   ActivityFeed: () => null,
 }));
@@ -40,6 +44,7 @@ import { useRecentScans, useScanActivity } from "../api/hooks/use-scans";
 import { useActiveHostCount } from "../api/hooks/use-hosts";
 import { useDiscoveryJobs, useDiscoveryDiff } from "../api/hooks/use-discovery";
 import { useStatsSummary } from "../api/hooks/use-dashboard";
+import { useExpiringCerts } from "../api/hooks/use-expiring-certs";
 
 const mockUseVersion = vi.mocked(useVersion);
 const mockUseNetworkStats = vi.mocked(useNetworkStats);
@@ -49,6 +54,7 @@ const mockUseActiveHostCount = vi.mocked(useActiveHostCount);
 const mockUseDiscoveryJobs = vi.mocked(useDiscoveryJobs);
 const mockUseDiscoveryDiff = vi.mocked(useDiscoveryDiff);
 const mockUseStatsSummary = vi.mocked(useStatsSummary);
+const mockUseExpiringCerts = vi.mocked(useExpiringCerts);
 
 function setupDefaultMocks() {
   mockUseVersion.mockReturnValue({
@@ -112,6 +118,11 @@ function setupDefaultMocks() {
     data: undefined,
     isLoading: false,
   } as unknown as ReturnType<typeof useStatsSummary>);
+
+  mockUseExpiringCerts.mockReturnValue({
+    data: { certificates: [], days: 30 },
+    isLoading: false,
+  } as unknown as ReturnType<typeof useExpiringCerts>);
 }
 
 beforeEach(() => {

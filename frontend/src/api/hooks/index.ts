@@ -63,3 +63,8 @@ export {
   useDeleteScan,
   useScanActivity,
 } from "./use-scans";
+export { useExpiringCerts } from "./use-expiring-certs";
+export type {
+  ExpiringCertificate,
+  ExpiringCertificatesResponse,
+} from "./use-expiring-certs";
