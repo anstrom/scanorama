@@ -13,6 +13,10 @@ import {
   Play,
   SlidersHorizontal,
   Plus,
+  FileText,
+  ChevronDown,
+  ChevronRight,
+  ShieldCheck,
 } from "lucide-react";
 import { SortHeader } from "../components/sort-header";
 import type { SortOrder } from "../components/sort-header";
@@ -173,6 +177,39 @@ function HostDetailPanel({
 }) {
   const { data: full, isLoading, isError, error } = useHost(host.id ?? "");
   const h = (full ?? host) as HostWithDetails;
+
+  // Expanded port banners: Set of "port-protocol" keys with banner expanded
+  const [expandedBanners, setExpandedBanners] = useState<Set<string>>(new Set());
+
+  function toggleBanner(port: number, protocol: string) {
+    const key = `${port}-${protocol}`;
+    setExpandedBanners((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
+
+  // Show-more state for truncated banners
+  const [expandedRawBanners, setExpandedRawBanners] = useState<Set<string>>(
+    new Set(),
+  );
+
+  function toggleRawBanner(key: string) {
+    setExpandedRawBanners((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
 
   // Hostname editing
   const [isEditingHostname, setIsEditingHostname] = useState(false);
@@ -652,31 +689,195 @@ function HostDetailPanel({
                     </p>
                   ) : (
                     <div className="space-y-1">
-                      {openPorts.map((p) => (
-                        <div
-                          key={`${p.port}-${p.protocol}`}
-                          className="flex items-center justify-between gap-2 py-0.5"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-mono text-xs text-text-primary shrink-0">
-                              {p.port}
-                            </span>
-                            <span className="text-xs text-text-muted uppercase shrink-0">
-                              {p.protocol}
-                            </span>
-                            {p.service && (
-                              <span className="text-xs text-text-secondary truncate">
-                                {p.service}
+                      {openPorts.map((p) => {
+                        const portKey = `${p.port}-${p.protocol}`;
+                        const banner = (h as HostWithDetails).banners?.find(
+                          (b) => b.port === p.port && b.protocol === (p.protocol ?? "tcp"),
+                        );
+                        const cert = (h as HostWithDetails).certificates?.find(
+                          (c) => c.port === p.port,
+                        );
+                        const hasBanner = !!banner;
+                        const hasCert = !!cert;
+                        const isExpanded = expandedBanners.has(portKey);
+                        const certDaysLeft = cert?.not_after
+                          ? Math.ceil(
+                              (new Date(cert.not_after).getTime() - Date.now()) /
+                                86400000,
+                            )
+                          : null;
+                        const certUrgent =
+                          certDaysLeft !== null && certDaysLeft <= 30;
+                        const certColor =
+                          certDaysLeft === null
+                            ? ""
+                            : certDaysLeft < 0
+                              ? "text-danger"
+                              : certDaysLeft <= 7
+                                ? "text-danger"
+                                : certDaysLeft <= 14
+                                  ? "text-[#f97316]"
+                                  : "text-warning";
+
+                        return (
+                          <div key={portKey}>
+                            <div className="flex items-center justify-between gap-2 py-0.5">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-mono text-xs text-text-primary shrink-0">
+                                  {p.port}
+                                </span>
+                                <span className="text-xs text-text-muted uppercase shrink-0">
+                                  {p.protocol}
+                                </span>
+                                {p.service && (
+                                  <span className="text-xs text-text-secondary truncate">
+                                    {p.service}
+                                  </span>
+                                )}
+                                {hasBanner && (
+                                  <button
+                                    type="button"
+                                    title="Show banner details"
+                                    onClick={() => toggleBanner(p.port!, p.protocol ?? "tcp")}
+                                    className={cn(
+                                      "shrink-0 flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-medium transition-colors",
+                                      isExpanded
+                                        ? "bg-accent/20 text-accent"
+                                        : "bg-surface-raised text-text-muted hover:text-text-secondary",
+                                    )}
+                                  >
+                                    <FileText className="h-2.5 w-2.5" />
+                                    {isExpanded ? (
+                                      <ChevronDown className="h-2.5 w-2.5" />
+                                    ) : (
+                                      <ChevronRight className="h-2.5 w-2.5" />
+                                    )}
+                                  </button>
+                                )}
+                                {hasCert && !hasBanner && (
+                                  <button
+                                    type="button"
+                                    title="Show certificate details"
+                                    onClick={() => toggleBanner(p.port!, p.protocol ?? "tcp")}
+                                    className={cn(
+                                      "shrink-0 flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-medium transition-colors",
+                                      isExpanded
+                                        ? "bg-accent/20 text-accent"
+                                        : certUrgent
+                                          ? "bg-warning/10 text-warning hover:bg-warning/20"
+                                          : "bg-surface-raised text-text-muted hover:text-text-secondary",
+                                    )}
+                                  >
+                                    <ShieldCheck className="h-2.5 w-2.5" />
+                                    {isExpanded ? (
+                                      <ChevronDown className="h-2.5 w-2.5" />
+                                    ) : (
+                                      <ChevronRight className="h-2.5 w-2.5" />
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                              <span className="text-xs text-text-muted whitespace-nowrap shrink-0">
+                                {p.last_seen
+                                  ? formatRelativeTime(p.last_seen)
+                                  : "—"}
                               </span>
+                            </div>
+
+                            {/* Inline banner/cert expansion */}
+                            {isExpanded && (hasBanner || hasCert) && (
+                              <div className="ml-4 mb-1 mt-0.5 text-xs bg-surface-raised rounded p-2 border border-border/50 space-y-1">
+                                {banner && (
+                                  <>
+                                    {(banner.service || banner.version) && (
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        {banner.service && (
+                                          <span className="text-text-secondary font-medium">
+                                            {banner.service}
+                                          </span>
+                                        )}
+                                        {banner.version && (
+                                          <span className="text-text-muted">
+                                            {banner.version}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                    {banner.raw_banner && (() => {
+                                      const rawKey = `raw-${portKey}`;
+                                      const isRawExpanded = expandedRawBanners.has(rawKey);
+                                      const maxLen = 200;
+                                      const truncated =
+                                        banner.raw_banner.length > maxLen &&
+                                        !isRawExpanded;
+                                      return (
+                                        <div>
+                                          <p className="font-mono text-[11px] text-text-muted break-all whitespace-pre-wrap">
+                                            {truncated
+                                              ? banner.raw_banner.slice(0, maxLen) + "…"
+                                              : banner.raw_banner}
+                                          </p>
+                                          {banner.raw_banner.length > maxLen && (
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleRawBanner(rawKey)}
+                                              className="text-[10px] text-accent hover:underline mt-0.5"
+                                            >
+                                              {isRawExpanded ? "show less" : "show more"}
+                                            </button>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
+                                  </>
+                                )}
+                                {cert && (
+                                  <div className="space-y-0.5">
+                                    {cert.subject_cn && (
+                                      <div className="flex gap-2">
+                                        <span className="text-text-muted w-14 shrink-0">CN</span>
+                                        <span className="text-text-secondary break-all">
+                                          {cert.subject_cn}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {cert.not_after && (
+                                      <div className="flex gap-2">
+                                        <span className="text-text-muted w-14 shrink-0">
+                                          Expires
+                                        </span>
+                                        <span
+                                          className={cn(
+                                            certDaysLeft !== null && certDaysLeft <= 30
+                                              ? certColor
+                                              : "text-text-secondary",
+                                          )}
+                                        >
+                                          {new Date(cert.not_after).toLocaleDateString()}
+                                          {certDaysLeft !== null &&
+                                            (certDaysLeft < 0
+                                              ? " (expired)"
+                                              : ` (${certDaysLeft}d)`)}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {cert.tls_version && (
+                                      <div className="flex gap-2">
+                                        <span className="text-text-muted w-14 shrink-0">
+                                          TLS
+                                        </span>
+                                        <span className="text-text-secondary">
+                                          {cert.tls_version}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
-                          <span className="text-xs text-text-muted whitespace-nowrap shrink-0">
-                            {p.last_seen
-                              ? formatRelativeTime(p.last_seen)
-                              : "—"}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
