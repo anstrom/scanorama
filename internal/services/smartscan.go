@@ -58,9 +58,10 @@ type SuggestionSummary struct {
 
 // BatchFilter constrains which hosts to include in a batch smart-scan trigger.
 type BatchFilter struct {
-	Stage   string      // empty = all eligible stages; otherwise one of ScanStage.Stage values
-	HostIDs []uuid.UUID // non-empty = only these hosts; empty = all hosts
-	Limit   int         // max hosts to queue; 0 = use defaultBatchLimit
+	Stage       string      // empty = all eligible stages; otherwise one of ScanStage.Stage values
+	HostIDs     []uuid.UUID // non-empty = only these hosts; empty = all hosts
+	NetworkCIDR string      // non-empty = only hosts whose IP falls within this CIDR
+	Limit       int         // max hosts to queue; 0 = use defaultBatchLimit
 }
 
 // BatchResult summarizes the outcome of a QueueBatch call.
@@ -444,7 +445,10 @@ func (s *SmartScanService) resolveHosts(ctx context.Context, filter BatchFilter)
 	}
 
 	// Fetch only up hosts to avoid wasting the query budget on gone/ignored entries.
-	hosts, _, err := s.hostRepo.ListHosts(ctx, &db.HostFilters{Status: "up"}, 0, maxBatchHostsQuery)
+	hosts, _, err := s.hostRepo.ListHosts(ctx, &db.HostFilters{
+		Status:  "up",
+		Network: filter.NetworkCIDR,
+	}, 0, maxBatchHostsQuery)
 	return hosts, err
 }
 

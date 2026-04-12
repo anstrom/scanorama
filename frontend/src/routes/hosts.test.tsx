@@ -27,8 +27,28 @@ vi.mock("../api/hooks/use-smart-scan", () => ({
   useTriggerSmartScan: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 
+const mockOnSmartScanConfirm = vi.fn();
+const mockOnSmartScanClose = vi.fn();
 vi.mock("../components/smart-scan-preview-modal", () => ({
-  HostSmartScanPreviewModal: () => null,
+  HostSmartScanPreviewModal: ({
+    onConfirm,
+    onClose,
+  }: {
+    hostIp: string;
+    stage: unknown;
+    isPending: boolean;
+    onConfirm: () => void;
+    onClose: () => void;
+  }) => {
+    mockOnSmartScanConfirm.mockImplementation(onConfirm);
+    mockOnSmartScanClose.mockImplementation(onClose);
+    return (
+      <div data-testid="smart-scan-preview-modal">
+        <button onClick={onConfirm}>Run Smart Scan</button>
+        <button onClick={onClose}>Cancel</button>
+      </div>
+    );
+  },
 }));
 
 import {
@@ -39,6 +59,14 @@ import {
   useDeleteHost,
   useBulkDeleteHosts,
 } from "../api/hooks/use-hosts";
+
+import {
+  useSmartScanStage,
+  useTriggerSmartScan,
+} from "../api/hooks/use-smart-scan";
+
+const mockUseSmartScanStage = vi.mocked(useSmartScanStage);
+const mockUseTriggerSmartScan = vi.mocked(useTriggerSmartScan);
 
 const mockUseHosts = vi.mocked(useHosts);
 const mockUseHost = vi.mocked(useHost);
@@ -1018,6 +1046,72 @@ describe("HostsPage", () => {
         screen.getByRole("button", { name: /^scan$/i }),
       );
       expect(screen.getByTestId("run-scan-modal")).toBeInTheDocument();
+    });
+
+    // ── Smart Scan button ──────────────────────────────────────────
+
+    it("renders a Smart Scan button in the panel footer", async () => {
+      await openPanel();
+      expect(
+        screen.getByRole("button", { name: /smart scan/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("opens the preview modal when Smart Scan is clicked and stage data is available", async () => {
+      mockUseSmartScanStage.mockReturnValue({
+        data: {
+          stage: "os_detection",
+          scan_type: "syn",
+          ports: "22,80,443",
+          os_detection: true,
+          reason: "no OS information",
+        },
+        isLoading: false,
+      } as unknown as ReturnType<typeof useSmartScanStage>);
+
+      await openPanel();
+      await userEvent.click(
+        screen.getByRole("button", { name: /smart scan/i }),
+      );
+      expect(screen.getByTestId("smart-scan-preview-modal")).toBeInTheDocument();
+    });
+
+    it("disables the Smart Scan button when a scan is already pending", async () => {
+      mockUseHostScans.mockReturnValue({
+        data: {
+          data: [{ id: "s1", status: "pending" }],
+          total: 1,
+          page: 1,
+          page_size: 5,
+          total_pages: 1,
+        },
+        isLoading: false,
+      } as unknown as ReturnType<typeof useHostScans>);
+
+      await openPanel();
+      const btn = screen.getByRole("button", { name: /smart scan/i });
+      expect(btn).toBeDisabled();
+    });
+
+    it("calls triggerSmartScan when the preview modal confirm button is clicked", async () => {
+      const mockTrigger = vi.fn().mockResolvedValue({ queued: true, scan_id: "scan-123" });
+      mockUseTriggerSmartScan.mockReturnValue({
+        mutateAsync: mockTrigger,
+        isPending: false,
+      } as unknown as ReturnType<typeof useTriggerSmartScan>);
+      mockUseSmartScanStage.mockReturnValue({
+        data: { stage: "port_expansion", scan_type: "connect", ports: "1-1024", reason: "no ports" },
+        isLoading: false,
+      } as unknown as ReturnType<typeof useSmartScanStage>);
+
+      await openPanel();
+      await userEvent.click(
+        screen.getByRole("button", { name: /smart scan/i }),
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: /run smart scan/i }),
+      );
+      expect(mockTrigger).toHaveBeenCalledWith("host-1");
     });
   });
 

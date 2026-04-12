@@ -560,7 +560,7 @@ function NetworkDetailPanel({
 
   async function handleSmartScanBatch() {
     try {
-      const result = await triggerBatch({});
+      const result = await triggerBatch({ network_cidr: n.cidr ?? undefined });
       setShowSmartScanPreview(false);
       toast.success(
         result.queued === 0

@@ -39,6 +39,13 @@ export function useSmartScanSuggestions(enabled = true) {
   });
 }
 
+export type TriggerHostResponse = {
+  host_id?: string;
+  queued?: boolean;
+  scan_id?: string;
+  message?: string;
+};
+
 export function useTriggerSmartScan() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -48,7 +55,7 @@ export function useTriggerSmartScan() {
         { params: { path: { id: hostId } } },
       );
       if (error) throw new ApiError(response.status, error);
-      return data;
+      return data as TriggerHostResponse;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["scans"] });
@@ -60,15 +67,12 @@ export function useTriggerSmartScan() {
 export function useTriggerSmartScanBatch() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: {
-      stage?: string;
-      host_ids?: string[];
-      limit?: number;
-    }) => {
+    mutationFn: async (
+      body: components["schemas"]["docs.TriggerBatchRequest"],
+    ) => {
       const { data, error, response } = await api.POST(
         "/smart-scan/trigger-batch",
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        { body: body as any },
+        { body },
       );
       if (error) throw new ApiError(response.status, error);
       return data as BatchResult;

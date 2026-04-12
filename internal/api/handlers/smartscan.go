@@ -177,9 +177,10 @@ func (h *SmartScanHandler) TriggerBatch(w http.ResponseWriter, r *http.Request) 
 	}
 
 	result, err := h.service.QueueBatch(r.Context(), services.BatchFilter{
-		Stage:   req.Stage,
-		HostIDs: hostIDs,
-		Limit:   req.Limit,
+		Stage:       req.Stage,
+		HostIDs:     hostIDs,
+		NetworkCIDR: req.NetworkCIDR,
+		Limit:       req.Limit,
 	})
 	if err != nil {
 		h.logger.Error("Failed to queue batch smart scan", "error", err)
@@ -190,9 +191,10 @@ func (h *SmartScanHandler) TriggerBatch(w http.ResponseWriter, r *http.Request) 
 }
 
 type triggerBatchRequest struct {
-	Stage   string   `json:"stage"`
-	HostIDs []string `json:"host_ids"`
-	Limit   int      `json:"limit"`
+	Stage       string   `json:"stage"`
+	HostIDs     []string `json:"host_ids"`
+	NetworkCIDR string   `json:"network_cidr"`
+	Limit       int      `json:"limit"`
 }
 
 // parseHostID extracts the host UUID from the path variable {id}.

@@ -1056,6 +1056,9 @@ definitions:
       limit:
         example: 50
         type: integer
+      network_cidr:
+        example: 192.168.1.0/24
+        type: string
       stage:
         enum:
         - os_detection
