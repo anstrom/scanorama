@@ -5,6 +5,34 @@ import type { components } from "../types";
 
 type CreateProfileRequest = components["schemas"]["docs.CreateProfileRequest"];
 
+// ProfileStats is fetched from the stats endpoint which is not yet in the
+// auto-generated types (regenerated after `make docs`).
+export interface ProfileStats {
+  profile_id: string;
+  total_scans: number;
+  unique_hosts: number;
+  last_used: string | null;
+  avg_hosts_found: number | null;
+}
+
+export function useProfileStats(id: string | undefined) {
+  return useQuery<ProfileStats>({
+    queryKey: ["profiles", id, "stats"],
+    queryFn: async () => {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+      const res = await fetch(`${baseUrl}/profiles/${id}/stats`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new ApiError(res.status, body);
+      }
+      return res.json() as Promise<ProfileStats>;
+    },
+    enabled: !!id,
+    // Stats are not time-critical; cache for 60 s before background refresh.
+    staleTime: 60_000,
+  });
+}
+
 export function useProfile(id: string | undefined) {
   return useQuery({
     queryKey: ["profiles", id],

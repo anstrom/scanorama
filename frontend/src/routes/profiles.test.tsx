@@ -9,6 +9,7 @@ vi.mock("../api/hooks/use-profiles", () => ({
   useProfiles: vi.fn(),
   useDeleteProfile: vi.fn(),
   useCloneProfile: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useProfileStats: vi.fn(() => ({ data: undefined, isLoading: false })),
 }));
 
 vi.mock("../components/profile-form-modal", () => ({
@@ -236,14 +237,16 @@ describe("ProfilesPage — row data", () => {
     render(<ProfilesPage />);
     const rows = screen.getAllByRole("row");
     const cells = within(rows[1]).getAllByRole("cell");
-    expect(cells[4].textContent).toMatch(/ago|just now/i);
+    // columns: Name(0), Scan Type(1), Ports(2), Description(3), Last Used(4), Updated(5)
+    expect(cells[5].textContent).toMatch(/ago|just now/i);
   });
 
   it("shows em-dash for missing updated_at", () => {
     render(<ProfilesPage />);
     const rows = screen.getAllByRole("row");
     const cells = within(rows[3]).getAllByRole("cell");
-    expect(cells[4]).toHaveTextContent("\u2014");
+    // columns: Name(0), Scan Type(1), Ports(2), Description(3), Last Used(4), Updated(5)
+    expect(cells[5]).toHaveTextContent("\u2014");
   });
 });
 
