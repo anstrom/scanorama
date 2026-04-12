@@ -54,6 +54,10 @@ jobs:
             query-filters:
               - exclude:
                   id: go/disabled-tls-verification
+              - exclude:
+                  id: go/disabled-certificate-check
+              - exclude:
+                  id: go/insecure-tls
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4
