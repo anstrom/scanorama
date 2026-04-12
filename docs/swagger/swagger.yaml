@@ -639,6 +639,65 @@ definitions:
         example: 1.24.0
         type: string
     type: object
+  docs.PortDefinitionResponse:
+    properties:
+      category:
+        example: web
+        type: string
+      description:
+        example: HTTP over TLS/SSL
+        type: string
+      is_standard:
+        example: true
+        type: boolean
+      os_families:
+        example:
+        - linux
+        - windows
+        items:
+          type: string
+        type: array
+      port:
+        example: 443
+        type: integer
+      protocol:
+        example: tcp
+        type: string
+      service:
+        example: https
+        type: string
+    type: object
+  docs.PortHostCountResponse:
+    properties:
+      count:
+        example: 12
+        type: integer
+      port:
+        example: 443
+        type: integer
+      protocol:
+        example: tcp
+        type: string
+    type: object
+  docs.PortListResponse:
+    properties:
+      page:
+        example: 1
+        type: integer
+      page_size:
+        example: 50
+        type: integer
+      ports:
+        items:
+          $ref: '#/definitions/docs.PortDefinitionResponse'
+        type: array
+      total:
+        example: 103
+        type: integer
+      total_pages:
+        example: 3
+        type: integer
+    type: object
   docs.ProfileResponse:
     properties:
       created_at:
@@ -890,6 +949,17 @@ definitions:
       version:
         example: 0.7.0
         type: string
+    type: object
+  docs.StringListResponse:
+    properties:
+      categories:
+        example:
+        - web
+        - database
+        - network
+        items:
+          type: string
+        type: array
     type: object
   docs.SuggestionGroupResponse:
     properties:
@@ -2294,6 +2364,142 @@ paths:
       summary: Get network statistics
       tags:
       - Networks
+  /ports:
+    get:
+      description: |-
+        Returns a paginated list of well-known port/service definitions.
+        Supports filtering by search query, category, and protocol.
+      operationId: listPorts
+      parameters:
+      - description: Search by port number, service name, or description
+        in: query
+        name: search
+        type: string
+      - description: Filter by category (web, database, windows, etc.)
+        in: query
+        name: category
+        type: string
+      - description: Filter by protocol (tcp or udp)
+        in: query
+        name: protocol
+        type: string
+      - description: Sort field (port, service, category)
+        in: query
+        name: sort_by
+        type: string
+      - description: Sort direction (asc or desc)
+        in: query
+        name: sort_order
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Results per page
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.PortListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List port definitions
+      tags:
+      - ports
+  /ports/{port}:
+    get:
+      description: |-
+        Returns the service definition for a specific port number.
+        Use ?protocol=tcp (default) or ?protocol=udp.
+      operationId: getPort
+      parameters:
+      - description: Port number
+        in: path
+        name: port
+        required: true
+        type: integer
+      - description: Protocol (tcp or udp, default tcp)
+        in: query
+        name: protocol
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.PortDefinitionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get port definition
+      tags:
+      - ports
+  /ports/categories:
+    get:
+      description: Returns the distinct category values used in the port definition
+        database.
+      operationId: listPortCategories
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.StringListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List port categories
+      tags:
+      - ports
+  /ports/host-counts:
+    get:
+      description: |-
+        Returns the number of distinct hosts with at least one open scan result
+        for each port+protocol pair observed in the network.
+      operationId: listPortHostCounts
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/docs.PortHostCountResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List port host counts
+      tags:
+      - ports
   /profiles:
     get:
       description: Get paginated list of scan profiles

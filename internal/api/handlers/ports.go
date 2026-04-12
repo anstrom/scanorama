@@ -142,6 +142,20 @@ func (h *PortHandler) GetPort(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusOK, def)
 }
 
+// ListPortHostCounts handles GET /api/v1/ports/host-counts — returns per-port open host counts.
+func (h *PortHandler) ListPortHostCounts(w http.ResponseWriter, r *http.Request) {
+	counts, err := h.repo.ListPortHostCounts(r.Context())
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError, fmt.Errorf("failed to list port host counts: %w", err))
+		return
+	}
+	if counts == nil {
+		counts = []db.PortHostCount{}
+	}
+
+	writeJSON(w, r, http.StatusOK, counts)
+}
+
 // ListPortCategories handles GET /api/v1/ports/categories — list distinct categories.
 //
 //	@Summary      List port categories

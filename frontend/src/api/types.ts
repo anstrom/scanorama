@@ -480,6 +480,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List port definitions
+         * @description Returns a paginated list of well-known port/service definitions.
+         *     Supports filtering by search query, category, and protocol.
+         */
+        get: operations["listPorts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ports/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List port categories
+         * @description Returns the distinct category values used in the port definition database.
+         */
+        get: operations["listPortCategories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ports/host-counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List port host counts
+         * @description Returns the number of distinct hosts with at least one open scan result
+         *     for each port+protocol pair observed in the network.
+         */
+        get: operations["listPortHostCounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ports/{port}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get port definition
+         * @description Returns the service definition for a specific port number.
+         *     Use ?protocol=tcp (default) or ?protocol=udp.
+         */
+        get: operations["getPort"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/profiles": {
         parameters: {
             query?: never;
@@ -1271,6 +1354,46 @@ export interface components {
             /** @example 1.24.0 */
             version?: string;
         };
+        "docs.PortDefinitionResponse": {
+            /** @example web */
+            category?: string;
+            /** @example HTTP over TLS/SSL */
+            description?: string;
+            /** @example true */
+            is_standard?: boolean;
+            /**
+             * @example [
+             *       "linux",
+             *       "windows"
+             *     ]
+             */
+            os_families?: string[];
+            /** @example 443 */
+            port?: number;
+            /** @example tcp */
+            protocol?: string;
+            /** @example https */
+            service?: string;
+        };
+        "docs.PortHostCountResponse": {
+            /** @example 12 */
+            count?: number;
+            /** @example 443 */
+            port?: number;
+            /** @example tcp */
+            protocol?: string;
+        };
+        "docs.PortListResponse": {
+            /** @example 1 */
+            page?: number;
+            /** @example 50 */
+            page_size?: number;
+            ports?: components["schemas"]["docs.PortDefinitionResponse"][];
+            /** @example 103 */
+            total?: number;
+            /** @example 3 */
+            total_pages?: number;
+        };
         "docs.ProfileResponse": {
             created_at?: string;
             /** @example Fast TCP connect scan */
@@ -1428,6 +1551,16 @@ export interface components {
             uptime?: string;
             /** @example 0.7.0 */
             version?: string;
+        };
+        "docs.StringListResponse": {
+            /**
+             * @example [
+             *       "web",
+             *       "database",
+             *       "network"
+             *     ]
+             */
+            categories?: string[];
         };
         "docs.SuggestionGroupResponse": {
             /** @example os_detection */
@@ -3326,6 +3459,161 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPorts: {
+        parameters: {
+            query?: {
+                /** @description Search by port number, service name, or description */
+                search?: string;
+                /** @description Filter by category (web, database, windows, etc.) */
+                category?: string;
+                /** @description Filter by protocol (tcp or udp) */
+                protocol?: string;
+                /** @description Sort field (port, service, category) */
+                sort_by?: string;
+                /** @description Sort direction (asc or desc) */
+                sort_order?: string;
+                /** @description Page number */
+                page?: number;
+                /** @description Results per page */
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.PortListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPortCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.StringListResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPortHostCounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.PortHostCountResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPort: {
+        parameters: {
+            query?: {
+                /** @description Protocol (tcp or udp, default tcp) */
+                protocol?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Port number */
+                port: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.PortDefinitionResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

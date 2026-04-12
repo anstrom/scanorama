@@ -197,6 +197,48 @@ func (r *PortRepository) LookupPort(ctx context.Context, port int, protocol stri
 	return service
 }
 
+// PortHostCount holds the number of distinct hosts observed with an open port.
+type PortHostCount struct {
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
+	Count    int    `json:"count"`
+}
+
+// ListPortHostCounts returns host counts for all port+protocol pairs that have
+// at least one open port scan result.
+func (r *PortRepository) ListPortHostCounts(ctx context.Context) ([]PortHostCount, error) {
+	const query = `
+		SELECT port, protocol, COUNT(DISTINCT host_id) AS count
+		FROM port_scans
+		WHERE state = 'open'
+		GROUP BY port, protocol
+		ORDER BY count DESC, port ASC`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, sanitizeDBError("list port host counts", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Warn("error closing rows", "error", err)
+		}
+	}()
+
+	var counts []PortHostCount
+	for rows.Next() {
+		var c PortHostCount
+		if err := rows.Scan(&c.Port, &c.Protocol, &c.Count); err != nil {
+			return nil, fmt.Errorf("failed to scan port host count row: %w", err)
+		}
+		counts = append(counts, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate port host count rows: %w", err)
+	}
+
+	return counts, nil
+}
+
 // ListCategories returns the distinct category values present in the table.
 func (r *PortRepository) ListCategories(ctx context.Context) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx,
