@@ -20,6 +20,7 @@ import (
 	"github.com/anstrom/scanorama/internal/discovery"
 	"github.com/anstrom/scanorama/internal/profiles"
 	"github.com/anstrom/scanorama/internal/scanning"
+	"github.com/anstrom/scanorama/internal/services"
 )
 
 const (
@@ -35,7 +36,11 @@ const (
 // defaultMaxConcurrentScans is the default limit on simultaneous per-host scans
 // launched by a single scan job execution. Callers can override this with
 // WithMaxConcurrentScans.
-const defaultMaxConcurrentScans = 5
+const (
+	defaultMaxConcurrentScans = 5
+	// smartScanJobTimeout is the per-execution deadline for a smart-scan cron job.
+	smartScanJobTimeout = 5 * time.Minute
+)
 
 // Scheduler manages scheduled discovery and scanning jobs.
 type Scheduler struct {
@@ -43,6 +48,7 @@ type Scheduler struct {
 	cron               *cron.Cron
 	discovery          *discovery.Engine
 	profiles           *profiles.Manager
+	smartScan          smartScanBatcher // optional: enables smart_scan job type
 	jobs               map[uuid.UUID]*ScheduledJob
 	mu                 sync.RWMutex
 	running            bool
@@ -51,6 +57,12 @@ type Scheduler struct {
 	maxConcurrentScans int                      // bounded parallelism for per-host scans
 	scanQueue          *scanning.ScanQueue      // optional queue-based scan execution
 	scanRunner         scanning.ScanJobExecutor // injectable for tests; defaults to RunScanWithContext
+}
+
+// smartScanBatcher is the subset of services.SmartScanService used by the
+// scheduler. Defined here to avoid an import cycle.
+type smartScanBatcher interface {
+	QueueBatch(ctx context.Context, filter services.BatchFilter) (*services.BatchResult, error)
 }
 
 // ScheduledJob represents a scheduled job wrapper.
@@ -81,6 +93,25 @@ type ScanJobConfig struct {
 	ProfileID     string   `json:"profile_id,omitempty"`
 	MaxAge        int      `json:"max_age_hours"`
 	OSFamily      []string `json:"os_family,omitempty"`
+}
+
+// SmartScanJobConfig configures a recurring scheduled smart scan.
+// On each cron fire the scheduler calls QueueBatch with a staleness filter
+// targeting hosts whose knowledge score is below the threshold or whose
+// last_seen timestamp is older than MaxStalenessHours.
+type SmartScanJobConfig struct {
+	// ScoreThreshold re-queues hosts with knowledge_score < threshold.
+	// Defaults to 80 when zero.
+	ScoreThreshold int `json:"score_threshold,omitempty"`
+	// MaxStalenessHours re-queues hosts not seen within this many hours.
+	// Ignored when zero.
+	MaxStalenessHours int `json:"max_staleness_hours,omitempty"`
+	// NetworkCIDR restricts the batch to hosts within the given network.
+	// Empty means all networks.
+	NetworkCIDR string `json:"network_cidr,omitempty"`
+	// Limit caps the number of scans queued per cron fire. Defaults to the
+	// SmartScanService batch limit when zero.
+	Limit int `json:"limit,omitempty"`
 }
 
 // NewScheduler creates a new job scheduler.
@@ -178,6 +209,25 @@ func (s *Scheduler) AddScanJob(ctx context.Context, name, cronExpr string, confi
 
 	return s.addJobToCron(cronExpr, job, func() {
 		s.executeScanJob(job.ID, config)
+	})
+}
+
+// WithSmartScanService attaches a SmartScanService so the scheduler can execute
+// smart_scan type jobs. Must be called before Start.
+func (s *Scheduler) WithSmartScanService(svc smartScanBatcher) *Scheduler {
+	s.smartScan = svc
+	return s
+}
+
+// AddSmartScanJob adds a new recurring smart-scan job to the schedule.
+func (s *Scheduler) AddSmartScanJob(ctx context.Context, name, cronExpr string, config SmartScanJobConfig) error {
+	job, err := s.createScheduledJob(ctx, name, cronExpr, db.ScheduledJobTypeSmartScan, config)
+	if err != nil {
+		return err
+	}
+
+	return s.addJobToCron(cronExpr, job, func() {
+		s.executeSmartScanJob(job.ID, config)
 	})
 }
 
@@ -988,6 +1038,8 @@ func (s *Scheduler) addJobToCronScheduler(job *db.ScheduledJob) (cron.EntryID, e
 		return s.addDiscoveryJobToCron(job)
 	case db.ScheduledJobTypeScan:
 		return s.addScanJobToCron(job)
+	case db.ScheduledJobTypeSmartScan:
+		return s.addSmartScanJobToCron(job)
 	default:
 		return 0, fmt.Errorf("unknown job type: %s", job.Type)
 	}
@@ -1015,6 +1067,42 @@ func (s *Scheduler) addScanJobToCron(job *db.ScheduledJob) (cron.EntryID, error)
 	return s.cron.AddFunc(job.CronExpression, func() {
 		s.executeScanJob(job.ID, &config)
 	})
+}
+
+// addSmartScanJobToCron adds a smart_scan job to the cron scheduler.
+func (s *Scheduler) addSmartScanJobToCron(job *db.ScheduledJob) (cron.EntryID, error) {
+	var config SmartScanJobConfig
+	if err := json.Unmarshal([]byte(job.Config), &config); err != nil {
+		return 0, fmt.Errorf("failed to unmarshal smart scan config: %w", err)
+	}
+
+	return s.cron.AddFunc(job.CronExpression, func() {
+		s.executeSmartScanJob(job.ID, config)
+	})
+}
+
+// executeSmartScanJob runs a scheduled smart scan by calling QueueBatch.
+func (s *Scheduler) executeSmartScanJob(jobID uuid.UUID, config SmartScanJobConfig) {
+	if s.smartScan == nil {
+		log.Printf("Smart scan job %s skipped: no SmartScanService configured", jobID)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(s.ctx, smartScanJobTimeout)
+	defer cancel()
+
+	filter := services.BatchFilter{
+		NetworkCIDR: config.NetworkCIDR,
+		Limit:       config.Limit,
+		Source:      db.ScanSourceScheduled,
+	}
+
+	result, err := s.smartScan.QueueBatch(ctx, filter)
+	if err != nil {
+		log.Printf("Smart scan job %s failed: %v", jobID, err)
+		return
+	}
+	log.Printf("Smart scan job %s queued %d scans, skipped %d", jobID, result.Queued, result.Skipped)
 }
 
 // storeJobInMemory stores the job in the scheduler's memory.
