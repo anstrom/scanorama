@@ -58,11 +58,13 @@ type SuggestionSummary struct {
 
 // BatchFilter constrains which hosts to include in a batch smart-scan trigger.
 type BatchFilter struct {
-	Stage       string      // empty = all eligible stages; otherwise one of ScanStage.Stage values
-	HostIDs     []uuid.UUID // non-empty = only these hosts; empty = all hosts
-	NetworkCIDR string      // non-empty = only hosts whose IP falls within this CIDR
-	Limit       int         // max hosts to queue; 0 = use defaultBatchLimit
-	Source      string      // db.ScanSourceAPI / ScanSourceScheduled; defaults to ScanSourceAPI
+	Stage             string      // empty = all eligible stages; otherwise one of ScanStage.Stage values
+	HostIDs           []uuid.UUID // non-empty = only these hosts; empty = all hosts
+	NetworkCIDR       string      // non-empty = only hosts whose IP falls within this CIDR
+	Limit             int         // max hosts to queue; 0 = use defaultBatchLimit
+	Source            string      // db.ScanSourceAPI / ScanSourceScheduled; defaults to ScanSourceAPI
+	ScoreThreshold    int         // 0 = no filter; >0 = only hosts with knowledge_score < threshold
+	MaxStalenessHours int         // 0 = no filter; >0 = only hosts not seen within N hours
 }
 
 // BatchResult summarizes the outcome of a QueueBatch call.
@@ -444,7 +446,7 @@ func (s *SmartScanService) ReEvaluateHosts(_ *db.DB, hostIDs []uuid.UUID) {
 		if host.KnowledgeScore >= s.autoProgressThreshold {
 			continue
 		}
-		if s.autoProgressMaxPerWin > 0 && s.exceedsAutoQueueLimit(ctx, id) {
+		if s.autoProgressMaxPerWin > 0 && s.exceedsAutoQueueLimit(ctx, host.IPAddress.String()) {
 			s.logger.Debug("Auto-progression skipped: loop guard triggered",
 				"host_id", id, "max_per_window", s.autoProgressMaxPerWin)
 			continue
@@ -461,7 +463,8 @@ func (s *SmartScanService) ReEvaluateHosts(_ *db.DB, hostIDs []uuid.UUID) {
 // exceedsAutoQueueLimit returns true when the host has already been auto-queued
 // autoProgressMaxPerWin times within the rolling autoProgressWindow. This
 // prevents runaway re-queuing when a host is stuck below the threshold.
-func (s *SmartScanService) exceedsAutoQueueLimit(ctx context.Context, hostID uuid.UUID) bool {
+// hostIP is the dotted-decimal IP address stored in execution_details.scan_targets.
+func (s *SmartScanService) exceedsAutoQueueLimit(ctx context.Context, hostIP string) bool {
 	windowStart := time.Now().Add(-s.autoProgressWindow)
 	src := db.ScanSourceAuto
 	var count int
@@ -469,9 +472,9 @@ func (s *SmartScanService) exceedsAutoQueueLimit(ctx context.Context, hostID uui
 		SELECT COUNT(*)
 		FROM scan_jobs sj
 		WHERE sj.source = $1
-		  AND sj.execution_details->>'scan_targets' LIKE $2
+		  AND sj.execution_details->'scan_targets' @> jsonb_build_array($2::text)
 		  AND sj.created_at >= $3
-	`, src, "%"+hostID.String()+"%", windowStart).Scan(&count)
+	`, src, hostIP, windowStart).Scan(&count)
 	if err != nil {
 		// On query error, allow the queue to proceed (fail open).
 		return false
@@ -515,6 +518,7 @@ func (s *SmartScanService) queryHasServices(ctx context.Context, hostID uuid.UUI
 // resolveHosts returns the list of active hosts for a batch operation.
 // When filter.HostIDs is non-empty only those hosts are returned; otherwise
 // all up hosts are returned, capped at maxBatchHostsQuery.
+// ScoreThreshold and MaxStalenessHours are applied as post-query filters (OR logic).
 func (s *SmartScanService) resolveHosts(ctx context.Context, filter BatchFilter) ([]*db.Host, error) {
 	if len(filter.HostIDs) > 0 {
 		hosts := make([]*db.Host, 0, len(filter.HostIDs))
@@ -534,7 +538,32 @@ func (s *SmartScanService) resolveHosts(ctx context.Context, filter BatchFilter)
 		Status:  "up",
 		Network: filter.NetworkCIDR,
 	}, 0, maxBatchHostsQuery)
-	return hosts, err
+	if err != nil {
+		return nil, err
+	}
+
+	if filter.ScoreThreshold <= 0 && filter.MaxStalenessHours <= 0 {
+		return hosts, nil
+	}
+	return applyKnowledgeFilter(hosts, filter), nil
+}
+
+// applyKnowledgeFilter retains hosts that are below the score threshold OR
+// have not been seen within the staleness window. Either condition suffices.
+func applyKnowledgeFilter(hosts []*db.Host, filter BatchFilter) []*db.Host {
+	var cutoff time.Time
+	if filter.MaxStalenessHours > 0 {
+		cutoff = time.Now().Add(-time.Duration(filter.MaxStalenessHours) * time.Hour)
+	}
+	out := make([]*db.Host, 0, len(hosts))
+	for _, h := range hosts {
+		scoreMatch := filter.ScoreThreshold > 0 && h.KnowledgeScore < filter.ScoreThreshold
+		staleMatch := filter.MaxStalenessHours > 0 && h.LastSeen.Before(cutoff)
+		if scoreMatch || staleMatch {
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 // createAndQueueScan builds a scan record from the stage recommendation and
