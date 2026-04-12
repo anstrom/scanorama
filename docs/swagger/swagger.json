@@ -1890,6 +1890,208 @@
                 }
             }
         },
+        "/ports": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of well-known port/service definitions.\nSupports filtering by search query, category, and protocol.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ports"
+                ],
+                "summary": "List port definitions",
+                "operationId": "listPorts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search by port number, service name, or description",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by category (web, database, windows, etc.)",
+                        "name": "category",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by protocol (tcp or udp)",
+                        "name": "protocol",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort field (port, service, category)",
+                        "name": "sort_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort direction (asc or desc)",
+                        "name": "sort_order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Results per page",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.PortListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ports/categories": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns the distinct category values used in the port definition database.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ports"
+                ],
+                "summary": "List port categories",
+                "operationId": "listPortCategories",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.StringListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ports/host-counts": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns the number of distinct hosts with at least one open scan result\nfor each port+protocol pair observed in the network.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ports"
+                ],
+                "summary": "List port host counts",
+                "operationId": "listPortHostCounts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/docs.PortHostCountResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ports/{port}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns the service definition for a specific port number.\nUse ?protocol=tcp (default) or ?protocol=udp.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ports"
+                ],
+                "summary": "Get port definition",
+                "operationId": "getPort",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Port number",
+                        "name": "port",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Protocol (tcp or udp, default tcp)",
+                        "name": "protocol",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.PortDefinitionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/profiles": {
             "get": {
                 "security": [
@@ -4369,6 +4571,89 @@
                 }
             }
         },
+        "docs.PortDefinitionResponse": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "example": "web"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "HTTP over TLS/SSL"
+                },
+                "is_standard": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "os_families": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "linux",
+                        "windows"
+                    ]
+                },
+                "port": {
+                    "type": "integer",
+                    "example": 443
+                },
+                "protocol": {
+                    "type": "string",
+                    "example": "tcp"
+                },
+                "service": {
+                    "type": "string",
+                    "example": "https"
+                }
+            }
+        },
+        "docs.PortHostCountResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "port": {
+                    "type": "integer",
+                    "example": 443
+                },
+                "protocol": {
+                    "type": "string",
+                    "example": "tcp"
+                }
+            }
+        },
+        "docs.PortListResponse": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "page_size": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "ports": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.PortDefinitionResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 103
+                },
+                "total_pages": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
         "docs.ProfileResponse": {
             "type": "object",
             "properties": {
@@ -4715,6 +5000,22 @@
                 "version": {
                     "type": "string",
                     "example": "0.7.0"
+                }
+            }
+        },
+        "docs.StringListResponse": {
+            "type": "object",
+            "properties": {
+                "categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "web",
+                        "database",
+                        "network"
+                    ]
                 }
             }
         },

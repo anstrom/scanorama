@@ -205,8 +205,9 @@ func (s *Server) setupGroupRoutes(api *mux.Router, h *apihandlers.GroupHandler) 
 
 // setupPortRoutes registers port definition lookup and browsing endpoints.
 func (s *Server) setupPortRoutes(api *mux.Router, h *apihandlers.PortHandler) {
-	// /ports/categories must be registered before /ports/{port} to avoid mux ambiguity.
+	// Fixed-path routes must be registered before /ports/{port} to avoid mux ambiguity.
 	api.HandleFunc("/ports/categories", h.ListPortCategories).Methods("GET")
+	api.HandleFunc("/ports/host-counts", h.ListPortHostCounts).Methods("GET")
 	api.HandleFunc("/ports", h.ListPorts).Methods("GET")
 	api.HandleFunc("/ports/{port}", h.GetPort).Methods("GET")
 }

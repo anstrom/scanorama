@@ -1426,3 +1426,97 @@ type BatchResultResponse struct {
 	Skipped int                        `json:"skipped" example:"51"`
 	Details []BatchDetailEntryResponse `json:"details"`
 }
+
+// PortDefinitionResponse mirrors db.PortDefinition for Swagger documentation.
+type PortDefinitionResponse struct {
+	Port        int      `json:"port" example:"443"`
+	Protocol    string   `json:"protocol" example:"tcp"`
+	Service     string   `json:"service" example:"https"`
+	Description string   `json:"description,omitempty" example:"HTTP over TLS/SSL"`
+	Category    string   `json:"category,omitempty" example:"web"`
+	OSFamilies  []string `json:"os_families" example:"linux,windows"`
+	IsStandard  bool     `json:"is_standard" example:"true"`
+}
+
+// PortListResponse is the paginated response body for ListPorts.
+type PortListResponse struct {
+	Ports      []PortDefinitionResponse `json:"ports"`
+	Total      int64                    `json:"total" example:"103"`
+	Page       int                      `json:"page" example:"1"`
+	PageSize   int                      `json:"page_size" example:"50"`
+	TotalPages int                      `json:"total_pages" example:"3"`
+}
+
+// StringListResponse is a generic response containing a list of strings.
+type StringListResponse struct {
+	Categories []string `json:"categories" example:"web,database,network"`
+}
+
+// PortHostCountResponse represents the open-host count for a single port+protocol pair.
+type PortHostCountResponse struct {
+	Port     int    `json:"port" example:"443"`
+	Protocol string `json:"protocol" example:"tcp"`
+	Count    int    `json:"count" example:"12"`
+}
+
+// ListPorts godoc
+// @Summary      List port definitions
+// @Description  Returns a paginated list of well-known port/service definitions.
+// @Description  Supports filtering by search query, category, and protocol.
+// @Tags         ports
+// @Produce      json
+// @Param        search     query  string  false  "Search by port number, service name, or description"
+// @Param        category   query  string  false  "Filter by category (web, database, windows, etc.)"
+// @Param        protocol   query  string  false  "Filter by protocol (tcp or udp)"
+// @Param        sort_by    query  string  false  "Sort field (port, service, category)"
+// @Param        sort_order query  string  false  "Sort direction (asc or desc)"
+// @Param        page       query  int     false  "Page number"
+// @Param        page_size  query  int     false  "Results per page"
+// @Success      200  {object}  PortListResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /ports [get]
+// @ID           listPorts
+func ListPorts(_ http.ResponseWriter, _ *http.Request) {}
+
+// GetPort godoc
+// @Summary      Get port definition
+// @Description  Returns the service definition for a specific port number.
+// @Description  Use ?protocol=tcp (default) or ?protocol=udp.
+// @Tags         ports
+// @Produce      json
+// @Param        port      path   int     true   "Port number"
+// @Param        protocol  query  string  false  "Protocol (tcp or udp, default tcp)"
+// @Success      200  {object}  PortDefinitionResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      404  {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /ports/{port} [get]
+// @ID           getPort
+func GetPort(_ http.ResponseWriter, _ *http.Request) {}
+
+// ListPortCategories godoc
+// @Summary      List port categories
+// @Description  Returns the distinct category values used in the port definition database.
+// @Tags         ports
+// @Produce      json
+// @Success      200  {object}  StringListResponse
+// @Failure      500  {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /ports/categories [get]
+// @ID           listPortCategories
+func ListPortCategories(_ http.ResponseWriter, _ *http.Request) {}
+
+// ListPortHostCounts godoc
+// @Summary      List port host counts
+// @Description  Returns the number of distinct hosts with at least one open scan result
+// @Description  for each port+protocol pair observed in the network.
+// @Tags         ports
+// @Produce      json
+// @Success      200  {array}   PortHostCountResponse
+// @Failure      500  {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /ports/host-counts [get]
+// @ID           listPortHostCounts
+func ListPortHostCounts(_ http.ResponseWriter, _ *http.Request) {}
