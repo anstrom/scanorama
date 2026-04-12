@@ -47,7 +47,7 @@ func TestUpsertForScan_Unit(t *testing.T) {
 				),
 			)
 
-		host, err := NewHostRepository(db).UpsertForScan(context.Background(), ip, "up")
+		host, err := NewHostRepository(db).UpsertForScan(context.Background(), ip, "up", "")
 
 		require.NoError(t, err)
 		require.NotNil(t, host)
@@ -80,7 +80,7 @@ func TestUpsertForScan_Unit(t *testing.T) {
 				),
 			)
 
-		host, err := NewHostRepository(db).UpsertForScan(context.Background(), ip, "up")
+		host, err := NewHostRepository(db).UpsertForScan(context.Background(), ip, "up", "")
 
 		require.NoError(t, err)
 		require.NotNil(t, host.Hostname)
@@ -96,7 +96,7 @@ func TestUpsertForScan_Unit(t *testing.T) {
 		mock.ExpectQuery(`INSERT INTO hosts`).
 			WillReturnError(fmt.Errorf("connection reset by peer"))
 
-		host, err := NewHostRepository(db).UpsertForScan(context.Background(), ip, "up")
+		host, err := NewHostRepository(db).UpsertForScan(context.Background(), ip, "up", "")
 
 		require.Error(t, err)
 		assert.Nil(t, host)

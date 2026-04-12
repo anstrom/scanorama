@@ -936,6 +936,48 @@ func TestConvertNmapHost_MultipleClasses_UsesFirstClass(t *testing.T) {
 	}
 }
 
+// ── convertNmapHost — hostname extraction ─────────────────────────────────────
+
+func TestConvertNmapHost_UserHostnameCaptured(t *testing.T) {
+	h := makeNmapHost("10.0.0.10", nil, nil)
+	h.Hostnames = []nmap.Hostname{
+		{Name: "proxmox-dev.example.com", Type: "user"},
+		{Name: "ptr.example.com", Type: "PTR"},
+	}
+	result := convertNmapHost(&h)
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if result.Hostname != "proxmox-dev.example.com" {
+		t.Errorf("Hostname: want %q (user type wins), got %q", "proxmox-dev.example.com", result.Hostname)
+	}
+}
+
+func TestConvertNmapHost_PTRFallbackWhenNoUser(t *testing.T) {
+	h := makeNmapHost("10.0.0.10", nil, nil)
+	h.Hostnames = []nmap.Hostname{
+		{Name: "ptr.example.com", Type: "PTR"},
+	}
+	result := convertNmapHost(&h)
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if result.Hostname != "ptr.example.com" {
+		t.Errorf("Hostname: want %q (PTR fallback), got %q", "ptr.example.com", result.Hostname)
+	}
+}
+
+func TestConvertNmapHost_NoHostnames_EmptyHostname(t *testing.T) {
+	h := makeNmapHost("10.0.0.10", nil, nil)
+	result := convertNmapHost(&h)
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if result.Hostname != "" {
+		t.Errorf("Hostname: want empty for IP-targeted scan, got %q", result.Hostname)
+	}
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // persistOSData — field-setting logic (struct mutation, no DB required)
 //

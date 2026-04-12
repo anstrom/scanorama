@@ -222,8 +222,8 @@ func runLiveHostsScan(database *db.DB, scanConfig *scanning.ScanConfig) {
 
 	// Calculate total ports
 	totalPorts := 0
-	for _, host := range result.Hosts {
-		totalPorts += len(host.Ports)
+	for i := range result.Hosts {
+		totalPorts += len(result.Hosts[i].Ports)
 	}
 
 	// Display results
@@ -233,8 +233,8 @@ func runLiveHostsScan(database *db.DB, scanConfig *scanning.ScanConfig) {
 
 	// Show summary of open ports found
 	openPorts := 0
-	for _, host := range result.Hosts {
-		for _, port := range host.Ports {
+	for i := range result.Hosts {
+		for _, port := range result.Hosts[i].Ports {
 			if port.State == "open" {
 				openPorts++
 			}
@@ -270,8 +270,8 @@ func runTargetsScan(database *db.DB, scanConfig *scanning.ScanConfig, targets st
 
 	// Calculate total ports
 	totalPorts := 0
-	for _, host := range result.Hosts {
-		totalPorts += len(host.Ports)
+	for i := range result.Hosts {
+		totalPorts += len(result.Hosts[i].Ports)
 	}
 
 	// Display results
@@ -281,8 +281,8 @@ func runTargetsScan(database *db.DB, scanConfig *scanning.ScanConfig, targets st
 
 	// Show summary of open ports found
 	openPorts := 0
-	for _, host := range result.Hosts {
-		for _, port := range host.Ports {
+	for i := range result.Hosts {
+		for _, port := range result.Hosts[i].Ports {
 			if port.State == "open" {
 				openPorts++
 			}
