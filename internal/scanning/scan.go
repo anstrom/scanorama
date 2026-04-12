@@ -283,20 +283,31 @@ func createAndRunScanner(ctx context.Context, config *ScanConfig) (*nmap.Run, er
 	return result, nil
 }
 
-// buildScanOptions creates nmap options based on scan configuration.
-func buildScanOptions(config *ScanConfig) []nmap.Option {
-	// Mixed-protocol support: if the port spec contains UDP ports (e.g. "T:22,80,U:53,161"),
-	// add an explicit UDP scan so nmap handles both TCP and UDP in a single run.
-	// Skip when using connect scan (-sT): UDP scanning always requires root (-sU),
-	// and combining -sU with -sT produces no results when running unprivileged.
-	// Strip the T:/U: protocol prefixes from the port spec in that case so nmap
-	// doesn't complain about the mixed-protocol syntax without a UDP scan mode.
-	hasUDP := strings.Contains(config.Ports, "U:")
-	if hasUDP && config.ScanType == scanTypeConnect {
-		// Resolve before building the options slice to avoid index mutation.
+// normalizePortSpec strips redundant or unsupported T:/U: protocol prefixes
+// from config.Ports and returns whether UDP ports remain after normalization.
+//
+// Two cases require stripping:
+//  1. TCP-only spec (no U: ports): the T: prefix is a no-op for TCP scans and
+//     triggers a nmap 7.99 regression where -sS --privileged produces "0 hosts up".
+//  2. Connect scan with UDP ports: -sU requires raw sockets and can't be combined
+//     with -sT unprivileged; drop the UDP ports and strip all prefixes.
+func normalizePortSpec(config *ScanConfig) (hasUDP bool) {
+	ports := strings.ToUpper(config.Ports)
+	hasUDP = strings.Contains(ports, "U:")
+	hasTCPPrefix := strings.Contains(ports, "T:")
+	switch {
+	case !hasUDP && hasTCPPrefix:
+		config.Ports = stripProtocolPrefixes(config.Ports)
+	case hasUDP && config.ScanType == scanTypeConnect:
 		config.Ports = stripProtocolPrefixes(config.Ports)
 		hasUDP = false
 	}
+	return hasUDP
+}
+
+// buildScanOptions creates nmap options based on scan configuration.
+func buildScanOptions(config *ScanConfig) []nmap.Option {
+	hasUDP := normalizePortSpec(config)
 
 	options := []nmap.Option{
 		nmap.WithTargets(config.Targets...),
