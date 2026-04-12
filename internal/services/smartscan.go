@@ -62,6 +62,7 @@ type BatchFilter struct {
 	HostIDs     []uuid.UUID // non-empty = only these hosts; empty = all hosts
 	NetworkCIDR string      // non-empty = only hosts whose IP falls within this CIDR
 	Limit       int         // max hosts to queue; 0 = use defaultBatchLimit
+	Source      string      // db.ScanSourceAPI / ScanSourceScheduled; defaults to ScanSourceAPI
 }
 
 // BatchResult summarizes the outcome of a QueueBatch call.
@@ -88,6 +89,17 @@ type smartHostRepository interface {
 	RecalculateKnowledgeScore(ctx context.Context, hostID uuid.UUID) error
 }
 
+// stageSkip is the Stage value returned when no scan action is recommended.
+const stageSkip = "skip"
+
+// Auto-progression defaults. Exported so the API server can pass them
+// explicitly to WithAutoProgression rather than using magic numbers.
+const (
+	AutoProgressDefaultThreshold    = 80 // re-queue when knowledge score < 80
+	AutoProgressDefaultMaxPerWindow = 3  // max auto-queues per host per window
+	AutoProgressDefaultWindowHours  = 24 // rolling window duration in hours
+)
+
 // SmartScanService evaluates host knowledge gaps and queues targeted scans.
 type SmartScanService struct {
 	database       *db.DB
@@ -101,6 +113,35 @@ type SmartScanService struct {
 	// live host state. Replaced in tests to avoid a real database dependency.
 	hasOpenPortsFn func(ctx context.Context, hostID uuid.UUID) (bool, error)
 	hasServicesFn  func(ctx context.Context, hostID uuid.UUID) (bool, error)
+
+	// auto-progression: re-queue hosts whose knowledge score is still below
+	// threshold after a scan completes. Disabled by default (opt-in).
+	autoProgressEnabled   bool
+	autoProgressThreshold int
+	autoProgressMaxPerWin int
+	autoProgressWindow    time.Duration
+}
+
+// WithAutoProgression enables the post-scan auto-queuing feature. When enabled,
+// ReEvaluateHosts will call QueueSmartScan for any host whose knowledge score
+// after a scan is still below threshold — up to maxPerWindow times within
+// windowHours. Pass 0 for maxPerWindow or windowHours to use defaults.
+func (s *SmartScanService) WithAutoProgression(threshold, maxPerWindow, windowHours int) *SmartScanService {
+	s.autoProgressEnabled = true
+	s.autoProgressThreshold = threshold
+	if s.autoProgressThreshold <= 0 {
+		s.autoProgressThreshold = AutoProgressDefaultThreshold
+	}
+	s.autoProgressMaxPerWin = maxPerWindow
+	if s.autoProgressMaxPerWin <= 0 {
+		s.autoProgressMaxPerWin = AutoProgressDefaultMaxPerWindow
+	}
+	wh := windowHours
+	if wh <= 0 {
+		wh = AutoProgressDefaultWindowHours
+	}
+	s.autoProgressWindow = time.Duration(wh) * time.Hour
+	return s
 }
 
 // NewSmartScanService creates a new SmartScanService.
@@ -181,7 +222,7 @@ func (s *SmartScanService) GetSuggestions(ctx context.Context) (*SuggestionSumma
 		WellKnown: SuggestionGroup{
 			Count:       wellKnown,
 			Description: "Hosts with comprehensive knowledge (score ≥ 80)",
-			Action:      "skip",
+			Action:      stageSkip,
 		},
 		TotalHosts:  total,
 		GeneratedAt: time.Now(),
@@ -202,7 +243,7 @@ func (s *SmartScanService) EvaluateHostByID(ctx context.Context, hostID uuid.UUI
 func (s *SmartScanService) EvaluateHost(ctx context.Context, host *db.Host) (*ScanStage, error) {
 	// Hosts that are gone or explicitly excluded from scanning are always skipped.
 	if host.Status == "gone" || host.IgnoreScanning {
-		return &ScanStage{Stage: "skip", Reason: "host is gone or excluded from scanning"}, nil
+		return &ScanStage{Stage: stageSkip, Reason: "host is gone or excluded from scanning"}, nil
 	}
 
 	hasOS := host.OSFamily != nil && *host.OSFamily != ""
@@ -236,7 +277,7 @@ func (s *SmartScanService) EvaluateHost(ctx context.Context, host *db.Host) (*Sc
 			Reason:   fmt.Sprintf("last seen %s ago — refreshing scan", time.Since(host.LastSeen).Round(time.Hour)),
 		}, nil
 	default:
-		return &ScanStage{Stage: "skip", Reason: "host knowledge is sufficient"}, nil
+		return &ScanStage{Stage: stageSkip, Reason: "host knowledge is sufficient"}, nil
 	}
 }
 
@@ -305,11 +346,11 @@ func (s *SmartScanService) QueueSmartScan(ctx context.Context, hostID uuid.UUID)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("failed to evaluate host: %w", err)
 	}
-	if stage.Stage == "skip" {
+	if stage.Stage == stageSkip {
 		return uuid.Nil, nil
 	}
 
-	return s.createAndQueueScan(ctx, host, stage)
+	return s.createAndQueueScan(ctx, host, stage, db.ScanSourceAPI)
 }
 
 // QueueBatch queues smart scans for all eligible hosts matching the filter.
@@ -317,6 +358,11 @@ func (s *SmartScanService) QueueBatch(ctx context.Context, filter BatchFilter) (
 	limit := filter.Limit
 	if limit <= 0 {
 		limit = defaultBatchLimit
+	}
+
+	source := filter.Source
+	if source == "" {
+		source = db.ScanSourceAPI
 	}
 
 	hosts, err := s.resolveHosts(ctx, filter)
@@ -338,7 +384,7 @@ func (s *SmartScanService) QueueBatch(ctx context.Context, filter BatchFilter) (
 			result.Skipped++
 			continue
 		}
-		if stage.Stage == "skip" {
+		if stage.Stage == stageSkip {
 			result.Skipped++
 			continue
 		}
@@ -347,7 +393,7 @@ func (s *SmartScanService) QueueBatch(ctx context.Context, filter BatchFilter) (
 			continue
 		}
 
-		scanID, err := s.createAndQueueScan(ctx, host, stage)
+		scanID, err := s.createAndQueueScan(ctx, host, stage, source)
 		if err != nil {
 			s.logger.Warn("Failed to queue smart scan for host",
 				"host_id", host.ID, "error", err)
@@ -391,7 +437,46 @@ func (s *SmartScanService) ReEvaluateHosts(_ *db.DB, hostIDs []uuid.UUID) {
 			continue
 		}
 		s.logger.Debug("Post-scan stage evaluation", "host_id", id, "stage", stage.Stage, "reason", stage.Reason)
+
+		if !s.autoProgressEnabled || stage.Stage == stageSkip {
+			continue
+		}
+		if host.KnowledgeScore >= s.autoProgressThreshold {
+			continue
+		}
+		if s.autoProgressMaxPerWin > 0 && s.exceedsAutoQueueLimit(ctx, id) {
+			s.logger.Debug("Auto-progression skipped: loop guard triggered",
+				"host_id", id, "max_per_window", s.autoProgressMaxPerWin)
+			continue
+		}
+		if _, err := s.createAndQueueScan(ctx, host, stage, db.ScanSourceAuto); err != nil {
+			s.logger.Warn("Auto-progression queue failed", "host_id", id, "error", err)
+		} else {
+			s.logger.Info("Auto-progression queued next scan stage",
+				"host_id", id, "stage", stage.Stage, "score", host.KnowledgeScore)
+		}
 	}
+}
+
+// exceedsAutoQueueLimit returns true when the host has already been auto-queued
+// autoProgressMaxPerWin times within the rolling autoProgressWindow. This
+// prevents runaway re-queuing when a host is stuck below the threshold.
+func (s *SmartScanService) exceedsAutoQueueLimit(ctx context.Context, hostID uuid.UUID) bool {
+	windowStart := time.Now().Add(-s.autoProgressWindow)
+	src := db.ScanSourceAuto
+	var count int
+	err := s.database.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM scan_jobs sj
+		WHERE sj.source = $1
+		  AND sj.execution_details->>'scan_targets' LIKE $2
+		  AND sj.created_at >= $3
+	`, src, "%"+hostID.String()+"%", windowStart).Scan(&count)
+	if err != nil {
+		// On query error, allow the queue to proceed (fail open).
+		return false
+	}
+	return count >= s.autoProgressMaxPerWin
 }
 
 // ── internal helpers ──────────────────────────────────────────────────────────
@@ -453,10 +538,14 @@ func (s *SmartScanService) resolveHosts(ctx context.Context, filter BatchFilter)
 }
 
 // createAndQueueScan builds a scan record from the stage recommendation and
-// submits it to the queue. Returns the new scan UUID.
-func (s *SmartScanService) createAndQueueScan(ctx context.Context, host *db.Host, stage *ScanStage) (uuid.UUID, error) {
+// submits it to the queue. source is one of db.ScanSourceAPI / ScanSourceAuto /
+// ScanSourceScheduled and is stored on the scan_jobs row for audit purposes.
+func (s *SmartScanService) createAndQueueScan(
+	ctx context.Context, host *db.Host, stage *ScanStage, source string,
+) (uuid.UUID, error) {
 	ip := host.IPAddress.String()
 	scanName := fmt.Sprintf("Smart Scan: %s [%s]", ip, stage.Stage)
+	src := source
 
 	input := db.CreateScanInput{
 		Name:        scanName,
@@ -465,6 +554,7 @@ func (s *SmartScanService) createAndQueueScan(ctx context.Context, host *db.Host
 		Ports:       stage.Ports,
 		OSDetection: stage.OSDetection,
 		ProfileID:   stage.ProfileID,
+		Source:      &src,
 	}
 
 	scan, err := s.scanRepo.CreateScan(ctx, input)
