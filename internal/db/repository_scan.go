@@ -92,14 +92,22 @@ func buildScanFilters(filters ScanFilters) (whereClause string, args []interface
 	return buildWhereClause(conditions)
 }
 
+// scanCountBaseQuery is the invariant part of the COUNT query used by getScanCount.
+const scanCountBaseQuery = `SELECT COUNT(*) FROM scan_jobs sj ` +
+	`LEFT JOIN networks n ON sj.network_id = n.id ` +
+	`LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id`
+
 // getScanCount gets total count of scans matching filters.
+// whereClause is produced by buildWhereClause and contains only parameterized
+// placeholders ($N) with hardcoded column names — no user data is concatenated.
 func (r *ScanRepository) getScanCount(ctx context.Context, whereClause string, args []interface{}) (int64, error) {
-	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM scan_jobs sj
-		LEFT JOIN networks n ON sj.network_id = n.id
-		LEFT JOIN scan_profiles sp ON sj.profile_id = sp.id %s`, whereClause)
+	q := scanCountBaseQuery
+	if whereClause != "" {
+		q += " " + whereClause
+	}
 
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, q, args...).Scan(&total); err != nil {
 		return 0, sanitizeDBError("get scan count", err)
 	}
 	return total, nil
@@ -308,7 +316,7 @@ func findOrCreateNetwork(ctx context.Context, tx *sql.Tx,
 // returns every target instead of only the primary network CIDR.
 func createScanJob(ctx context.Context, tx *sql.Tx, jobID uuid.UUID, networkID *uuid.UUID,
 	profileID *string, now time.Time, osDetection bool, allTargets []string,
-	name, description, ports, scanType string) error {
+	name, description, ports, scanType string, source *string) error {
 	details := map[string]interface{}{
 		"os_detection": osDetection,
 	}
@@ -342,9 +350,9 @@ func createScanJob(ctx context.Context, tx *sql.Tx, jobID uuid.UUID, networkID *
 	}
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO scan_jobs (id, network_id, profile_id, status, created_at, execution_details)
-		VALUES ($1, $2, $3, 'pending', $4, $5)
-	`, jobID, networkIDArg, profileID, now, string(execDetailsJSON))
+		INSERT INTO scan_jobs (id, network_id, profile_id, status, created_at, execution_details, source)
+		VALUES ($1, $2, $3, 'pending', $4, $5, $6)
+	`, jobID, networkIDArg, profileID, now, string(execDetailsJSON), source)
 	if err != nil {
 		return sanitizeDBError("create scan job", err)
 	}
@@ -420,7 +428,7 @@ func (r *ScanRepository) CreateScan(ctx context.Context, input CreateScanInput) 
 
 	if err := createScanJob(ctx, tx, jobID, networkID, input.ProfileID, now,
 		input.OSDetection, input.Targets,
-		input.Name, input.Description, input.Ports, input.ScanType); err != nil {
+		input.Name, input.Description, input.Ports, input.ScanType, input.Source); err != nil {
 		return nil, err
 	}
 
