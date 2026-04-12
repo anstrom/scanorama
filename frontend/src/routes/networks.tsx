@@ -12,6 +12,7 @@ import {
   ScanSearch,
   Radar,
   TrendingUp,
+  Zap,
 } from "lucide-react";
 import { SortHeader } from "../components/sort-header";
 import type { SortOrder } from "../components/sort-header";
@@ -47,6 +48,11 @@ import { EditNetworkModal } from "../components/edit-network-modal";
 import { CreateDiscoveryModal } from "../components/create-discovery-modal";
 import { ScanNetworkModal } from "../components/scan-network-modal";
 import { useToast } from "../components/toast-provider";
+import {
+  useSmartScanSuggestions,
+  useTriggerSmartScanBatch,
+} from "../api/hooks/use-smart-scan";
+import { BatchSmartScanPreviewModal } from "../components/smart-scan-preview-modal";
 import { formatRelativeTime, formatAbsoluteTime, cn } from "../lib/utils";
 import type { components } from "../api/types";
 
@@ -535,6 +541,7 @@ function NetworkDetailPanel({
   const [actionError, setActionError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showScanModal, setShowScanModal] = useState(false);
+  const [showSmartScanPreview, setShowSmartScanPreview] = useState(false);
 
   const { toast } = useToast();
 
@@ -546,6 +553,26 @@ function NetworkDetailPanel({
     useDeleteNetwork();
   const { mutateAsync: discoverNetwork, isPending: isDiscovering } =
     useStartNetworkDiscovery();
+  const { data: smartScanSuggestions, isLoading: isSuggestionsLoading } =
+    useSmartScanSuggestions(showSmartScanPreview);
+  const { mutateAsync: triggerBatch, isPending: isBatchPending } =
+    useTriggerSmartScanBatch();
+
+  async function handleSmartScanBatch() {
+    try {
+      const result = await triggerBatch({});
+      setShowSmartScanPreview(false);
+      toast.success(
+        result.queued === 0
+          ? "No hosts needed scanning."
+          : `Smart Scan queued for ${result.queued} host${result.queued === 1 ? "" : "s"}.`,
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to queue Smart Scan batch.",
+      );
+    }
+  }
 
   const isTogglingActive = isEnabling || isDisabling;
   const n = initialNetwork;
@@ -685,6 +712,17 @@ function NetworkDetailPanel({
           >
             <Radar className="h-3 w-3 mr-1" />
             Scan hosts
+          </Button>
+
+          <Button
+            variant="secondary"
+            onClick={() => setShowSmartScanPreview(true)}
+            disabled={isSuggestionsLoading}
+            title="Queue the next recommended scan for all eligible hosts"
+            className="text-xs h-7 px-3"
+          >
+            <Zap className="h-3 w-3 mr-1" />
+            Smart Scan
           </Button>
 
           {showDeleteConfirm ? (
@@ -840,6 +878,16 @@ function NetworkDetailPanel({
 
       {showScanModal && (
         <ScanNetworkModal network={n} onClose={() => setShowScanModal(false)} />
+      )}
+
+      {showSmartScanPreview && smartScanSuggestions && (
+        <BatchSmartScanPreviewModal
+          networkName={n.name ?? n.cidr ?? "Network"}
+          summary={smartScanSuggestions}
+          isPending={isBatchPending}
+          onConfirm={() => void handleSmartScanBatch()}
+          onClose={() => setShowSmartScanPreview(false)}
+        />
       )}
     </>
   );

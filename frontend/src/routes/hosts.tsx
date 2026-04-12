@@ -17,6 +17,7 @@ import {
   ChevronDown,
   ChevronRight,
   ShieldCheck,
+  Zap,
 } from "lucide-react";
 import { SortHeader } from "../components/sort-header";
 import type { SortOrder } from "../components/sort-header";
@@ -48,6 +49,11 @@ import type { FilterGroup } from "../lib/filter-expr";
 import { deserializeFilter, serializeFilter } from "../lib/filter-expr";
 import { useTags, useUpdateHostTags } from "../api/hooks/use-tags";
 import { useGroups, useAddHostsToGroup } from "../api/hooks/use-groups";
+import {
+  useSmartScanStage,
+  useTriggerSmartScan,
+} from "../api/hooks/use-smart-scan";
+import { HostSmartScanPreviewModal } from "../components/smart-scan-preview-modal";
 
 type HostResponse = components["schemas"]["docs.HostResponse"];
 
@@ -264,6 +270,33 @@ function HostDetailPanel({
     host.id ?? "",
     { page: scanHistoryPage, page_size: SCAN_HISTORY_PAGE_SIZE },
   );
+
+  // Smart Scan
+  const [showSmartScanPreview, setShowSmartScanPreview] = useState(false);
+  const { data: smartScanStage, isLoading: smartScanStageLoading } =
+    useSmartScanStage(showSmartScanPreview ? (h.id ?? "") : "");
+  const { mutateAsync: triggerSmartScan, isPending: isSmartScanPending } =
+    useTriggerSmartScan();
+
+  const hasPendingScan = (hostScansData?.data ?? []).some(
+    (s) => s.status === "pending" || s.status === "running",
+  );
+
+  async function handleSmartScanConfirm() {
+    try {
+      const result = await triggerSmartScan(h.id ?? "");
+      setShowSmartScanPreview(false);
+      if (result && "queued" in result && !result.queued) {
+        toast.success("No scan needed — host knowledge is sufficient.");
+      } else {
+        toast.success("Smart Scan queued.");
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to queue Smart Scan.",
+      );
+    }
+  }
 
   async function handleSaveHostname() {
     setHostnameError(null);
@@ -1183,16 +1216,32 @@ function HostDetailPanel({
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-border shrink-0 space-y-2">
-          <Button
-            icon={<ScanLine className="h-3.5 w-3.5" />}
-            onClick={() => {
-              onClose();
-              onScan(h.ip_address ?? "");
-            }}
-            className="w-full justify-center"
-          >
-            Scan this host
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              icon={<ScanLine className="h-3.5 w-3.5" />}
+              onClick={() => {
+                onClose();
+                onScan(h.ip_address ?? "");
+              }}
+              className="flex-1 justify-center"
+            >
+              Scan
+            </Button>
+            <Button
+              variant="secondary"
+              icon={<Zap className="h-3.5 w-3.5" />}
+              onClick={() => setShowSmartScanPreview(true)}
+              disabled={hasPendingScan || smartScanStageLoading}
+              title={
+                hasPendingScan
+                  ? "A scan is already pending for this host"
+                  : "Run the next recommended scan for this host"
+              }
+              className="flex-1 justify-center"
+            >
+              Smart Scan
+            </Button>
+          </div>
 
           {deleteError && (
             <p className="text-[11px] text-danger">{deleteError}</p>
@@ -1231,6 +1280,16 @@ function HostDetailPanel({
           )}
         </div>
       </div>
+
+      {showSmartScanPreview && smartScanStage && (
+        <HostSmartScanPreviewModal
+          hostIp={h.ip_address ?? ""}
+          stage={smartScanStage}
+          isPending={isSmartScanPending}
+          onConfirm={() => void handleSmartScanConfirm()}
+          onClose={() => setShowSmartScanPreview(false)}
+        />
+      )}
     </>
   );
 }
