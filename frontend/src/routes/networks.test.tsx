@@ -93,6 +93,23 @@ import {
   useRerunDiscovery,
 } from "../api/hooks/use-discovery";
 
+vi.mock("../api/hooks/use-smart-scan", () => ({
+  useSmartScanSuggestions: vi.fn(),
+  useTriggerSmartScanBatch: vi.fn(),
+}));
+
+vi.mock("../components/smart-scan-preview-modal", () => ({
+  BatchSmartScanPreviewModal: () => null,
+}));
+
+import {
+  useSmartScanSuggestions,
+  useTriggerSmartScanBatch,
+} from "../api/hooks/use-smart-scan";
+
+const mockUseSmartScanSuggestions = vi.mocked(useSmartScanSuggestions);
+const mockUseTriggerSmartScanBatch = vi.mocked(useTriggerSmartScanBatch);
+
 const mockUseNetworks = vi.mocked(useNetworks);
 const mockUseNetworkExclusions = vi.mocked(useNetworkExclusions);
 const mockUseEnableNetwork = vi.mocked(useEnableNetwork);
@@ -259,6 +276,13 @@ beforeEach(() => {
   );
   mockUseRerunDiscovery.mockReturnValue(
     idleMutation as unknown as ReturnType<typeof useRerunDiscovery>,
+  );
+  mockUseSmartScanSuggestions.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+  } as unknown as ReturnType<typeof useSmartScanSuggestions>);
+  mockUseTriggerSmartScanBatch.mockReturnValue(
+    idleMutation as unknown as ReturnType<typeof useTriggerSmartScanBatch>,
   );
 });
 

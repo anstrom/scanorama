@@ -68,3 +68,10 @@ export type {
   ExpiringCertificate,
   ExpiringCertificatesResponse,
 } from "./use-expiring-certs";
+export {
+  useSmartScanStage,
+  useSmartScanSuggestions,
+  useTriggerSmartScan,
+  useTriggerSmartScanBatch,
+} from "./use-smart-scan";
+export type { ScanStage, SuggestionSummary, BatchResult } from "./use-smart-scan";

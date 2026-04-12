@@ -22,6 +22,15 @@ vi.mock("../api/hooks/use-groups", () => ({
   useAddHostsToGroup: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 
+vi.mock("../api/hooks/use-smart-scan", () => ({
+  useSmartScanStage: vi.fn(() => ({ data: undefined, isLoading: false })),
+  useTriggerSmartScan: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+}));
+
+vi.mock("../components/smart-scan-preview-modal", () => ({
+  HostSmartScanPreviewModal: () => null,
+}));
+
 import {
   useHosts,
   useHost,
@@ -1003,10 +1012,10 @@ describe("HostsPage", () => {
 
     // ── Scan this host button ─────────────────────────────────────
 
-    it("opens the scan modal when 'Scan this host' is clicked", async () => {
+    it("opens the scan modal when 'Scan' is clicked", async () => {
       await openPanel();
       await userEvent.click(
-        screen.getByRole("button", { name: /scan this host/i }),
+        screen.getByRole("button", { name: /^scan$/i }),
       );
       expect(screen.getByTestId("run-scan-modal")).toBeInTheDocument();
     });
