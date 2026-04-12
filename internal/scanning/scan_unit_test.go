@@ -1315,3 +1315,76 @@ func TestValidateTargets(t *testing.T) {
 		assert.Contains(t, err.Error(), "--script=vuln")
 	})
 }
+
+// TestBuildScanOptions_ProtocolPrefixStripping verifies that buildScanOptions
+// strips the T: prefix from TCP-only port specs to work around a nmap 7.99
+// regression where T: with -sS --privileged produces "0 hosts up".
+func TestBuildScanOptions_ProtocolPrefixStripping(t *testing.T) {
+	base := ScanConfig{
+		Targets: []string{"10.0.0.1"},
+	}
+
+	t.Run("T: prefix stripped for SYN scan (nmap 7.99 workaround)", func(t *testing.T) {
+		cfg := base
+		cfg.ScanType = scanTypeSYN
+		cfg.Ports = "T:22,80,443,8006"
+		buildScanOptions(&cfg)
+		assert.Equal(t, "22,80,443,8006", cfg.Ports)
+	})
+
+	t.Run("T: prefix stripped for connect scan with no UDP", func(t *testing.T) {
+		cfg := base
+		cfg.ScanType = scanTypeConnect
+		cfg.Ports = "T:22,80,443"
+		buildScanOptions(&cfg)
+		assert.Equal(t, "22,80,443", cfg.Ports)
+	})
+
+	t.Run("plain port spec unchanged", func(t *testing.T) {
+		cfg := base
+		cfg.ScanType = scanTypeSYN
+		cfg.Ports = "22,80,443,8006"
+		buildScanOptions(&cfg)
+		assert.Equal(t, "22,80,443,8006", cfg.Ports)
+	})
+
+	t.Run("mixed T:/U: spec preserved for privileged non-connect scan", func(t *testing.T) {
+		cfg := base
+		cfg.ScanType = scanTypeSYN
+		cfg.Ports = "T:22,80,U:53,161"
+		buildScanOptions(&cfg)
+		assert.Equal(t, "T:22,80,U:53,161", cfg.Ports)
+	})
+
+	t.Run("mixed T:/U: spec stripped for connect scan", func(t *testing.T) {
+		cfg := base
+		cfg.ScanType = scanTypeConnect
+		cfg.Ports = "T:22,80,U:53,161"
+		buildScanOptions(&cfg)
+		assert.Equal(t, "22,80,53,161", cfg.Ports)
+	})
+
+	t.Run("T: prefix stripped for aggressive scan (same nmap 7.99 workaround)", func(t *testing.T) {
+		cfg := base
+		cfg.ScanType = scanTypeAggressive
+		cfg.Ports = "T:22,80,443"
+		buildScanOptions(&cfg)
+		assert.Equal(t, "22,80,443", cfg.Ports)
+	})
+
+	t.Run("T: prefix stripped for comprehensive scan", func(t *testing.T) {
+		cfg := base
+		cfg.ScanType = scanTypeComprehensive
+		cfg.Ports = "T:22,80,443"
+		buildScanOptions(&cfg)
+		assert.Equal(t, "22,80,443", cfg.Ports)
+	})
+
+	t.Run("lowercase t: prefix stripped (same as uppercase)", func(t *testing.T) {
+		cfg := base
+		cfg.ScanType = scanTypeSYN
+		cfg.Ports = "t:22,80,443"
+		buildScanOptions(&cfg)
+		assert.Equal(t, "22,80,443", cfg.Ports)
+	})
+}
