@@ -43,13 +43,20 @@ type BannerTarget struct {
 
 // BannerGrabber grabs TCP/TLS banners from open ports and stores the results.
 type BannerGrabber struct {
-	repo   *db.BannerRepository
-	logger *slog.Logger
+	repo        *db.BannerRepository
+	logger      *slog.Logger
+	fingerprint *Fingerprinter
 }
 
 // NewBannerGrabber creates a new BannerGrabber.
-func NewBannerGrabber(repo *db.BannerRepository, logger *slog.Logger) *BannerGrabber {
-	return &BannerGrabber{repo: repo, logger: logger}
+// extraFingerprintPath is an optional path to a JSON file with custom fingerprint
+// rules; pass an empty string to use only the built-in rules.
+func NewBannerGrabber(repo *db.BannerRepository, logger *slog.Logger, extraFingerprintPath string) *BannerGrabber {
+	return &BannerGrabber{
+		repo:        repo,
+		logger:      logger,
+		fingerprint: NewFingerprinter(extraFingerprintPath),
+	}
 }
 
 // EnrichHosts grabs banners for all targets concurrently.
@@ -116,14 +123,21 @@ func (g *BannerGrabber) grabPlain(ctx context.Context, t BannerTarget, port int,
 		RawBanner: rawBanner,
 	}
 
+	// Always attempt fingerprint matching: port-only rules (Pattern="") fire even
+	// when no banner was received (binary protocols that wait for the client to speak).
+	bannerText := ""
 	if rawBanner != nil {
-		svc, ver := parseServiceFromBanner(*rawBanner, port)
-		if svc != "" {
-			banner.Service = &svc
-		}
-		if ver != "" {
-			banner.Version = &ver
-		}
+		bannerText = *rawBanner
+	}
+	svc, ver := g.fingerprint.Match(port, bannerText)
+	if svc == "" && rawBanner != nil {
+		svc, ver = parseServiceFromBanner(*rawBanner, port)
+	}
+	if svc != "" {
+		banner.Service = &svc
+	}
+	if ver != "" {
+		banner.Version = &ver
 	}
 
 	if err := g.repo.UpsertPortBanner(ctx, banner); err != nil {
@@ -142,8 +156,11 @@ func (g *BannerGrabber) grabTLS(ctx context.Context, t BannerTarget, port int, a
 	}
 	defer rawConn.Close() //nolint:errcheck
 
-	tlsConn := tls.Client(rawConn, &tls.Config{
-		InsecureSkipVerify: true, //nolint:gosec // scanner needs certs from self-signed/expired endpoints
+	// Scanner intentionally accepts any TLS version and self-signed certs so
+	// it can inspect endpoints that a strict client would reject.
+	tlsConn := tls.Client(rawConn, &tls.Config{ // nosemgrep
+		MinVersion:         tls.VersionTLS10, // nosemgrep
+		InsecureSkipVerify: true,             //nolint:gosec // nosemgrep
 		ServerName:         t.IP,
 	})
 	defer tlsConn.Close() //nolint:errcheck
