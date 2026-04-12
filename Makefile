@@ -255,6 +255,27 @@ coverage: test-db-up ## Generate coverage report
 	@$(GO) tool cover -func=$(COVERAGE_FILE) | tail -1
 	@echo "✓ Report: $(COVERAGE_FILE).html"
 
+.PHONY: coverage-diff
+coverage-diff: coverage ## Show per-file coverage for Go files changed vs main (mirrors Codecov patch check)
+	@echo ""
+	@echo "Coverage for files changed vs main:"
+	@BASE=$$(git merge-base origin/main HEAD 2>/dev/null || echo "origin/main"); \
+	git diff --name-only $$BASE HEAD -- '*.go' \
+		| grep -v '_test\.go' | grep -v '/mocks/' \
+		| while read f; do \
+			$(GO) tool cover -func=$(COVERAGE_FILE) 2>/dev/null \
+				| grep "$$f" | tail -1; \
+		done | grep -v '^$$' || echo "  (no data — run make coverage first)"
+	@echo ""
+	@echo "Total project coverage:"
+	@$(GO) tool cover -func=$(COVERAGE_FILE) 2>/dev/null | tail -1 || echo "  (no data — run make coverage first)"
+	@echo ""
+	@echo "Codecov thresholds (.codecov.yml):"
+	@echo "  patch:   >=40% of new/changed lines covered (informational only)"
+	@echo "  project: must not drop >2% from base branch (blocking)"
+	@echo ""
+	@echo "Tip: open coverage.out.html for a line-by-line view — red = uncovered."
+
 
 
 # ─── Code Quality ────────────────────────────────────────────────────────────

@@ -22,6 +22,19 @@ Run `make docs` and then `git diff --exit-code docs/swagger/ frontend/src/api/ty
 - If the diff is non-empty: **blocker** — the swagger spec is out of sync. List the files that changed and instruct the author to commit the updated output.
 - This check is mandatory even if no handler files changed (swagger_docs.go may reference types from other packages).
 
+### Codecov annotations (if a PR exists and CI has run)
+Run: `gh pr checks <PR number> --json name,conclusion,detailsUrl | jq '.[] | select(.name | test("codecov"; "i"))'`
+
+Then fetch the Codecov PR comment to read patch and project coverage:
+`gh api repos/anstrom/scanorama/issues/<PR number>/comments --jq '[.[] | select(.user.login == "codecov[bot]")] | last | .body' 2>/dev/null`
+
+From the comment, extract:
+- **Patch coverage** — the percentage of *new/changed lines* that are covered. Codecov threshold is ≥40% (informational — does not block CI, but flag if below).
+- **Project coverage** — total coverage delta vs base branch. Threshold is must not drop >2% (blocking — CI fails if it does). Flag if the project check shows a negative delta.
+- **File-level coverage table** — list any changed files where coverage dropped significantly (>5 percentage points) vs the base branch. These are should-fix items even if under threshold.
+- If CI is still running (no Codecov comment yet): note "Codecov pending" and skip this check — do not block on it.
+- If there is no PR yet: skip this check entirely.
+
 ### Test coverage audit
 Read the PR test plan and the diff, then answer these questions:
 
@@ -89,6 +102,7 @@ Print a single consolidated summary in this exact shape:
 - Lint/format: <pass/fail>
 - Live API smoke test: <pass/fail>
 - Cross-layer contract check: <pass/fail>
+- Codecov patch coverage: <X% / pending / no PR>
 
 ### Recommendation
 <merge | merge after fixing blockers | block — reason>
