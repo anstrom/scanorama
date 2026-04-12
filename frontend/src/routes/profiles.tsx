@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Plus, Pencil, Trash2, X, SlidersHorizontal, Copy } from "lucide-react";
 import { SortHeader } from "../components/sort-header";
 import type { SortOrder } from "../components/sort-header";
@@ -115,16 +115,19 @@ interface ProfileDetailPanelProps {
   profile: ProfileResponse;
   onClose: () => void;
   onForked?: (profile: ProfileResponse) => void;
+  /** When true the edit modal opens immediately on mount (used after fork). */
+  initiallyEditing?: boolean;
 }
 
 function ProfileDetailPanel({
   profile: initialProfile,
   onClose,
   onForked,
+  initiallyEditing = false,
 }: ProfileDetailPanelProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(initiallyEditing);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
   const { data: stats } = useProfileStats(initialProfile.id);
   const [cloneName, setCloneName] = useState("");
@@ -151,7 +154,7 @@ function ProfileDetailPanel({
   }
 
   function openCloneDialog() {
-    setCloneName(p.default ? (p.name ?? "") : `Copy of ${p.name ?? ""}`);
+    setCloneName(`${p.name ?? ""} (copy)`);
     setShowCloneDialog(true);
     setActionError(null);
   }
@@ -449,6 +452,7 @@ export function ProfilesPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [selectedProfile, setSelectedProfile] =
     useState<ProfileResponse | null>(null);
+  const [editAfterFork, setEditAfterFork] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [colVis, setColVis] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(PROFILE_COLUMNS.map((c) => [c.key, true])),
@@ -477,19 +481,16 @@ export function ProfilesPage() {
   );
 
   // Debounce name search
-  const debounceRef = {
-    current: 0 as unknown as ReturnType<typeof setTimeout>,
-  };
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleSearchInput = useCallback(
     (value: string) => {
       setSearch(value);
-      clearTimeout(debounceRef.current);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         setDebouncedSearch(value);
         setPage(1);
       }, 300);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
@@ -675,9 +676,11 @@ export function ProfilesPage() {
       {/* Profile detail panel */}
       {selectedProfile && (
         <ProfileDetailPanel
+          key={selectedProfile.id}
           profile={selectedProfile}
-          onClose={() => setSelectedProfile(null)}
-          onForked={(forked) => setSelectedProfile(forked)}
+          onClose={() => { setSelectedProfile(null); setEditAfterFork(false); }}
+          onForked={(forked) => { setSelectedProfile(forked); setEditAfterFork(true); }}
+          initiallyEditing={editAfterFork}
         />
       )}
 
