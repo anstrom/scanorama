@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/anstrom/scanorama/internal/db"
+	internaldns "github.com/anstrom/scanorama/internal/dns"
 )
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -941,5 +942,46 @@ func TestSaveDiscoveredHosts_EmptyVendorAndZeroRTT(t *testing.T) {
 
 	err := engine.saveDiscoveredHosts(ctx, results)
 	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ─── dnsScan ──────────────────────────────────────────────────────────────────
+
+func TestDnsScan_NilResolver_ReturnsError(t *testing.T) {
+	// Engine created without WithDNSResolver → dnsScan must fail with a clear
+	// error instead of panicking.
+	engine := NewEngine(nil)
+	ipnet := mustParseCIDR("192.168.1.0/30")
+
+	results, err := engine.dnsScan(context.Background(), ipnet, 0)
+
+	require.Error(t, err)
+	assert.Nil(t, results)
+	assert.Contains(t, err.Error(), "no DNS resolver configured")
+}
+
+func TestDnsScan_WithResolver_ReturnsDiscoveredHosts(t *testing.T) {
+	// Verify that WithDNSResolver wiring is correct: dnsScan delegates to
+	// dnsSweep and returns its results unchanged.
+	resolver, mock := newMockResolver(t,
+		internaldns.WithLookupAddrFn(func(_ context.Context, ip string) ([]string, error) {
+			return []string{ip + ".example.com"}, nil
+		}),
+	)
+	// /30 has 2 usable host IPs — each triggers one cache-miss + upsert cycle.
+	expectCacheMissAndUpsert(mock)
+	expectCacheMissAndUpsert(mock)
+
+	engine := NewEngine(nil).WithDNSResolver(resolver)
+	ipnet := mustParseCIDR("192.168.1.0/30")
+
+	results, err := engine.dnsScan(context.Background(), ipnet, 0)
+
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	for _, r := range results {
+		assert.Equal(t, "up", r.Status)
+		assert.Equal(t, "dns", r.Method)
+	}
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

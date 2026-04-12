@@ -1041,7 +1041,7 @@ export interface components {
              * @example ping
              * @enum {string}
              */
-            method?: "ping" | "arp" | "icmp" | "tcp_connect";
+            method?: "ping" | "arp" | "icmp" | "tcp_connect" | "dns";
             /** @example Office Network Discovery */
             name?: string;
             /**
@@ -1163,7 +1163,7 @@ export interface components {
              * @example ping
              * @enum {string}
              */
-            method?: "ping" | "arp" | "icmp" | "tcp_connect";
+            method?: "ping" | "arp" | "icmp" | "tcp_connect" | "dns";
             /** @example Network Discovery */
             name?: string;
             /**

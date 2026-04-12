@@ -251,7 +251,7 @@ type DiscoveryJobResponse struct {
 	Name        string     `json:"name" example:"Network Discovery"`
 	Description string     `json:"description,omitempty"`
 	Networks    []string   `json:"networks" example:"192.168.1.0/24"`
-	Method      string     `json:"method" example:"ping" enums:"ping,arp,icmp,tcp_connect"`
+	Method      string     `json:"method" example:"ping" enums:"ping,arp,icmp,tcp_connect,dns"`
 	Status      string     `json:"status" example:"running" enums:"pending,running,completed,failed"`
 	Progress    float64    `json:"progress" example:"45.5"`
 	HostsFound  int        `json:"hosts_found" example:"12"`
@@ -270,7 +270,7 @@ type DiscoveryJobResponse struct {
 type CreateDiscoveryJobRequest struct {
 	Name        string   `json:"name" example:"Office Network Discovery"`
 	Networks    []string `json:"networks" example:"192.168.1.0/24"`
-	Method      string   `json:"method" example:"ping" enums:"ping,arp,icmp,tcp_connect"`
+	Method      string   `json:"method" example:"ping" enums:"ping,arp,icmp,tcp_connect,dns"`
 	Description string   `json:"description,omitempty"`
 	Enabled     bool     `json:"enabled" example:"true"`
 }

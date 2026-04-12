@@ -196,7 +196,7 @@ type DiscoveryRequest struct {
 	Name        string            `json:"name" validate:"required,min=1,max=255"`
 	Description string            `json:"description,omitempty"`
 	Networks    []string          `json:"networks" validate:"required,min=1"`
-	Method      string            `json:"method" validate:"required,oneof=ping arp icmp tcp_connect"`
+	Method      string            `json:"method" validate:"required,oneof=ping arp icmp tcp_connect dns"`
 	Ports       string            `json:"ports,omitempty"`
 	Timeout     time.Duration     `json:"timeout,omitempty"`
 	Retries     int               `json:"retries,omitempty"`
@@ -612,6 +612,7 @@ func (h *DiscoveryHandler) validateMethod(method string) error {
 		"arp":         true,
 		"icmp":        true,
 		"tcp_connect": true,
+		"dns":         true,
 	}
 	if !validMethods[method] {
 		return fmt.Errorf("invalid discovery method: %s", method)
