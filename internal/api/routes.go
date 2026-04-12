@@ -43,6 +43,7 @@ func (s *Server) setupRoutes() {
 	groupHandler := apihandlers.NewGroupHandler(
 		services.NewGroupService(db.NewGroupRepository(s.database), s.logger), s.logger, s.metrics)
 	portHandler := apihandlers.NewPortHandler(db.NewPortRepository(s.database), s.logger, s.metrics)
+	certHandler := apihandlers.NewCertificateHandler(db.NewBannerRepository(s.database), s.logger, s.metrics)
 	profileManager := profiles.NewManager(s.database)
 	smartScanSvc := services.NewSmartScanService(s.database, profileManager, s.scanQueue, s.logger)
 	scanning.SetPostScanHook(smartScanSvc.ReEvaluateHosts)
@@ -65,6 +66,7 @@ func (s *Server) setupRoutes() {
 	s.setupScheduleRoutes(api, scheduleHandler)
 	s.setupNetworkRoutes(api, networkHandler)
 	s.setupPortRoutes(api, portHandler)
+	s.setupCertificateRoutes(api, certHandler)
 
 	api.HandleFunc("/ws", handlerManager.GeneralWebSocket).Methods("GET")
 	api.HandleFunc("/ws/scans", handlerManager.ScanWebSocket).Methods("GET")
@@ -210,6 +212,11 @@ func (s *Server) setupPortRoutes(api *mux.Router, h *apihandlers.PortHandler) {
 	api.HandleFunc("/ports/host-counts", h.ListPortHostCounts).Methods("GET")
 	api.HandleFunc("/ports", h.ListPorts).Methods("GET")
 	api.HandleFunc("/ports/{port}", h.GetPort).Methods("GET")
+}
+
+// setupCertificateRoutes registers TLS certificate endpoints.
+func (s *Server) setupCertificateRoutes(api *mux.Router, h *apihandlers.CertificateHandler) {
+	api.HandleFunc("/certificates/expiring", h.GetExpiringCertificates).Methods("GET")
 }
 
 // setupDocRoutes registers Swagger documentation and alias endpoints.

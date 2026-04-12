@@ -24,6 +24,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/certificates/expiring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List expiring TLS certificates
+         * @description Returns certificates expiring within the specified lookahead window (default 30 days, max 90).
+         *     Each entry is enriched with the host IP address and hostname.
+         */
+        get: operations["getExpiringCertificates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/discovery": {
         parameters: {
             query?: never;
@@ -1149,6 +1170,28 @@ export interface components {
             request_id?: string;
             timestamp?: string;
         };
+        "docs.ExpiringCertificateResponse": {
+            /** @example 14 */
+            days_left?: number;
+            /** @example 550e8400-e29b-41d4-a716-446655440002 */
+            host_id?: string;
+            /** @example 192.168.1.100 */
+            host_ip?: string;
+            /** @example server01.local */
+            hostname?: string;
+            not_after?: string;
+            /** @example 443 */
+            port?: number;
+            /** @example tcp */
+            protocol?: string;
+            /** @example server01.local */
+            subject_cn?: string;
+        };
+        "docs.ExpiringCertificatesResponse": {
+            certificates?: components["schemas"]["docs.ExpiringCertificateResponse"][];
+            /** @example 30 */
+            days?: number;
+        };
         "docs.HealthResponse": {
             checks?: {
                 [key: string]: string;
@@ -1701,6 +1744,47 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getExpiringCertificates: {
+        parameters: {
+            query?: {
+                /** @description Lookahead window in days (1–90, default 30) */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ExpiringCertificatesResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

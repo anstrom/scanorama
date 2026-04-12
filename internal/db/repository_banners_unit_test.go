@@ -359,3 +359,65 @@ func TestBannerRepository_ListExpiringCertificates_Empty(t *testing.T) {
 	assert.Empty(t, certs)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ── ListExpiringCertificatesWithHosts ────────────────────────────────────────
+
+var expiringWithHostsCols = []string{
+	"host_id", "ip_address", "hostname", "port", "subject_cn", "not_after",
+}
+
+func TestBannerRepository_ListExpiringCertificatesWithHosts_OK(t *testing.T) {
+	db, mock := newMockDB(t)
+	repo := NewBannerRepository(db)
+
+	notAfter := time.Now().UTC().Add(14 * 24 * time.Hour)
+	hostID := uuid.New().String()
+
+	rows := sqlmock.NewRows(expiringWithHostsCols).
+		AddRow(hostID, "192.168.1.100", "server01.local", 443, "server01.local", notAfter)
+
+	mock.ExpectQuery("SELECT").
+		WithArgs(30).
+		WillReturnRows(rows)
+
+	result, err := repo.ListExpiringCertificatesWithHosts(context.Background(), 30)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	assert.Equal(t, hostID, result[0].HostID)
+	assert.Equal(t, "192.168.1.100", result[0].HostIP)
+	assert.Equal(t, "server01.local", result[0].Hostname)
+	assert.Equal(t, 443, result[0].Port)
+	assert.Equal(t, "server01.local", result[0].SubjectCN)
+	assert.Equal(t, "tcp", result[0].Protocol)
+	// DaysLeft = int(hours / 24); allow ±1 for execution time
+	assert.InDelta(t, 14, result[0].DaysLeft, 1)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBannerRepository_ListExpiringCertificatesWithHosts_Empty(t *testing.T) {
+	db, mock := newMockDB(t)
+	repo := NewBannerRepository(db)
+
+	mock.ExpectQuery("SELECT").
+		WithArgs(30).
+		WillReturnRows(sqlmock.NewRows(expiringWithHostsCols))
+
+	result, err := repo.ListExpiringCertificatesWithHosts(context.Background(), 30)
+	require.NoError(t, err)
+	assert.NotNil(t, result, "should return [] not nil")
+	assert.Empty(t, result)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBannerRepository_ListExpiringCertificatesWithHosts_QueryError(t *testing.T) {
+	db, mock := newMockDB(t)
+	repo := NewBannerRepository(db)
+
+	mock.ExpectQuery("SELECT").
+		WithArgs(30).
+		WillReturnError(fmt.Errorf("join failed"))
+
+	_, err := repo.ListExpiringCertificatesWithHosts(context.Background(), 30)
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

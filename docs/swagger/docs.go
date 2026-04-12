@@ -66,6 +66,52 @@ const docTemplate = `{
                 }
             }
         },
+        "/certificates/expiring": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns certificates expiring within the specified lookahead window (default 30 days, max 90).\nEach entry is enriched with the host IP address and hostname.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "certificates"
+                ],
+                "summary": "List expiring TLS certificates",
+                "operationId": "getExpiringCertificates",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Lookahead window in days (1–90, default 30)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ExpiringCertificatesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/discovery": {
             "get": {
                 "security": [
@@ -4125,6 +4171,57 @@ const docTemplate = `{
                 },
                 "timestamp": {
                     "type": "string"
+                }
+            }
+        },
+        "docs.ExpiringCertificateResponse": {
+            "type": "object",
+            "properties": {
+                "days_left": {
+                    "type": "integer",
+                    "example": 14
+                },
+                "host_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440002"
+                },
+                "host_ip": {
+                    "type": "string",
+                    "example": "192.168.1.100"
+                },
+                "hostname": {
+                    "type": "string",
+                    "example": "server01.local"
+                },
+                "not_after": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer",
+                    "example": 443
+                },
+                "protocol": {
+                    "type": "string",
+                    "example": "tcp"
+                },
+                "subject_cn": {
+                    "type": "string",
+                    "example": "server01.local"
+                }
+            }
+        },
+        "docs.ExpiringCertificatesResponse": {
+            "type": "object",
+            "properties": {
+                "certificates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.ExpiringCertificateResponse"
+                    }
+                },
+                "days": {
+                    "type": "integer",
+                    "example": 30
                 }
             }
         },
