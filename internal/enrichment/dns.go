@@ -5,6 +5,7 @@ package enrichment
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"strings"
@@ -16,6 +17,15 @@ import (
 	internaldns "github.com/anstrom/scanorama/internal/dns"
 )
 
+// netLookups is the subset of *net.Resolver used by forwardRecords. It allows
+// tests to inject a fake resolver without starting a real DNS server.
+type netLookups interface {
+	LookupCNAME(ctx context.Context, host string) (string, error)
+	LookupMX(ctx context.Context, host string) ([]*net.MX, error)
+	LookupTXT(ctx context.Context, host string) ([]string, error)
+	LookupSRV(ctx context.Context, service, proto, name string) (string, []*net.SRV, error)
+}
+
 // DNSEnricher enriches hosts with DNS records collected after discovery or scanning.
 //
 // It performs:
@@ -26,10 +36,11 @@ import (
 //
 // All results are stored in host_dns_records (replacing any previous records).
 type DNSEnricher struct {
-	resolver *internaldns.Resolver
-	dnsRepo  *db.DNSRepository
-	hostRepo *db.HostRepository
-	logger   *slog.Logger
+	resolver    *internaldns.Resolver
+	netResolver netLookups
+	dnsRepo     *db.DNSRepository
+	hostRepo    *db.HostRepository
+	logger      *slog.Logger
 }
 
 // NewDNSEnricher creates a DNSEnricher.
@@ -39,11 +50,19 @@ func NewDNSEnricher(
 	hostRepo *db.HostRepository,
 ) *DNSEnricher {
 	return &DNSEnricher{
-		resolver: resolver,
-		dnsRepo:  dnsRepo,
-		hostRepo: hostRepo,
-		logger:   slog.Default(),
+		resolver:    resolver,
+		netResolver: net.DefaultResolver,
+		dnsRepo:     dnsRepo,
+		hostRepo:    hostRepo,
+		logger:      slog.Default(),
 	}
+}
+
+// WithNetResolver overrides the net.Resolver used for CNAME, MX, TXT, and SRV
+// lookups. The primary use-case is unit tests.
+func (e *DNSEnricher) WithNetResolver(r netLookups) *DNSEnricher {
+	e.netResolver = r
+	return e
 }
 
 // EnrichHost performs DNS enrichment for a single host. ctx should carry a
@@ -111,12 +130,12 @@ func (e *DNSEnricher) maybeSetHostname(ctx context.Context, host *db.Host, hostn
 		"host_id", host.ID, "hostname", hostname)
 }
 
-// forwardRecords collects A, AAAA, MX, and TXT records for the given hostname.
+// forwardRecords collects A, AAAA, CNAME, MX, TXT, and SRV records for the given hostname.
 func (e *DNSEnricher) forwardRecords(ctx context.Context, hostID uuid.UUID, hostname string) []db.DNSRecord {
 	var records []db.DNSRecord
 
-	// A / AAAA — LookupHost returns both.
-	addrs, err := net.DefaultResolver.LookupHost(ctx, hostname)
+	// A / AAAA — use the cached resolver for deduplication across concurrent enrichments.
+	addrs, err := e.resolver.LookupHost(ctx, hostname)
 	if err == nil {
 		for _, addr := range addrs {
 			rtype := "A"
@@ -131,8 +150,33 @@ func (e *DNSEnricher) forwardRecords(ctx context.Context, hostID uuid.UUID, host
 		}
 	}
 
+	// CNAME — the canonical name; omit if it equals the query name (no alias).
+	cname, err := e.netResolver.LookupCNAME(ctx, hostname)
+	if err == nil {
+		cname = strings.TrimSuffix(cname, ".")
+		if cname != "" && cname != hostname {
+			records = append(records, db.DNSRecord{
+				HostID:     hostID,
+				RecordType: "CNAME",
+				Value:      cname,
+			})
+		}
+	}
+
+	// MX
+	mxRecords, err := e.netResolver.LookupMX(ctx, hostname)
+	if err == nil {
+		for _, mx := range mxRecords {
+			records = append(records, db.DNSRecord{
+				HostID:     hostID,
+				RecordType: "MX",
+				Value:      strings.TrimSuffix(mx.Host, "."),
+			})
+		}
+	}
+
 	// TXT
-	txts, err := net.DefaultResolver.LookupTXT(ctx, hostname)
+	txts, err := e.netResolver.LookupTXT(ctx, hostname)
 	if err == nil {
 		for _, txt := range txts {
 			records = append(records, db.DNSRecord{
@@ -143,14 +187,34 @@ func (e *DNSEnricher) forwardRecords(ctx context.Context, hostID uuid.UUID, host
 		}
 	}
 
-	// MX
-	mxRecords, err := net.DefaultResolver.LookupMX(ctx, hostname)
-	if err == nil {
-		for _, mx := range mxRecords {
+	// SRV — probe well-known service prefixes. We deliberately skip "service"
+	// and "proto" discovery; the goal is best-effort population for common services.
+	//
+	// net.Resolver.LookupSRV prepends underscores automatically, so the service
+	// and proto values must NOT include a leading underscore.
+	srvServices := []struct{ service, proto string }{
+		{"http", "tcp"},
+		{"https", "tcp"},
+		{"smtp", "tcp"},
+		{"imap", "tcp"},
+		{"imaps", "tcp"},
+		{"ldap", "tcp"},
+		{"ldaps", "tcp"},
+		{"xmpp-client", "tcp"},
+		{"xmpp-server", "tcp"},
+	}
+	for _, s := range srvServices {
+		_, addrs, err := e.netResolver.LookupSRV(ctx, s.service, s.proto, hostname)
+		if err != nil {
+			continue
+		}
+		for _, srv := range addrs {
 			records = append(records, db.DNSRecord{
 				HostID:     hostID,
-				RecordType: "MX",
-				Value:      strings.TrimSuffix(mx.Host, "."),
+				RecordType: "SRV",
+				Value: fmt.Sprintf("_%s._%s.%s %d %d %d",
+					s.service, s.proto, strings.TrimSuffix(srv.Target, "."),
+					srv.Priority, srv.Weight, srv.Port),
 			})
 		}
 	}

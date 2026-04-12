@@ -347,6 +347,42 @@ func TestEnrichHost_UpsertError(t *testing.T) {
 
 // ─── forwardRecords ───────────────────────────────────────────────────────────
 
+// fakeNetResolver implements netLookups for tests, returning configurable records.
+type fakeNetResolver struct {
+	cname string
+	mx    []*net.MX
+	txts  []string
+	srvs  []*net.SRV // returned for every service/proto combination
+}
+
+func (f *fakeNetResolver) LookupCNAME(_ context.Context, _ string) (string, error) {
+	if f.cname == "" {
+		return "", &net.DNSError{IsNotFound: true}
+	}
+	return f.cname, nil
+}
+
+func (f *fakeNetResolver) LookupMX(_ context.Context, _ string) ([]*net.MX, error) {
+	if len(f.mx) == 0 {
+		return nil, &net.DNSError{IsNotFound: true}
+	}
+	return f.mx, nil
+}
+
+func (f *fakeNetResolver) LookupTXT(_ context.Context, _ string) ([]string, error) {
+	if len(f.txts) == 0 {
+		return nil, &net.DNSError{IsNotFound: true}
+	}
+	return f.txts, nil
+}
+
+func (f *fakeNetResolver) LookupSRV(_ context.Context, _, _, _ string) (string, []*net.SRV, error) {
+	if len(f.srvs) == 0 {
+		return "", nil, &net.DNSError{IsNotFound: true}
+	}
+	return "", f.srvs, nil
+}
+
 // TestForwardRecords_EmptyHostname verifies that forwardRecords called with an
 // empty hostname (which the enricher guards against) returns an empty slice.
 // We test it indirectly via EnrichHost with a host that has no PTR record.
@@ -373,5 +409,133 @@ func TestForwardRecords_NotCalledWithoutPTR(t *testing.T) {
 	// No DNS repo calls expected because there are no records to store.
 	require.NoError(t, dnsMock.ExpectationsWereMet())
 	require.NoError(t, hostMock.ExpectationsWereMet())
+	require.NoError(t, resolverMock.ExpectationsWereMet())
+}
+
+// newForwardRecordsEnricher builds a DNSEnricher wired to a fake net resolver
+// for testing forwardRecords in isolation. The returned sqlmock is set up with
+// exactly one cache-miss + upsert expectation for the A/AAAA lookup.
+func newForwardRecordsEnricher(
+	t *testing.T,
+	fake *fakeNetResolver,
+) (*DNSEnricher, sqlmock.Sqlmock) {
+	t.Helper()
+	resolverDB, resolverMock := newMockDB(t)
+	dnsDB, _ := newMockDB(t)
+	hostDB, _ := newMockDB(t)
+
+	// The A/AAAA lookup goes through the cached resolver → one cache miss + upsert.
+	noOpCacheExpect(resolverMock)
+
+	resolver := internaldns.New(resolverDB,
+		internaldns.WithLookupHostFn(func(_ context.Context, _ string) ([]string, error) {
+			return nil, internaldns.ErrNoRecords
+		}),
+	)
+	enricher := NewDNSEnricher(
+		resolver,
+		db.NewDNSRepository(dnsDB),
+		db.NewHostRepository(hostDB),
+	).WithNetResolver(fake)
+
+	return enricher, resolverMock
+}
+
+func TestForwardRecords_CNAME(t *testing.T) {
+	hostID := uuid.New()
+	fake := &fakeNetResolver{cname: "canonical.example.com."}
+	enricher, resolverMock := newForwardRecordsEnricher(t, fake)
+
+	records := enricher.forwardRecords(context.Background(), hostID, "host.example.com")
+
+	var cnames []string
+	for _, r := range records {
+		if r.RecordType == "CNAME" {
+			cnames = append(cnames, r.Value)
+		}
+	}
+	require.Len(t, cnames, 1)
+	require.Equal(t, "canonical.example.com", cnames[0])
+	require.NoError(t, resolverMock.ExpectationsWereMet())
+}
+
+func TestForwardRecords_CNAME_SelfReference_Omitted(t *testing.T) {
+	// When the CNAME equals the queried hostname, it must not be stored.
+	// net.DefaultResolver returns the queried name (with trailing dot) for names
+	// without a CNAME alias. Simulate that.
+	hostID := uuid.New()
+	fake := &fakeNetResolver{cname: "host.example.com."}
+	enricher, resolverMock := newForwardRecordsEnricher(t, fake)
+
+	records := enricher.forwardRecords(context.Background(), hostID, "host.example.com")
+
+	for _, r := range records {
+		require.NotEqual(t, "CNAME", r.RecordType, "self-referencing CNAME must be omitted")
+	}
+	require.NoError(t, resolverMock.ExpectationsWereMet())
+}
+
+func TestForwardRecords_MX(t *testing.T) {
+	hostID := uuid.New()
+	fake := &fakeNetResolver{
+		mx: []*net.MX{
+			{Host: "mail.example.com.", Pref: 10},
+		},
+	}
+	enricher, resolverMock := newForwardRecordsEnricher(t, fake)
+
+	records := enricher.forwardRecords(context.Background(), hostID, "example.com")
+
+	var mxVals []string
+	for _, r := range records {
+		if r.RecordType == "MX" {
+			mxVals = append(mxVals, r.Value)
+		}
+	}
+	require.Len(t, mxVals, 1)
+	require.Equal(t, "mail.example.com", mxVals[0])
+	require.NoError(t, resolverMock.ExpectationsWereMet())
+}
+
+func TestForwardRecords_TXT(t *testing.T) {
+	hostID := uuid.New()
+	fake := &fakeNetResolver{txts: []string{"v=spf1 include:example.com ~all"}}
+	enricher, resolverMock := newForwardRecordsEnricher(t, fake)
+
+	records := enricher.forwardRecords(context.Background(), hostID, "example.com")
+
+	var txts []string
+	for _, r := range records {
+		if r.RecordType == "TXT" {
+			txts = append(txts, r.Value)
+		}
+	}
+	require.Len(t, txts, 1)
+	require.Equal(t, "v=spf1 include:example.com ~all", txts[0])
+	require.NoError(t, resolverMock.ExpectationsWereMet())
+}
+
+func TestForwardRecords_SRV(t *testing.T) {
+	hostID := uuid.New()
+	fake := &fakeNetResolver{
+		srvs: []*net.SRV{
+			{Target: "sip.example.com.", Port: 5060, Priority: 10, Weight: 20},
+		},
+	}
+	enricher, resolverMock := newForwardRecordsEnricher(t, fake)
+
+	records := enricher.forwardRecords(context.Background(), hostID, "example.com")
+
+	var srvVals []string
+	for _, r := range records {
+		if r.RecordType == "SRV" {
+			srvVals = append(srvVals, r.Value)
+		}
+	}
+	// fakeNetResolver returns the same SRV for every service/proto, so we get
+	// one record per probed service (9 total). The first probed service is "http/tcp".
+	require.Len(t, srvVals, 9)
+	// Validate the full format: _service._proto.target priority weight port
+	require.Equal(t, "_http._tcp.sip.example.com 10 20 5060", srvVals[0])
 	require.NoError(t, resolverMock.ExpectationsWereMet())
 }
