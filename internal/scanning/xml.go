@@ -55,7 +55,8 @@ func SaveResults(result *ScanResult, filePath string) error {
 	xmlData.EndTime = result.EndTime.Format(time.RFC3339)
 	xmlData.Duration = result.Duration.String()
 
-	for i, host := range result.Hosts {
+	for i := range result.Hosts {
+		host := &result.Hosts[i]
 		xmlHost := HostXML{
 			Address: host.Address,
 			Status:  host.Status,

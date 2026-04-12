@@ -377,8 +377,8 @@ func runTestScan(database *db.DB, profile *db.ScanProfile, target string, cfg *c
 
 	// Calculate total ports
 	totalPorts := 0
-	for _, host := range result.Hosts {
-		totalPorts += len(host.Ports)
+	for i := range result.Hosts {
+		totalPorts += len(result.Hosts[i].Ports)
 	}
 
 	fmt.Printf("\nProfile test completed successfully!\n")

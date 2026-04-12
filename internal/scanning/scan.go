@@ -424,6 +424,19 @@ func convertNmapHost(h *nmap.Host) *Host {
 		Ports:   make([]Port, 0, len(h.Ports)),
 	}
 
+	// Capture the DNS name used as the scan target (type="user") or the
+	// PTR record (type="PTR") from nmap's <hostnames> element.
+	// Prefer "user" so the name the operator typed is preserved over reverse DNS.
+	for _, hn := range h.Hostnames {
+		if hn.Type == "user" {
+			host.Hostname = hn.Name
+			break
+		}
+		if hn.Type == "PTR" && host.Hostname == "" {
+			host.Hostname = hn.Name
+		}
+	}
+
 	for j := range h.Ports {
 		p := &h.Ports[j]
 		port := Port{
@@ -502,7 +515,8 @@ func PrintResults(result *ScanResult) {
 	fmt.Printf("Total hosts: %d, Up: %d, Down: %d\n\n",
 		result.Stats.Total, result.Stats.Up, result.Stats.Down)
 
-	for _, host := range result.Hosts {
+	for i := range result.Hosts {
+		host := &result.Hosts[i]
 		fmt.Printf("Host: %s (%s)\n", host.Address, host.Status)
 		if host.Status != "up" {
 			continue
@@ -849,7 +863,7 @@ func persistOSData(ctx context.Context, hostRepo *db.HostRepository, dbHost *db.
 // the TOCTOU race of the previous get-then-create pattern.
 func getOrCreateHostSafely(ctx context.Context, _ *db.DB, hostRepo *db.HostRepository,
 	ipAddr db.IPAddr, host *Host) (*db.Host, error) {
-	dbHost, err := hostRepo.UpsertForScan(ctx, ipAddr, host.Status)
+	dbHost, err := hostRepo.UpsertForScan(ctx, ipAddr, host.Status, host.Hostname)
 	if err != nil {
 		return nil, fmt.Errorf("failed to upsert host %s: %w", ipAddr, err)
 	}
@@ -934,7 +948,8 @@ func runBannerEnrichment(database *db.DB, hosts []Host) {
 	grabber := enrichment.NewBannerGrabber(bannerRepo, slog.Default(), "")
 
 	var targets []enrichment.BannerTarget
-	for _, h := range hosts {
+	for i := range hosts {
+		h := &hosts[i]
 		if h.Status != "up" {
 			continue
 		}

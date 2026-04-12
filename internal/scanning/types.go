@@ -217,6 +217,9 @@ func (r *ScanResult) Complete() {
 type Host struct {
 	// Address is the IP address or hostname of the scanned host
 	Address string
+	// Hostname is the DNS name used as the scan target, if any (type="user" from
+	// nmap's <hostnames> element). Empty for IP-targeted scans.
+	Hostname string
 	// Status indicates whether the host is "up" or "down"
 	Status string
 	// Ports contains information about all scanned ports
