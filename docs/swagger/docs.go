@@ -3912,7 +3912,8 @@ const docTemplate = `{
                         "ping",
                         "arp",
                         "icmp",
-                        "tcp_connect"
+                        "tcp_connect",
+                        "dns"
                     ],
                     "example": "ping"
                 },
@@ -4175,7 +4176,8 @@ const docTemplate = `{
                         "ping",
                         "arp",
                         "icmp",
-                        "tcp_connect"
+                        "tcp_connect",
+                        "dns"
                     ],
                     "example": "ping"
                 },

@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/anstrom/scanorama/internal/db"
+	internaldns "github.com/anstrom/scanorama/internal/dns"
 )
 
 const (
@@ -46,6 +47,7 @@ type Engine struct {
 	db          *db.DB
 	concurrency int
 	timeout     time.Duration
+	dnsResolver *internaldns.Resolver
 }
 
 // Config holds discovery configuration parameters.
@@ -79,6 +81,12 @@ func NewEngine(database *db.DB) *Engine {
 		concurrency: defaultConcurrency,
 		timeout:     time.Duration(defaultTimeoutSeconds) * time.Second,
 	}
+}
+
+// WithDNSResolver attaches a cached DNS resolver for DNS-based discovery methods.
+func (e *Engine) WithDNSResolver(r *internaldns.Resolver) *Engine {
+	e.dnsResolver = r
+	return e
 }
 
 // SetConcurrency sets the concurrency level for discovery operations.
@@ -162,23 +170,18 @@ func (e *Engine) ScanNetwork(ctx context.Context, cfg *Config) (int, error) {
 		maxHosts = 10000
 	}
 
-	targets, err := e.generateTargetsFromCIDR(*ipnet, maxHosts)
-	if err != nil {
-		return 0, fmt.Errorf("failed to generate targets: %w", err)
+	var discovered []Result
+	var scanErr error
+	if cfg.Method == "dns" {
+		discovered, scanErr = e.dnsScan(ctx, *ipnet, maxHosts)
+	} else {
+		discovered, scanErr = e.nmapScan(ctx, *ipnet, maxHosts, cfg)
 	}
-
-	if len(targets) == 0 {
-		slog.Info("no targets to discover")
-		return 0, nil
+	if scanErr != nil {
+		return 0, scanErr
 	}
-
-	dynamicTimeout := e.calculateDynamicTimeout(len(targets), cfg.Timeout)
-	slog.Info("starting nmap discovery",
-		"targets", len(targets), "method", cfg.Method, "timeout", dynamicTimeout)
-
-	discovered, err := e.nmapDiscoveryWithTargets(ctx, targets, cfg, dynamicTimeout)
-	if err != nil {
-		return 0, err
+	if discovered == nil {
+		return 0, nil // no targets or no results
 	}
 
 	if len(discovered) > 0 {
@@ -205,6 +208,39 @@ func (e *Engine) validateNetworkSize(ipnet net.IPNet) error {
 	return nil
 }
 
+// dnsScan runs a DNS PTR sweep over ipnet and returns the discovered hosts. It
+// returns (nil, error) on configuration problems, and (nil, nil) if no hosts
+// respond — the caller interprets a nil slice as "nothing to do".
+func (e *Engine) dnsScan(ctx context.Context, ipnet net.IPNet, maxHosts int) ([]Result, error) {
+	if e.dnsResolver == nil {
+		return nil, fmt.Errorf("dns sweep: no DNS resolver configured on engine")
+	}
+	slog.Info("starting DNS PTR sweep", "network", ipnet.String())
+	results := dnsSweep(ctx, ipnet, e.dnsResolver, maxHosts)
+	if len(results) == 0 {
+		return nil, nil
+	}
+	return results, nil
+}
+
+// nmapScan generates targets from ipnet, runs nmap, and returns discovered
+// hosts. It returns (nil, nil) when the network contains no targets to scan
+// (e.g. a /32 with no usable host addresses).
+func (e *Engine) nmapScan(ctx context.Context, ipnet net.IPNet, maxHosts int, cfg *Config) ([]Result, error) {
+	targets, err := e.generateTargetsFromCIDR(ipnet, maxHosts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate targets: %w", err)
+	}
+	if len(targets) == 0 {
+		slog.Info("no targets to discover")
+		return nil, nil
+	}
+	dynamicTimeout := e.calculateDynamicTimeout(len(targets), cfg.Timeout)
+	slog.Info("starting nmap discovery",
+		"targets", len(targets), "method", cfg.Method, "timeout", dynamicTimeout)
+	return e.nmapDiscoveryWithTargets(ctx, targets, cfg, dynamicTimeout)
+}
+
 // runDiscovery executes the actual discovery process using nmap.
 func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config *Config) {
 	defer e.finalizeDiscoveryJob(ctx, job)
@@ -217,42 +253,31 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 	default:
 	}
 
-	// Generate targets from network CIDR
 	maxHosts := config.MaxHosts
 	if maxHosts <= 0 {
 		maxHosts = 10000
 	}
 
-	targets, err := e.generateTargetsFromCIDR(job.Network.IPNet, maxHosts)
-	if err != nil {
+	var discoveredHosts []Result
+	var scanErr error
+	if config.Method == "dns" {
+		discoveredHosts, scanErr = e.dnsScan(ctx, job.Network.IPNet, maxHosts)
+	} else {
+		discoveredHosts, scanErr = e.nmapScan(ctx, job.Network.IPNet, maxHosts, config)
+	}
+	if scanErr != nil {
 		job.Status = db.DiscoveryJobStatusFailed
-		slog.Error("failed to generate targets", "error", err)
+		slog.Error("discovery failed", "error", scanErr)
 		return
 	}
-
-	if len(targets) == 0 {
-		job.Status = db.DiscoveryJobStatusCompleted
-		slog.Info("no targets to discover")
-		return
-	}
-
-	// Calculate dynamic timeout based on target count
-	dynamicTimeout := e.calculateDynamicTimeout(len(targets), config.Timeout)
-	slog.Info("starting nmap discovery", "targets", len(targets), "method", config.Method, "timeout", dynamicTimeout)
-
-	// Use nmap for host discovery with generated targets
-	discoveredHosts, err := e.nmapDiscoveryWithTargets(ctx, targets, config, dynamicTimeout)
-	if err != nil {
-		job.Status = db.DiscoveryJobStatusFailed
-		slog.Error("discovery failed", "error", err)
-		return
+	if discoveredHosts == nil {
+		return // no targets — finalizeDiscoveryJob will set status to Completed
 	}
 
 	// Save discovered hosts to database
 	if len(discoveredHosts) > 0 {
-		err = e.saveDiscoveredHosts(ctx, discoveredHosts)
-		if err != nil {
-			slog.Warn("failed to save some discovered hosts", "error", err)
+		if saveErr := e.saveDiscoveredHosts(ctx, discoveredHosts); saveErr != nil {
+			slog.Warn("failed to save some discovered hosts", "error", saveErr)
 		} else {
 			slog.Info("saved discovered hosts to database", "count", len(discoveredHosts))
 		}

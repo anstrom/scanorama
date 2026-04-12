@@ -13,6 +13,7 @@ const METHODS = [
   { value: "tcp_connect", label: "TCP Connect" },
   { value: "icmp", label: "ICMP" },
   { value: "arp", label: "ARP" },
+  { value: "dns", label: "DNS Sweep" },
 ] as const;
 
 type Method = (typeof METHODS)[number]["value"];

@@ -17,6 +17,7 @@ import (
 	"github.com/anstrom/scanorama/internal/config"
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/discovery"
+	internaldns "github.com/anstrom/scanorama/internal/dns"
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/anstrom/scanorama/internal/scanning"
@@ -107,7 +108,8 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 	apiConfig := getAPIConfigFromConfig(cfg)
 
 	// Create the discovery engine so API-triggered jobs actually run nmap.
-	discoveryEngine := discovery.NewEngine(database)
+	dnsResolver := internaldns.New(database)
+	discoveryEngine := discovery.NewEngine(database).WithDNSResolver(dnsResolver)
 
 	// Create the scan queue using pool size and queue depth from config.
 	scanQueue := scanning.NewScanQueue(

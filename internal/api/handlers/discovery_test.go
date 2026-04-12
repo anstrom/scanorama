@@ -303,6 +303,11 @@ func TestDiscoveryHandler_ValidateMethod(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name:        "valid dns method",
+			method:      "dns",
+			expectError: false,
+		},
+		{
 			name:        "invalid method",
 			method:      "invalid",
 			expectError: true,
