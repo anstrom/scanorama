@@ -21,6 +21,7 @@ import (
 	"github.com/anstrom/scanorama/internal/logging"
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/anstrom/scanorama/internal/scanning"
+	"github.com/anstrom/scanorama/internal/scheduler"
 )
 
 // Server timeout constants.
@@ -51,6 +52,9 @@ type Server struct {
 
 	// background metrics updater
 	metricsCancel context.CancelFunc
+
+	// scheduler runs cron-based discovery, scan, and smart-scan jobs.
+	scheduler *scheduler.Scheduler
 }
 
 // Config holds API server configuration.
@@ -181,6 +185,16 @@ func (s *Server) Start(ctx context.Context) error {
 			"queue_depth", s.config.Scanning.MaxConcurrentTargets)
 	}
 
+	// Start the cron scheduler, which loads enabled jobs from the DB and fires
+	// them on their configured cron schedule.
+	if s.scheduler != nil {
+		if err := s.scheduler.Start(); err != nil {
+			s.logger.Warn("Failed to start scheduler", "error", err)
+		} else {
+			s.logger.Info("Scheduler started")
+		}
+	}
+
 	s.mu.Lock()
 	s.running = true
 	s.mu.Unlock()
@@ -239,6 +253,13 @@ func (s *Server) Stop() error {
 	s.mu.Unlock()
 
 	s.logger.Info("Stopping API server")
+
+	// Stop the scheduler before the HTTP server so no new jobs are fired
+	// while requests are still being served.
+	if s.scheduler != nil {
+		s.scheduler.Stop()
+		s.logger.Info("Scheduler stopped")
+	}
 
 	// Stop the scan queue first so in-flight scans can finish before the
 	// HTTP server stops accepting new requests.

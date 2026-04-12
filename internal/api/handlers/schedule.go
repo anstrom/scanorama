@@ -349,6 +349,90 @@ func (h *ScheduleHandler) GetScheduleNextRun(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// SmartScanScheduleRequest is the request body for POST /schedules/smart-scan.
+type SmartScanScheduleRequest struct {
+	Name              string `json:"name"`
+	CronExpr          string `json:"cron_expr"`
+	Enabled           bool   `json:"enabled"`
+	ScoreThreshold    int    `json:"score_threshold,omitempty"`
+	MaxStalenessHours int    `json:"max_staleness_hours,omitempty"`
+	NetworkCIDR       string `json:"network_cidr,omitempty"`
+	Limit             int    `json:"limit,omitempty"`
+}
+
+// CreateSmartScanSchedule handles POST /api/v1/schedules/smart-scan — creates a
+// recurring smart-scan job that re-queues hosts with knowledge gaps on a cron
+// schedule.
+//
+//	@Summary		Create a scheduled Smart Scan
+//	@Description	Creates a recurring cron job that calls QueueBatch on each fire.
+//	@Tags			schedules
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		SmartScanScheduleRequest	true	"Smart scan schedule config"
+//	@Success		201	{object}	ScheduleResponse
+//	@Failure		400	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Router			/schedules/smart-scan [post]
+func (h *ScheduleHandler) CreateSmartScanSchedule(w http.ResponseWriter, r *http.Request) {
+	var req SmartScanScheduleRequest
+	if err := parseJSON(r, &req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+	if err := h.validateSmartScanScheduleRequest(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+	input := db.CreateScheduleInput{
+		Name:           req.Name,
+		JobType:        db.ScheduledJobTypeSmartScan,
+		CronExpression: req.CronExpr,
+		Enabled:        req.Enabled,
+		JobConfig: map[string]interface{}{
+			"score_threshold":     req.ScoreThreshold,
+			"max_staleness_hours": req.MaxStalenessHours,
+			"network_cidr":        req.NetworkCIDR,
+			"limit":               req.Limit,
+		},
+	}
+	schedule, err := h.service.CreateSchedule(r.Context(), input)
+	if err != nil {
+		h.logger.Error("Failed to create smart scan schedule",
+			"request_id", getRequestIDFromContext(r.Context()), "error", err)
+		writeError(w, r, http.StatusInternalServerError,
+			fmt.Errorf("failed to create smart scan schedule: %w", err))
+		return
+	}
+	writeJSON(w, r, http.StatusCreated, h.scheduleToResponse(schedule))
+	if h.metrics != nil {
+		h.metrics.Counter("api_smart_scan_schedules_created_total", nil)
+	}
+}
+
+// validateSmartScanScheduleRequest validates a smart scan schedule request.
+func (h *ScheduleHandler) validateSmartScanScheduleRequest(req *SmartScanScheduleRequest) error {
+	if req.Name == "" {
+		return fmt.Errorf("schedule name is required")
+	}
+	if len(req.Name) > maxScheduleNameLength {
+		return fmt.Errorf("schedule name too long (max %d characters)", maxScheduleNameLength)
+	}
+	if err := services.ValidateCronExpression(req.CronExpr); err != nil {
+		return err
+	}
+	if req.ScoreThreshold < 0 || req.ScoreThreshold > 100 {
+		return fmt.Errorf("score_threshold must be between 0 and 100")
+	}
+	if req.MaxStalenessHours < 0 {
+		return fmt.Errorf("max_staleness_hours cannot be negative")
+	}
+	if req.Limit < 0 {
+		return fmt.Errorf("limit cannot be negative")
+	}
+	return nil
+}
+
 // Helper methods
 
 // validateScheduleRequest validates a schedule request.

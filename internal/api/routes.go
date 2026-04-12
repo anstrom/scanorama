@@ -11,6 +11,7 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/profiles"
 	"github.com/anstrom/scanorama/internal/scanning"
+	"github.com/anstrom/scanorama/internal/scheduler"
 	"github.com/anstrom/scanorama/internal/services"
 )
 
@@ -46,9 +47,16 @@ func (s *Server) setupRoutes() {
 	portHandler := apihandlers.NewPortHandler(db.NewPortRepository(s.database), s.logger, s.metrics)
 	certHandler := apihandlers.NewCertificateHandler(db.NewBannerRepository(s.database), s.logger, s.metrics)
 	profileManager := profiles.NewManager(s.database)
-	smartScanSvc := services.NewSmartScanService(s.database, profileManager, s.scanQueue, s.logger)
+	smartScanSvc := services.NewSmartScanService(s.database, profileManager, s.scanQueue, s.logger).
+		WithAutoProgression(
+			services.AutoProgressDefaultThreshold,
+			services.AutoProgressDefaultMaxPerWindow,
+			services.AutoProgressDefaultWindowHours,
+		)
 	scanning.SetPostScanHook(smartScanSvc.ReEvaluateHosts)
 	smartScanHandler := apihandlers.NewSmartScanHandler(smartScanSvc, s.logger)
+
+	s.scheduler = s.buildScheduler(profileManager, smartScanSvc)
 	handlerManager := apihandlers.New(s.database, s.logger, s.metrics).
 		WithRingBuffer(s.ringBuffer)
 	if s.scanQueue != nil {
@@ -154,6 +162,8 @@ func (s *Server) setupProfileRoutes(api *mux.Router, h *apihandlers.ProfileHandl
 
 // setupScheduleRoutes registers scheduled job CRUD and control endpoints.
 func (s *Server) setupScheduleRoutes(api *mux.Router, h *apihandlers.ScheduleHandler) {
+	// Fixed-path routes must come before the /{id} pattern.
+	api.HandleFunc("/schedules/smart-scan", h.CreateSmartScanSchedule).Methods("POST")
 	api.HandleFunc("/schedules", h.ListSchedules).Methods("GET")
 	api.HandleFunc("/schedules", h.CreateSchedule).Methods("POST")
 	api.HandleFunc("/schedules/{id}", h.GetSchedule).Methods("GET")
@@ -219,6 +229,21 @@ func (s *Server) setupPortRoutes(api *mux.Router, h *apihandlers.PortHandler) {
 // setupCertificateRoutes registers TLS certificate endpoints.
 func (s *Server) setupCertificateRoutes(api *mux.Router, h *apihandlers.CertificateHandler) {
 	api.HandleFunc("/certificates/expiring", h.GetExpiringCertificates).Methods("GET")
+}
+
+// buildScheduler constructs and wires the cron scheduler.
+// Returns nil when the server has no database (unit-test mode).
+func (s *Server) buildScheduler(
+	profileManager *profiles.Manager, smartScanSvc *services.SmartScanService,
+) *scheduler.Scheduler {
+	if s.database == nil {
+		return nil
+	}
+	sched := scheduler.NewScheduler(s.database, s.discoveryEngine, profileManager)
+	if s.scanQueue != nil {
+		sched = sched.WithScanQueue(s.scanQueue)
+	}
+	return sched.WithSmartScanService(smartScanSvc)
 }
 
 // setupDocRoutes registers Swagger documentation and alias endpoints.
