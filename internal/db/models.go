@@ -285,6 +285,7 @@ type ScanJob struct {
 	ExecutionDetails JSONB      `db:"execution_details" json:"execution_details,omitempty"`
 	WorkerID         *string    `db:"worker_id" json:"worker_id,omitempty"`
 	CreatedBy        *string    `db:"created_by" json:"created_by,omitempty"`
+	Source           *string    `db:"source" json:"source,omitempty"`
 }
 
 // OSFingerprint represents OS detection information.
@@ -605,6 +606,14 @@ const (
 const (
 	ScheduledJobTypeDiscovery = "discovery"
 	ScheduledJobTypeScan      = "scan"
+	ScheduledJobTypeSmartScan = "smart_scan"
+)
+
+// ScanSource constants describe what triggered a scan job.
+const (
+	ScanSourceAPI       = "api"       // triggered by a user via the API
+	ScanSourceAuto      = "auto"      // triggered by post-scan auto-progression
+	ScanSourceScheduled = "scheduled" // triggered by the cron scheduler
 )
 
 // DiscoveryMethod constants.

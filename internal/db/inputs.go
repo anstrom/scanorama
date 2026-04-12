@@ -21,6 +21,7 @@ type CreateScanInput struct {
 	ProfileID   *string
 	OSDetection bool
 	NetworkID   *uuid.UUID // optional: caller-supplied FK to an existing networks row
+	Source      *string    // optional: ScanSourceAPI / ScanSourceAuto / ScanSourceScheduled
 }
 
 // UpdateScanInput holds the optional fields that may be changed on an existing
