@@ -5266,6 +5266,10 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 50
                 },
+                "network_cidr": {
+                    "type": "string",
+                    "example": "192.168.1.0/24"
+                },
                 "stage": {
                     "type": "string",
                     "enum": [

@@ -74,4 +74,9 @@ export {
   useTriggerSmartScan,
   useTriggerSmartScanBatch,
 } from "./use-smart-scan";
-export type { ScanStage, SuggestionSummary, BatchResult } from "./use-smart-scan";
+export type {
+  ScanStage,
+  SuggestionSummary,
+  BatchResult,
+  TriggerHostResponse,
+} from "./use-smart-scan";

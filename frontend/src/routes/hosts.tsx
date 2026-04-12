@@ -52,6 +52,7 @@ import { useGroups, useAddHostsToGroup } from "../api/hooks/use-groups";
 import {
   useSmartScanStage,
   useTriggerSmartScan,
+  type TriggerHostResponse,
 } from "../api/hooks/use-smart-scan";
 import { HostSmartScanPreviewModal } from "../components/smart-scan-preview-modal";
 
@@ -286,7 +287,8 @@ function HostDetailPanel({
     try {
       const result = await triggerSmartScan(h.id ?? "");
       setShowSmartScanPreview(false);
-      if (result && "queued" in result && !result.queued) {
+      const typed = result as TriggerHostResponse;
+      if (!typed.queued) {
         toast.success("No scan needed — host knowledge is sufficient.");
       } else {
         toast.success("Smart Scan queued.");
@@ -1231,7 +1233,8 @@ function HostDetailPanel({
               variant="secondary"
               icon={<Zap className="h-3.5 w-3.5" />}
               onClick={() => setShowSmartScanPreview(true)}
-              disabled={hasPendingScan || smartScanStageLoading}
+              disabled={hasPendingScan}
+              loading={showSmartScanPreview && smartScanStageLoading}
               title={
                 hasPendingScan
                   ? "A scan is already pending for this host"

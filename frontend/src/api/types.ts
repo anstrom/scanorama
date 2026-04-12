@@ -1664,6 +1664,8 @@ export interface components {
             host_ids?: string[];
             /** @example 50 */
             limit?: number;
+            /** @example 192.168.1.0/24 */
+            network_cidr?: string;
             /**
              * @example os_detection
              * @enum {string}

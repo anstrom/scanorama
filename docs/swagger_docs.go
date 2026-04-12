@@ -1432,9 +1432,10 @@ type TriggerHostResponse struct {
 
 // TriggerBatchRequest is the request body for TriggerSmartScanBatch.
 type TriggerBatchRequest struct {
-	Stage   string   `json:"stage,omitempty" example:"os_detection" enums:"os_detection,port_expansion,service_scan,refresh,skip"`
-	HostIDs []string `json:"host_ids,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
-	Limit   int      `json:"limit,omitempty" example:"50"`
+	Stage       string   `json:"stage,omitempty" example:"os_detection" enums:"os_detection,port_expansion,service_scan,refresh,skip"`
+	HostIDs     []string `json:"host_ids,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	NetworkCIDR string   `json:"network_cidr,omitempty" example:"192.168.1.0/24"`
+	Limit       int      `json:"limit,omitempty" example:"50"`
 }
 
 // BatchDetailEntryResponse records the outcome for one host in a batch.

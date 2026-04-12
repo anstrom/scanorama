@@ -136,12 +136,11 @@ interface BatchSmartScanPreviewProps {
 
 interface SuggestionRowProps {
   label: string;
-  count: number | undefined;
+  count: number;
   action: string | undefined;
 }
 
 function SuggestionRow({ label, count, action }: SuggestionRowProps) {
-  if (!count) return null;
   return (
     <div className="flex items-center justify-between text-xs py-1">
       <span className="text-text-secondary">{label}</span>
@@ -202,12 +201,14 @@ export function BatchSmartScanPreviewModal({
 
         <div className="rounded-md border border-border bg-surface-raised divide-y divide-border/50">
           {groups.map((g) => (
-            <div key={g.label} className={cn("px-3", !g.count && "opacity-40")}>
-              <SuggestionRow
-                label={g.label}
-                count={g.count}
-                action={g.action}
-              />
+            <div key={g.label} className="px-3">
+              <div className={cn(!g.count && "opacity-40")}>
+                <SuggestionRow
+                  label={g.label}
+                  count={g.count ?? 0}
+                  action={g.action}
+                />
+              </div>
             </div>
           ))}
         </div>
