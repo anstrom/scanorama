@@ -1445,13 +1445,6 @@ type BatchDetailEntryResponse struct {
 	Reason string `json:"reason,omitempty" example:"skip: host knowledge is sufficient"`
 }
 
-// BatchResultResponse is the response body for TriggerSmartScanBatch.
-type BatchResultResponse struct {
-	Queued  int                        `json:"queued" example:"15"`
-	Skipped int                        `json:"skipped" example:"51"`
-	Details []BatchDetailEntryResponse `json:"details"`
-}
-
 // PortDefinitionResponse mirrors db.PortDefinition for Swagger documentation.
 type PortDefinitionResponse struct {
 	Port        int      `json:"port" example:"443"`
@@ -1483,6 +1476,49 @@ type PortHostCountResponse struct {
 	Protocol string `json:"protocol" example:"tcp"`
 	Count    int    `json:"count" example:"12"`
 }
+
+// PortHostCountListResponse is the response body for ListPortHostCounts.
+type PortHostCountListResponse = []PortHostCountResponse
+
+// BatchResultResponse is the response body for TriggerSmartScanBatch.
+type BatchResultResponse struct {
+	Queued  int                        `json:"queued" example:"15"`
+	Skipped int                        `json:"skipped" example:"51"`
+	Details []BatchDetailEntryResponse `json:"details"`
+}
+
+// ExpiringCertificateResponse represents a single certificate that is approaching expiry.
+type ExpiringCertificateResponse struct {
+	HostID    string    `json:"host_id" example:"550e8400-e29b-41d4-a716-446655440002"`
+	HostIP    string    `json:"host_ip" example:"192.168.1.100"`
+	Hostname  string    `json:"hostname,omitempty" example:"server01.local"`
+	Port      int       `json:"port" example:"443"`
+	Protocol  string    `json:"protocol" example:"tcp"`
+	SubjectCN string    `json:"subject_cn,omitempty" example:"server01.local"`
+	NotAfter  time.Time `json:"not_after"`
+	DaysLeft  int       `json:"days_left" example:"14"`
+}
+
+// ExpiringCertificatesResponse is the response body for GET /certificates/expiring.
+type ExpiringCertificatesResponse struct {
+	Certificates []ExpiringCertificateResponse `json:"certificates"`
+	Days         int                           `json:"days" example:"30"`
+}
+
+// GetExpiringCertificates godoc
+// @Summary      List expiring TLS certificates
+// @Description  Returns certificates expiring within the specified lookahead window (default 30 days, max 90).
+// @Description  Each entry is enriched with the host IP address and hostname.
+// @Tags         certificates
+// @Produce      json
+// @Param        days  query  int  false  "Lookahead window in days (1–90, default 30)"
+// @Success      200  {object}  ExpiringCertificatesResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /certificates/expiring [get]
+// @ID           getExpiringCertificates
+func GetExpiringCertificates(_ http.ResponseWriter, _ *http.Request) {}
 
 // ListPorts godoc
 // @Summary      List port definitions

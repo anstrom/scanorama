@@ -318,6 +318,42 @@ definitions:
       timestamp:
         type: string
     type: object
+  docs.ExpiringCertificateResponse:
+    properties:
+      days_left:
+        example: 14
+        type: integer
+      host_id:
+        example: 550e8400-e29b-41d4-a716-446655440002
+        type: string
+      host_ip:
+        example: 192.168.1.100
+        type: string
+      hostname:
+        example: server01.local
+        type: string
+      not_after:
+        type: string
+      port:
+        example: 443
+        type: integer
+      protocol:
+        example: tcp
+        type: string
+      subject_cn:
+        example: server01.local
+        type: string
+    type: object
+  docs.ExpiringCertificatesResponse:
+    properties:
+      certificates:
+        items:
+          $ref: '#/definitions/docs.ExpiringCertificateResponse'
+        type: array
+      days:
+        example: 30
+        type: integer
+    type: object
   docs.HealthResponse:
     properties:
       checks:
@@ -1184,6 +1220,37 @@ paths:
       summary: Admin status
       tags:
       - Admin
+  /certificates/expiring:
+    get:
+      description: |-
+        Returns certificates expiring within the specified lookahead window (default 30 days, max 90).
+        Each entry is enriched with the host IP address and hostname.
+      operationId: getExpiringCertificates
+      parameters:
+      - description: Lookahead window in days (1–90, default 30)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.ExpiringCertificatesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List expiring TLS certificates
+      tags:
+      - certificates
   /discovery:
     get:
       description: Get paginated list of discovery jobs

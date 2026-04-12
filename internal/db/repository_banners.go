@@ -163,3 +163,75 @@ func (r *BannerRepository) ListExpiringCertificates(ctx context.Context, days in
 	}()
 	return scanCertRows(rows)
 }
+
+// ExpiringCertificate is a certificate record enriched with host IP and hostname.
+type ExpiringCertificate struct {
+	HostID    string    `json:"host_id"`
+	HostIP    string    `json:"host_ip"`
+	Hostname  string    `json:"hostname"`
+	Port      int       `json:"port"`
+	Protocol  string    `json:"protocol"`
+	SubjectCN string    `json:"subject_cn"`
+	NotAfter  time.Time `json:"not_after"`
+	DaysLeft  int       `json:"days_left"`
+}
+
+// ExpiringCertificatesResponse is the response body for the expiring certs endpoint.
+type ExpiringCertificatesResponse struct {
+	Certificates []ExpiringCertificate `json:"certificates"`
+	Days         int                   `json:"days"`
+}
+
+// hoursPerDay is the number of hours in a day, used to convert hours to days.
+const hoursPerDay = 24
+
+// ListExpiringCertificatesWithHosts returns certificates expiring within the
+// given number of days, joined with the hosts table to include host IP and hostname.
+func (r *BannerRepository) ListExpiringCertificatesWithHosts(
+	ctx context.Context, days int,
+) ([]ExpiringCertificate, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT
+			c.host_id::text,
+			h.ip_address::text,
+			COALESCE(h.hostname, '') AS hostname,
+			c.port,
+			COALESCE(c.subject_cn, '') AS subject_cn,
+			c.not_after
+		FROM certificates c
+		JOIN hosts h ON h.id = c.host_id
+		WHERE c.not_after IS NOT NULL
+		  AND c.not_after BETWEEN NOW() AND NOW() + ($1 * INTERVAL '1 day')
+		ORDER BY c.not_after ASC`,
+		days)
+	if err != nil {
+		return nil, sanitizeDBError("list expiring certs with hosts", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Warn("error closing expiring cert rows", "error", err)
+		}
+	}()
+
+	var result []ExpiringCertificate
+	now := time.Now().UTC()
+	for rows.Next() {
+		var c ExpiringCertificate
+		if err := rows.Scan(
+			&c.HostID, &c.HostIP, &c.Hostname,
+			&c.Port, &c.SubjectCN, &c.NotAfter,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan expiring cert row: %w", err)
+		}
+		c.Protocol = "tcp"
+		c.DaysLeft = int(c.NotAfter.Sub(now).Hours() / hoursPerDay)
+		result = append(result, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if result == nil {
+		result = []ExpiringCertificate{}
+	}
+	return result, nil
+}
