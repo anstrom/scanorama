@@ -4875,7 +4875,8 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": [
-                        "192.168.1.0/24"
+                        "192.168.1.0/24",
+                        "myserver.local"
                     ]
                 },
                 "updated_at": {

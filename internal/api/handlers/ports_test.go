@@ -288,5 +288,68 @@ func TestPortHandler_ListPortCategories_DBError(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+// ── ListPortHostCounts ────────────────────────────────────────────────────────
+
+func TestPortHandler_ListPortHostCounts_OK(t *testing.T) {
+	h, mock := newPortHandlerWithMock(t)
+
+	rows := sqlmock.NewRows([]string{"port", "protocol", "count"}).
+		AddRow(80, "tcp", 42).
+		AddRow(443, "tcp", 17).
+		AddRow(53, "udp", 8)
+	mock.ExpectQuery("SELECT port, protocol").WillReturnRows(rows)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ports/host-counts", nil)
+	req = withRequestID(req)
+	rr := httptest.NewRecorder()
+	h.ListPortHostCounts(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var resp []db.PortHostCount
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(t, resp, 3)
+	assert.Equal(t, 80, resp[0].Port)
+	assert.Equal(t, "tcp", resp[0].Protocol)
+	assert.Equal(t, 42, resp[0].Count)
+	assert.Equal(t, 53, resp[2].Port)
+	assert.Equal(t, "udp", resp[2].Protocol)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPortHandler_ListPortHostCounts_Empty(t *testing.T) {
+	h, mock := newPortHandlerWithMock(t)
+
+	mock.ExpectQuery("SELECT port, protocol").
+		WillReturnRows(sqlmock.NewRows([]string{"port", "protocol", "count"}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ports/host-counts", nil)
+	req = withRequestID(req)
+	rr := httptest.NewRecorder()
+	h.ListPortHostCounts(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	// Must be [] not null.
+	assert.Equal(t, "[]\n", rr.Body.String())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPortHandler_ListPortHostCounts_DBError(t *testing.T) {
+	h, mock := newPortHandlerWithMock(t)
+
+	mock.ExpectQuery("SELECT port, protocol").
+		WillReturnError(fmt.Errorf("connection reset"))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ports/host-counts", nil)
+	req = withRequestID(req)
+	rr := httptest.NewRecorder()
+	h.ListPortHostCounts(rr, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 // suppress unused import warning for bytes
 var _ = bytes.NewBuffer
