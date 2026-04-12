@@ -4937,13 +4937,22 @@ const docTemplate = `{
         "docs.SNMPInterfaceResponse": {
             "type": "object",
             "properties": {
+                "admin_status": {
+                    "type": "string",
+                    "enum": [
+                        "up",
+                        "down",
+                        "testing",
+                        "unknown",
+                        "dormant",
+                        "notPresent",
+                        "lowerLayerDown"
+                    ],
+                    "example": "up"
+                },
                 "index": {
                     "type": "integer",
                     "example": 1
-                },
-                "ip": {
-                    "type": "string",
-                    "example": "192.168.1.1"
                 },
                 "mac": {
                     "type": "string",
@@ -4952,6 +4961,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "eth0"
+                },
+                "rx_bytes": {
+                    "type": "integer",
+                    "example": 1048576
                 },
                 "speed_mbps": {
                     "type": "number",
@@ -4962,9 +4975,17 @@ const docTemplate = `{
                     "enum": [
                         "up",
                         "down",
-                        "unknown"
+                        "testing",
+                        "unknown",
+                        "dormant",
+                        "notPresent",
+                        "lowerLayerDown"
                     ],
                     "example": "up"
+                },
+                "tx_bytes": {
+                    "type": "integer",
+                    "example": 524288
                 }
             }
         },

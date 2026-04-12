@@ -743,11 +743,13 @@ type PortBanner struct {
 
 // SNMPInterface describes a single network interface collected via SNMP.
 type SNMPInterface struct {
-	Name   string `json:"name,omitempty"`
-	Status string `json:"status,omitempty"`
-	Speed  uint   `json:"speed_mbps,omitempty"`
-	MAC    string `json:"mac,omitempty"`
-	IP     string `json:"ip,omitempty"`
+	Name        string `json:"name,omitempty"`
+	AdminStatus string `json:"admin_status,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Speed       uint   `json:"speed_mbps,omitempty"`
+	MAC         string `json:"mac,omitempty"`
+	RxBytes     uint64 `json:"rx_bytes,omitempty"`
+	TxBytes     uint64 `json:"tx_bytes,omitempty"`
 }
 
 // HostSNMPData holds SNMP data collected from a network device.

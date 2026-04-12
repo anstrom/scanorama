@@ -122,10 +122,12 @@ type HostWithDetails = HostResponse & {
 
 interface SNMPInterface {
   name?: string;
+  admin_status?: string;
   status?: string;
   speed_mbps?: number;
   mac?: string;
-  ip?: string;
+  rx_bytes?: number;
+  tx_bytes?: number;
 }
 
 interface SNMPData {
@@ -144,6 +146,14 @@ const PAGE_SIZE = 25;
 // ──────────────────────────────────────────────
 // Host detail panel
 // ──────────────────────────────────────────────
+
+/** Formats a byte count as a compact human-readable string (KB/MB/GB). */
+function formatBytes(bytes: number): string {
+  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+  if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
 
 /** Converts SNMP sysUptime centiseconds to a human-readable string. */
 function formatSNMPUptime(cs: number): string {
@@ -184,6 +194,9 @@ function HostDetailPanel({
 }) {
   const { data: full, isLoading, isError, error } = useHost(host.id ?? "");
   const h = (full ?? host) as HostWithDetails;
+
+  // Active detail tab — "interfaces" only shown when SNMP interface data is present
+  const [detailTab, setDetailTab] = useState<"overview" | "interfaces">("overview");
 
   // Expanded port banners: Set of "port-protocol" keys with banner expanded
   const [expandedBanners, setExpandedBanners] = useState<Set<string>>(new Set());
@@ -373,6 +386,27 @@ function HostDetailPanel({
           </button>
         </div>
 
+        {/* Tab bar — shown only when SNMP interface data is present */}
+        {h.snmp_data?.interfaces && h.snmp_data.interfaces.length > 0 && (
+          <div className="flex border-b border-border shrink-0">
+            {(["overview", "interfaces"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setDetailTab(tab)}
+                className={cn(
+                  "px-5 py-2.5 text-xs font-medium capitalize transition-colors border-b-2 -mb-px",
+                  detailTab === tab
+                    ? "border-accent text-text-primary"
+                    : "border-transparent text-text-muted hover:text-text-secondary",
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
           {isError && (
@@ -382,6 +416,8 @@ function HostDetailPanel({
                 : "Failed to load host details."}
             </p>
           )}
+
+          {detailTab === "overview" && <>
 
           {/* OS Detection */}
           {(isLoading || h.os_family || h.os_name || h.os_version_detail) && (
@@ -1096,47 +1132,21 @@ function HostDetailPanel({
                     value={formatSNMPUptime(h.snmp_data.sys_uptime_cs)}
                   />
                 )}
-              </div>
-              {h.snmp_data.interfaces && h.snmp_data.interfaces.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs text-text-muted mb-2">
-                    Interfaces ({h.snmp_data.if_count ?? h.snmp_data.interfaces.length})
-                  </p>
-                  <div className="space-y-1">
-                    {h.snmp_data.interfaces.map((iface, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between gap-2 py-0.5 text-xs"
+                {h.snmp_data.interfaces && h.snmp_data.interfaces.length > 0 && (
+                  <MetaRow
+                    label="Interfaces"
+                    value={
+                      <button
+                        type="button"
+                        onClick={() => setDetailTab("interfaces")}
+                        className="text-accent hover:underline"
                       >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className={`shrink-0 w-1.5 h-1.5 rounded-full ${
-                              iface.status === "up"
-                                ? "bg-green-500"
-                                : "bg-surface-raised border border-border"
-                            }`}
-                          />
-                          <span className="font-mono text-text-primary truncate">
-                            {iface.name || `if${idx + 1}`}
-                          </span>
-                          {iface.mac && (
-                            <span className="font-mono text-text-muted shrink-0">
-                              {iface.mac}
-                            </span>
-                          )}
-                        </div>
-                        {iface.speed_mbps != null && iface.speed_mbps > 0 && (
-                          <span className="text-text-muted shrink-0">
-                            {iface.speed_mbps >= 1000
-                              ? `${iface.speed_mbps / 1000} Gbps`
-                              : `${iface.speed_mbps} Mbps`}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                        {h.snmp_data.if_count ?? h.snmp_data.interfaces.length} interfaces →
+                      </button>
+                    }
+                  />
+                )}
+              </div>
             </section>
           )}
 
@@ -1214,6 +1224,91 @@ function HostDetailPanel({
                 </div>
               )}
           </section>
+
+          </> /* end overview tab */}
+
+          {/* Interfaces tab */}
+          {detailTab === "interfaces" && h.snmp_data?.interfaces && (
+            <section>
+              <h3 className="text-xs font-medium text-text-primary mb-3">
+                Network Interfaces ({h.snmp_data.if_count ?? h.snmp_data.interfaces.length})
+              </h3>
+              <div className="overflow-x-auto -mx-1">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="text-left text-text-muted border-b border-border">
+                      <th className="pb-2 pr-3 font-medium">Name</th>
+                      <th className="pb-2 pr-3 font-medium">Admin</th>
+                      <th className="pb-2 pr-3 font-medium">Status</th>
+                      <th className="pb-2 pr-3 font-medium">Speed</th>
+                      <th className="pb-2 pr-3 font-medium">MAC</th>
+                      <th className="pb-2 pr-3 font-medium">RX</th>
+                      <th className="pb-2 font-medium">TX</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {h.snmp_data.interfaces.map((iface, idx) => (
+                      <tr
+                        key={iface.name || String(idx)}
+                        className="border-b border-border/40 last:border-0 align-top"
+                      >
+                        <td className="py-2 pr-3 font-mono text-text-primary">
+                          {iface.name || `if${idx + 1}`}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <span
+                            className={cn(
+                              "inline-block w-1.5 h-1.5 rounded-full",
+                              iface.admin_status === "up"
+                                ? "bg-green-500"
+                                : iface.admin_status === "down"
+                                  ? "bg-red-500"
+                                  : "bg-border",
+                            )}
+                            title={iface.admin_status ?? "unknown"}
+                          />
+                        </td>
+                        <td className="py-2 pr-3">
+                          <span
+                            className={cn(
+                              "inline-block px-1.5 py-0.5 rounded text-[10px] font-medium",
+                              iface.status === "up"
+                                ? "bg-green-500/10 text-green-400"
+                                : iface.status === "down"
+                                  ? "bg-red-500/10 text-red-400"
+                                  : "bg-border/40 text-text-muted",
+                            )}
+                          >
+                            {iface.status ?? "—"}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-3 text-text-secondary tabular-nums whitespace-nowrap">
+                          {iface.speed_mbps != null && iface.speed_mbps > 0
+                            ? iface.speed_mbps >= 1000
+                              ? `${iface.speed_mbps / 1000} Gbps`
+                              : `${iface.speed_mbps} Mbps`
+                            : "—"}
+                        </td>
+                        <td className="py-2 pr-3 font-mono text-text-muted whitespace-nowrap">
+                          {iface.mac || "—"}
+                        </td>
+                        <td className="py-2 pr-3 text-text-muted tabular-nums whitespace-nowrap">
+                          {iface.rx_bytes != null && iface.rx_bytes > 0
+                            ? formatBytes(iface.rx_bytes)
+                            : "—"}
+                        </td>
+                        <td className="py-2 text-text-muted tabular-nums whitespace-nowrap">
+                          {iface.tx_bytes != null && iface.tx_bytes > 0
+                            ? formatBytes(iface.tx_bytes)
+                            : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
         </div>
 
         {/* Footer */}
@@ -2112,6 +2207,7 @@ export function HostsPage() {
 
       {selectedHost && (
         <HostDetailPanel
+          key={selectedHost.id}
           host={selectedHost}
           onClose={() => setSelectedHost(null)}
           onScan={(ip) => setScanIP(ip)}

@@ -17,19 +17,25 @@ import (
 
 func TestBuildIfOIDs(t *testing.T) {
 	oids := buildIfOIDs(2)
-	require.Len(t, oids, 8, "count=2 should produce 8 OIDs (4 per interface)")
+	require.Len(t, oids, 14, "count=2 should produce 14 OIDs (7 per interface)")
 
-	// First interface OIDs.
+	// First interface OIDs — order: descr, adminStatus, operStatus, speed, physAddr, inOctets, outOctets.
 	assert.Equal(t, fmt.Sprintf("%s.1", oidIfDescr), oids[0])
-	assert.Equal(t, fmt.Sprintf("%s.1", oidIfOperStatus), oids[1])
-	assert.Equal(t, fmt.Sprintf("%s.1", oidIfSpeed), oids[2])
-	assert.Equal(t, fmt.Sprintf("%s.1", oidIfPhysAddr), oids[3])
+	assert.Equal(t, fmt.Sprintf("%s.1", oidIfAdminStatus), oids[1])
+	assert.Equal(t, fmt.Sprintf("%s.1", oidIfOperStatus), oids[2])
+	assert.Equal(t, fmt.Sprintf("%s.1", oidIfSpeed), oids[3])
+	assert.Equal(t, fmt.Sprintf("%s.1", oidIfPhysAddr), oids[4])
+	assert.Equal(t, fmt.Sprintf("%s.1", oidIfInOctets), oids[5])
+	assert.Equal(t, fmt.Sprintf("%s.1", oidIfOutOctets), oids[6])
 
 	// Second interface OIDs.
-	assert.Equal(t, fmt.Sprintf("%s.2", oidIfDescr), oids[4])
-	assert.Equal(t, fmt.Sprintf("%s.2", oidIfOperStatus), oids[5])
-	assert.Equal(t, fmt.Sprintf("%s.2", oidIfSpeed), oids[6])
-	assert.Equal(t, fmt.Sprintf("%s.2", oidIfPhysAddr), oids[7])
+	assert.Equal(t, fmt.Sprintf("%s.2", oidIfDescr), oids[7])
+	assert.Equal(t, fmt.Sprintf("%s.2", oidIfAdminStatus), oids[8])
+	assert.Equal(t, fmt.Sprintf("%s.2", oidIfOperStatus), oids[9])
+	assert.Equal(t, fmt.Sprintf("%s.2", oidIfSpeed), oids[10])
+	assert.Equal(t, fmt.Sprintf("%s.2", oidIfPhysAddr), oids[11])
+	assert.Equal(t, fmt.Sprintf("%s.2", oidIfInOctets), oids[12])
+	assert.Equal(t, fmt.Sprintf("%s.2", oidIfOutOctets), oids[13])
 }
 
 func TestBuildIfOIDs_Zero(t *testing.T) {
@@ -182,15 +188,46 @@ func TestApplyIfPDU_PhysAddr(t *testing.T) {
 	assert.Equal(t, "00:1a:2b:3c:4d:5e", entry.mac)
 }
 
+func TestApplyIfPDU_AdminStatus_Up(t *testing.T) {
+	entry := &ifData{}
+	pdu := gosnmp.SnmpPDU{Name: oidIfAdminStatus + ".1", Value: uint32(1)}
+	applyIfPDU(entry, pdu)
+	assert.Equal(t, "up", entry.adminStatus)
+}
+
+func TestApplyIfPDU_AdminStatus_Down(t *testing.T) {
+	entry := &ifData{}
+	pdu := gosnmp.SnmpPDU{Name: oidIfAdminStatus + ".1", Value: uint32(2)}
+	applyIfPDU(entry, pdu)
+	assert.Equal(t, "down", entry.adminStatus)
+}
+
+func TestApplyIfPDU_RxBytes(t *testing.T) {
+	entry := &ifData{}
+	pdu := gosnmp.SnmpPDU{Name: oidIfInOctets + ".1", Value: uint32(1_000_000)}
+	applyIfPDU(entry, pdu)
+	assert.Equal(t, uint64(1_000_000), entry.rxBytes)
+}
+
+func TestApplyIfPDU_TxBytes(t *testing.T) {
+	entry := &ifData{}
+	pdu := gosnmp.SnmpPDU{Name: oidIfOutOctets + ".1", Value: uint32(2_000_000)}
+	applyIfPDU(entry, pdu)
+	assert.Equal(t, uint64(2_000_000), entry.txBytes)
+}
+
 func TestApplyIfPDU_Unknown(t *testing.T) {
 	entry := &ifData{}
 	pdu := gosnmp.SnmpPDU{Name: ".9.9.9.9.1", Value: "whatever"}
 	applyIfPDU(entry, pdu)
 	// No field should be set.
 	assert.Empty(t, entry.name)
+	assert.Empty(t, entry.adminStatus)
 	assert.Empty(t, entry.status)
 	assert.Zero(t, entry.speed)
 	assert.Empty(t, entry.mac)
+	assert.Zero(t, entry.rxBytes)
+	assert.Zero(t, entry.txBytes)
 }
 
 // ── parseIfPDUs ───────────────────────────────────────────────────────────────
@@ -237,14 +274,22 @@ func TestParseIfPDUs_ZeroIndexSkipped(t *testing.T) {
 func TestBuildIfSlice_Ordered(t *testing.T) {
 	// Sparse map: only indices 1 and 3 present out of count=3.
 	byIndex := map[int]*ifData{
-		1: {name: "eth0", status: "up", speed: 1000, mac: "aa:bb:cc:dd:ee:ff"},
-		3: {name: "eth2", status: "down", speed: 100},
+		1: {
+			name: "eth0", adminStatus: "up", status: "up",
+			speed: 1000, mac: "aa:bb:cc:dd:ee:ff", rxBytes: 500, txBytes: 250,
+		},
+		3: {name: "eth2", adminStatus: "up", status: "down", speed: 100},
 	}
 
 	ifaces := buildIfSlice(byIndex, 3)
 	require.Len(t, ifaces, 2)
 	assert.Equal(t, "eth0", ifaces[0].Name)
+	assert.Equal(t, "up", ifaces[0].AdminStatus)
+	assert.Equal(t, "up", ifaces[0].Status)
+	assert.Equal(t, uint64(500), ifaces[0].RxBytes)
+	assert.Equal(t, uint64(250), ifaces[0].TxBytes)
 	assert.Equal(t, "eth2", ifaces[1].Name)
+	assert.Equal(t, "down", ifaces[1].Status)
 }
 
 func TestBuildIfSlice_Empty(t *testing.T) {

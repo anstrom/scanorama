@@ -21,7 +21,8 @@ const (
 	snmpTimeout       = 5 * time.Second
 	snmpCommunityStr  = "public"
 	snmpMaxInterfaces = 64
-	ifOIDsPerEntry    = 4
+	ifOIDsPerEntry    = 7
+	snmpMaxOIDsPerGet = 60 // gosnmp hard limit per Get() call
 	bitsPerMbps       = 1_000_000
 	macAddrBytes      = 6
 )
@@ -37,11 +38,14 @@ const (
 
 // Interface table OIDs (IF-MIB).
 const (
-	oidIfNumber     = ".1.3.6.1.2.1.2.1.0"
-	oidIfDescr      = ".1.3.6.1.2.1.2.2.1.2"
-	oidIfOperStatus = ".1.3.6.1.2.1.2.2.1.8"
-	oidIfSpeed      = ".1.3.6.1.2.1.2.2.1.5"
-	oidIfPhysAddr   = ".1.3.6.1.2.1.2.2.1.6"
+	oidIfNumber      = ".1.3.6.1.2.1.2.1.0"
+	oidIfDescr       = ".1.3.6.1.2.1.2.2.1.2"
+	oidIfAdminStatus = ".1.3.6.1.2.1.2.2.1.7"
+	oidIfOperStatus  = ".1.3.6.1.2.1.2.2.1.8"
+	oidIfSpeed       = ".1.3.6.1.2.1.2.2.1.5"
+	oidIfPhysAddr    = ".1.3.6.1.2.1.2.2.1.6"
+	oidIfInOctets    = ".1.3.6.1.2.1.2.2.1.10"
+	oidIfOutOctets   = ".1.3.6.1.2.1.2.2.1.16"
 )
 
 // IF-MIB ifOperStatus values (RFC 2863).
@@ -167,46 +171,56 @@ func (e *SNMPEnricher) EnrichHost(ctx context.Context, target SNMPTarget) error 
 }
 
 // walkInterfaces performs a lightweight walk of the IF-MIB interface table.
+// OIDs are batched into groups of snmpMaxOIDsPerGet (60) to stay within
+// gosnmp's hard per-Get limit.
 func (e *SNMPEnricher) walkInterfaces(g *gosnmp.GoSNMP, data *db.HostSNMPData) []db.SNMPInterface {
 	if data.IfCount == nil || *data.IfCount == 0 {
 		return nil
 	}
 
-	count := *data.IfCount
-	if count > snmpMaxInterfaces {
-		count = snmpMaxInterfaces
-	}
+	count := min(*data.IfCount, snmpMaxInterfaces)
 
 	oids := buildIfOIDs(count)
-	result, err := g.Get(oids)
-	if err != nil {
-		e.logger.Debug("snmp: interface walk failed", "err", err)
-		return nil
+	var allVars []gosnmp.SnmpPDU
+	for i := 0; i < len(oids); i += snmpMaxOIDsPerGet {
+		end := min(i+snmpMaxOIDsPerGet, len(oids))
+		result, err := g.Get(oids[i:end])
+		if err != nil {
+			e.logger.Warn("snmp: interface batch failed", "err", err)
+			continue
+		}
+		allVars = append(allVars, result.Variables...)
 	}
 
-	byIndex := parseIfPDUs(result.Variables, count)
+	byIndex := parseIfPDUs(allVars, count)
 	return buildIfSlice(byIndex, count)
 }
 
-// buildIfOIDs returns per-index OIDs for descr, operStatus, speed, physAddr.
+// buildIfOIDs returns per-index OIDs for descr, adminStatus, operStatus, speed, physAddr, inOctets, outOctets.
 func buildIfOIDs(count int) []string {
 	oids := make([]string, 0, count*ifOIDsPerEntry)
 	for i := 1; i <= count; i++ {
 		oids = append(oids,
 			fmt.Sprintf("%s.%d", oidIfDescr, i),
+			fmt.Sprintf("%s.%d", oidIfAdminStatus, i),
 			fmt.Sprintf("%s.%d", oidIfOperStatus, i),
 			fmt.Sprintf("%s.%d", oidIfSpeed, i),
 			fmt.Sprintf("%s.%d", oidIfPhysAddr, i),
+			fmt.Sprintf("%s.%d", oidIfInOctets, i),
+			fmt.Sprintf("%s.%d", oidIfOutOctets, i),
 		)
 	}
 	return oids
 }
 
 type ifData struct {
-	name   string
-	status string
-	speed  uint
-	mac    string
+	name        string
+	adminStatus string
+	status      string
+	speed       uint
+	mac         string
+	rxBytes     uint64
+	txBytes     uint64
 }
 
 // parseIfPDUs groups SNMP variables by interface index.
@@ -225,6 +239,27 @@ func parseIfPDUs(vars []gosnmp.SnmpPDU, count int) map[int]*ifData {
 	return byIndex
 }
 
+func ifStatusString(code int64) string {
+	switch code {
+	case ifOperStatusUp:
+		return "up"
+	case ifOperStatusDown:
+		return "down"
+	case ifOperStatusTesting:
+		return "testing"
+	case ifOperStatusUnknown:
+		return "unknown"
+	case ifOperStatusDormant:
+		return "dormant"
+	case ifOperStatusNotPresent:
+		return "notPresent"
+	case ifOperStatusLowerLayerDown:
+		return "lowerLayerDown"
+	default:
+		return "unknown"
+	}
+}
+
 // applyIfPDU applies a single PDU value to the matching ifData field.
 func applyIfPDU(entry *ifData, v gosnmp.SnmpPDU) {
 	switch {
@@ -232,25 +267,10 @@ func applyIfPDU(entry *ifData, v gosnmp.SnmpPDU) {
 		if s, ok := v.Value.(string); ok {
 			entry.name = s
 		}
+	case strings.HasPrefix(v.Name, oidIfAdminStatus+"."):
+		entry.adminStatus = ifStatusString(gosnmp.ToBigInt(v.Value).Int64())
 	case strings.HasPrefix(v.Name, oidIfOperStatus+"."):
-		switch gosnmp.ToBigInt(v.Value).Int64() {
-		case ifOperStatusUp:
-			entry.status = "up"
-		case ifOperStatusDown:
-			entry.status = "down"
-		case ifOperStatusTesting:
-			entry.status = "testing"
-		case ifOperStatusUnknown:
-			entry.status = "unknown"
-		case ifOperStatusDormant:
-			entry.status = "dormant"
-		case ifOperStatusNotPresent:
-			entry.status = "notPresent"
-		case ifOperStatusLowerLayerDown:
-			entry.status = "lowerLayerDown"
-		default:
-			entry.status = "unknown"
-		}
+		entry.status = ifStatusString(gosnmp.ToBigInt(v.Value).Int64())
 	case strings.HasPrefix(v.Name, oidIfSpeed+"."):
 		bps := gosnmp.ToBigInt(v.Value).Uint64()
 		entry.speed = uint(bps / bitsPerMbps)
@@ -258,6 +278,10 @@ func applyIfPDU(entry *ifData, v gosnmp.SnmpPDU) {
 		if raw, ok := v.Value.(string); ok {
 			entry.mac = formatMAC(raw)
 		}
+	case strings.HasPrefix(v.Name, oidIfInOctets+"."):
+		entry.rxBytes = gosnmp.ToBigInt(v.Value).Uint64()
+	case strings.HasPrefix(v.Name, oidIfOutOctets+"."):
+		entry.txBytes = gosnmp.ToBigInt(v.Value).Uint64()
 	}
 }
 
@@ -267,10 +291,13 @@ func buildIfSlice(byIndex map[int]*ifData, count int) []db.SNMPInterface {
 	for i := 1; i <= count; i++ {
 		if d, ok := byIndex[i]; ok {
 			ifaces = append(ifaces, db.SNMPInterface{
-				Name:   d.name,
-				Status: d.status,
-				Speed:  d.speed,
-				MAC:    d.mac,
+				Name:        d.name,
+				AdminStatus: d.adminStatus,
+				Status:      d.status,
+				Speed:       d.speed,
+				MAC:         d.mac,
+				RxBytes:     d.rxBytes,
+				TxBytes:     d.txBytes,
 			})
 		}
 	}

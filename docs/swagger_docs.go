@@ -169,12 +169,14 @@ type CertificateResponse struct {
 
 // SNMPInterfaceResponse represents a single network interface reported by SNMP.
 type SNMPInterfaceResponse struct {
-	Index     int     `json:"index" example:"1"`
-	Name      string  `json:"name" example:"eth0"`
-	Status    string  `json:"status" example:"up" enums:"up,down,unknown"`
-	SpeedMbps float64 `json:"speed_mbps" example:"1000"`
-	MAC       string  `json:"mac,omitempty" example:"00:1B:44:11:3A:B7"`
-	IP        string  `json:"ip,omitempty" example:"192.168.1.1"`
+	Index       int     `json:"index" example:"1"`
+	Name        string  `json:"name" example:"eth0"`
+	AdminStatus string  `json:"admin_status,omitempty" example:"up" enums:"up,down,testing,unknown,dormant,notPresent,lowerLayerDown"`
+	Status      string  `json:"status" example:"up" enums:"up,down,testing,unknown,dormant,notPresent,lowerLayerDown"`
+	SpeedMbps   float64 `json:"speed_mbps" example:"1000"`
+	MAC         string  `json:"mac,omitempty" example:"00:1B:44:11:3A:B7"`
+	RxBytes     uint64  `json:"rx_bytes,omitempty" example:"1048576"`
+	TxBytes     uint64  `json:"tx_bytes,omitempty" example:"524288"`
 }
 
 // SNMPDataResponse represents SNMP device information for a host.
