@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -27,6 +28,32 @@ const MaxTargetLength = 200
 
 // MaxTargetCount is the maximum number of targets allowed per scan.
 const MaxTargetCount = 100
+
+// hostnameLabel matches a single DNS label: 1–63 chars, alphanumeric plus
+// interior hyphens, not starting or ending with a hyphen (RFC 1123).
+var hostnameLabel = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
+
+// IsValidScanTarget reports whether s is an acceptable scan target:
+// a plain IP address, a CIDR range, or an RFC 1123 hostname.
+func IsValidScanTarget(s string) bool {
+	if net.ParseIP(s) != nil {
+		return true
+	}
+	if _, _, err := net.ParseCIDR(s); err == nil {
+		return true
+	}
+	// Hostname: dot-separated labels, total length ≤ 253.
+	s = strings.TrimRight(s, ".") // strip optional trailing dot
+	if s == "" || len(s) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(s, ".") {
+		if !hostnameLabel.MatchString(label) {
+			return false
+		}
+	}
+	return true
+}
 
 // validScanTypes lists the scan-type values accepted by the service layer.
 var validScanTypes = map[string]bool{
@@ -204,11 +231,9 @@ func validateScanInput(input db.CreateScanInput) error {
 			return errors.NewScanError(errors.CodeValidation,
 				fmt.Sprintf("target %d too long (max %d characters)", i+1, MaxTargetLength))
 		}
-		if _, _, err := net.ParseCIDR(target); err != nil {
-			if net.ParseIP(target) == nil {
-				return errors.NewScanError(errors.CodeValidation,
-					fmt.Sprintf("target %d: %q is not a valid IP address or CIDR range", i+1, target))
-			}
+		if !IsValidScanTarget(target) {
+			return errors.NewScanError(errors.CodeValidation,
+				fmt.Sprintf("target %d: %q is not a valid IP address, CIDR range, or hostname", i+1, target))
 		}
 	}
 

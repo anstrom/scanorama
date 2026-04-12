@@ -11,7 +11,6 @@ import (
 	stderrors "errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"time"
 
@@ -22,13 +21,6 @@ import (
 	"github.com/anstrom/scanorama/internal/metrics"
 	"github.com/anstrom/scanorama/internal/scanning"
 	"github.com/anstrom/scanorama/internal/services"
-)
-
-// Scan validation constants.
-const (
-	maxScanNameLength = 255
-	maxTargetLength   = 255
-	maxTargetCount    = 100
 )
 
 // ScanHandler handles scan-related API endpoints.
@@ -566,10 +558,8 @@ func (h *ScanHandler) validateScanRequest(req *ScanRequest) error {
 		if len(target) > services.MaxTargetLength {
 			return fmt.Errorf("target %d too long (max %d characters)", i+1, services.MaxTargetLength)
 		}
-		if _, _, err := net.ParseCIDR(target); err != nil {
-			if net.ParseIP(target) == nil {
-				return fmt.Errorf("target %d: %q is not a valid IP address or CIDR range", i+1, target)
-			}
+		if !services.IsValidScanTarget(target) {
+			return fmt.Errorf("target %d: %q is not a valid IP address, CIDR range, or hostname", i+1, target)
 		}
 	}
 

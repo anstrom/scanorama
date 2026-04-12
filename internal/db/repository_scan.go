@@ -25,15 +25,19 @@ const (
 )
 
 // isHostTarget reports whether target represents a single host: a bare IP
-// address or a /32 (IPv4) / /128 (IPv6) CIDR.  Such targets must not be
-// stored as rows in the networks table.
+// address, a /32 (IPv4) / /128 (IPv6) CIDR, or a DNS hostname.
+// Such targets must not be stored as rows in the networks table;
+// they are passed directly to the scan runner via execution_details.
 func isHostTarget(target string) bool {
 	if net.ParseIP(target) != nil {
 		return true // bare IP — always maps to /32 or /128
 	}
 	_, ipNet, err := net.ParseCIDR(target)
 	if err != nil {
-		return false
+		// Not an IP or CIDR — it must be a hostname (already validated by the
+		// service layer before reaching the DB).  Hostnames are host-scoped,
+		// not network-scoped, so we treat them like bare IPs.
+		return true
 	}
 	ones, bits := ipNet.Mask.Size()
 	return ones == bits // /32 for IPv4, /128 for IPv6

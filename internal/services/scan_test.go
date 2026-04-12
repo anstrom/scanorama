@@ -846,19 +846,19 @@ func TestValidateScanInput(t *testing.T) {
 		assert.Contains(t, err.Error(), "too long")
 	})
 
-	t.Run("target at MaxTargetLength but invalid IP is rejected for format", func(t *testing.T) {
-		// Exactly MaxTargetLength chars: passes the length gate, fails IP check.
+	t.Run("target at MaxTargetLength but not a valid target is rejected", func(t *testing.T) {
+		// Exactly MaxTargetLength chars of underscores: not an IP, CIDR, or hostname.
 		in := validCreateInput()
-		in.Targets = []string{strings.Repeat("a", MaxTargetLength)}
+		in.Targets = []string{strings.Repeat("_", MaxTargetLength)}
 		err := validateScanInput(in)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeValidation))
 		assert.Contains(t, err.Error(), "not a valid IP")
 	})
 
-	t.Run("invalid target (hostname, not an IP or CIDR)", func(t *testing.T) {
+	t.Run("invalid target (bare invalid string)", func(t *testing.T) {
 		in := validCreateInput()
-		in.Targets = []string{"not-an-ip"}
+		in.Targets = []string{"not an ip!"}
 		err := validateScanInput(in)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeValidation))
@@ -887,6 +887,57 @@ func TestValidateScanInput(t *testing.T) {
 		in := validCreateInput()
 		in.Targets = []string{"2001:db8::/32"}
 		assert.NoError(t, validateScanInput(in))
+	})
+
+	t.Run("valid simple hostname", func(t *testing.T) {
+		in := validCreateInput()
+		in.Targets = []string{"myserver"}
+		assert.NoError(t, validateScanInput(in))
+	})
+
+	t.Run("valid FQDN", func(t *testing.T) {
+		in := validCreateInput()
+		in.Targets = []string{"api.internal.example.com"}
+		assert.NoError(t, validateScanInput(in))
+	})
+
+	t.Run("valid hostname with hyphens", func(t *testing.T) {
+		in := validCreateInput()
+		in.Targets = []string{"my-server-01.prod.example.com"}
+		assert.NoError(t, validateScanInput(in))
+	})
+
+	t.Run("valid hostname with trailing dot", func(t *testing.T) {
+		in := validCreateInput()
+		in.Targets = []string{"api.example.com."}
+		assert.NoError(t, validateScanInput(in))
+	})
+
+	t.Run("invalid hostname — label starts with hyphen", func(t *testing.T) {
+		in := validCreateInput()
+		in.Targets = []string{"-badhost.example.com"}
+		err := validateScanInput(in)
+		require.Error(t, err)
+		assert.True(t, errors.IsCode(err, errors.CodeValidation))
+		assert.Contains(t, err.Error(), "not a valid IP")
+	})
+
+	t.Run("invalid hostname — label ends with hyphen", func(t *testing.T) {
+		in := validCreateInput()
+		in.Targets = []string{"badhost-.example.com"}
+		err := validateScanInput(in)
+		require.Error(t, err)
+		assert.True(t, errors.IsCode(err, errors.CodeValidation))
+		assert.Contains(t, err.Error(), "not a valid IP")
+	})
+
+	t.Run("invalid hostname — contains underscore", func(t *testing.T) {
+		in := validCreateInput()
+		in.Targets = []string{"bad_host.example.com"}
+		err := validateScanInput(in)
+		require.Error(t, err)
+		assert.True(t, errors.IsCode(err, errors.CodeValidation))
+		assert.Contains(t, err.Error(), "not a valid IP")
 	})
 
 	// ── ScanType ──────────────────────────────────────────────────────────────

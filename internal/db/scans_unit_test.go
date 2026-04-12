@@ -326,16 +326,18 @@ func TestIsHostTarget(t *testing.T) {
 		input string
 		want  bool
 	}{
-		{"10.0.0.1", true},        // bare IPv4
-		{"192.168.1.100", true},   // bare IPv4
-		{"10.0.0.1/32", true},     // explicit /32
-		{"::1", true},             // bare IPv6 loopback
-		{"2001:db8::1/128", true}, // explicit /128
-		{"10.0.0.0/8", false},     // network CIDR /8
-		{"192.168.1.0/24", false}, // /24 network
-		{"172.16.0.0/12", false},  // /12 network
-		{"10.0.0.0/31", false},    // /31 point-to-point (two hosts, not one)
-		{"notanip", false},        // garbage — not a valid IP or CIDR
+		{"10.0.0.1", true},                 // bare IPv4
+		{"192.168.1.100", true},            // bare IPv4
+		{"10.0.0.1/32", true},              // explicit /32
+		{"::1", true},                      // bare IPv6 loopback
+		{"2001:db8::1/128", true},          // explicit /128
+		{"10.0.0.0/8", false},              // network CIDR /8
+		{"192.168.1.0/24", false},          // /24 network
+		{"172.16.0.0/12", false},           // /12 network
+		{"10.0.0.0/31", false},             // /31 point-to-point (two hosts, not one)
+		{"myserver", true},                 // bare hostname — host-scoped
+		{"api.internal.example.com", true}, // FQDN — host-scoped
+		{"my-server-01.prod.corp", true},   // FQDN with hyphens — host-scoped
 	}
 
 	for _, tc := range cases {
