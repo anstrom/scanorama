@@ -15,6 +15,11 @@ import (
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
+const (
+	protoTCP = "tcp"
+	protoUDP = "udp"
+)
+
 // PortHandler handles port definition endpoints.
 type PortHandler struct {
 	repo    *db.PortRepository
@@ -51,6 +56,10 @@ func (h *PortHandler) ListPorts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
+	if proto := q.Get("protocol"); proto != "" && proto != protoTCP && proto != protoUDP {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("invalid protocol %q: must be tcp or udp", proto))
+		return
+	}
 	filters := db.PortFilters{
 		Search:    q.Get("search"),
 		Category:  q.Get("category"),
@@ -143,6 +152,14 @@ func (h *PortHandler) GetPort(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListPortHostCounts handles GET /api/v1/ports/host-counts — returns per-port open host counts.
+//
+//	@Summary      List port host counts
+//	@Description  Returns the number of distinct hosts with each port open, ordered by host count descending.
+//	@Tags         ports
+//	@Produce      json
+//	@Success      200  {array}   docs.PortHostCountResponse
+//	@Router       /ports/host-counts [get]
+//	@Security     BearerAuth
 func (h *PortHandler) ListPortHostCounts(w http.ResponseWriter, r *http.Request) {
 	counts, err := h.repo.ListPortHostCounts(r.Context())
 	if err != nil {

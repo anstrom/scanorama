@@ -629,7 +629,7 @@ func TestScanHandler_EdgeCases(t *testing.T) {
 	handler := NewScanHandler(nilScanServicer{}, logger, metrics.NewRegistry())
 
 	t.Run("scan types validation", func(t *testing.T) {
-		validTypes := []string{"connect", "syn", "ack", "aggressive", "comprehensive"}
+		validTypes := []string{"connect", "syn", "ack", "udp", "aggressive", "comprehensive"}
 		for _, scanType := range validTypes {
 			req := &ScanRequest{
 				Name:     "Test",

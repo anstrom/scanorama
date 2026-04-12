@@ -324,3 +324,68 @@ func TestPortRepository_ListCategories_QueryError(t *testing.T) {
 	require.Error(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ── ListPortHostCounts ────────────────────────────────────────────────────────
+
+func TestPortRepository_ListPortHostCounts_OK(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	rows := sqlmock.NewRows([]string{"port", "protocol", "count"}).
+		AddRow(80, "tcp", 42).
+		AddRow(443, "tcp", 17).
+		AddRow(53, "udp", 8)
+	mock.ExpectQuery("SELECT port, protocol").WillReturnRows(rows)
+
+	repo := NewPortRepository(db)
+	counts, err := repo.ListPortHostCounts(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, counts, 3)
+	assert.Equal(t, 80, counts[0].Port)
+	assert.Equal(t, "tcp", counts[0].Protocol)
+	assert.Equal(t, 42, counts[0].Count)
+	assert.Equal(t, 53, counts[2].Port)
+	assert.Equal(t, "udp", counts[2].Protocol)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPortRepository_ListPortHostCounts_Empty(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	mock.ExpectQuery("SELECT port, protocol").
+		WillReturnRows(sqlmock.NewRows([]string{"port", "protocol", "count"}))
+
+	repo := NewPortRepository(db)
+	counts, err := repo.ListPortHostCounts(context.Background())
+
+	require.NoError(t, err)
+	assert.Nil(t, counts, "nil slice expected when no rows")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPortRepository_ListPortHostCounts_QueryError(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	mock.ExpectQuery("SELECT port, protocol").
+		WillReturnError(fmt.Errorf("connection reset"))
+
+	repo := NewPortRepository(db)
+	_, err := repo.ListPortHostCounts(context.Background())
+
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPortRepository_ListPortHostCounts_ScanError(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	// Return a row with wrong column count to force a scan error.
+	rows := sqlmock.NewRows([]string{"port"}).AddRow(80)
+	mock.ExpectQuery("SELECT port, protocol").WillReturnRows(rows)
+
+	repo := NewPortRepository(db)
+	_, err := repo.ListPortHostCounts(context.Background())
+
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

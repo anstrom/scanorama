@@ -102,7 +102,7 @@ type ScanResponse struct {
 	ProfileID    *string           `json:"profile_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
 	ScanType     string            `json:"scan_type" example:"connect" enums:"connect,syn,ack,udp,aggressive,comprehensive"`
 	Ports        string            `json:"ports,omitempty" example:"22,80,443"`
-	Targets      []string          `json:"targets" example:"192.168.1.0/24"`
+	Targets      []string          `json:"targets" example:"192.168.1.0/24,myserver.local"`
 	Options      map[string]string `json:"options,omitempty"`
 	Tags         []string          `json:"tags,omitempty"`
 	Status       string            `json:"status" example:"running" enums:"pending,running,completed,failed"`
