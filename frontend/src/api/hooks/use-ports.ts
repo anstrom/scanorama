@@ -50,6 +50,26 @@ export function usePorts(params: PortListParams = {}) {
   });
 }
 
+export interface PortHostCount {
+  port: number;
+  protocol: string;
+  count: number;
+}
+
+export function usePortHostCounts() {
+  return useQuery({
+    queryKey: ["ports", "host-counts"],
+    queryFn: async () => {
+      const res = await fetch(`${baseURL()}/ports/host-counts`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new ApiError(res.status, body);
+      }
+      return res.json() as Promise<PortHostCount[]>;
+    },
+  });
+}
+
 export function usePortCategories() {
   return useQuery({
     queryKey: ["ports", "categories"],

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Database, Search, X } from "lucide-react";
-import { usePorts, usePortCategories } from "../api/hooks/use-ports";
-import type { PortDefinition } from "../api/hooks/use-ports";
+import { usePorts, usePortCategories, usePortHostCounts } from "../api/hooks/use-ports";
+import type { PortDefinition, PortHostCount } from "../api/hooks/use-ports";
 import { Skeleton } from "../components";
 import { cn } from "../lib/utils";
 
@@ -29,6 +29,9 @@ function SkeletonRows() {
           </td>
           <td className="px-4 py-2.5">
             <Skeleton className="h-3 w-16" />
+          </td>
+          <td className="px-4 py-2.5">
+            <Skeleton className="h-3 w-10" />
           </td>
         </tr>
       ))}
@@ -86,7 +89,7 @@ function CategoryBadge({ category }: { category?: string }) {
 
 // ── Row ───────────────────────────────────────────────────────────────────────
 
-function PortRow({ port }: { port: PortDefinition }) {
+function PortRow({ port, hostCount }: { port: PortDefinition; hostCount: number }) {
   return (
     <tr className="border-b border-border hover:bg-muted/30 transition-colors">
       <td className="px-4 py-2.5 font-mono text-sm font-semibold text-foreground">
@@ -109,6 +112,15 @@ function PortRow({ port }: { port: PortDefinition }) {
           ? port.os_families.join(", ")
           : "—"}
       </td>
+      <td className="px-4 py-2.5 text-xs">
+        {hostCount > 0 ? (
+          <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 font-medium">
+            {hostCount}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
     </tr>
   );
 }
@@ -128,6 +140,7 @@ export function PortsPage() {
   > | null>(null);
 
   const { data: categories } = usePortCategories();
+  const { data: hostCountData } = usePortHostCounts();
   const { data, isLoading } = usePorts({
     search: debouncedSearch,
     category,
@@ -135,6 +148,15 @@ export function PortsPage() {
     page,
     page_size: PAGE_SIZE,
   });
+
+  // Build a lookup map from "port/protocol" → host count.
+  const hostCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    (hostCountData ?? []).forEach((hc: PortHostCount) => {
+      map.set(`${hc.port}/${hc.protocol}`, hc.count);
+    });
+    return map;
+  }, [hostCountData]);
 
   function handleSearchChange(value: string) {
     setSearch(value);
@@ -257,6 +279,9 @@ export function PortsPage() {
               <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide w-32">
                 OS Families
               </th>
+              <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wide w-28">
+                In your network
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -265,7 +290,7 @@ export function PortsPage() {
             ) : ports.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-12 text-center text-muted-foreground"
                 >
                   {hasFilters
@@ -275,7 +300,11 @@ export function PortsPage() {
               </tr>
             ) : (
               ports.map((p) => (
-                <PortRow key={`${p.port}-${p.protocol}`} port={p} />
+                <PortRow
+                  key={`${p.port}-${p.protocol}`}
+                  port={p}
+                  hostCount={hostCountMap.get(`${p.port}/${p.protocol}`) ?? 0}
+                />
               ))
             )}
           </tbody>
