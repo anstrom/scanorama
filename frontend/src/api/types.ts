@@ -615,6 +615,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/profiles/{profileId}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get profile stats
+         * @description Get scan effectiveness statistics for a profile
+         */
+        get: operations["getProfileStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/scans": {
         parameters: {
             query?: never;
@@ -1413,6 +1433,17 @@ export interface components {
              */
             scan_type?: "connect" | "syn" | "ack" | "udp" | "aggressive" | "comprehensive";
             updated_at?: string;
+        };
+        "docs.ProfileStatsResponse": {
+            /** @example 12.5 */
+            avg_hosts_found?: number;
+            last_used?: string;
+            /** @example web-full */
+            profile_id?: string;
+            /** @example 42 */
+            total_scans?: number;
+            /** @example 7 */
+            unique_hosts?: number;
         };
         "docs.RenameNetworkRequest": {
             /** @example New Office Network */
@@ -3942,6 +3973,65 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getProfileStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Profile ID */
+                profileId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ProfileStatsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
                 };
             };
         };

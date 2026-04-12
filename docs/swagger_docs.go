@@ -762,6 +762,31 @@ func UpdateProfile(_ http.ResponseWriter, _ *http.Request) {}
 // @ID deleteProfile
 func DeleteProfile(_ http.ResponseWriter, _ *http.Request) {}
 
+// ProfileStatsResponse represents effectiveness statistics for a scan profile.
+type ProfileStatsResponse struct {
+	ProfileID     string     `json:"profile_id" example:"web-full"`
+	TotalScans    int        `json:"total_scans" example:"42"`
+	UniqueHosts   int        `json:"unique_hosts" example:"7"`
+	LastUsed      *time.Time `json:"last_used,omitempty"`
+	AvgHostsFound *float64   `json:"avg_hosts_found,omitempty" example:"12.5"`
+}
+
+// GetProfileStats godoc
+// @Summary Get profile stats
+// @Description Get scan effectiveness statistics for a profile
+// @Tags Profiles
+// @Produce json
+// @Param profileId path string true "Profile ID"
+// @Success 200 {object} ProfileStatsResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /profiles/{profileId}/stats [get]
+// @ID getProfileStats
+func GetProfileStats(_ http.ResponseWriter, _ *http.Request) {}
+
 // ListDiscoveryJobs godoc
 // @Summary List discovery jobs
 // @Description Get paginated list of discovery jobs

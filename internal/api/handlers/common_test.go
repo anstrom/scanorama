@@ -203,6 +203,9 @@ func (nilProfileServicer) DeleteProfile(_ context.Context, _ string) error {
 func (nilProfileServicer) CloneProfile(_ context.Context, _, _ string) (*db.ScanProfile, error) {
 	panic("nilProfileServicer: CloneProfile called unexpectedly")
 }
+func (nilProfileServicer) GetProfileStats(_ context.Context, _ string) (*db.ProfileStats, error) {
+	panic("nilProfileServicer: GetProfileStats called unexpectedly")
+}
 
 func TestNewBaseHandler(t *testing.T) {
 	tests := []struct {

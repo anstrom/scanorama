@@ -101,6 +101,8 @@ type ProfileServicer interface {
 	// CloneProfile creates a new user-owned profile that is a copy of the source
 	// profile identified by fromID, assigned the given newName.
 	CloneProfile(ctx context.Context, fromID string, newName string) (*db.ScanProfile, error)
+	// GetProfileStats returns scan effectiveness statistics for a profile.
+	GetProfileStats(ctx context.Context, id string) (*db.ProfileStats, error)
 }
 
 // NetworkServicer is the subset of *services.NetworkService used by NetworkHandler.

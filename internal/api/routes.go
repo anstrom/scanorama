@@ -146,6 +146,7 @@ func (s *Server) setupProfileRoutes(api *mux.Router, h *apihandlers.ProfileHandl
 	api.HandleFunc("/profiles/{id}", h.DeleteProfile).Methods("DELETE")
 	api.HandleFunc("/profiles/{id}/clone", h.CloneProfile).Methods("POST")
 	api.HandleFunc("/profiles/{id}/fork", h.CloneProfile).Methods("POST")
+	api.HandleFunc("/profiles/{id}/stats", h.GetProfileStats).Methods("GET")
 }
 
 // setupScheduleRoutes registers scheduled job CRUD and control endpoints.

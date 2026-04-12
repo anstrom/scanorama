@@ -2420,6 +2420,65 @@
                 }
             }
         },
+        "/profiles/{profileId}/stats": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get scan effectiveness statistics for a profile",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Profiles"
+                ],
+                "summary": "Get profile stats",
+                "operationId": "getProfileStats",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Profile ID",
+                        "name": "profileId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ProfileStatsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/scans": {
             "get": {
                 "security": [
@@ -4696,6 +4755,30 @@
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "docs.ProfileStatsResponse": {
+            "type": "object",
+            "properties": {
+                "avg_hosts_found": {
+                    "type": "number",
+                    "example": 12.5
+                },
+                "last_used": {
+                    "type": "string"
+                },
+                "profile_id": {
+                    "type": "string",
+                    "example": "web-full"
+                },
+                "total_scans": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "unique_hosts": {
+                    "type": "integer",
+                    "example": 7
                 }
             }
         },
