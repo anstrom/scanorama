@@ -6,6 +6,8 @@ import { useRecentScans } from "../api/hooks/use-scans";
 import { useActiveHostCount } from "../api/hooks/use-hosts";
 import { useDiscoveryJobs, useDiscoveryDiff } from "../api/hooks/use-discovery";
 import { useStatsSummary } from "../api/hooks/use-dashboard";
+import { useExpiringCerts } from "../api/hooks/use-expiring-certs";
+import type { ExpiringCertificate } from "../api/hooks/use-expiring-certs";
 import { StatCard } from "../components/stat-card";
 import { SystemInfoCard } from "../components/system-info-card";
 import { RecentScansTable } from "../components/recent-scans-table";
@@ -21,6 +23,7 @@ import {
   ScanSearch,
   AlertCircle,
   Clock,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "../components/button";
 import { RunScanModal } from "../components";
@@ -394,6 +397,115 @@ function AvgDurationCard({
   );
 }
 
+// ── Expiring TLS certificates widget ──────────────────────────────────────────
+
+function certUrgencyClass(daysLeft: number): string {
+  if (daysLeft <= 7) return "text-danger";
+  if (daysLeft <= 14) return "text-[#f97316]"; // orange-500
+  return "text-warning";
+}
+
+function ExpiringCertsWidget() {
+  const { data, isLoading } = useExpiringCerts(30);
+  const navigate = useNavigate();
+
+  // Render nothing when there are no expiring certs and we're done loading.
+  if (!isLoading && (!data || data.certificates.length === 0)) return null;
+
+  function viewHost(cert: ExpiringCertificate) {
+    const filter = serializeFilter({
+      op: "AND",
+      conditions: [{ field: "ip_address", cmp: "eq", value: cert.host_ip }],
+    });
+    void navigate({ to: "/hosts", search: { filter }, replace: false });
+  }
+
+  const certs = data?.certificates ?? [];
+  const criticalCount = certs.filter((c) => c.days_left <= 7).length;
+  const warningCount = certs.filter(
+    (c) => c.days_left > 7 && c.days_left <= 14,
+  ).length;
+
+  return (
+    <div className="mt-6 bg-surface rounded-lg border border-border p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <ShieldAlert
+          className={cn(
+            "h-3.5 w-3.5 shrink-0",
+            criticalCount > 0
+              ? "text-danger"
+              : warningCount > 0
+                ? "text-[#f97316]"
+                : "text-warning",
+          )}
+        />
+        <p className="text-xs font-medium text-text-primary">
+          Expiring TLS Certificates
+        </p>
+        {!isLoading && (
+          <span
+            className={cn(
+              "ml-auto text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded",
+              criticalCount > 0
+                ? "bg-danger/15 text-danger"
+                : "bg-warning/15 text-warning",
+            )}
+          >
+            {certs.length}
+          </span>
+        )}
+      </div>
+      {isLoading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {certs.slice(0, 6).map((cert) => (
+            <button
+              key={`${cert.host_id}-${cert.port}`}
+              type="button"
+              onClick={() => viewHost(cert)}
+              className="w-full flex items-center gap-2 text-left hover:bg-surface-raised rounded px-1 py-0.5 transition-colors"
+            >
+              <span
+                className={cn(
+                  "text-xs font-mono shrink-0 w-8 text-right",
+                  certUrgencyClass(cert.days_left),
+                )}
+              >
+                {cert.days_left}d
+              </span>
+              <span className="text-xs text-text-secondary font-mono shrink-0">
+                {cert.host_ip}
+              </span>
+              {cert.hostname && (
+                <span className="text-xs text-text-muted truncate">
+                  {cert.hostname}
+                </span>
+              )}
+              <span className="text-xs text-text-muted shrink-0 ml-auto font-mono">
+                :{cert.port}
+              </span>
+              {cert.subject_cn && (
+                <span className="text-xs text-text-muted truncate max-w-[120px]">
+                  {cert.subject_cn}
+                </span>
+              )}
+            </button>
+          ))}
+          {certs.length > 6 && (
+            <p className="text-[10px] text-text-muted pt-1">
+              +{certs.length - 6} more expiring within 30 days
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
@@ -495,6 +607,9 @@ export function DashboardPage() {
 
       {/* Recent discovery changes */}
       <RecentDiscoveryChanges />
+
+      {/* Expiring TLS certificates */}
+      <ExpiringCertsWidget />
 
       {/* Modals / panels */}
       {selectedScan && (
