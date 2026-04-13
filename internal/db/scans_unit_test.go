@@ -838,11 +838,14 @@ func TestCreateScan_Unit(t *testing.T) {
 
 	t.Run("new CIDR creates network then job", func(t *testing.T) {
 		db, mock := newMockDB(t)
+		networkID := uuid.New()
 
 		mock.ExpectBegin()
 		mock.ExpectQuery(`SELECT id FROM networks`).WillReturnError(sql.ErrNoRows)
-		mock.ExpectExec(`INSERT INTO networks`).
-			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectExec(`SAVEPOINT`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`INSERT INTO networks`).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(networkID))
+		mock.ExpectExec(`RELEASE SAVEPOINT`).WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectExec(`INSERT INTO scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
@@ -863,17 +866,18 @@ func TestCreateScan_Unit(t *testing.T) {
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("name collision falls back to CIDR as network name", func(t *testing.T) {
+	t.Run("concurrent same-CIDR insert is resolved by upsert", func(t *testing.T) {
 		db, mock := newMockDB(t)
+		// ON CONFLICT (cidr) DO UPDATE returns the existing row's id when a
+		// concurrent insert beat us to it — no two-step retry needed.
+		existingID := uuid.New()
 
 		mock.ExpectBegin()
 		mock.ExpectQuery(`SELECT id FROM networks`).WillReturnError(sql.ErrNoRows)
-		// First INSERT: name collision — no rows affected.
-		mock.ExpectExec(`INSERT INTO networks`).
-			WillReturnResult(sqlmock.NewResult(0, 0))
-		// Fallback INSERT using CIDR as name.
-		mock.ExpectExec(`INSERT INTO networks`).
-			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectExec(`SAVEPOINT`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`INSERT INTO networks`).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(existingID))
+		mock.ExpectExec(`RELEASE SAVEPOINT`).WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectExec(`INSERT INTO scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
