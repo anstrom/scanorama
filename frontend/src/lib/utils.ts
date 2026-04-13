@@ -43,7 +43,7 @@ export function describeCron(expr: string): string {
   if ([min, hr, dom, month, dow].every(allStar)) return "Every minute";
   if (allStar(min) && [hr, dom, month, dow].every(allStar))
     return "Every minute"; // same
-  if (!allStar(hr) && allStar(min) && [dom, month, dow].every(allStar))
+  if (!allStar(hr) && min === "0" && [dom, month, dow].every(allStar))
     return `Every day at ${timeStr(hr, "0")}`;
   if (!allStar(min) && !allStar(hr) && [dom, month, dow].every(allStar))
     return `Every day at ${timeStr(hr, min)}`;
