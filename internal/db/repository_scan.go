@@ -956,7 +956,18 @@ func (r *ScanRepository) CompleteScan(ctx context.Context, id uuid.UUID) error {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
-		return errors.ErrNotFoundWithID("scan", id.String())
+		var currentStatus string
+		queryErr := r.db.QueryRowContext(ctx,
+			`SELECT status FROM scan_jobs WHERE id = $1`, id,
+		).Scan(&currentStatus)
+		if queryErr != nil {
+			if stderrors.Is(queryErr, sql.ErrNoRows) {
+				return errors.ErrNotFoundWithID("scan", id.String())
+			}
+			return sanitizeDBError("check scan status", queryErr)
+		}
+		return errors.ErrConflictWithReason("scan",
+			fmt.Sprintf("scan is in state %q, expected %q", currentStatus, ScanJobStatusRunning))
 	}
 
 	return nil
@@ -983,7 +994,18 @@ func (r *ScanRepository) StopScan(ctx context.Context, id uuid.UUID, errMsg ...s
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
-		return errors.ErrNotFoundWithID("scan", id.String())
+		var currentStatus string
+		queryErr := r.db.QueryRowContext(ctx,
+			`SELECT status FROM scan_jobs WHERE id = $1`, id,
+		).Scan(&currentStatus)
+		if queryErr != nil {
+			if stderrors.Is(queryErr, sql.ErrNoRows) {
+				return errors.ErrNotFoundWithID("scan", id.String())
+			}
+			return sanitizeDBError("check scan status", queryErr)
+		}
+		return errors.ErrConflictWithReason("scan",
+			fmt.Sprintf("scan is in state %q, expected %q", currentStatus, ScanJobStatusRunning))
 	}
 
 	return nil

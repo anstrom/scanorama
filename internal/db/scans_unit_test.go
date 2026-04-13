@@ -1151,14 +1151,30 @@ func TestCompleteScan_Unit(t *testing.T) {
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("zero rows affected returns CodeNotFound", func(t *testing.T) {
+	t.Run("zero rows affected — scan not found returns CodeNotFound", func(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`UPDATE scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT status FROM scan_jobs`).
+			WillReturnError(sql.ErrNoRows)
 
 		err := NewScanRepository(db).CompleteScan(context.Background(), id)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("zero rows affected — wrong state returns CodeConflict", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectExec(`UPDATE scan_jobs`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT status FROM scan_jobs`).
+			WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("pending"))
+
+		err := NewScanRepository(db).CompleteScan(context.Background(), id)
+		require.Error(t, err)
+		assert.True(t, errors.IsCode(err, errors.CodeConflict))
+		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("db error is wrapped", func(t *testing.T) {
@@ -1202,14 +1218,30 @@ func TestStopScan_Unit(t *testing.T) {
 		require.NoError(t, NewScanRepository(db).StopScan(context.Background(), id, ""))
 	})
 
-	t.Run("zero rows affected returns CodeNotFound", func(t *testing.T) {
+	t.Run("zero rows affected — scan not found returns CodeNotFound", func(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectExec(`UPDATE scan_jobs`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT status FROM scan_jobs`).
+			WillReturnError(sql.ErrNoRows)
 
 		err := NewScanRepository(db).StopScan(context.Background(), id)
 		require.Error(t, err)
 		assert.True(t, errors.IsCode(err, errors.CodeNotFound))
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("zero rows affected — wrong state returns CodeConflict", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		mock.ExpectExec(`UPDATE scan_jobs`).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT status FROM scan_jobs`).
+			WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("completed"))
+
+		err := NewScanRepository(db).StopScan(context.Background(), id)
+		require.Error(t, err)
+		assert.True(t, errors.IsCode(err, errors.CodeConflict))
+		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("db error is wrapped", func(t *testing.T) {
