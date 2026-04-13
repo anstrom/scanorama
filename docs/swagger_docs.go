@@ -1396,6 +1396,19 @@ func TriggerSmartScan(_ http.ResponseWriter, _ *http.Request) {}
 // @ID triggerSmartScanBatch
 func TriggerSmartScanBatch(_ http.ResponseWriter, _ *http.Request) {}
 
+// GetProfileRecommendations godoc
+// @Summary Get profile recommendations
+// @Description Returns profile suggestions grouped by detected OS family.
+// @Tags smart-scan
+// @Produce json
+// @Success 200 {array} ProfileRecommendationResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /smart-scan/profile-recommendations [get]
+// @ID getProfileRecommendations
+func GetProfileRecommendations(_ http.ResponseWriter, _ *http.Request) {}
+
 // ScanStageResponse is the response body for EvaluateHostStage.
 type ScanStageResponse struct {
 	Stage       string  `json:"stage" example:"os_detection" enums:"os_detection,port_expansion,service_scan,refresh,skip"`
@@ -1437,6 +1450,7 @@ type TriggerBatchRequest struct {
 	Stage       string   `json:"stage,omitempty" example:"os_detection" enums:"os_detection,port_expansion,service_scan,refresh,skip"`
 	HostIDs     []string `json:"host_ids,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	NetworkCIDR string   `json:"network_cidr,omitempty" example:"192.168.1.0/24"`
+	OSFamily    string   `json:"os_family,omitempty" example:"Linux"`
 	Limit       int      `json:"limit,omitempty" example:"50"`
 }
 
@@ -1482,6 +1496,15 @@ type PortHostCountResponse struct {
 
 // PortHostCountListResponse is the response body for ListPortHostCounts.
 type PortHostCountListResponse = []PortHostCountResponse
+
+// ProfileRecommendationResponse is a single entry in the profile recommendations list.
+type ProfileRecommendationResponse struct {
+	OSFamily    string `json:"os_family" example:"Linux"`
+	HostCount   int    `json:"host_count" example:"42"`
+	ProfileID   string `json:"profile_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	ProfileName string `json:"profile_name" example:"Linux Standard"`
+	Action      string `json:"action" example:"port_expansion"`
+}
 
 // BatchResultResponse is the response body for TriggerSmartScanBatch.
 type BatchResultResponse struct {

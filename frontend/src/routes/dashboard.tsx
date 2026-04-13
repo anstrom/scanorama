@@ -8,6 +8,10 @@ import { useDiscoveryJobs, useDiscoveryDiff } from "../api/hooks/use-discovery";
 import { useStatsSummary } from "../api/hooks/use-dashboard";
 import { useExpiringCerts } from "../api/hooks/use-expiring-certs";
 import type { ExpiringCertificate } from "../api/hooks/use-expiring-certs";
+import {
+  useProfileRecommendations,
+  useTriggerSmartScanBatch,
+} from "../api/hooks/use-smart-scan";
 import { StatCard } from "../components/stat-card";
 import { SystemInfoCard } from "../components/system-info-card";
 import { RecentScansTable } from "../components/recent-scans-table";
@@ -24,6 +28,7 @@ import {
   AlertCircle,
   Clock,
   ShieldAlert,
+  Layers,
 } from "lucide-react";
 import { Button } from "../components/button";
 import { RunScanModal } from "../components";
@@ -506,6 +511,75 @@ function ExpiringCertsWidget() {
   );
 }
 
+// ── Profile recommendations widget ───────────────────────────────────────────
+
+function ProfileRecommendationsWidget() {
+  const { data: recs, isLoading } = useProfileRecommendations();
+  const triggerBatch = useTriggerSmartScanBatch();
+
+  if (!isLoading && (!recs || recs.length === 0)) return null;
+
+  function queueForFamily(osFamily: string) {
+    triggerBatch.mutate({ os_family: osFamily, stage: "port_expansion" });
+  }
+
+  return (
+    <div className="mt-6 bg-surface rounded-lg border border-border p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Layers className="h-3.5 w-3.5 shrink-0 text-accent" />
+        <p className="text-xs font-medium text-text-primary">
+          Profile Recommendations
+        </p>
+        {!isLoading && recs && (
+          <span className="ml-auto text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded bg-accent/15 text-accent">
+            {recs.length}
+          </span>
+        )}
+      </div>
+      {isLoading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {(recs ?? []).map((rec) => {
+            const family = rec.os_family ?? "";
+            return (
+              <div
+                key={family}
+                className="flex items-center gap-2 px-1 py-0.5"
+              >
+                <span className="text-xs font-mono text-text-secondary shrink-0 w-6 text-right tabular-nums">
+                  {rec.host_count ?? 0}
+                </span>
+                <span className="text-xs text-text-secondary capitalize flex-1 truncate">
+                  {family}
+                </span>
+                <span className="text-xs text-text-muted truncate max-w-[140px]">
+                  {rec.profile_name ?? "—"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => queueForFamily(family)}
+                  disabled={triggerBatch.isPending || !family}
+                  className="shrink-0 flex items-center gap-1 text-[10px] px-2 h-5 rounded border border-accent/40 text-accent bg-accent/10 hover:bg-accent/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ScanLine className="h-2.5 w-2.5" />
+                  Queue Scan
+                </button>
+              </div>
+            );
+          })}
+          <p className="text-[10px] text-text-muted pt-1">
+            Hosts grouped by OS family — queue a port expansion scan for each.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
@@ -610,6 +684,9 @@ export function DashboardPage() {
 
       {/* Expiring TLS certificates */}
       <ExpiringCertsWidget />
+
+      {/* Profile recommendations */}
+      <ProfileRecommendationsWidget />
 
       {/* Modals / panels */}
       {selectedScan && (

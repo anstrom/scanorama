@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -22,14 +23,24 @@ import (
 // ── mock ──────────────────────────────────────────────────────────────────────
 
 type mockSmartScanServicer struct {
-	getSuggestionsFn   func(ctx context.Context) (*services.SuggestionSummary, error)
-	evaluateHostByIDFn func(ctx context.Context, id uuid.UUID) (*services.ScanStage, error)
-	queueSmartScanFn   func(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
-	queueBatchFn       func(ctx context.Context, f services.BatchFilter) (*services.BatchResult, error)
+	getSuggestionsFn            func(ctx context.Context) (*services.SuggestionSummary, error)
+	getProfileRecommendationsFn func(ctx context.Context) ([]services.ProfileRecommendation, error)
+	evaluateHostByIDFn          func(ctx context.Context, id uuid.UUID) (*services.ScanStage, error)
+	queueSmartScanFn            func(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	queueBatchFn                func(ctx context.Context, f services.BatchFilter) (*services.BatchResult, error)
 }
 
 func (m *mockSmartScanServicer) GetSuggestions(ctx context.Context) (*services.SuggestionSummary, error) {
 	return m.getSuggestionsFn(ctx)
+}
+
+func (m *mockSmartScanServicer) GetProfileRecommendations(
+	ctx context.Context,
+) ([]services.ProfileRecommendation, error) {
+	if m.getProfileRecommendationsFn != nil {
+		return m.getProfileRecommendationsFn(ctx)
+	}
+	return []services.ProfileRecommendation{}, nil
 }
 
 func (m *mockSmartScanServicer) EvaluateHostByID(ctx context.Context, id uuid.UUID) (*services.ScanStage, error) {
@@ -57,6 +68,7 @@ func newSmartScanHandler(svc smartScanServicer) *SmartScanHandler {
 func routeSmartScan(h *SmartScanHandler, method, path string, body []byte) *httptest.ResponseRecorder {
 	r := mux.NewRouter()
 	r.HandleFunc("/api/v1/smart-scan/suggestions", h.GetSuggestions).Methods("GET")
+	r.HandleFunc("/api/v1/smart-scan/profile-recommendations", h.GetProfileRecommendations).Methods("GET")
 	r.HandleFunc("/api/v1/smart-scan/hosts/{id}/stage", h.EvaluateHost).Methods("GET")
 	r.HandleFunc("/api/v1/smart-scan/hosts/{id}/trigger", h.TriggerHost).Methods("POST")
 	r.HandleFunc("/api/v1/smart-scan/trigger-batch", h.TriggerBatch).Methods("POST")
@@ -263,4 +275,78 @@ func TestSmartScan_TriggerBatch_EmptyBody_UsesDefaults(t *testing.T) {
 
 	w := routeSmartScan(newSmartScanHandler(svc), "POST", "/api/v1/smart-scan/trigger-batch", nil)
 	assert.Equal(t, http.StatusAccepted, w.Code)
+}
+
+// ── GetProfileRecommendations ─────────────────────────────────────────────────
+
+func TestSmartScan_GetProfileRecommendations_ReturnsRecommendations(t *testing.T) {
+	svc := &mockSmartScanServicer{
+		getProfileRecommendationsFn: func(_ context.Context) ([]services.ProfileRecommendation, error) {
+			return []services.ProfileRecommendation{
+				{OSFamily: "Linux", HostCount: 5, ProfileID: "p1", ProfileName: "Linux Standard",
+					Action: "port_expansion"},
+				{OSFamily: "Windows", HostCount: 3, ProfileID: "p2", ProfileName: "Windows Standard",
+					Action: "port_expansion"},
+			}, nil
+		},
+	}
+
+	w := routeSmartScan(newSmartScanHandler(svc), "GET", "/api/v1/smart-scan/profile-recommendations", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var body []services.ProfileRecommendation
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	require.Len(t, body, 2)
+	assert.Equal(t, "Linux", body[0].OSFamily)
+	assert.Equal(t, 5, body[0].HostCount)
+	assert.Equal(t, "Linux Standard", body[0].ProfileName)
+	assert.Equal(t, "Windows", body[1].OSFamily)
+}
+
+func TestSmartScan_GetProfileRecommendations_EmptyResult_ReturnsEmptyArray(t *testing.T) {
+	svc := &mockSmartScanServicer{
+		getProfileRecommendationsFn: func(_ context.Context) ([]services.ProfileRecommendation, error) {
+			return nil, nil
+		},
+	}
+
+	w := routeSmartScan(newSmartScanHandler(svc), "GET", "/api/v1/smart-scan/profile-recommendations", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	// Pin the wire format: the handler must serialize nil service result as []
+	// not null. bytes.Buffer.String() does not advance the read position, so
+	// decoding from the same body afterwards still works.
+	assert.Equal(t, "[]\n", w.Body.String(), "empty result must serialize as [] not null")
+	var body []services.ProfileRecommendation
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	assert.NotNil(t, body)
+	assert.Empty(t, body)
+}
+
+func TestSmartScan_GetProfileRecommendations_ServiceError_Returns500(t *testing.T) {
+	svc := &mockSmartScanServicer{
+		getProfileRecommendationsFn: func(_ context.Context) ([]services.ProfileRecommendation, error) {
+			return nil, fmt.Errorf("db unavailable")
+		},
+	}
+
+	w := routeSmartScan(newSmartScanHandler(svc), "GET", "/api/v1/smart-scan/profile-recommendations", nil)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestSmartScan_TriggerBatch_OSFamily_PassedToFilter(t *testing.T) {
+	svc := &mockSmartScanServicer{
+		queueBatchFn: func(_ context.Context, f services.BatchFilter) (*services.BatchResult, error) {
+			assert.Equal(t, "linux", f.OSFamily)
+			return &services.BatchResult{Queued: 3, Details: []services.BatchDetailEntry{}}, nil
+		},
+	}
+
+	body, _ := json.Marshal(map[string]any{"os_family": "linux", "stage": "port_expansion"})
+	w := routeSmartScan(newSmartScanHandler(svc), "POST", "/api/v1/smart-scan/trigger-batch", body)
+	require.Equal(t, http.StatusAccepted, w.Code)
+
+	var result services.BatchResult
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+	assert.Equal(t, 3, result.Queued)
 }

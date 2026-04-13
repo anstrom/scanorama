@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/profiles"
 )
 
 func discardLogger() *slog.Logger {
@@ -693,4 +694,70 @@ func TestExceedsAutoQueueLimit_DBErrorFailsOpen(t *testing.T) {
 	exceeded := svc.exceedsAutoQueueLimit(context.Background(), "10.0.0.1")
 	assert.False(t, exceeded, "DB error must fail open (allow the queue)")
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ── filterByOSFamily ──────────────────────────────────────────────────────────
+
+func TestFilterByOSFamily_MatchesCaseInsensitive(t *testing.T) {
+	linux := strPtr("linux")
+	windows := strPtr("Windows")
+	empty := strPtr("")
+	hosts := []*db.Host{
+		{ID: uuid.New(), OSFamily: linux, IPAddress: mustParseIP("10.0.0.1")},
+		{ID: uuid.New(), OSFamily: windows, IPAddress: mustParseIP("10.0.0.2")},
+		{ID: uuid.New(), OSFamily: empty, IPAddress: mustParseIP("10.0.0.3")},
+		{ID: uuid.New(), OSFamily: nil, IPAddress: mustParseIP("10.0.0.4")},
+	}
+
+	got := filterByOSFamily(hosts, "Linux")
+	require.Len(t, got, 1)
+	assert.Equal(t, hosts[0].ID, got[0].ID)
+}
+
+func TestFilterByOSFamily_EmptyFamilyReturnsNone(t *testing.T) {
+	// A nil OSFamily host must not match even when the filter is "".
+	// filterByOSFamily is only called with non-empty filter values, but ensure
+	// the nil-check is robust.
+	hosts := []*db.Host{{ID: uuid.New(), OSFamily: nil, IPAddress: mustParseIP("10.0.0.1")}}
+	got := filterByOSFamily(hosts, "")
+	// nil-check: no os_family match for ""
+	assert.Empty(t, got)
+}
+
+// ── GetProfileRecommendations ─────────────────────────────────────────────────
+
+func TestGetProfileRecommendations_NilProfileManager_ReturnsEmpty(t *testing.T) {
+	database, _ := newSmartScanMockDB(t)
+	// nil profileManager causes early return before any DB query.
+	svc := &SmartScanService{database: database, profileManager: nil}
+	recs, err := svc.GetProfileRecommendations(context.Background())
+	require.NoError(t, err)
+	assert.NotNil(t, recs, "nil profileManager must return [] not nil")
+	assert.Empty(t, recs)
+}
+
+func TestGetProfileRecommendations_DBError_ReturnsError(t *testing.T) {
+	database, mock := newSmartScanMockDB(t)
+	mock.ExpectQuery("SELECT os_family").
+		WillReturnError(fmt.Errorf("connection reset"))
+
+	// profileManager must be non-nil so the nil guard does not short-circuit.
+	svc := &SmartScanService{database: database, profileManager: &profiles.Manager{}}
+	_, err := svc.GetProfileRecommendations(context.Background())
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetProfileRecommendations_NoHosts_ReturnsEmpty(t *testing.T) {
+	database, mock := newSmartScanMockDB(t)
+	mock.ExpectQuery("SELECT os_family").
+		WillReturnRows(sqlmock.NewRows([]string{"os_family", "host_count"}))
+
+	// profileManager must be non-nil so the DB query runs.
+	svc := &SmartScanService{database: database, profileManager: &profiles.Manager{}}
+	recs, err := svc.GetProfileRecommendations(context.Background())
+	require.NoError(t, err)
+	assert.NotNil(t, recs, "no hosts must return [] not nil")
+	assert.Empty(t, recs)
+	require.NoError(t, mock.ExpectationsWereMet())
 }

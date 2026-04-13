@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,10 +62,21 @@ type BatchFilter struct {
 	Stage             string      // empty = all eligible stages; otherwise one of ScanStage.Stage values
 	HostIDs           []uuid.UUID // non-empty = only these hosts; empty = all hosts
 	NetworkCIDR       string      // non-empty = only hosts whose IP falls within this CIDR
+	OSFamily          string      // non-empty = only hosts whose os_family matches (case-insensitive)
 	Limit             int         // max hosts to queue; 0 = use defaultBatchLimit
 	Source            string      // db.ScanSourceAPI / ScanSourceScheduled; defaults to ScanSourceAPI
 	ScoreThreshold    int         // 0 = no filter; >0 = only hosts with knowledge_score < threshold
 	MaxStalenessHours int         // 0 = no filter; >0 = only hosts not seen within N hours
+}
+
+// ProfileRecommendation suggests a scan profile for a group of hosts sharing
+// the same detected OS family.
+type ProfileRecommendation struct {
+	OSFamily    string `json:"os_family"`
+	HostCount   int    `json:"host_count"`
+	ProfileID   string `json:"profile_id"`
+	ProfileName string `json:"profile_name"`
+	Action      string `json:"action"` // the ScanStage.Stage value to use
 }
 
 // BatchResult summarizes the outcome of a QueueBatch call.
@@ -229,6 +241,70 @@ func (s *SmartScanService) GetSuggestions(ctx context.Context) (*SuggestionSumma
 		TotalHosts:  total,
 		GeneratedAt: time.Now(),
 	}, nil
+}
+
+// GetProfileRecommendations returns profile suggestions grouped by OS family.
+// For each OS family present in the fleet, it finds the best matching profile
+// template. Only families with an available profile are returned — an empty
+// slice means there are no actionable recommendations.
+func (s *SmartScanService) GetProfileRecommendations(ctx context.Context) ([]ProfileRecommendation, error) {
+	if s.profileManager == nil {
+		return []ProfileRecommendation{}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, smartScanQueryTimeout)
+	defer cancel()
+
+	// Query host counts grouped by OS family (active hosts only).
+	rows, err := s.database.QueryContext(ctx, `
+		SELECT os_family, COUNT(*) AS host_count
+		FROM hosts
+		WHERE os_family IS NOT NULL AND os_family != '' AND status = 'up'
+		GROUP BY os_family
+		ORDER BY host_count DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query OS family distribution: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	type osFamilyCount struct {
+		family string
+		count  int
+	}
+	var families []osFamilyCount
+	for rows.Next() {
+		var fc osFamilyCount
+		if err := rows.Scan(&fc.family, &fc.count); err != nil {
+			return nil, fmt.Errorf("failed to scan OS family row: %w", err)
+		}
+		families = append(families, fc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	recs := make([]ProfileRecommendation, 0)
+	for _, fc := range families {
+		matched, err := s.profileManager.GetByOSFamily(ctx, fc.family)
+		if err != nil || len(matched) == 0 {
+			continue // no matching profile — skip this OS family
+		}
+		// Prefer the first result (profiles are ordered by specificity in the DB).
+		p := matched[0]
+		// Skip generic catch-all profiles (os_family = NULL/empty in DB) — they
+		// match every OS family but don't represent a meaningful recommendation.
+		if len(p.OSFamily) == 0 {
+			continue
+		}
+		recs = append(recs, ProfileRecommendation{
+			OSFamily:    fc.family,
+			HostCount:   fc.count,
+			ProfileID:   p.ID,
+			ProfileName: p.Name,
+			Action:      "port_expansion",
+		})
+	}
+	return recs, nil
 }
 
 // EvaluateHostByID is a convenience wrapper that loads the host then calls EvaluateHost.
@@ -545,10 +621,28 @@ func (s *SmartScanService) resolveHosts(ctx context.Context, filter BatchFilter)
 		return nil, err
 	}
 
+	// Apply OS family filter in-memory — avoids a separate DB query since the
+	// full host list is already fetched and capped at maxBatchHostsQuery.
+	if filter.OSFamily != "" {
+		hosts = filterByOSFamily(hosts, filter.OSFamily)
+	}
+
 	if filter.ScoreThreshold <= 0 && filter.MaxStalenessHours <= 0 {
 		return hosts, nil
 	}
 	return applyKnowledgeFilter(hosts, filter), nil
+}
+
+// filterByOSFamily retains only hosts whose OS family matches the given value
+// (case-insensitive).
+func filterByOSFamily(hosts []*db.Host, family string) []*db.Host {
+	out := make([]*db.Host, 0, len(hosts))
+	for _, h := range hosts {
+		if h.OSFamily != nil && strings.EqualFold(*h.OSFamily, family) {
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 // applyKnowledgeFilter retains hosts that are below the score threshold OR

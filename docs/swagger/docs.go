@@ -3627,6 +3627,47 @@ const docTemplate = `{
                 }
             }
         },
+        "/smart-scan/profile-recommendations": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns profile suggestions grouped by detected OS family.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "smart-scan"
+                ],
+                "summary": "Get profile recommendations",
+                "operationId": "getProfileRecommendations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/docs.ProfileRecommendationResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/smart-scan/suggestions": {
             "get": {
                 "security": [
@@ -4818,6 +4859,31 @@ const docTemplate = `{
                 }
             }
         },
+        "docs.ProfileRecommendationResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "example": "port_expansion"
+                },
+                "host_count": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "os_family": {
+                    "type": "string",
+                    "example": "Linux"
+                },
+                "profile_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "profile_name": {
+                    "type": "string",
+                    "example": "Linux Standard"
+                }
+            }
+        },
         "docs.ProfileResponse": {
             "type": "object",
             "properties": {
@@ -5292,6 +5358,10 @@ const docTemplate = `{
                 "network_cidr": {
                     "type": "string",
                     "example": "192.168.1.0/24"
+                },
+                "os_family": {
+                    "type": "string",
+                    "example": "Linux"
                 },
                 "stage": {
                     "type": "string",
