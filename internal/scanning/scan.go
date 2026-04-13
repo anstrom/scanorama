@@ -168,15 +168,23 @@ func RunScanWithDB(config *ScanConfig, database *db.DB) (*ScanResult, error) {
 	return RunScanWithContext(context.Background(), config, database)
 }
 
+// recordScanDuration records scan duration to Prometheus.
+// It is nil-safe: both the global metrics instance and config may be nil.
+func recordScanDuration(config *ScanConfig, start time.Time) {
+	m := metrics.GetGlobalMetrics()
+	if m == nil || config == nil {
+		return
+	}
+	m.RecordScanDuration(config.ScanType, time.Since(start))
+}
+
 // RunScanWithContext performs a network scan based on the provided configuration and context.
 // It uses nmap to scan the specified targets and ports, returning detailed results
 // about discovered hosts and services. If database is provided, results are stored.
 func RunScanWithContext(ctx context.Context, config *ScanConfig, database *db.DB) (*ScanResult, error) {
 	// Start timing for Prometheus metrics
 	scanStart := time.Now()
-	defer func() {
-		metrics.GetGlobalMetrics().RecordScanDuration(config.ScanType, time.Since(scanStart))
-	}()
+	defer recordScanDuration(config, scanStart)
 
 	// Log scan start
 	logging.Info("Starting scan operation",
