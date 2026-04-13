@@ -447,21 +447,20 @@ func (s *Scheduler) executeDiscoveryJob(jobID uuid.UUID, config DiscoveryJobConf
 		}
 	}()
 
-	s.mu.RLock()
+	// Check and set Running under a single write lock to prevent two goroutines
+	// from both seeing Running=false and proceeding concurrently.
+	s.mu.Lock()
 	job, exists := s.jobs[jobID]
 	if !exists || !job.Config.Enabled {
-		s.mu.RUnlock()
+		s.mu.Unlock()
 		return
 	}
 
 	if job.Running {
 		log.Printf("Discovery job '%s' is already running, skipping", job.Config.Name)
-		s.mu.RUnlock()
+		s.mu.Unlock()
 		return
 	}
-	s.mu.RUnlock()
-
-	s.mu.Lock()
 	job.Running = true
 	job.LastRun = time.Now()
 	s.mu.Unlock()
@@ -593,26 +592,24 @@ func (s *Scheduler) executeScanJob(jobID uuid.UUID, config *ScanJobConfig) {
 }
 
 // prepareJobExecution validates and prepares a job for execution.
+// The Running check and set are performed under a single write lock to
+// prevent two goroutines from both seeing Running=false and proceeding.
 func (s *Scheduler) prepareJobExecution(jobID uuid.UUID) (*ScheduledJob, bool) {
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	job, exists := s.jobs[jobID]
 	if !exists || !job.Config.Enabled {
-		s.mu.RUnlock()
 		return nil, false
 	}
 
 	if job.Running {
 		log.Printf("Scan job '%s' is already running, skipping", job.Config.Name)
-		s.mu.RUnlock()
 		return nil, false
 	}
-	s.mu.RUnlock()
 
-	s.mu.Lock()
 	job.Running = true
 	job.LastRun = time.Now()
-	s.mu.Unlock()
-
 	return job, true
 }
 
@@ -677,13 +674,15 @@ hostLoop:
 
 		wg.Add(1)
 		go func(h *db.Host, pID string, ports, scanType, timing string, timeoutSec int) {
+			// recover must be registered first so it runs last (LIFO), after
+			// wg.Done and sem release, catching any panic from those as well.
 			defer func() {
-				<-sem // release semaphore slot
-				wg.Done()
 				if r := recover(); r != nil {
 					log.Printf("PANIC while scanning host %s: %v", h.IPAddress, r)
 				}
 			}()
+			defer func() { <-sem }() // release semaphore slot
+			defer wg.Done()
 
 			osFamily := "unknown"
 			if h.OSFamily != nil {
