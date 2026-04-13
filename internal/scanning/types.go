@@ -236,6 +236,36 @@ type Host struct {
 	// host, derived from the per-host start/end timestamps in the XML output.
 	// Nil when nmap did not report per-host timing (e.g. the host was down).
 	ScanDurationMs *int
+	// SMBHostname is the hostname reported by the smb-os-discovery or nbstat NSE script.
+	SMBHostname string
+	// SMBDomain is the domain or workgroup from the smb-os-discovery NSE script.
+	SMBDomain string
+}
+
+// NSECertData holds SSL certificate fields extracted from the ssl-cert NSE script.
+type NSECertData struct {
+	SubjectCN string
+	SANs      []string
+	Issuer    string
+	NotBefore time.Time
+	NotAfter  time.Time
+	KeyType   string
+}
+
+// NSEData holds parsed output from NSE scripts for a single port.
+type NSEData struct {
+	// Banner is the raw service banner from the `banner` NSE script.
+	Banner string
+	// HTTPTitle is the page title from the `http-title` NSE script.
+	HTTPTitle string
+	// SSHKeyFingerprint is the key fingerprint from the `ssh-hostkey` NSE script.
+	SSHKeyFingerprint string
+	// SSLCert holds structured TLS certificate data from the `ssl-cert` NSE script.
+	SSLCert *NSECertData
+}
+
+func (n *NSEData) isEmpty() bool {
+	return n.Banner == "" && n.HTTPTitle == "" && n.SSHKeyFingerprint == "" && n.SSLCert == nil
 }
 
 // Port represents the scan results for a single port.
@@ -252,6 +282,8 @@ type Port struct {
 	Version string
 	// ServiceInfo contains additional service details, if available
 	ServiceInfo string
+	// NSE holds structured output from NSE scripts, if any were run for this port.
+	NSE *NSEData
 }
 
 // HostStats contains summary statistics about a network scan.

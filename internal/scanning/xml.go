@@ -64,7 +64,14 @@ func SaveResults(result *ScanResult, filePath string) error {
 		}
 
 		for j, port := range host.Ports {
-			xmlHost.Ports[j] = PortXML(port)
+			xmlHost.Ports[j] = PortXML{
+				Number:      port.Number,
+				Protocol:    port.Protocol,
+				State:       port.State,
+				Service:     port.Service,
+				Version:     port.Version,
+				ServiceInfo: port.ServiceInfo,
+			}
 		}
 
 		xmlData.Hosts[i] = xmlHost
@@ -143,7 +150,14 @@ func LoadResults(filePath string) (*ScanResult, error) {
 		}
 
 		for j, xmlPort := range xmlHost.Ports {
-			host.Ports[j] = Port(xmlPort)
+			host.Ports[j] = Port{
+				Number:      xmlPort.Number,
+				Protocol:    xmlPort.Protocol,
+				State:       xmlPort.State,
+				Service:     xmlPort.Service,
+				Version:     xmlPort.Version,
+				ServiceInfo: xmlPort.ServiceInfo,
+			}
 		}
 
 		result.Hosts[i] = host

@@ -731,14 +731,16 @@ type Certificate struct {
 
 // PortBanner is a raw service banner captured from a host/port.
 type PortBanner struct {
-	ID        uuid.UUID `db:"id"         json:"id"`
-	HostID    uuid.UUID `db:"host_id"    json:"host_id"`
-	Port      int       `db:"port"       json:"port"`
-	Protocol  string    `db:"protocol"   json:"protocol"`
-	RawBanner *string   `db:"raw_banner" json:"raw_banner,omitempty"`
-	Service   *string   `db:"service"    json:"service,omitempty"`
-	Version   *string   `db:"version"    json:"version,omitempty"`
-	ScannedAt time.Time `db:"scanned_at" json:"scanned_at"`
+	ID                uuid.UUID `db:"id"                   json:"id"`
+	HostID            uuid.UUID `db:"host_id"              json:"host_id"`
+	Port              int       `db:"port"                 json:"port"`
+	Protocol          string    `db:"protocol"             json:"protocol"`
+	RawBanner         *string   `db:"raw_banner"           json:"raw_banner,omitempty"`
+	Service           *string   `db:"service"              json:"service,omitempty"`
+	Version           *string   `db:"version"              json:"version,omitempty"`
+	HTTPTitle         *string   `db:"http_title"           json:"http_title,omitempty"`
+	SSHKeyFingerprint *string   `db:"ssh_key_fingerprint"  json:"ssh_key_fingerprint,omitempty"`
+	ScannedAt         time.Time `db:"scanned_at"           json:"scanned_at"`
 }
 
 // SNMPInterface describes a single network interface collected via SNMP.

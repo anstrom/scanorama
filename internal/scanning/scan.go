@@ -457,9 +457,15 @@ func convertNmapHost(h *nmap.Host) *Host {
 			Service:     p.Service.Name,
 			Version:     p.Service.Version,
 			ServiceInfo: p.Service.Product,
+			NSE:         parsePortScripts(p.Scripts),
 		}
 		host.Ports = append(host.Ports, port)
 	}
+
+	// Apply host-level NSE scripts (smb-os-discovery, nbstat) before OS detection
+	// so that SMBHostname/SMBDomain are populated and OSAccuracy is consulted
+	// by applySSBOSDiscovery correctly.
+	parseHostScripts(h.HostScripts, host)
 
 	// Capture OS detection data from the best match (highest accuracy).
 	if len(h.OS.Matches) > 0 {
@@ -680,6 +686,7 @@ func storeScanResults(
 	// Launch banner enrichment in the background — best-effort, non-blocking.
 	go runBannerEnrichment(database, result.Hosts)
 	go runSNMPEnrichment(database, result.Hosts, config)
+	go runNSEDataStorage(database, result.Hosts)
 
 	return nil
 }
