@@ -462,12 +462,9 @@ func convertNmapHost(h *nmap.Host) *Host {
 		host.Ports = append(host.Ports, port)
 	}
 
-	// Apply host-level NSE scripts (smb-os-discovery, nbstat) before OS detection
-	// so that SMBHostname/SMBDomain are populated and OSAccuracy is consulted
-	// by applySSBOSDiscovery correctly.
-	parseHostScripts(h.HostScripts, host)
-
 	// Capture OS detection data from the best match (highest accuracy).
+	// This must run before parseHostScripts so that applySSBOSDiscovery can
+	// check host.OSAccuracy and refuse to overwrite a real nmap fingerprint.
 	if len(h.OS.Matches) > 0 {
 		best := h.OS.Matches[0]
 		host.OSName = best.Name
@@ -477,6 +474,11 @@ func convertNmapHost(h *nmap.Host) *Host {
 			host.OSVersion = best.Classes[0].OSGeneration
 		}
 	}
+
+	// Apply host-level NSE scripts (smb-os-discovery, nbstat) after OS detection
+	// so that applySSBOSDiscovery correctly checks host.OSAccuracy before
+	// deciding whether to apply SMB-derived OS data.
+	parseHostScripts(h.HostScripts, host)
 
 	// Derive per-host scan duration from the nmap XML start/end timestamps.
 	// nmap.Timestamp is an alias for time.Time, so a zero value means the

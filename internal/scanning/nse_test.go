@@ -57,6 +57,13 @@ func TestParsePortScripts_SSHHostkey(t *testing.T) {
 	assert.Equal(t, "2048 SHA256:abc123def456 (RSA)", got.SSHKeyFingerprint)
 }
 
+func TestParsePortScripts_UnrecognisedScript_ReturnsNil(t *testing.T) {
+	// A script whose ID we don't handle should leave all fields empty,
+	// triggering isEmpty() and returning nil rather than a zero-value struct.
+	scripts := []nmap.Script{{ID: "ftp-bounce", Output: "some output"}}
+	assert.Nil(t, parsePortScripts(scripts))
+}
+
 func TestParsePortScripts_AllFieldsReturnedTogether(t *testing.T) {
 	scripts := []nmap.Script{
 		{ID: "banner", Output: "HTTP/1.1 200 OK"},
@@ -212,6 +219,18 @@ func TestParseHostScripts_NBStat_DoesNotOverrideSMBHostname(t *testing.T) {
 	assert.Equal(t, "from-smb-discovery", host.SMBHostname)
 }
 
+func TestParseHostScripts_SMBOSDiscovery_LowercaseFQDN(t *testing.T) {
+	host := &Host{}
+	scripts := []nmap.Script{
+		{
+			ID:       "smb-os-discovery",
+			Elements: []nmap.Element{{Key: "fqdn", Value: "srv.corp.local"}},
+		},
+	}
+	parseHostScripts(scripts, host)
+	assert.Equal(t, "srv.corp.local", host.SMBHostname)
+}
+
 // ── parseNmapTime ─────────────────────────────────────────────────────────────
 
 func TestParseNmapTime_RFC3339(t *testing.T) {
@@ -227,6 +246,14 @@ func TestParseNmapTime_SpaceSeparated(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2024, got.Year())
 	assert.Equal(t, time.June, got.Month())
+}
+
+func TestParseNmapTime_RFC3339WithTimezone(t *testing.T) {
+	// Verify the time.RFC3339 fallback handles a Z-suffixed timestamp.
+	got, err := parseNmapTime("2024-01-15T10:30:00Z")
+	require.NoError(t, err)
+	assert.Equal(t, 2024, got.Year())
+	assert.Equal(t, time.January, got.Month())
 }
 
 func TestParseNmapTime_Invalid(t *testing.T) {
