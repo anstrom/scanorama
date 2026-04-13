@@ -1634,9 +1634,12 @@ export function HostsPage() {
   ]);
 
   // Clamp page back when a filter/search change reduces total_pages below current page.
-  if (!isLoading && totalPages > 0 && page > totalPages) {
-    setPage(totalPages);
-  }
+  // Must be in useEffect — calling setPage during render causes an infinite loop.
+  useEffect(() => {
+    if (!isLoading && totalPages > 0 && page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [isLoading, page, totalPages, setPage]);
 
   const toggleSelectAll = useCallback(() => {
     if (selectedIds.size === hosts.length && hosts.length > 0) {

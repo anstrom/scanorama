@@ -136,9 +136,12 @@ export function ScansPage() {
   }, [page, statusFilter, sortBy, sortOrder, setFocusedIndex]);
 
   // Clamp page back when a filter change reduces total_pages below current page.
-  if (!isLoading && totalPages > 0 && page > totalPages) {
-    setPage(totalPages);
-  }
+  // Must be in useEffect — calling setPage during render causes an infinite loop.
+  useEffect(() => {
+    if (!isLoading && totalPages > 0 && page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [isLoading, page, totalPages, setPage]);
 
   return (
     <>
