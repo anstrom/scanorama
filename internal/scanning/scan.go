@@ -679,7 +679,7 @@ func storeScanResults(
 
 	// Launch banner enrichment in the background — best-effort, non-blocking.
 	go runBannerEnrichment(database, result.Hosts)
-	go runSNMPEnrichment(database, result.Hosts, config.SNMPCommunity)
+	go runSNMPEnrichment(database, result.Hosts, config)
 
 	return nil
 }
@@ -1012,7 +1012,8 @@ const (
 
 // runSNMPEnrichment probes hosts that had port 161 open during the scan.
 // Runs in a goroutine; errors are logged but not propagated.
-func runSNMPEnrichment(database *db.DB, hosts []Host, community string) {
+// Community string resolution order: DB-configured global credential → config.SNMPCommunity → "public".
+func runSNMPEnrichment(database *db.DB, hosts []Host, config *ScanConfig) {
 	defer func() {
 		if r := recover(); r != nil {
 			logging.Error("panic in SNMP enrichment goroutine", "error", r)
@@ -1021,6 +1022,22 @@ func runSNMPEnrichment(database *db.DB, hosts []Host, community string) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), snmpEnrichmentTimeout)
 	defer cancel()
+
+	// Resolve the community string: config.SNMPCommunity takes precedence (explicit
+	// per-scan override); fall back to the DB global credential, then "public".
+	// Network-scoped credentials are not applied here because the resolved network
+	// UUID is not available at this stage.
+	community := config.SNMPCommunity
+	if community == "" {
+		credsRepo := db.NewSNMPCredentialsRepository(database)
+		if effective, err := credsRepo.GetEffectiveCommunity(ctx, nil); err != nil {
+			slog.Default().Warn("snmp enrichment: failed to load credential from DB, using default",
+				"err", err)
+			community = "public"
+		} else {
+			community = effective
+		}
+	}
 
 	hostRepo := db.NewHostRepository(database)
 	snmpRepo := db.NewSNMPRepository(database)

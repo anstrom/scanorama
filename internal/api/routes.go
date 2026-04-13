@@ -92,6 +92,7 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/admin/settings", settingsHandler.GetSettings).Methods("GET")
 	api.HandleFunc("/admin/settings", settingsHandler.UpdateSettings).Methods("PUT")
 
+	s.setupAdminSNMPRoutes(api)
 	s.setupDocRoutes()
 	s.router.HandleFunc("/", s.redirectToAPI).Methods("GET")
 }
@@ -229,6 +230,15 @@ func (s *Server) setupPortRoutes(api *mux.Router, h *apihandlers.PortHandler) {
 // setupCertificateRoutes registers TLS certificate endpoints.
 func (s *Server) setupCertificateRoutes(api *mux.Router, h *apihandlers.CertificateHandler) {
 	api.HandleFunc("/certificates/expiring", h.GetExpiringCertificates).Methods("GET")
+}
+
+// setupAdminSNMPRoutes registers SNMP credential management endpoints.
+func (s *Server) setupAdminSNMPRoutes(api *mux.Router) {
+	h := apihandlers.NewSNMPCredentialsHandler(
+		db.NewSNMPCredentialsRepository(s.database), s.logger)
+	api.HandleFunc("/admin/snmp/credentials", h.ListSNMPCredentials).Methods("GET")
+	api.HandleFunc("/admin/snmp/credentials", h.UpsertSNMPCredential).Methods("PUT")
+	api.HandleFunc("/admin/snmp/credentials/{id}", h.DeleteSNMPCredential).Methods("DELETE")
 }
 
 // buildScheduler constructs and wires the cron scheduler.
