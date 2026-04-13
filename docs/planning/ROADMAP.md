@@ -1,7 +1,7 @@
 # Scanorama Product Roadmap
 
 > Milestone-based roadmap focused on feature completeness.
-> Last updated: 2026-04-09 · Current version: v0.22.0
+> Last updated: 2026-04-13 · Current version: v0.24.0
 
 ---
 
@@ -190,6 +190,7 @@ The existing profile editor (create/edit modal) works, but the built-in profiles
 | Scan strategy preview | Before launching, show what Smart Scan plans to do: "12 hosts need OS detection, 8 need port expansion, 3 flagged for deep scan" — user can approve or adjust | S | Not Started |
 | Suggestions engine | Dashboard suggestions that guide the user toward deeper knowledge: "23 hosts have no OS info — run OS detection?", "5 hosts haven't been scanned in 30 days", "New host found on 10.0.1.0/24" | M | Not Started |
 | Scan result learning | After each scan completes, update the host's knowledge score and queue the next appropriate scan stage if the score is still below threshold | M | Not Started |
+| Device identity merge | When a new MAC is seen but hostname and OS fingerprint match a known host, surface a "possible duplicate" suggestion in the discovery changelog. User can merge (preserves scan history, tags, notes) or dismiss. Handles MAC address randomization on iOS/Android. (ref: #694) | M | Not Started |
 
 ### Port & Service Intelligence
 
@@ -203,6 +204,7 @@ The standard `/etc/services` file is bare-minimum. Scanorama should ship with a 
 | Banner display in UI | Show captured banners in host/scan detail views — raw banner text, parsed service name, version, and any TLS cert details | S | Not Started |
 | Port database browser | Searchable reference page in the UI: look up any port number and see what services commonly run on it, which OS families use it, and whether it's in your network | S | Not Started |
 | Learned port associations | Track what scanorama actually sees running on each port across your network. "In your environment, port 8080 is always Traefik" — override the generic database with local knowledge | M | Not Started |
+| NSE script output parsing | Parse nmap NSE script output already present in `--oX` XML: SSL cert fields (CN, SANs, expiry, issuer), HTTP page titles, SMB OS detection, Netbios names, SSH key fingerprints, and raw banners. Zero new dependencies — this data is already captured. (ref: #693) | M | Not Started |
 
 ### Tool Integration: ZGrab2 (Banner Grabbing & TLS)
 
@@ -225,6 +227,8 @@ GoSNMP is a pure Go SNMP library (BSD license). Network switches, routers, print
 | Device metadata extraction | Pull sysName, sysDescr, sysLocation, sysContact, sysUpTime, interface count, and interface names via standard MIBs. Store as structured host metadata. | M | Not Started |
 | Interface inventory | For SNMP-capable devices, enumerate network interfaces with: name, status (up/down), speed, MAC address, IP address, traffic counters. Display in a dedicated "Interfaces" tab on host detail. | L | Not Started |
 | SNMP credentials management | Settings page to configure SNMP community strings and v3 credentials per network or host group. Credentials stored encrypted. | S | Not Started |
+| LLDP/CDP neighbor discovery | Query LLDP-MIB and CDP MIB to discover switch-to-switch and switch-to-host connections. Reveals which switch port a device is connected to. Store in a `host_neighbors` table for future topology visualization. (ref: #696) | M | Not Started |
+| ENTITY-MIB hardware inventory | Query ENTITY-MIB (RFC 4133) to extract chassis serial numbers, installed modules, hardware revisions, and firmware versions from SNMP-capable devices. Store as structured host metadata; include in CSV export. (ref: #697) | S | Not Started |
 
 ### Tool Integration: DNSX (DNS Enrichment)
 
@@ -342,7 +346,7 @@ The dashboard tells a story. A user can glance at it and understand: how many ho
 | Global search | Cmd/Ctrl+K command palette: search across hosts, scans, networks, profiles by name, IP, tag, or status | M | Not Started |
 | Keyboard shortcuts | Full shortcut system: `n` for new scan, `d` for dashboard, `?` for shortcut help overlay | S | Not Started |
 | Dark mode | Theme toggle with system preference detection; persist choice | M | Not Started |
-| Notification preferences | Per-user settings for which events trigger notifications (scan complete, new host found, host went down) | M | Not Started |
+| Notification preferences | Per-host and global alert rules: choose which hosts trigger notifications (online, offline, or both), and which delivery channel (webhook). Granularity confirmed by community demand — users want "alert me when this NAS goes offline", not just global toggles. (ref: #695) | M | Not Started |
 | Webhook management UI | Configure outgoing webhooks for scan events (backend type already defined, needs UI + delivery engine) | M | Not Started |
 | Inline editing | Edit hostname, tags, and notes directly in table rows without opening a panel | S | Not Started |
 | Onboarding flow | First-run wizard: add your first network, run a discovery, review results | M | Not Started |
@@ -401,7 +405,8 @@ Scanorama is ready for other people to depend on. Auth works, the test suite is 
 | **v0.24** | Tags, Groups, Dashboard & Admin | Tag UI, host groups, profile cloning, enhanced dashboard stats, live activity feed, quick actions, settings page, system status | Next |
 | **v0.25** | Smart Profiles & Smart Scan | Smart profiles, progressive scanning, ZGrab2 banners, GoSNMP enrichment, DNSX, curated port DB, knowledge scores | Next |
 | **v0.26** | Analytics, Reporting & Queries | Port/OS/service charts, web tech fingerprinting (httpx), vuln scanning (nuclei), saved queries, scheduled reports, PDF export, business & system health metrics (#222) | Later |
-| **v0.27** | UX Polish | Scan diff, export, global search, dark mode, webhooks, onboarding | Later |
+| **v0.27** | UX Polish | Scan diff, export, global search, dark mode, webhooks, per-host alert rules (#695), onboarding | Later |
+| **v0.28** | Network Topology | Visual graph of network topology using LLDP/CDP neighbor data from v0.25; nodes = hosts/switches, edges = confirmed connections, filterable by network/group/tag (#698) | Later |
 | **v1.0** | Production Release | Multi-user auth, RBAC, audit log, Linux privilege management (#554), `scanorama doctor`, capability detection, alerting infrastructure, OpenTelemetry tracing, Grafana dashboards (#222), test coverage, security audit | Later |
 
 ---
@@ -424,9 +429,11 @@ These are small items that can land in any release without waiting for their par
 v0.23 (Tables & Discovery Changelog)
   └─► v0.24 (Tags, Groups, Dashboard & Admin)
         └─► v0.25 (Smart Scan) ◄── builds on tags, groups, and host metadata
-              └─► v0.26 (Analytics & Reporting) ◄── uses knowledge scores and scan data
-                    └─► v0.27 (UX Polish) ◄── benefits from all prior data/features
-                          └─► v1.0 (Production)
+              │     └── LLDP/CDP topology data (#696) ─────────────────────┐
+              └─► v0.26 (Analytics & Reporting) ◄── uses knowledge scores  │
+                    └─► v0.27 (UX Polish) ◄── benefits from all prior data  │
+                          └─► v0.28 (Topology) ◄── requires LLDP data ─────┘
+                                └─► v1.0 (Production)
 ```
 
 Each milestone builds on the one before it, but individual features within a milestone can often be developed in parallel. The Quick Wins listed above can be shipped at any time.
