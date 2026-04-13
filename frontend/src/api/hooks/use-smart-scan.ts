@@ -64,6 +64,30 @@ export function useTriggerSmartScan() {
   });
 }
 
+export type ProfileRecommendation = {
+  os_family: string;
+  host_count: number;
+  profile_id: string;
+  profile_name: string;
+  action: string;
+};
+
+export function useProfileRecommendations(enabled = true) {
+  return useQuery({
+    queryKey: ["smart-scan", "profile-recommendations"],
+    queryFn: async () => {
+      const { data, error, response } = await api.GET(
+        "/smart-scan/profile-recommendations" as never,
+        {} as never,
+      );
+      if (error) throw new ApiError(response.status, error);
+      return (data as ProfileRecommendation[]) ?? [];
+    },
+    enabled,
+    staleTime: 120_000,
+  });
+}
+
 export function useTriggerSmartScanBatch() {
   const queryClient = useQueryClient();
   return useMutation({
