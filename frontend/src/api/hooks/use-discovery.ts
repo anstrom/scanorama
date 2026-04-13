@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../client";
 import { ApiError } from "../errors";
+
+const BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 import type { components } from "../types";
 
 type CreateDiscoveryJobRequest =
@@ -141,7 +143,7 @@ export function useDiscoveryDiff(jobId: string, enabled = true) {
   return useQuery({
     queryKey: ["discovery", jobId, "diff"],
     queryFn: async (): Promise<DiscoveryDiff> => {
-      const res = await fetch(`/api/v1/discovery/${jobId}/diff`);
+      const res = await fetch(`${BASE}/discovery/${jobId}/diff`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new ApiError(res.status, body);
@@ -172,7 +174,7 @@ export function useDiscoveryCompare(
     queryKey: ["discovery", "compare", runA, runB],
     queryFn: async (): Promise<DiscoveryCompareDiff> => {
       const res = await fetch(
-        `/api/v1/discovery/compare?run_a=${encodeURIComponent(runA)}&run_b=${encodeURIComponent(runB)}`,
+        `${BASE}/discovery/compare?run_a=${encodeURIComponent(runA)}&run_b=${encodeURIComponent(runB)}`,
       );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
