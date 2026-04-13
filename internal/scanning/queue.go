@@ -212,13 +212,10 @@ func (q *ScanQueue) Stop() {
 		"total_rejected", q.totalRejected.Load())
 }
 
-// Submit enqueues a scan request for execution by the worker pool.
-// It returns ErrQueueClosed if the queue has been shut down, or ErrQueueFull
-// if the queue is at capacity. Submit is non-blocking.
 // Submit enqueues a job for execution by the worker pool.
 // It returns ErrQueueClosed if the queue has been shut down, or ErrQueueFull
 // if the queue is at capacity. Submit is non-blocking.
-func (q *ScanQueue) Submit(job Job) error {
+func (q *ScanQueue) Submit(job Job) (retErr error) {
 	if q.closed.Load() {
 		q.totalRejected.Add(1)
 		metrics.IncrementScansRejectedPrometheus("queue_closed")
@@ -228,6 +225,17 @@ func (q *ScanQueue) Submit(job Job) error {
 	if job == nil {
 		return fmt.Errorf("job must not be nil")
 	}
+
+	// Guard against a send on a closed channel: Stop() may close q.queue
+	// between the closed.Load() check above and the channel send below.
+	// Recover converts the resulting panic into ErrQueueClosed.
+	defer func() {
+		if r := recover(); r != nil {
+			q.totalRejected.Add(1)
+			metrics.IncrementScansRejectedPrometheus("queue_closed")
+			retErr = ErrQueueClosed
+		}
+	}()
 
 	select {
 	case q.queue <- job:
