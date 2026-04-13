@@ -96,8 +96,14 @@ func NewWebSocketHandler(logger *slog.Logger, metricsManager *metrics.Registry) 
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
-				// Allow all origins for now
-				return true
+				origin := r.Header.Get("Origin")
+				if origin == "" {
+					// Non-browser clients (CLI, API consumers) send no Origin header.
+					return true
+				}
+				// Accept connections from the same host (HTTP or HTTPS).
+				host := r.Host
+				return origin == "http://"+host || origin == "https://"+host
 			},
 		},
 		scanClients:        make(map[*websocket.Conn]bool),
@@ -120,7 +126,7 @@ func (h *WebSocketHandler) ScanWebSocket(w http.ResponseWriter, r *http.Request)
 	requestID := getRequestIDFromContext(r.Context())
 	h.logger.Info("New scan WebSocket connection", "request_id", requestID, "remote_addr", r.RemoteAddr)
 
-	conn, err := h.upgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil) // nosemgrep
 	if err != nil {
 		h.logger.Error("Failed to upgrade WebSocket connection", "request_id", requestID, "error", err)
 		return
@@ -135,7 +141,7 @@ func (h *WebSocketHandler) DiscoveryWebSocket(w http.ResponseWriter, r *http.Req
 	requestID := getRequestIDFromContext(r.Context())
 	h.logger.Info("New discovery WebSocket connection", "request_id", requestID, "remote_addr", r.RemoteAddr)
 
-	conn, err := h.upgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil) // nosemgrep
 	if err != nil {
 		h.logger.Error("Failed to upgrade WebSocket connection", "request_id", requestID, "error", err)
 		return
@@ -150,7 +156,7 @@ func (h *WebSocketHandler) GeneralWebSocket(w http.ResponseWriter, r *http.Reque
 	requestID := getRequestIDFromContext(r.Context())
 	h.logger.Info("New general WebSocket connection", "request_id", requestID, "remote_addr", r.RemoteAddr)
 
-	conn, err := h.upgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil) // nosemgrep
 	if err != nil {
 		h.logger.Error("Failed to upgrade WebSocket connection", "request_id", requestID, "error", err)
 		return
@@ -252,14 +258,8 @@ func (h *WebSocketHandler) Shutdown() {
 }
 
 // readPump pumps messages from the WebSocket connection to the hub.
+// Cleanup (unregister + close) is owned by the setupConnection defer, not here.
 func (h *WebSocketHandler) readPump(conn *websocket.Conn, requestID string) {
-	defer func() {
-		h.unregister <- conn
-		if err := conn.Close(); err != nil {
-			h.logger.Error("Error closing connection in readPump", "request_id", requestID, "error", err)
-		}
-	}()
-
 	for {
 		_, _, err := conn.ReadMessage()
 		if err != nil {
@@ -296,31 +296,38 @@ func (h *WebSocketHandler) writePump(conn *websocket.Conn, _, requestID string) 
 }
 
 // broadcastToClients sends a message to all clients of a specific type.
+// It must only be called from the run() goroutine.
+// Dead connections are removed directly from the map (no unregister channel)
+// to avoid a deadlock: run() cannot receive from h.unregister while it is
+// blocked inside this function.
 func (h *WebSocketHandler) broadcastToClients(clients map[*websocket.Conn]bool, message []byte, clientType string) {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
+	// Collect dead connections under a read lock so writes to the map happen separately.
+	var dead []*websocket.Conn
 
+	h.mutex.RLock()
 	for conn := range clients {
-		select {
-		case <-time.After(writeWait):
-			h.logger.Warn("Write timeout, closing connection", "client_type", clientType)
+		if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+			h.logger.Error("Failed to set write deadline", "error", err)
+			dead = append(dead, conn)
+			continue
+		}
+		if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
+			h.logger.Debug("Write failed, closing connection", "client_type", clientType, "error", err)
+			dead = append(dead, conn)
+		}
+	}
+	h.mutex.RUnlock()
+
+	if len(dead) > 0 {
+		h.mutex.Lock()
+		for _, conn := range dead {
+			delete(h.scanClients, conn)
+			delete(h.discoveryClients, conn)
 			if err := conn.Close(); err != nil {
-				h.logger.Error("Error closing timed out connection", "error", err)
-			}
-			h.unregister <- conn
-		default:
-			if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-				h.logger.Error("Failed to set write deadline", "error", err)
-				continue
-			}
-			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
-				h.logger.Debug("Write failed, closing connection", "client_type", clientType, "error", err)
-				if err := conn.Close(); err != nil {
-					h.logger.Error("Error closing failed connection", "error", err)
-				}
-				h.unregister <- conn
+				h.logger.Debug("Error closing dead connection", "error", err)
 			}
 		}
+		h.mutex.Unlock()
 	}
 
 	// Record metrics
@@ -332,27 +339,47 @@ func (h *WebSocketHandler) broadcastToClients(clients map[*websocket.Conn]bool, 
 }
 
 // pingClients sends ping messages to all connected clients.
+// Dead connections are removed directly from the map (no unregister channel)
+// to avoid a deadlock: run() cannot receive from h.unregister while it is
+// blocked inside this function.
 func (h *WebSocketHandler) pingClients() {
+	var dead []*websocket.Conn
+
 	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-
-	allClients := make([]*websocket.Conn, 0, len(h.scanClients)+len(h.discoveryClients))
 	for conn := range h.scanClients {
-		allClients = append(allClients, conn)
-	}
-	for conn := range h.discoveryClients {
-		allClients = append(allClients, conn)
-	}
-
-	for _, conn := range allClients {
 		if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
 			h.logger.Error("Failed to set write deadline for ping", "error", err)
+			dead = append(dead, conn)
 			continue
 		}
 		if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 			h.logger.Debug("Ping failed", "error", err)
-			h.unregister <- conn
+			dead = append(dead, conn)
 		}
+	}
+	for conn := range h.discoveryClients {
+		if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+			h.logger.Error("Failed to set write deadline for ping", "error", err)
+			dead = append(dead, conn)
+			continue
+		}
+		if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			h.logger.Debug("Ping failed", "error", err)
+			dead = append(dead, conn)
+		}
+	}
+	h.mutex.RUnlock()
+
+	if len(dead) > 0 {
+		h.mutex.Lock()
+		for _, conn := range dead {
+			delete(h.scanClients, conn)
+			delete(h.discoveryClients, conn)
+			if err := conn.Close(); err != nil {
+				h.logger.Debug("Error closing dead connection", "error", err)
+			}
+		}
+		h.mutex.Unlock()
 	}
 }
 
@@ -559,7 +586,7 @@ func (h *WebSocketHandler) LogsWebSocket(w http.ResponseWriter, r *http.Request)
 	requestID := getRequestIDFromContext(r.Context())
 	h.logger.Info("New logs WebSocket connection", "request_id", requestID, "remote_addr", r.RemoteAddr)
 
-	conn, err := h.upgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil) // nosemgrep
 	if err != nil {
 		h.logger.Error("Failed to upgrade logs WebSocket connection", "request_id", requestID, "error", err)
 		return
