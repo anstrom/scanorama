@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/profiles"
 )
 
 func discardLogger() *slog.Logger {
@@ -725,18 +726,14 @@ func TestFilterByOSFamily_EmptyFamilyReturnsNone(t *testing.T) {
 
 // ── GetProfileRecommendations ─────────────────────────────────────────────────
 
-func TestGetProfileRecommendations_NilProfileManager_ReturnsNil(t *testing.T) {
-	database, mock := newSmartScanMockDB(t)
-	// DB query still runs; profileManager nil causes early return.
-	mock.ExpectQuery("SELECT os_family").
-		WillReturnRows(sqlmock.NewRows([]string{"os_family", "host_count"}).
-			AddRow("linux", 5))
-
+func TestGetProfileRecommendations_NilProfileManager_ReturnsEmpty(t *testing.T) {
+	database, _ := newSmartScanMockDB(t)
+	// nil profileManager causes early return before any DB query.
 	svc := &SmartScanService{database: database, profileManager: nil}
 	recs, err := svc.GetProfileRecommendations(context.Background())
 	require.NoError(t, err)
-	assert.Nil(t, recs)
-	require.NoError(t, mock.ExpectationsWereMet())
+	assert.NotNil(t, recs, "nil profileManager must return [] not nil")
+	assert.Empty(t, recs)
 }
 
 func TestGetProfileRecommendations_DBError_ReturnsError(t *testing.T) {
@@ -744,7 +741,8 @@ func TestGetProfileRecommendations_DBError_ReturnsError(t *testing.T) {
 	mock.ExpectQuery("SELECT os_family").
 		WillReturnError(fmt.Errorf("connection reset"))
 
-	svc := &SmartScanService{database: database}
+	// profileManager must be non-nil so the nil guard does not short-circuit.
+	svc := &SmartScanService{database: database, profileManager: &profiles.Manager{}}
 	_, err := svc.GetProfileRecommendations(context.Background())
 	require.Error(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -755,9 +753,11 @@ func TestGetProfileRecommendations_NoHosts_ReturnsEmpty(t *testing.T) {
 	mock.ExpectQuery("SELECT os_family").
 		WillReturnRows(sqlmock.NewRows([]string{"os_family", "host_count"}))
 
-	svc := &SmartScanService{database: database, profileManager: nil}
+	// profileManager must be non-nil so the DB query runs.
+	svc := &SmartScanService{database: database, profileManager: &profiles.Manager{}}
 	recs, err := svc.GetProfileRecommendations(context.Background())
 	require.NoError(t, err)
-	assert.Nil(t, recs)
+	assert.NotNil(t, recs, "no hosts must return [] not nil")
+	assert.Empty(t, recs)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
