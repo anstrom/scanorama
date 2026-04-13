@@ -694,3 +694,70 @@ func TestExceedsAutoQueueLimit_DBErrorFailsOpen(t *testing.T) {
 	assert.False(t, exceeded, "DB error must fail open (allow the queue)")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ── filterByOSFamily ──────────────────────────────────────────────────────────
+
+func TestFilterByOSFamily_MatchesCaseInsensitive(t *testing.T) {
+	linux := strPtr("linux")
+	windows := strPtr("Windows")
+	empty := strPtr("")
+	hosts := []*db.Host{
+		{ID: uuid.New(), OSFamily: linux, IPAddress: mustParseIP("10.0.0.1")},
+		{ID: uuid.New(), OSFamily: windows, IPAddress: mustParseIP("10.0.0.2")},
+		{ID: uuid.New(), OSFamily: empty, IPAddress: mustParseIP("10.0.0.3")},
+		{ID: uuid.New(), OSFamily: nil, IPAddress: mustParseIP("10.0.0.4")},
+	}
+
+	got := filterByOSFamily(hosts, "Linux")
+	require.Len(t, got, 1)
+	assert.Equal(t, hosts[0].ID, got[0].ID)
+}
+
+func TestFilterByOSFamily_EmptyFamilyReturnsNone(t *testing.T) {
+	// A nil OSFamily host must not match even when the filter is "".
+	// filterByOSFamily is only called with non-empty filter values, but ensure
+	// the nil-check is robust.
+	hosts := []*db.Host{{ID: uuid.New(), OSFamily: nil, IPAddress: mustParseIP("10.0.0.1")}}
+	got := filterByOSFamily(hosts, "")
+	// nil-check: no os_family match for ""
+	assert.Empty(t, got)
+}
+
+// ── GetProfileRecommendations ─────────────────────────────────────────────────
+
+func TestGetProfileRecommendations_NilProfileManager_ReturnsNil(t *testing.T) {
+	database, mock := newSmartScanMockDB(t)
+	// DB query still runs; profileManager nil causes early return.
+	mock.ExpectQuery("SELECT os_family").
+		WillReturnRows(sqlmock.NewRows([]string{"os_family", "host_count"}).
+			AddRow("linux", 5))
+
+	svc := &SmartScanService{database: database, profileManager: nil}
+	recs, err := svc.GetProfileRecommendations(context.Background())
+	require.NoError(t, err)
+	assert.Nil(t, recs)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetProfileRecommendations_DBError_ReturnsError(t *testing.T) {
+	database, mock := newSmartScanMockDB(t)
+	mock.ExpectQuery("SELECT os_family").
+		WillReturnError(fmt.Errorf("connection reset"))
+
+	svc := &SmartScanService{database: database}
+	_, err := svc.GetProfileRecommendations(context.Background())
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetProfileRecommendations_NoHosts_ReturnsEmpty(t *testing.T) {
+	database, mock := newSmartScanMockDB(t)
+	mock.ExpectQuery("SELECT os_family").
+		WillReturnRows(sqlmock.NewRows([]string{"os_family", "host_count"}))
+
+	svc := &SmartScanService{database: database, profileManager: nil}
+	recs, err := svc.GetProfileRecommendations(context.Background())
+	require.NoError(t, err)
+	assert.Nil(t, recs)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

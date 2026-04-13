@@ -20,6 +20,7 @@ import (
 // smartScanServicer is the service interface consumed by SmartScanHandler.
 type smartScanServicer interface {
 	GetSuggestions(ctx context.Context) (*services.SuggestionSummary, error)
+	GetProfileRecommendations(ctx context.Context) ([]services.ProfileRecommendation, error)
 	EvaluateHostByID(ctx context.Context, hostID uuid.UUID) (*services.ScanStage, error)
 	QueueSmartScan(ctx context.Context, hostID uuid.UUID) (uuid.UUID, error)
 	QueueBatch(ctx context.Context, filter services.BatchFilter) (*services.BatchResult, error)
@@ -180,6 +181,7 @@ func (h *SmartScanHandler) TriggerBatch(w http.ResponseWriter, r *http.Request) 
 		Stage:       req.Stage,
 		HostIDs:     hostIDs,
 		NetworkCIDR: req.NetworkCIDR,
+		OSFamily:    req.OSFamily,
 		Limit:       req.Limit,
 	})
 	if err != nil {
@@ -194,7 +196,30 @@ type triggerBatchRequest struct {
 	Stage       string   `json:"stage"`
 	HostIDs     []string `json:"host_ids"`
 	NetworkCIDR string   `json:"network_cidr"`
+	OSFamily    string   `json:"os_family"`
 	Limit       int      `json:"limit"`
+}
+
+// GetProfileRecommendations handles GET /api/v1/smart-scan/profile-recommendations.
+//
+//	@Summary		Get profile recommendations
+//	@Description	Returns profile suggestions grouped by detected OS family.
+//	@Tags			smart-scan
+//	@Produce		json
+//	@Success		200	{array}		services.ProfileRecommendation
+//	@Failure		500	{object}	ErrorResponse
+//	@Router			/smart-scan/profile-recommendations [get]
+func (h *SmartScanHandler) GetProfileRecommendations(w http.ResponseWriter, r *http.Request) {
+	recs, err := h.service.GetProfileRecommendations(r.Context())
+	if err != nil {
+		h.logger.Error("Failed to get profile recommendations", "error", err)
+		writeError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	if recs == nil {
+		recs = []services.ProfileRecommendation{}
+	}
+	writeJSON(w, r, http.StatusOK, recs)
 }
 
 // parseHostID extracts the host UUID from the path variable {id}.
