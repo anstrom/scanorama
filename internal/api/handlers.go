@@ -154,23 +154,6 @@ func (s *Server) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	promhttp.HandlerFor(s.prom.GetRegistry(), promhttp.HandlerOpts{}).ServeHTTP(w, r)
 }
 
-// notImplementedHandler returns a not implemented response.
-// notImplementedHandler godoc
-// @Summary Not implemented
-// @Description Endpoint not yet implemented
-// @Tags System
-// @Produce json
-// @Success 501 {object} handlers.ErrorResponse
-// @Router /scans [get]
-// @Router /scans [post]
-// @Router /hosts [get]
-// @Router /discovery [get]
-// @Router /discovery [post]
-// @Router /profiles [get]
-// @Router /profiles [post]
-// @Router /schedules [get]
-// @Router /schedules [post]
-
 // adminStatusHandler provides administrative status information.
 // adminStatusHandler godoc
 // @Summary Admin status
