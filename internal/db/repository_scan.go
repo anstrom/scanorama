@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
+	"github.com/lib/pq/pqerror"
 
 	"github.com/anstrom/scanorama/internal/errors"
 )
@@ -241,7 +243,7 @@ func (r *ScanRepository) ListScans(
 		}
 	}()
 
-	var scans []*Scan
+	scans := make([]*Scan, 0)
 	for rows.Next() {
 		scan, err := processScanRow(rows)
 		if err != nil {
@@ -272,7 +274,46 @@ func findOrCreateNetwork(ctx context.Context, tx *sql.Tx,
 	}
 
 	id = uuid.New()
-	result, err := tx.ExecContext(ctx, `
+	// Use a savepoint so that a name-collision error (unique_violation on
+	// networks_name_key) can be recovered from without aborting the outer
+	// transaction. PostgreSQL marks a transaction as aborted on any error;
+	// ROLLBACK TO SAVEPOINT restores a clean state for the retry.
+	if _, err = tx.ExecContext(ctx, "SAVEPOINT sp_insert_network"); err != nil {
+		return uuid.Nil, sanitizeDBError("savepoint before create network", err)
+	}
+	// ON CONFLICT (cidr) handles concurrent inserts for the same CIDR by
+	// returning the winning row's id via RETURNING.
+	id, err = insertNetwork(ctx, tx, id, name, cidr, description, ports, scanType)
+	if err != nil {
+		// Roll back to the clean state before inspecting the error — the
+		// transaction is aborted after any error and must be restored before
+		// any further SQL can run.
+		if _, rbErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT sp_insert_network"); rbErr != nil {
+			return uuid.Nil, sanitizeDBError("rollback savepoint after create network", rbErr)
+		}
+		// If the requested name is already taken by a different network,
+		// fall back to using the CIDR string as the network name.
+		if pqErr := pq.As(err); pqErr != nil &&
+			pqErr.Code == pqerror.UniqueViolation &&
+			pqErr.Constraint == "networks_name_key" {
+			id, err = insertNetwork(ctx, tx, uuid.New(), cidr, cidr, description, ports, scanType)
+		}
+		if err != nil {
+			return uuid.Nil, sanitizeDBError("create network", err)
+		}
+	}
+	if _, err = tx.ExecContext(ctx, "RELEASE SAVEPOINT sp_insert_network"); err != nil {
+		return uuid.Nil, sanitizeDBError("release savepoint after create network", err)
+	}
+	return id, nil
+}
+
+// insertNetwork executes the upsert that creates or reclaims a network row by CIDR.
+// Returns the actual UUID from RETURNING id (may differ from the input id when
+// ON CONFLICT fires and the existing row's id is returned instead).
+func insertNetwork(ctx context.Context, tx *sql.Tx,
+	id uuid.UUID, name, cidr, description, ports, scanType string) (uuid.UUID, error) {
+	err := tx.QueryRowContext(ctx, `
 		INSERT INTO networks (
 			id, name, cidr, description,
 			scan_ports, scan_type,
@@ -280,28 +321,10 @@ func findOrCreateNetwork(ctx context.Context, tx *sql.Tx,
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, true, true, 'tcp'
 		)
-		ON CONFLICT (name) DO NOTHING
-	`, id, name, cidr, description, ports, scanType)
-	if err != nil {
-		return uuid.Nil, sanitizeDBError("create network", err)
-	}
-
-	if n, _ := result.RowsAffected(); n == 0 {
-		id = uuid.New()
-		_, err = tx.ExecContext(ctx, `
-			INSERT INTO networks (
-				id, name, cidr, description,
-				scan_ports, scan_type,
-				is_active, scan_enabled, discovery_method
-			) VALUES (
-				$1, $2, $3, $4, $5, $6, true, true, 'tcp'
-			)
-		`, id, cidr, cidr, description, ports, scanType)
-		if err != nil {
-			return uuid.Nil, sanitizeDBError("create network", err)
-		}
-	}
-	return id, nil
+		ON CONFLICT (cidr) DO UPDATE SET name = EXCLUDED.name
+		RETURNING id
+	`, id, name, cidr, description, ports, scanType).Scan(&id)
+	return id, err
 }
 
 // createScanJob inserts a single scan_jobs row.
@@ -804,7 +827,7 @@ func (r *ScanRepository) GetScanResults(ctx context.Context, scanID uuid.UUID, o
 		}
 	}()
 
-	var results []*ScanResult
+	results := make([]*ScanResult, 0)
 	for rows.Next() {
 		result := &ScanResult{}
 		var serviceName *string
