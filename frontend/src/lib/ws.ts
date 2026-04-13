@@ -132,7 +132,6 @@ export class WsManager {
     )
     this.retryCount++
     this.retryTimeout = setTimeout(() => {
-      this.shouldReconnect = true
       this.connect()
     }, delay)
   }
