@@ -900,6 +900,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/smart-scan/profile-recommendations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get profile recommendations
+         * @description Returns profile suggestions grouped by detected OS family.
+         */
+        get: operations["getProfileRecommendations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/smart-scan/suggestions": {
         parameters: {
             query?: never;
@@ -1457,6 +1477,18 @@ export interface components {
             /** @example 3 */
             total_pages?: number;
         };
+        "docs.ProfileRecommendationResponse": {
+            /** @example port_expansion */
+            action?: string;
+            /** @example 42 */
+            host_count?: number;
+            /** @example Linux */
+            os_family?: string;
+            /** @example 550e8400-e29b-41d4-a716-446655440000 */
+            profile_id?: string;
+            /** @example Linux Standard */
+            profile_name?: string;
+        };
         "docs.ProfileResponse": {
             created_at?: string;
             /** @example Fast TCP connect scan */
@@ -1673,6 +1705,8 @@ export interface components {
             limit?: number;
             /** @example 192.168.1.0/24 */
             network_cidr?: string;
+            /** @example Linux */
+            os_family?: string;
             /**
              * @example os_detection
              * @enum {string}
@@ -5181,6 +5215,44 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getProfileRecommendations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ProfileRecommendationResponse"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
