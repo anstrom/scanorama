@@ -18,7 +18,8 @@ import (
 // bannerCols is the column list returned by port_banners SELECT queries.
 var bannerCols = []string{
 	"id", "host_id", "port", "protocol",
-	"raw_banner", "service", "version", "scanned_at",
+	"raw_banner", "service", "version",
+	"http_title", "ssh_key_fingerprint", "scanned_at",
 }
 
 // certCols is the column list returned by certificates SELECT queries.
@@ -104,6 +105,49 @@ func TestBannerRepository_UpsertPortBanner_DBError(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+// ── UpsertNSEPortData ───────────────────────────────────────────────────────
+
+func TestBannerRepository_UpsertNSEPortData_OK(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	hostID := uuid.New()
+	title := "Admin Console"
+	fingerprint := "2048 SHA256:abc123 (RSA)"
+
+	b := &PortBanner{
+		HostID:            hostID,
+		Port:              443,
+		Protocol:          ProtocolTCP,
+		HTTPTitle:         &title,
+		SSHKeyFingerprint: &fingerprint,
+	}
+
+	mock.ExpectExec("INSERT INTO port_banners").
+		WithArgs(sqlmock.AnyArg(), hostID, 443, ProtocolTCP,
+			b.RawBanner, &title, &fingerprint, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	require.NoError(t, repo.UpsertNSEPortData(context.Background(), b))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBannerRepository_UpsertNSEPortData_DBError(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnError(fmt.Errorf("deadlock"))
+
+	err := repo.UpsertNSEPortData(context.Background(), &PortBanner{
+		HostID:   uuid.New(),
+		Port:     80,
+		Protocol: ProtocolTCP,
+	})
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 // ── ListPortBanners ─────────────────────────────────────────────────────────
 
 func TestBannerRepository_ListPortBanners_OK(t *testing.T) {
@@ -116,8 +160,8 @@ func TestBannerRepository_ListPortBanners_OK(t *testing.T) {
 	raw2, svc2 := "220 FTP ready", "ftp"
 
 	rows := sqlmock.NewRows(bannerCols).
-		AddRow(uuid.New(), hostID, 22, ProtocolTCP, &raw1, &svc1, nil, now).
-		AddRow(uuid.New(), hostID, 21, ProtocolTCP, &raw2, &svc2, nil, now)
+		AddRow(uuid.New(), hostID, 22, ProtocolTCP, &raw1, &svc1, nil, nil, nil, now).
+		AddRow(uuid.New(), hostID, 21, ProtocolTCP, &raw2, &svc2, nil, nil, nil, now)
 
 	mock.ExpectQuery("SELECT .* FROM port_banners").
 		WithArgs(hostID).

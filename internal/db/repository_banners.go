@@ -44,10 +44,37 @@ func (r *BannerRepository) UpsertPortBanner(ctx context.Context, b *PortBanner) 
 	return nil
 }
 
+// UpsertNSEPortData writes NSE-derived fields (http_title, ssh_key_fingerprint,
+// and optionally a raw banner) for a port. On conflict it never overwrites an
+// existing raw_banner (ZGrab2 data takes precedence), but updates NSE-specific
+// columns with any new non-null value.
+func (r *BannerRepository) UpsertNSEPortData(ctx context.Context, b *PortBanner) error {
+	if b.ID == uuid.Nil {
+		b.ID = uuid.New()
+	}
+	b.ScannedAt = time.Now().UTC()
+
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO port_banners
+			(id, host_id, port, protocol, raw_banner, http_title, ssh_key_fingerprint, scanned_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (host_id, port, protocol) DO UPDATE SET
+			raw_banner          = COALESCE(port_banners.raw_banner, EXCLUDED.raw_banner),
+			http_title          = COALESCE(EXCLUDED.http_title, port_banners.http_title),
+			ssh_key_fingerprint = COALESCE(EXCLUDED.ssh_key_fingerprint, port_banners.ssh_key_fingerprint),
+			scanned_at          = EXCLUDED.scanned_at`,
+		b.ID, b.HostID, b.Port, b.Protocol, b.RawBanner, b.HTTPTitle, b.SSHKeyFingerprint, b.ScannedAt)
+	if err != nil {
+		return sanitizeDBError("upsert nse port data", err)
+	}
+	return nil
+}
+
 // ListPortBanners returns all port banner records for a host.
 func (r *BannerRepository) ListPortBanners(ctx context.Context, hostID uuid.UUID) ([]*PortBanner, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, host_id, port, protocol, raw_banner, service, version, scanned_at
+		SELECT id, host_id, port, protocol, raw_banner, service, version,
+		       http_title, ssh_key_fingerprint, scanned_at
 		FROM port_banners
 		WHERE host_id = $1
 		ORDER BY port ASC`,
@@ -66,7 +93,8 @@ func (r *BannerRepository) ListPortBanners(ctx context.Context, hostID uuid.UUID
 		b := &PortBanner{}
 		if err := rows.Scan(
 			&b.ID, &b.HostID, &b.Port, &b.Protocol,
-			&b.RawBanner, &b.Service, &b.Version, &b.ScannedAt,
+			&b.RawBanner, &b.Service, &b.Version,
+			&b.HTTPTitle, &b.SSHKeyFingerprint, &b.ScannedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan banner row: %w", err)
 		}
