@@ -198,23 +198,37 @@ func (p *Pool) Shutdown() error {
 		close(done)
 	}()
 
+	timedOut := false
 	select {
 	case <-done:
 		logging.Info("Worker pool shutdown completed")
 	case <-time.After(p.config.ShutdownTimeout):
-		logging.Warn("Worker pool shutdown timeout, forcing termination")
-		<-done
+		// Workers are still running after the timeout. Log and proceed —
+		// blocking on <-done here would defeat the purpose of a timeout.
+		logging.Warn("Worker pool shutdown timeout, proceeding without waiting for stragglers")
+		timedOut = true
 	}
 
-	// Cancel context to signal processResults to exit
+	// Cancel context to signal processResults to exit.
 	p.cancel()
 
-	// Wait for processResults to actually exit
+	// Wait for processResults to actually exit.
 	p.processWG.Wait()
 
-	// Now safely close results channels
-	close(p.results)
-	close(p.externalResults)
+	if timedOut {
+		// Workers may still be running and sending to p.results. Defer the
+		// close to a goroutine that waits for them — closing early would
+		// cause a send-on-closed panic.
+		go func() {
+			<-done
+			close(p.results)
+			close(p.externalResults)
+		}()
+	} else {
+		// All workers finished (wg.Wait returned above), so no senders remain.
+		close(p.results)
+		close(p.externalResults)
+	}
 
 	// Stop rate limiter
 	if p.rateLimiter != nil {
