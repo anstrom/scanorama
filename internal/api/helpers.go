@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -75,45 +74,6 @@ func (s *Server) ParseJSON(r *http.Request, v interface{}) error {
 
 	if err := decoder.Decode(v); err != nil {
 		return fmt.Errorf("invalid JSON: %w", err)
-	}
-
-	return nil
-}
-
-// GetQueryParam gets a query parameter with optional default value.
-func (s *Server) GetQueryParam(r *http.Request, key, defaultValue string) string {
-	if value := r.URL.Query().Get(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-// GetQueryParamInt gets an integer query parameter with optional default value.
-func (s *Server) GetQueryParamInt(r *http.Request, key string, defaultValue int) (int, error) {
-	if value := r.URL.Query().Get(key); value != "" {
-		return strconv.Atoi(value)
-	}
-	return defaultValue, nil
-}
-
-// GetQueryParamBool gets a boolean query parameter with optional default value.
-func (s *Server) GetQueryParamBool(r *http.Request, key string, defaultValue bool) bool {
-	if value := r.URL.Query().Get(key); value != "" {
-		if parsed, err := strconv.ParseBool(value); err == nil {
-			return parsed
-		}
-	}
-	return defaultValue
-}
-
-// ValidateRequest performs basic request validation.
-func (s *Server) ValidateRequest(r *http.Request) error {
-	// Check content type for POST/PUT requests
-	if r.Method == "POST" || r.Method == "PUT" {
-		contentType := r.Header.Get("Content-Type")
-		if contentType != "application/json" {
-			return fmt.Errorf("content-type must be application/json, got: %s", contentType)
-		}
 	}
 
 	return nil
