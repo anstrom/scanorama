@@ -168,16 +168,17 @@ func LoadResults(filePath string) (*ScanResult, error) {
 
 // validateFilePath validates that the file path is safe to use.
 func validateFilePath(path string) error {
-	// Clean the path
-	cleanPath := filepath.Clean(path)
-
-	// Check for directory traversal patterns
-	if strings.Contains(cleanPath, "..") {
-		return fmt.Errorf("path contains directory traversal")
+	// Check each component of the raw path before cleaning.
+	// filepath.Clean removes ".." segments from absolute paths
+	// (e.g. "/foo/../etc/passwd" → "/etc/passwd"), so the traversal check must
+	// happen on the original string. We test for ".." as a complete path
+	// component (not a substring) to avoid rejecting valid filenames that
+	// happen to contain ".." (e.g. "scan..results.xml").
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if part == ".." {
+			return fmt.Errorf("path contains directory traversal")
+		}
 	}
-
-	// Ensure path doesn't start with / (absolute path restrictions can be added here)
-	// For now, we allow both absolute and relative paths but check for traversal
 
 	return nil
 }
