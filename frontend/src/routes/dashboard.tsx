@@ -420,7 +420,7 @@ function ExpiringCertsWidget() {
   function viewHost(cert: ExpiringCertificate) {
     const filter = serializeFilter({
       op: "AND",
-      conditions: [{ field: "ip_address", cmp: "eq", value: cert.host_ip }],
+      conditions: [{ field: "hostname", cmp: "contains", value: cert.host_ip }],
     });
     void navigate({ to: "/hosts", search: { filter }, replace: false });
   }
