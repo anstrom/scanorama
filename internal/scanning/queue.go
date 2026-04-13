@@ -22,6 +22,12 @@ const (
 	DefaultMaxQueueSize  = 50
 )
 
+// Worker status values.
+const (
+	workerStateIdle   = "idle"
+	workerStateActive = "active"
+)
+
 // Sentinel errors for queue operations.
 var (
 	ErrQueueFull   = errors.New("scan queue is full")
@@ -130,7 +136,7 @@ func NewScanQueue(maxConcurrent, maxQueueSize int) *ScanQueue {
 
 	states := make([]*workerState, maxConcurrent)
 	for i := range states {
-		states[i] = &workerState{status: "idle"}
+		states[i] = &workerState{status: workerStateIdle}
 	}
 
 	return &ScanQueue{
@@ -319,7 +325,7 @@ func (q *ScanQueue) executeJob(ctx context.Context, workerID int, job Job) {
 	jobStartedAt := time.Now()
 	ws := q.workerStates[workerID]
 	ws.mu.Lock()
-	ws.status = "active"
+	ws.status = workerStateActive
 	ws.jobID = job.ID()
 	ws.jobType = job.Type()
 	ws.jobTarget = job.Target()
@@ -346,7 +352,7 @@ func (q *ScanQueue) executeJob(ctx context.Context, workerID int, job Job) {
 	// Return worker to idle and update per-worker counters.
 	completedAt := time.Now()
 	ws.mu.Lock()
-	ws.status = "idle"
+	ws.status = workerStateIdle
 	ws.jobID = ""
 	ws.jobType = ""
 	ws.jobTarget = ""
