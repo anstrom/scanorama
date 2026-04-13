@@ -543,31 +543,34 @@ function ProfileRecommendationsWidget() {
         </div>
       ) : (
         <div className="space-y-1.5">
-          {(recs ?? []).map((rec) => (
-            <div
-              key={rec.os_family}
-              className="flex items-center gap-2 px-1 py-0.5"
-            >
-              <span className="text-xs font-mono text-text-secondary shrink-0 w-6 text-right tabular-nums">
-                {rec.host_count}
-              </span>
-              <span className="text-xs text-text-secondary capitalize flex-1 truncate">
-                {rec.os_family}
-              </span>
-              <span className="text-xs text-text-muted truncate max-w-[140px]">
-                {rec.profile_name}
-              </span>
-              <button
-                type="button"
-                onClick={() => queueForFamily(rec.os_family)}
-                disabled={triggerBatch.isPending}
-                className="shrink-0 flex items-center gap-1 text-[10px] px-2 h-5 rounded border border-accent/40 text-accent bg-accent/10 hover:bg-accent/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          {(recs ?? []).map((rec) => {
+            const family = rec.os_family ?? "";
+            return (
+              <div
+                key={family}
+                className="flex items-center gap-2 px-1 py-0.5"
               >
-                <ScanLine className="h-2.5 w-2.5" />
-                Queue Scan
-              </button>
-            </div>
-          ))}
+                <span className="text-xs font-mono text-text-secondary shrink-0 w-6 text-right tabular-nums">
+                  {rec.host_count ?? 0}
+                </span>
+                <span className="text-xs text-text-secondary capitalize flex-1 truncate">
+                  {family}
+                </span>
+                <span className="text-xs text-text-muted truncate max-w-[140px]">
+                  {rec.profile_name ?? "—"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => queueForFamily(family)}
+                  disabled={triggerBatch.isPending || !family}
+                  className="shrink-0 flex items-center gap-1 text-[10px] px-2 h-5 rounded border border-accent/40 text-accent bg-accent/10 hover:bg-accent/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ScanLine className="h-2.5 w-2.5" />
+                  Queue Scan
+                </button>
+              </div>
+            );
+          })}
           <p className="text-[10px] text-text-muted pt-1">
             Hosts grouped by OS family — queue a port expansion scan for each.
           </p>

@@ -736,6 +736,24 @@ definitions:
         example: 3
         type: integer
     type: object
+  docs.ProfileRecommendationResponse:
+    properties:
+      action:
+        example: port_expansion
+        type: string
+      host_count:
+        example: 42
+        type: integer
+      os_family:
+        example: Linux
+        type: string
+      profile_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      profile_name:
+        example: Linux Standard
+        type: string
+    type: object
   docs.ProfileResponse:
     properties:
       created_at:
@@ -1078,6 +1096,9 @@ definitions:
         type: integer
       network_cidr:
         example: 192.168.1.0/24
+        type: string
+      os_family:
+        example: Linux
         type: string
       stage:
         enum:
@@ -3577,6 +3598,32 @@ paths:
       summary: Trigger Smart Scan for a host
       tags:
       - Smart Scan
+  /smart-scan/profile-recommendations:
+    get:
+      description: Returns profile suggestions grouped by detected OS family.
+      operationId: getProfileRecommendations
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/docs.ProfileRecommendationResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get profile recommendations
+      tags:
+      - smart-scan
   /smart-scan/suggestions:
     get:
       description: Returns fleet-wide counts of hosts in each knowledge-gap category.
