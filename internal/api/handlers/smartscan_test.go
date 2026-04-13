@@ -313,9 +313,13 @@ func TestSmartScan_GetProfileRecommendations_EmptyResult_ReturnsEmptyArray(t *te
 	w := routeSmartScan(newSmartScanHandler(svc), "GET", "/api/v1/smart-scan/profile-recommendations", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 
+	// Pin the wire format: the handler must serialize nil service result as []
+	// not null. bytes.Buffer.String() does not advance the read position, so
+	// decoding from the same body afterwards still works.
+	assert.Equal(t, "[]\n", w.Body.String(), "empty result must serialize as [] not null")
 	var body []services.ProfileRecommendation
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
-	assert.NotNil(t, body, "empty result must be [] not null")
+	assert.NotNil(t, body)
 	assert.Empty(t, body)
 }
 

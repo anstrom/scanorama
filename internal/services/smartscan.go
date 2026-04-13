@@ -248,6 +248,10 @@ func (s *SmartScanService) GetSuggestions(ctx context.Context) (*SuggestionSumma
 // template. Only families with an available profile are returned — an empty
 // slice means there are no actionable recommendations.
 func (s *SmartScanService) GetProfileRecommendations(ctx context.Context) ([]ProfileRecommendation, error) {
+	if s.profileManager == nil {
+		return []ProfileRecommendation{}, nil
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, smartScanQueryTimeout)
 	defer cancel()
 
@@ -279,11 +283,7 @@ func (s *SmartScanService) GetProfileRecommendations(ctx context.Context) ([]Pro
 		return nil, err
 	}
 
-	if s.profileManager == nil {
-		return nil, nil
-	}
-
-	var recs []ProfileRecommendation
+	recs := make([]ProfileRecommendation, 0)
 	for _, fc := range families {
 		matched, err := s.profileManager.GetByOSFamily(ctx, fc.family)
 		if err != nil || len(matched) == 0 {
@@ -291,6 +291,11 @@ func (s *SmartScanService) GetProfileRecommendations(ctx context.Context) ([]Pro
 		}
 		// Prefer the first result (profiles are ordered by specificity in the DB).
 		p := matched[0]
+		// Skip generic catch-all profiles (os_family = NULL/empty in DB) — they
+		// match every OS family but don't represent a meaningful recommendation.
+		if len(p.OSFamily) == 0 {
+			continue
+		}
 		recs = append(recs, ProfileRecommendation{
 			OSFamily:    fc.family,
 			HostCount:   fc.count,
