@@ -110,6 +110,7 @@ func (s *Server) setupSystemRoutes(api *mux.Router) {
 // setupSmartScanRoutes registers Smart Scan evaluation and trigger endpoints.
 func (s *Server) setupSmartScanRoutes(api *mux.Router, h *apihandlers.SmartScanHandler) {
 	api.HandleFunc("/smart-scan/suggestions", h.GetSuggestions).Methods("GET")
+	api.HandleFunc("/smart-scan/profile-recommendations", h.GetProfileRecommendations).Methods("GET")
 	api.HandleFunc("/smart-scan/hosts/{id}/stage", h.EvaluateHost).Methods("GET")
 	api.HandleFunc("/smart-scan/hosts/{id}/trigger", h.TriggerHost).Methods("POST")
 	api.HandleFunc("/smart-scan/trigger-batch", h.TriggerBatch).Methods("POST")
