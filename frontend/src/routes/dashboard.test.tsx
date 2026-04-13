@@ -34,6 +34,11 @@ vi.mock("../api/hooks/use-expiring-certs", () => ({
   useExpiringCerts: vi.fn(),
 }));
 
+vi.mock("../api/hooks/use-smart-scan", () => ({
+  useProfileRecommendations: vi.fn(),
+  useTriggerSmartScanBatch: vi.fn(),
+}));
+
 vi.mock("../components/activity-feed", () => ({
   ActivityFeed: () => null,
 }));
@@ -45,6 +50,10 @@ import { useActiveHostCount } from "../api/hooks/use-hosts";
 import { useDiscoveryJobs, useDiscoveryDiff } from "../api/hooks/use-discovery";
 import { useStatsSummary } from "../api/hooks/use-dashboard";
 import { useExpiringCerts } from "../api/hooks/use-expiring-certs";
+import {
+  useProfileRecommendations,
+  useTriggerSmartScanBatch,
+} from "../api/hooks/use-smart-scan";
 
 const mockUseVersion = vi.mocked(useVersion);
 const mockUseNetworkStats = vi.mocked(useNetworkStats);
@@ -55,6 +64,8 @@ const mockUseDiscoveryJobs = vi.mocked(useDiscoveryJobs);
 const mockUseDiscoveryDiff = vi.mocked(useDiscoveryDiff);
 const mockUseStatsSummary = vi.mocked(useStatsSummary);
 const mockUseExpiringCerts = vi.mocked(useExpiringCerts);
+const mockUseProfileRecommendations = vi.mocked(useProfileRecommendations);
+const mockUseTriggerSmartScanBatch = vi.mocked(useTriggerSmartScanBatch);
 
 function setupDefaultMocks() {
   mockUseVersion.mockReturnValue({
@@ -123,6 +134,16 @@ function setupDefaultMocks() {
     data: { certificates: [], days: 30 },
     isLoading: false,
   } as unknown as ReturnType<typeof useExpiringCerts>);
+
+  mockUseProfileRecommendations.mockReturnValue({
+    data: [],
+    isLoading: false,
+  } as unknown as ReturnType<typeof useProfileRecommendations>);
+
+  mockUseTriggerSmartScanBatch.mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+  } as unknown as ReturnType<typeof useTriggerSmartScanBatch>);
 }
 
 beforeEach(() => {
