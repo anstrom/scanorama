@@ -112,15 +112,16 @@ func (r *BannerRepository) UpsertSSHPortData(ctx context.Context, b *PortBanner)
 
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO port_banners
-			(id, host_id, port, protocol, raw_banner, version,
+			(id, host_id, port, protocol, raw_banner, service, version,
 			 ssh_key_fingerprint, scanned_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (host_id, port, protocol) DO UPDATE SET
 			raw_banner          = EXCLUDED.raw_banner,
+			service             = EXCLUDED.service,
 			version             = EXCLUDED.version,
 			ssh_key_fingerprint = EXCLUDED.ssh_key_fingerprint,
 			scanned_at          = EXCLUDED.scanned_at`,
-		b.ID, b.HostID, b.Port, b.Protocol, b.RawBanner, b.Version,
+		b.ID, b.HostID, b.Port, b.Protocol, b.RawBanner, b.Service, b.Version,
 		b.SSHKeyFingerprint, b.ScannedAt)
 	if err != nil {
 		return sanitizeDBError("upsert ssh port data", err)

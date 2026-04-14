@@ -465,3 +465,159 @@ func TestBannerRepository_ListExpiringCertificatesWithHosts_QueryError(t *testin
 	require.Error(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ── UpsertHTTPPortData ───────────────────────────────────────────────────────
+
+func TestBannerRepository_UpsertHTTPPortData_OK(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	hostID := uuid.New()
+	raw := "HTTP 200 https"
+	svc := "https"
+	var sc int16 = 200
+	redirect := "https://example.com/"
+	b := &PortBanner{
+		ID:             uuid.New(),
+		HostID:         hostID,
+		Port:           443,
+		Protocol:       ProtocolTCP,
+		RawBanner:      &raw,
+		Service:        &svc,
+		HTTPStatusCode: &sc,
+		HTTPRedirect:   &redirect,
+	}
+
+	mock.ExpectExec("INSERT INTO port_banners").
+		WithArgs(
+			b.ID, b.HostID, b.Port, b.Protocol,
+			b.RawBanner, b.Service, b.Version,
+			b.HTTPStatusCode, b.HTTPRedirect, b.HTTPResponseHeaders,
+			sqlmock.AnyArg(),
+		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	err := repo.UpsertHTTPPortData(context.Background(), b)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBannerRepository_UpsertHTTPPortData_AssignsID(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	b := &PortBanner{
+		HostID:   uuid.New(),
+		Port:     80,
+		Protocol: ProtocolTCP,
+	}
+	assert.Equal(t, uuid.Nil, b.ID)
+
+	mock.ExpectExec("INSERT INTO port_banners").
+		WithArgs(
+			sqlmock.AnyArg(), b.HostID, b.Port, b.Protocol,
+			b.RawBanner, b.Service, b.Version,
+			b.HTTPStatusCode, b.HTTPRedirect, b.HTTPResponseHeaders,
+			sqlmock.AnyArg(),
+		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	err := repo.UpsertHTTPPortData(context.Background(), b)
+	require.NoError(t, err)
+	assert.NotEqual(t, uuid.Nil, b.ID, "UpsertHTTPPortData should assign a UUID")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBannerRepository_UpsertHTTPPortData_DBError(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnError(fmt.Errorf("deadlock"))
+
+	err := repo.UpsertHTTPPortData(context.Background(), &PortBanner{
+		ID:       uuid.New(),
+		HostID:   uuid.New(),
+		Port:     80,
+		Protocol: ProtocolTCP,
+	})
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ── UpsertSSHPortData ────────────────────────────────────────────────────────
+
+func TestBannerRepository_UpsertSSHPortData_OK(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	hostID := uuid.New()
+	raw := "SSH-2.0-OpenSSH_9.0"
+	svc := "ssh"
+	ver := "OpenSSH_9.0"
+	fp := "SHA256:abc123xyz"
+	b := &PortBanner{
+		ID:                uuid.New(),
+		HostID:            hostID,
+		Port:              22,
+		Protocol:          ProtocolTCP,
+		RawBanner:         &raw,
+		Service:           &svc,
+		Version:           &ver,
+		SSHKeyFingerprint: &fp,
+	}
+
+	mock.ExpectExec("INSERT INTO port_banners").
+		WithArgs(
+			b.ID, b.HostID, b.Port, b.Protocol,
+			b.RawBanner, b.Service, b.Version, b.SSHKeyFingerprint,
+			sqlmock.AnyArg(),
+		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	err := repo.UpsertSSHPortData(context.Background(), b)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBannerRepository_UpsertSSHPortData_AssignsID(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	b := &PortBanner{
+		HostID:   uuid.New(),
+		Port:     22,
+		Protocol: ProtocolTCP,
+	}
+	assert.Equal(t, uuid.Nil, b.ID)
+
+	mock.ExpectExec("INSERT INTO port_banners").
+		WithArgs(
+			sqlmock.AnyArg(), b.HostID, b.Port, b.Protocol,
+			b.RawBanner, b.Service, b.Version, b.SSHKeyFingerprint,
+			sqlmock.AnyArg(),
+		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	err := repo.UpsertSSHPortData(context.Background(), b)
+	require.NoError(t, err)
+	assert.NotEqual(t, uuid.Nil, b.ID, "UpsertSSHPortData should assign a UUID")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBannerRepository_UpsertSSHPortData_DBError(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnError(fmt.Errorf("connection reset"))
+
+	err := repo.UpsertSSHPortData(context.Background(), &PortBanner{
+		ID:       uuid.New(),
+		HostID:   uuid.New(),
+		Port:     22,
+		Protocol: ProtocolTCP,
+	})
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

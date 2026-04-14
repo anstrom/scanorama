@@ -178,7 +178,7 @@ func TestGrabPlain_ReturnsBanner(t *testing.T) {
 	mock.ExpectExec("INSERT INTO port_banners").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	target := BannerTarget{HostID: hostID, IP: host, Ports: []int{port}}
+	target := BannerTarget{HostID: hostID, IP: host, Ports: []PortInfo{{Number: port}}}
 	g.grabPlain(context.Background(), target, port, addr)
 
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -205,7 +205,7 @@ func TestGrabPlain_NoData_NoUpsert(t *testing.T) {
 	var port int
 	parsePort(portStr, &port)
 
-	target := BannerTarget{HostID: uuid.New(), IP: host, Ports: []int{port}}
+	target := BannerTarget{HostID: uuid.New(), IP: host, Ports: []PortInfo{{Number: port}}}
 	g.grabPlain(context.Background(), target, port, addr)
 
 	// May or may not upsert depending on timing; just verify no panic.
@@ -247,7 +247,7 @@ func TestGrabTLS_StoresCertificate(t *testing.T) {
 	mock.ExpectExec("INSERT INTO port_banners").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	target := BannerTarget{HostID: hostID, IP: host, Ports: []int{port}}
+	target := BannerTarget{HostID: hostID, IP: host, Ports: []PortInfo{{Number: port}}}
 	g.grabTLS(context.Background(), target, port, addr)
 
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -291,7 +291,7 @@ func TestGrabPlain_NoBanner_PortOnlyServiceDetected(t *testing.T) {
 	mock.ExpectExec("INSERT INTO port_banners").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	target := BannerTarget{HostID: uuid.New(), IP: host, Ports: []int{port}}
+	target := BannerTarget{HostID: uuid.New(), IP: host, Ports: []PortInfo{{Number: port}}}
 	g.grabPlain(context.Background(), target, port, addr)
 
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -329,7 +329,7 @@ func TestEnrichHosts_WithTCPTarget(t *testing.T) {
 	mock.ExpectExec("INSERT INTO port_banners").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	targets := []BannerTarget{{HostID: hostID, IP: host, Ports: []int{port}}}
+	targets := []BannerTarget{{HostID: hostID, IP: host, Ports: []PortInfo{{Number: port}}}}
 	g.EnrichHosts(context.Background(), targets)
 
 	require.NoError(t, mock.ExpectationsWereMet())
