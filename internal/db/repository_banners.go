@@ -70,11 +70,71 @@ func (r *BannerRepository) UpsertNSEPortData(ctx context.Context, b *PortBanner)
 	return nil
 }
 
+// UpsertHTTPPortData writes HTTP-specific banner fields (status code, redirect,
+// response headers, raw banner, service, version) for a port. On conflict it
+// overwrites all HTTP-related columns but leaves http_title and
+// ssh_key_fingerprint untouched (those are owned by NSE storage).
+func (r *BannerRepository) UpsertHTTPPortData(ctx context.Context, b *PortBanner) error {
+	if b.ID == uuid.Nil {
+		b.ID = uuid.New()
+	}
+	b.ScannedAt = time.Now().UTC()
+
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO port_banners
+			(id, host_id, port, protocol, raw_banner, service, version,
+			 http_status_code, http_redirect, http_response_headers, scanned_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (host_id, port, protocol) DO UPDATE SET
+			raw_banner            = EXCLUDED.raw_banner,
+			service               = EXCLUDED.service,
+			version               = EXCLUDED.version,
+			http_status_code      = EXCLUDED.http_status_code,
+			http_redirect         = EXCLUDED.http_redirect,
+			http_response_headers = EXCLUDED.http_response_headers,
+			scanned_at            = EXCLUDED.scanned_at`,
+		b.ID, b.HostID, b.Port, b.Protocol, b.RawBanner, b.Service, b.Version,
+		b.HTTPStatusCode, b.HTTPRedirect, b.HTTPResponseHeaders, b.ScannedAt)
+	if err != nil {
+		return sanitizeDBError("upsert http port data", err)
+	}
+	return nil
+}
+
+// UpsertSSHPortData writes SSH-specific banner fields (server version and host
+// key fingerprint) for a port. On conflict it overwrites these columns but
+// leaves http_* columns untouched.
+func (r *BannerRepository) UpsertSSHPortData(ctx context.Context, b *PortBanner) error {
+	if b.ID == uuid.Nil {
+		b.ID = uuid.New()
+	}
+	b.ScannedAt = time.Now().UTC()
+
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO port_banners
+			(id, host_id, port, protocol, raw_banner, version,
+			 ssh_key_fingerprint, scanned_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (host_id, port, protocol) DO UPDATE SET
+			raw_banner          = EXCLUDED.raw_banner,
+			version             = EXCLUDED.version,
+			ssh_key_fingerprint = EXCLUDED.ssh_key_fingerprint,
+			scanned_at          = EXCLUDED.scanned_at`,
+		b.ID, b.HostID, b.Port, b.Protocol, b.RawBanner, b.Version,
+		b.SSHKeyFingerprint, b.ScannedAt)
+	if err != nil {
+		return sanitizeDBError("upsert ssh port data", err)
+	}
+	return nil
+}
+
 // ListPortBanners returns all port banner records for a host.
 func (r *BannerRepository) ListPortBanners(ctx context.Context, hostID uuid.UUID) ([]*PortBanner, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, host_id, port, protocol, raw_banner, service, version,
-		       http_title, ssh_key_fingerprint, scanned_at
+		       http_title, ssh_key_fingerprint,
+		       http_status_code, http_redirect, http_response_headers,
+		       scanned_at
 		FROM port_banners
 		WHERE host_id = $1
 		ORDER BY port ASC`,
@@ -88,13 +148,15 @@ func (r *BannerRepository) ListPortBanners(ctx context.Context, hostID uuid.UUID
 		}
 	}()
 
-	var banners []*PortBanner
+	banners := make([]*PortBanner, 0)
 	for rows.Next() {
 		b := &PortBanner{}
 		if err := rows.Scan(
 			&b.ID, &b.HostID, &b.Port, &b.Protocol,
 			&b.RawBanner, &b.Service, &b.Version,
-			&b.HTTPTitle, &b.SSHKeyFingerprint, &b.ScannedAt,
+			&b.HTTPTitle, &b.SSHKeyFingerprint,
+			&b.HTTPStatusCode, &b.HTTPRedirect, &b.HTTPResponseHeaders,
+			&b.ScannedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan banner row: %w", err)
 		}
@@ -113,20 +175,22 @@ func (r *BannerRepository) UpsertCertificate(ctx context.Context, c *Certificate
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO certificates
 			(id, host_id, port, subject_cn, sans, issuer, not_before, not_after,
-			 key_type, tls_version, raw_banner, scanned_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+			 key_type, tls_version, cipher_suite, raw_banner, scanned_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		ON CONFLICT (host_id, port) DO UPDATE SET
-			subject_cn  = EXCLUDED.subject_cn,
-			sans        = EXCLUDED.sans,
-			issuer      = EXCLUDED.issuer,
-			not_before  = EXCLUDED.not_before,
-			not_after   = EXCLUDED.not_after,
-			key_type    = EXCLUDED.key_type,
-			tls_version = EXCLUDED.tls_version,
-			raw_banner  = EXCLUDED.raw_banner,
-			scanned_at  = EXCLUDED.scanned_at`,
+			subject_cn   = EXCLUDED.subject_cn,
+			sans         = EXCLUDED.sans,
+			issuer       = EXCLUDED.issuer,
+			not_before   = EXCLUDED.not_before,
+			not_after    = EXCLUDED.not_after,
+			key_type     = EXCLUDED.key_type,
+			tls_version  = EXCLUDED.tls_version,
+			cipher_suite = EXCLUDED.cipher_suite,
+			raw_banner   = EXCLUDED.raw_banner,
+			scanned_at   = EXCLUDED.scanned_at`,
 		c.ID, c.HostID, c.Port, c.SubjectCN, pq.Array(c.SANs), c.Issuer,
-		c.NotBefore, c.NotAfter, c.KeyType, c.TLSVersion, c.RawBanner, c.ScannedAt)
+		c.NotBefore, c.NotAfter, c.KeyType, c.TLSVersion, c.CipherSuite,
+		c.RawBanner, c.ScannedAt)
 	if err != nil {
 		return sanitizeDBError("upsert certificate", err)
 	}
@@ -135,10 +199,10 @@ func (r *BannerRepository) UpsertCertificate(ctx context.Context, c *Certificate
 
 // scanCertRows iterates cert query rows and returns the Certificate slice.
 func scanCertRows(rows *sql.Rows) ([]*Certificate, error) {
-	var certs []*Certificate
+	certs := make([]*Certificate, 0)
 	for rows.Next() {
 		c := &Certificate{}
-		var sans interface{}
+		var sans any
 		if err := rows.Scan(
 			&c.ID, &c.HostID, &c.Port, &c.SubjectCN, &sans, &c.Issuer,
 			&c.NotBefore, &c.NotAfter, &c.KeyType, &c.TLSVersion, &c.RawBanner, &c.ScannedAt,
