@@ -982,10 +982,13 @@ func runBannerEnrichment(database *db.DB, hosts []Host) {
 			continue
 		}
 
-		var openPorts []int
+		var openPorts []enrichment.PortInfo
 		for _, p := range h.Ports {
 			if p.State == portStateOpen && p.Protocol == db.ProtocolTCP {
-				openPorts = append(openPorts, int(p.Number))
+				openPorts = append(openPorts, enrichment.PortInfo{
+					Number:  int(p.Number),
+					Service: p.Service,
+				})
 			}
 		}
 		if len(openPorts) == 0 {
