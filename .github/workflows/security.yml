@@ -168,7 +168,7 @@ jobs:
           go install github.com/google/go-licenses@latest
 
           # Check licenses (allow common permissive licenses)
-          go-licenses check ./... --allowed_licenses=Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC || {
+          go-licenses check ./... --allowed_licenses=Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC,MPL-2.0 || {
             echo "❌ License compliance check failed"
             echo "Run 'go-licenses report ./...' to see all licenses"
             exit 1

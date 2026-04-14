@@ -1270,3 +1270,11 @@ go test -short -coverprofile=coverage.out ./...
 go tool cover -func=coverage.out | grep -v "100.0%"
 ```
 Any new file showing 0.0% on all functions is a blocker — add tests before committing.
+
+## Execution Speed
+
+When a task is straightforward — a clear bug fix, a small feature, a known pattern — skip the multi-phase exploration workflow and implement directly. Read the relevant files, make the change, run lint and tests, done.
+
+Use structured phases (explore → clarify → architect → implement) only when the task is genuinely ambiguous or spans multiple subsystems with unclear integration points. Do not use skill-based workflows for routine tasks.
+
+Default behaviour: **act first, explain after.** Run the tool call, then briefly state what you did. Do not narrate intent before acting.

@@ -715,32 +715,36 @@ type PortFilters struct {
 
 // Certificate is a TLS certificate record captured from a host/port.
 type Certificate struct {
-	ID         uuid.UUID  `db:"id"          json:"id"`
-	HostID     uuid.UUID  `db:"host_id"     json:"host_id"`
-	Port       int        `db:"port"        json:"port"`
-	SubjectCN  *string    `db:"subject_cn"  json:"subject_cn,omitempty"`
-	SANs       []string   `db:"sans"        json:"sans,omitempty"`
-	Issuer     *string    `db:"issuer"      json:"issuer,omitempty"`
-	NotBefore  *time.Time `db:"not_before"  json:"not_before,omitempty"`
-	NotAfter   *time.Time `db:"not_after"   json:"not_after,omitempty"`
-	KeyType    *string    `db:"key_type"    json:"key_type,omitempty"`
-	TLSVersion *string    `db:"tls_version" json:"tls_version,omitempty"`
-	RawBanner  *string    `db:"raw_banner"  json:"raw_banner,omitempty"`
-	ScannedAt  time.Time  `db:"scanned_at"  json:"scanned_at"`
+	ID          uuid.UUID  `db:"id"           json:"id"`
+	HostID      uuid.UUID  `db:"host_id"      json:"host_id"`
+	Port        int        `db:"port"         json:"port"`
+	SubjectCN   *string    `db:"subject_cn"   json:"subject_cn,omitempty"`
+	SANs        []string   `db:"sans"         json:"sans,omitempty"`
+	Issuer      *string    `db:"issuer"       json:"issuer,omitempty"`
+	NotBefore   *time.Time `db:"not_before"   json:"not_before,omitempty"`
+	NotAfter    *time.Time `db:"not_after"    json:"not_after,omitempty"`
+	KeyType     *string    `db:"key_type"     json:"key_type,omitempty"`
+	TLSVersion  *string    `db:"tls_version"  json:"tls_version,omitempty"`
+	CipherSuite *string    `db:"cipher_suite" json:"cipher_suite,omitempty"`
+	RawBanner   *string    `db:"raw_banner"   json:"raw_banner,omitempty"`
+	ScannedAt   time.Time  `db:"scanned_at"   json:"scanned_at"`
 }
 
 // PortBanner is a raw service banner captured from a host/port.
 type PortBanner struct {
-	ID                uuid.UUID `db:"id"                   json:"id"`
-	HostID            uuid.UUID `db:"host_id"              json:"host_id"`
-	Port              int       `db:"port"                 json:"port"`
-	Protocol          string    `db:"protocol"             json:"protocol"`
-	RawBanner         *string   `db:"raw_banner"           json:"raw_banner,omitempty"`
-	Service           *string   `db:"service"              json:"service,omitempty"`
-	Version           *string   `db:"version"              json:"version,omitempty"`
-	HTTPTitle         *string   `db:"http_title"           json:"http_title,omitempty"`
-	SSHKeyFingerprint *string   `db:"ssh_key_fingerprint"  json:"ssh_key_fingerprint,omitempty"`
-	ScannedAt         time.Time `db:"scanned_at"           json:"scanned_at"`
+	ID                  uuid.UUID `db:"id"                     json:"id"`
+	HostID              uuid.UUID `db:"host_id"                json:"host_id"`
+	Port                int       `db:"port"                   json:"port"`
+	Protocol            string    `db:"protocol"               json:"protocol"`
+	RawBanner           *string   `db:"raw_banner"             json:"raw_banner,omitempty"`
+	Service             *string   `db:"service"                json:"service,omitempty"`
+	Version             *string   `db:"version"                json:"version,omitempty"`
+	HTTPTitle           *string   `db:"http_title"             json:"http_title,omitempty"`
+	SSHKeyFingerprint   *string   `db:"ssh_key_fingerprint"    json:"ssh_key_fingerprint,omitempty"`
+	HTTPStatusCode      *int16    `db:"http_status_code"       json:"http_status_code,omitempty"`
+	HTTPRedirect        *string   `db:"http_redirect"          json:"http_redirect,omitempty"`
+	HTTPResponseHeaders JSONB     `db:"http_response_headers"  json:"http_response_headers,omitempty"`
+	ScannedAt           time.Time `db:"scanned_at"             json:"scanned_at"`
 }
 
 // SNMPInterface describes a single network interface collected via SNMP.
