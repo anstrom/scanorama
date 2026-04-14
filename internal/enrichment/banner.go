@@ -587,7 +587,12 @@ func (g *BannerGrabber) storeZGrabHTTPBanner(
 		banner.Version = &serverHdr
 	}
 
-	raw := fmt.Sprintf("HTTP %d %s", resp.StatusCode, svc)
+	var raw string
+	if resp.StatusCode > 0 {
+		raw = fmt.Sprintf("HTTP %d %s", resp.StatusCode, svc)
+	} else {
+		raw = svc
+	}
 	banner.RawBanner = &raw
 
 	if err := g.repo.UpsertHTTPPortData(ctx, banner); err != nil {

@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -208,8 +209,7 @@ func TestGrabPlain_NoData_NoUpsert(t *testing.T) {
 	target := BannerTarget{HostID: uuid.New(), IP: host, Ports: []PortInfo{{Number: port}}}
 	g.grabPlain(context.Background(), target, port, addr)
 
-	// May or may not upsert depending on timing; just verify no panic.
-	_ = mock.ExpectationsWereMet()
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestGrabPlain_UnreachableHost(t *testing.T) {
@@ -333,6 +333,44 @@ func TestEnrichHosts_WithTCPTarget(t *testing.T) {
 	g.EnrichHosts(context.Background(), targets)
 
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ── extractHeaders / buildSSHBanner / keyTypeFromPublicKey ────────────────────
+
+func TestExtractHeaders_InterestingHeaders(t *testing.T) {
+	h := http.Header{
+		"Server":        []string{"nginx/1.24"},
+		"X-Powered-By":  []string{"PHP/8.2"},
+		"Content-Type":  []string{"text/html"}, // IS in the interesting set
+		"X-Custom-Junk": []string{"ignored"},   // NOT in the interesting set
+	}
+	data := extractHeaders(h)
+	require.NotNil(t, data)
+	assert.Contains(t, string(data), "Server")
+	assert.Contains(t, string(data), "nginx/1.24")
+	assert.Contains(t, string(data), "Content-Type")
+	assert.NotContains(t, string(data), "X-Custom-Junk")
+}
+
+func TestExtractHeaders_NoInterestingHeaders(t *testing.T) {
+	// None of the headers in this map are in interestingHTTPHeaders.
+	h := http.Header{"X-Custom-Junk": []string{"ignored"}}
+	assert.Nil(t, extractHeaders(h))
+}
+
+func TestBuildSSHBanner(t *testing.T) {
+	assert.Equal(t, "SSH OpenSSH_8.9 SHA256:abc", buildSSHBanner("OpenSSH_8.9", "SHA256:abc"))
+	assert.Equal(t, "SSH OpenSSH_8.9", buildSSHBanner("OpenSSH_8.9", ""))
+	assert.Equal(t, "SSH SHA256:abc", buildSSHBanner("", "SHA256:abc"))
+	assert.Equal(t, "SSH", buildSSHBanner("", ""))
+}
+
+func TestKeyTypeFromPublicKey(t *testing.T) {
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	assert.Equal(t, "ECDSA", keyTypeFromPublicKey(ecKey.Public()))
+	assert.Equal(t, "", keyTypeFromPublicKey(nil))
+	assert.Equal(t, "", keyTypeFromPublicKey("unknown"))
 }
 
 // parsePort parses a decimal port string into *out.
