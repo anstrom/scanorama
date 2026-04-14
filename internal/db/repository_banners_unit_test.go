@@ -19,13 +19,15 @@ import (
 var bannerCols = []string{
 	"id", "host_id", "port", "protocol",
 	"raw_banner", "service", "version",
-	"http_title", "ssh_key_fingerprint", "scanned_at",
+	"http_title", "ssh_key_fingerprint",
+	"http_status_code", "http_redirect", "http_response_headers",
+	"scanned_at",
 }
 
 // certCols is the column list returned by certificates SELECT queries.
 var certCols = []string{
 	"id", "host_id", "port", "subject_cn", "sans", "issuer",
-	"not_before", "not_after", "key_type", "tls_version", "raw_banner", "scanned_at",
+	"not_before", "not_after", "key_type", "tls_version", "cipher_suite", "raw_banner", "scanned_at",
 }
 
 // ── NewBannerRepository ─────────────────────────────────────────────────────
@@ -160,8 +162,8 @@ func TestBannerRepository_ListPortBanners_OK(t *testing.T) {
 	raw2, svc2 := "220 FTP ready", "ftp"
 
 	rows := sqlmock.NewRows(bannerCols).
-		AddRow(uuid.New(), hostID, 22, ProtocolTCP, &raw1, &svc1, nil, nil, nil, now).
-		AddRow(uuid.New(), hostID, 21, ProtocolTCP, &raw2, &svc2, nil, nil, nil, now)
+		AddRow(uuid.New(), hostID, 22, ProtocolTCP, &raw1, &svc1, nil, nil, nil, nil, nil, nil, now).
+		AddRow(uuid.New(), hostID, 21, ProtocolTCP, &raw2, &svc2, nil, nil, nil, nil, nil, nil, now)
 
 	mock.ExpectQuery("SELECT .* FROM port_banners").
 		WithArgs(hostID).
@@ -236,7 +238,7 @@ func TestBannerRepository_UpsertCertificate_OK(t *testing.T) {
 			c.ID, c.HostID, c.Port, c.SubjectCN,
 			sqlmock.AnyArg(),
 			c.Issuer, c.NotBefore, c.NotAfter,
-			c.KeyType, c.TLSVersion, c.RawBanner,
+			c.KeyType, c.TLSVersion, c.CipherSuite, c.RawBanner,
 			sqlmock.AnyArg(),
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -263,7 +265,7 @@ func TestBannerRepository_UpsertCertificate_AssignsID(t *testing.T) {
 			c.SubjectCN,
 			sqlmock.AnyArg(),
 			c.Issuer, c.NotBefore, c.NotAfter,
-			c.KeyType, c.TLSVersion, c.RawBanner,
+			c.KeyType, c.TLSVersion, c.CipherSuite, c.RawBanner,
 			sqlmock.AnyArg(),
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -313,7 +315,7 @@ func TestBannerRepository_ListCertificates_OK(t *testing.T) {
 			uuid.New(), hostID, 443, &cn,
 			pq.Array([]string{"a.example.com"}),
 			&issuer, &notBefore, &notAfter,
-			&keyType, &tlsVer, &raw, now,
+			&keyType, &tlsVer, nil, &raw, now,
 		)
 
 	mock.ExpectQuery("SELECT .* FROM certificates").
@@ -376,7 +378,7 @@ func TestBannerRepository_ListExpiringCertificates_OK(t *testing.T) {
 			uuid.New(), uuid.New(), 443, &cn,
 			pq.Array([]string{"expiring.example.com"}),
 			&issuer, &notBefore, &notAfter,
-			&keyType, &tlsVer, &raw, now,
+			&keyType, &tlsVer, nil, &raw, now,
 		)
 
 	mock.ExpectQuery("SELECT .* FROM certificates").
