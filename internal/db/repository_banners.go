@@ -206,7 +206,8 @@ func scanCertRows(rows *sql.Rows) ([]*Certificate, error) {
 		var sans any
 		if err := rows.Scan(
 			&c.ID, &c.HostID, &c.Port, &c.SubjectCN, &sans, &c.Issuer,
-			&c.NotBefore, &c.NotAfter, &c.KeyType, &c.TLSVersion, &c.RawBanner, &c.ScannedAt,
+			&c.NotBefore, &c.NotAfter, &c.KeyType, &c.TLSVersion,
+			&c.CipherSuite, &c.RawBanner, &c.ScannedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan cert row: %w", err)
 		}
@@ -220,7 +221,7 @@ func scanCertRows(rows *sql.Rows) ([]*Certificate, error) {
 func (r *BannerRepository) ListCertificates(ctx context.Context, hostID uuid.UUID) ([]*Certificate, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, host_id, port, subject_cn, sans, issuer, not_before, not_after,
-		       key_type, tls_version, raw_banner, scanned_at
+		       key_type, tls_version, cipher_suite, raw_banner, scanned_at
 		FROM certificates
 		WHERE host_id = $1
 		ORDER BY port ASC`,
@@ -240,7 +241,7 @@ func (r *BannerRepository) ListCertificates(ctx context.Context, hostID uuid.UUI
 func (r *BannerRepository) ListExpiringCertificates(ctx context.Context, days int) ([]*Certificate, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, host_id, port, subject_cn, sans, issuer, not_before, not_after,
-		       key_type, tls_version, raw_banner, scanned_at
+		       key_type, tls_version, cipher_suite, raw_banner, scanned_at
 		FROM certificates
 		WHERE not_after IS NOT NULL
 		  AND not_after BETWEEN NOW() AND NOW() + ($1 * INTERVAL '1 day')
