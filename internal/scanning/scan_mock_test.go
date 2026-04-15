@@ -291,5 +291,5 @@ func TestStoreScanResults_NilScanID_Mock_NoTargets(t *testing.T) {
 
 	err := storeScanResults(ctx, database, config, result, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to look up containing network")
+	assert.Contains(t, err.Error(), "no targets specified")
 }
