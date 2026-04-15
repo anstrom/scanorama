@@ -5,8 +5,6 @@ package scanning
 
 import (
 	"context"
-	"database/sql"
-	stderrors "errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -639,32 +637,11 @@ func storeScanResults(
 			logging.Warn("Failed to update scan job stats", "job_id", jobID, "error", err)
 		}
 	} else {
-		// No caller-supplied ID — standalone (non-API) scan run.
-		// Find or create a network entry and create a brand-new scan_job row.
-		networkID, err := findOrCreateNetwork(ctx, database, config)
+		var err error
+		jobID, err = createAdhocScanJob(ctx, database, jobRepo, config, result, statsJSON)
 		if err != nil {
-			logging.Error("Failed to find or create network", "error", err)
-			return fmt.Errorf("failed to find or create network: %w", err)
+			return err
 		}
-		logging.Debug("Found/created network", "network_id", networkID)
-
-		jobID = uuid.New()
-		now := time.Now()
-		scanJob := &db.ScanJob{
-			ID:        jobID,
-			NetworkID: &networkID,
-			Status:    db.ScanJobStatusCompleted,
-		}
-		scanJob.StartedAt = &result.StartTime
-		scanJob.CompletedAt = &now
-		scanJob.ScanStats = db.JSONB(statsJSON)
-
-		logging.Debug("Creating scan job", "job_id", scanJob.ID, "network_id", scanJob.NetworkID)
-		if err := jobRepo.Create(ctx, scanJob); err != nil {
-			logging.Error("Failed to create scan job", "error", err)
-			return fmt.Errorf("failed to create scan job: %w", err)
-		}
-		logging.Debug("Successfully created scan job", "job_id", scanJob.ID)
 	}
 
 	// Store host and port scan results.
@@ -701,8 +678,58 @@ func storeScanResults(
 	return nil
 }
 
+// createAdhocScanJob handles the nil-scanID path in storeScanResults:
+// it resolves the first scan target to a containing network (if any),
+// builds a new scan_job row, and returns the new job UUID.
+func createAdhocScanJob(
+	ctx context.Context,
+	database *db.DB,
+	jobRepo *db.ScanJobRepository,
+	config *ScanConfig,
+	result *ScanResult,
+	statsJSON string,
+) (uuid.UUID, error) {
+	if len(config.Targets) == 0 {
+		return uuid.Nil, fmt.Errorf("cannot create ad-hoc scan job: no targets specified")
+	}
+	target := config.Targets[0]
+	lookupKey := normaliseToCIDR(target)
+
+	networkID, err := findContainingNetwork(ctx, database, lookupKey)
+	if err != nil {
+		logging.Error("Failed to look up containing network", "error", err)
+		return uuid.Nil, fmt.Errorf("failed to look up containing network: %w", err)
+	}
+	if networkID == uuid.Nil {
+		logging.Debug("Ad-hoc scan has no registered containing network", "target", target)
+	} else {
+		logging.Debug("Ad-hoc scan attached to registered network",
+			"target", target, "network_id", networkID)
+	}
+
+	jobID := uuid.New()
+	now := time.Now()
+	scanJob := &db.ScanJob{
+		ID:     jobID,
+		Status: db.ScanJobStatusCompleted,
+	}
+	if networkID != uuid.Nil {
+		scanJob.NetworkID = &networkID
+	}
+	scanJob.StartedAt = &result.StartTime
+	scanJob.CompletedAt = &now
+	scanJob.ScanStats = db.JSONB(statsJSON)
+
+	logging.Debug("Creating scan job", "job_id", scanJob.ID, "network_id", scanJob.NetworkID)
+	if err := jobRepo.Create(ctx, scanJob); err != nil {
+		logging.Error("Failed to create scan job", "error", err)
+		return uuid.Nil, fmt.Errorf("failed to create scan job: %w", err)
+	}
+	logging.Debug("Successfully created scan job", "job_id", scanJob.ID)
+	return jobID, nil
+}
+
 // normaliseToCIDR converts a raw scan target into a CIDR string suitable for
-// the PostgreSQL inet column.  IP addresses get a /32 (IPv4) or /128 (IPv6)
 // host-route suffix.  Hostnames are resolved via DNS; if the first returned
 // address is an IP, it is used.  Plain CIDR strings are returned unchanged.
 // If no normalisation is possible, the original string is returned and the
@@ -732,71 +759,6 @@ func normaliseToCIDR(target string) string {
 		return resolved.String() + "/128"
 	}
 	return target
-}
-
-// findOrCreateNetwork finds an existing network by CIDR or creates a new one
-// for ad-hoc (non-API) scan runs.  Returns the network UUID to store as
-// scan_jobs.network_id.
-func findOrCreateNetwork(ctx context.Context, database *db.DB, config *ScanConfig) (uuid.UUID, error) {
-	if len(config.Targets) == 0 {
-		return uuid.Nil, fmt.Errorf("no targets specified")
-	}
-
-	firstTarget := config.Targets[0]
-
-	// Normalise to a CIDR string.
-	cidr := normaliseToCIDR(firstTarget)
-
-	// Reuse the network if this CIDR is already known.
-	var id uuid.UUID
-	err := database.QueryRowContext(ctx,
-		`SELECT id FROM networks WHERE cidr = $1`, cidr).Scan(&id)
-	if err == nil {
-		return id, nil
-	}
-	if !stderrors.Is(err, sql.ErrNoRows) {
-		return uuid.Nil, fmt.Errorf("failed to look up network by CIDR: %w", err)
-	}
-
-	// Not found — determine scan type and create an ephemeral network entry
-	// (is_active=false, scan_enabled=false so it won't appear in scheduled scans).
-	dbScanType := config.ScanType
-	switch config.ScanType {
-	case "comprehensive", scanTypeAggressive:
-		dbScanType = scanTypeConnect
-	case "stealth":
-		dbScanType = scanTypeConnect
-	}
-
-	id = uuid.New()
-	name := fmt.Sprintf("Ad-hoc: %s", cidr)
-	_, err = database.ExecContext(ctx, `
-		INSERT INTO networks (
-			id, name, cidr,
-			scan_ports, scan_type,
-			is_active, scan_enabled, discovery_method
-		) VALUES (
-			$1, $2, $3, $4, $5, false, false, 'tcp'
-		)
-	`, id, name, cidr, config.Ports, dbScanType)
-	if err != nil {
-		// Name collision — fall back to the CIDR itself as the name.
-		_, err = database.ExecContext(ctx, `
-			INSERT INTO networks (
-				id, name, cidr,
-				scan_ports, scan_type,
-				is_active, scan_enabled, discovery_method
-			) VALUES (
-				$1, $2, $3, $4, $5, false, false, 'tcp'
-			)
-		`, id, cidr, cidr, config.Ports, dbScanType)
-		if err != nil {
-			return uuid.Nil, fmt.Errorf("failed to create network for ad-hoc scan: %w", err)
-		}
-	}
-
-	logging.Debug("Created ad-hoc network", "network_id", id, "cidr", cidr)
-	return id, nil
 }
 
 // parseTargetAddress parses a target string as CIDR, IP address, or hostname.

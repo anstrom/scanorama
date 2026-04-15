@@ -109,10 +109,10 @@ func TestStoreScanResults_WithScanID_Mock_UpdateFails(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestStoreScanResults_NilScanID_Mock_Success is the primary test covering
-// line 535 (the db.ScanJob struct literal in the else branch).
+// the db.ScanJob struct literal in the else branch.
 // With scanID == nil, storeScanResults must:
-//  1. Call findOrCreateNetwork — mock SELECT returns an existing network row.
-//  2. Build the db.ScanJob struct literal (line 535).
+//  1. Call findContainingNetwork — mock SELECT returns an existing network row.
+//  2. Build the db.ScanJob struct literal with network_id set.
 //  3. Call jobRepo.Create via NamedQueryContext (converts named params →
 //     positional, then calls QueryxContext; no Prepare step).
 //  4. Return nil when Hosts is empty.
@@ -136,8 +136,8 @@ func TestStoreScanResults_NilScanID_Mock_Success(t *testing.T) {
 		Hosts:     []Host{}, // empty — avoids host-processing DB calls
 	}
 
-	// findOrCreateNetwork: SELECT id FROM networks WHERE cidr = $1
-	// Returns an existing row so no INSERT into networks is required.
+	// findContainingNetwork: SELECT id FROM networks WHERE $1::inet <<= cidr ...
+	// Returns an existing row — network_id will be set on the scan_job.
 	mock.ExpectQuery(`SELECT id FROM networks`).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(networkID.String()))
@@ -161,8 +161,8 @@ func TestStoreScanResults_NilScanID_Mock_Success(t *testing.T) {
 }
 
 // TestStoreScanResults_NilScanID_Mock_NetworkNotFound exercises the path where
-// the target CIDR is absent from the DB, so findOrCreateNetwork falls through
-// to INSERT a new ad-hoc network row before creating the scan_job.
+// the target is not contained in any registered network.  findContainingNetwork
+// returns uuid.Nil (no error), and the scan_job is created with network_id = NULL.
 func TestStoreScanResults_NilScanID_Mock_NetworkNotFound(t *testing.T) {
 	database, mock, cleanup := newMockScanDB(t)
 	defer cleanup()
@@ -182,33 +182,20 @@ func TestStoreScanResults_NilScanID_Mock_NetworkNotFound(t *testing.T) {
 		Hosts:     []Host{},
 	}
 
-	// findOrCreateNetwork: SELECT returns an empty result set.
-	// sql.Row.Scan will return sql.ErrNoRows, triggering the INSERT path.
+	// findContainingNetwork: SELECT returns no rows → uuid.Nil, no error.
 	mock.ExpectQuery(`SELECT id FROM networks`).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"})) // no rows
 
-	// findOrCreateNetwork: INSERT INTO networks (ad-hoc entry).
-	// Args: id, name, cidr, scan_ports, scan_type (5 positional).
-	mock.ExpectExec(`INSERT INTO networks`).
-		WithArgs(
-			sqlmock.AnyArg(), // id
-			sqlmock.AnyArg(), // name
-			sqlmock.AnyArg(), // cidr
-			sqlmock.AnyArg(), // scan_ports
-			sqlmock.AnyArg(), // scan_type
-		).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-
-	// jobRepo.Create: INSERT INTO scan_jobs.
+	// jobRepo.Create: INSERT INTO scan_jobs — network_id arg is NULL.
 	mock.ExpectQuery(`INSERT INTO scan_jobs`).
 		WithArgs(
-			sqlmock.AnyArg(),
-			sqlmock.AnyArg(),
-			sqlmock.AnyArg(),
-			sqlmock.AnyArg(),
-			sqlmock.AnyArg(),
-			sqlmock.AnyArg(),
+			sqlmock.AnyArg(), // id
+			sqlmock.AnyArg(), // network_id (nil/NULL)
+			sqlmock.AnyArg(), // status
+			sqlmock.AnyArg(), // started_at
+			sqlmock.AnyArg(), // completed_at
+			sqlmock.AnyArg(), // scan_stats
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(now))
 
@@ -218,7 +205,7 @@ func TestStoreScanResults_NilScanID_Mock_NetworkNotFound(t *testing.T) {
 }
 
 // TestStoreScanResults_NilScanID_Mock_NetworkQueryFails exercises the early-exit
-// when findOrCreateNetwork encounters a fatal (non-ErrNoRows) SELECT error.
+// when findContainingNetwork encounters a fatal (non-ErrNoRows) SELECT error.
 func TestStoreScanResults_NilScanID_Mock_NetworkQueryFails(t *testing.T) {
 	database, mock, cleanup := newMockScanDB(t)
 	defer cleanup()
@@ -243,7 +230,7 @@ func TestStoreScanResults_NilScanID_Mock_NetworkQueryFails(t *testing.T) {
 
 	err := storeScanResults(ctx, database, config, result, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to find or create network")
+	assert.Contains(t, err.Error(), "failed to look up containing network")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -269,7 +256,7 @@ func TestStoreScanResults_NilScanID_Mock_CreateJobFails(t *testing.T) {
 		Hosts:     []Host{},
 	}
 
-	// findOrCreateNetwork succeeds (existing network).
+	// findContainingNetwork succeeds — SELECT returns an existing network row.
 	mock.ExpectQuery(`SELECT id FROM networks`).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(networkID.String()))
@@ -285,8 +272,7 @@ func TestStoreScanResults_NilScanID_Mock_CreateJobFails(t *testing.T) {
 }
 
 // TestStoreScanResults_NilScanID_Mock_NoTargets verifies that storeScanResults
-// propagates the "no targets" error produced by findOrCreateNetwork when
-// ScanConfig.Targets is empty — no DB calls are made in this case.
+// returns an error when ScanConfig.Targets is empty — no DB calls are made.
 func TestStoreScanResults_NilScanID_Mock_NoTargets(t *testing.T) {
 	database, _, cleanup := newMockScanDB(t)
 	defer cleanup()
@@ -305,5 +291,5 @@ func TestStoreScanResults_NilScanID_Mock_NoTargets(t *testing.T) {
 
 	err := storeScanResults(ctx, database, config, result, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to find or create network")
+	assert.Contains(t, err.Error(), "failed to look up containing network")
 }

@@ -236,9 +236,10 @@ func TestStoreScanResults_InvalidTarget(t *testing.T) {
 	}
 }
 
-// TestFindOrCreateNetwork_ValidIP tests that findOrCreateNetwork creates a /32
-// network entry for a plain IP address.
-func TestFindOrCreateNetwork_ValidIP(t *testing.T) {
+// TestAdhocScan_NoContainingNetwork verifies that a standalone scan run
+// whose target is not inside any registered network returns uuid.Nil and
+// does not create any new network rows.
+func TestAdhocScan_NoContainingNetwork(t *testing.T) {
 	database := setupTestDB(t)
 	if database == nil {
 		return
@@ -246,29 +247,32 @@ func TestFindOrCreateNetwork_ValidIP(t *testing.T) {
 	defer database.Close()
 
 	ctx := context.Background()
-	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '192.168.1.50/32'`)
 
-	config := &ScanConfig{
-		Targets:  []string{"192.168.1.50"},
-		ScanType: "connect",
-		Ports:    "80",
-	}
-
-	id, err := findOrCreateNetwork(ctx, database, config)
-	require.NoError(t, err, "should create network for valid IP")
-	assert.NotEqual(t, uuid.Nil, id)
-
-	// Verify a networks row was created with the /32 CIDR.
-	var cidr string
+	// Precondition: ensure no registered network contains the target IP so
+	// the test is deterministic regardless of other fixtures in the DB.
+	const target = "203.0.113.7" // TEST-NET-3, reserved for documentation
+	var containing int
 	require.NoError(t, database.QueryRowContext(ctx,
-		`SELECT cidr::text FROM networks WHERE id = $1`, id,
-	).Scan(&cidr))
-	assert.Equal(t, "192.168.1.50/32", cidr)
+		`SELECT COUNT(*) FROM networks WHERE $1::inet <<= cidr`, target,
+	).Scan(&containing))
+	require.Equal(t, 0, containing, "precondition: no registered network may contain %s", target)
+
+	var before int
+	require.NoError(t, database.QueryRowContext(ctx, `SELECT COUNT(*) FROM networks`).Scan(&before))
+
+	id, err := findContainingNetwork(ctx, database, target)
+	require.NoError(t, err)
+	assert.Equal(t, uuid.Nil, id)
+
+	// The lookup must not create any new network rows.
+	var after int
+	require.NoError(t, database.QueryRowContext(ctx, `SELECT COUNT(*) FROM networks`).Scan(&after))
+	assert.Equal(t, before, after, "ad-hoc lookup must not create network rows")
 }
 
-// TestFindOrCreateNetwork_CIDR tests that findOrCreateNetwork uses the CIDR
-// string directly when the target already includes a prefix length.
-func TestFindOrCreateNetwork_CIDR(t *testing.T) {
+// TestAdhocScan_AttachesToContainingNetwork verifies that a standalone
+// scan of an IP inside a registered network attaches to it.
+func TestAdhocScan_AttachesToContainingNetwork(t *testing.T) {
 	database := setupTestDB(t)
 	if database == nil {
 		return
@@ -276,58 +280,30 @@ func TestFindOrCreateNetwork_CIDR(t *testing.T) {
 	defer database.Close()
 
 	ctx := context.Background()
-	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.0.1.0/24'`)
-
-	config := &ScanConfig{
-		Targets:  []string{"10.0.1.0/24"},
-		ScanType: "connect",
-		Ports:    "22,80",
-	}
-
-	id, err := findOrCreateNetwork(ctx, database, config)
-	require.NoError(t, err, "should create network for CIDR")
-	assert.NotEqual(t, uuid.Nil, id)
-}
-
-// TestFindOrCreateNetwork_ReuseExisting tests that findOrCreateNetwork returns
-// the existing network UUID when the CIDR is already in the database.
-func TestFindOrCreateNetwork_ReuseExisting(t *testing.T) {
-	database := setupTestDB(t)
-	if database == nil {
-		return
-	}
-	defer database.Close()
-
-	ctx := context.Background()
-	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.99.0.0/24'`)
+	// Prophylactic cleanup: remove any leftover rows from a prior failed run so
+	// the unique constraints networks_name_key / networks_cidr_key don't collide.
+	cleanupNetworksByName(t, database, "lab")
+	cleanupNetworksByCIDR(t, database, "10.0.0.0/24")
+	want := uuid.New()
+	_, err := database.ExecContext(ctx, `
+		INSERT INTO networks (id, name, cidr, scan_ports, scan_type,
+		                     is_active, scan_enabled, discovery_method)
+		VALUES ($1, 'lab', '10.0.0.0/24', '22,80', 'connect', true, true, 'tcp')
+	`, want)
+	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.99.0.0/24'`)
+		_, _ = database.ExecContext(context.Background(),
+			`DELETE FROM networks WHERE id = $1`, want)
 	})
 
-	existing := uuid.New()
-	_, err := database.ExecContext(ctx, `
-		INSERT INTO networks
-		    (id, name, cidr, discovery_method, is_active, scan_enabled,
-		     scan_interval_seconds, scan_ports, scan_type)
-		VALUES ($1, 'existing', '10.99.0.0/24', 'tcp', true, true, 3600, '22', 'connect')`,
-		existing,
-	)
+	got, err := findContainingNetwork(ctx, database, "10.0.0.5")
 	require.NoError(t, err)
-
-	config := &ScanConfig{
-		Targets:  []string{"10.99.0.0/24"},
-		ScanType: "connect",
-		Ports:    "22",
-	}
-
-	id, err := findOrCreateNetwork(ctx, database, config)
-	require.NoError(t, err, "should reuse existing network")
-	assert.Equal(t, existing, id, "should return the pre-existing network UUID")
+	assert.Equal(t, want, got)
 }
 
-// TestFindOrCreateNetwork_InvalidAddress tests that an invalid CIDR string
-// results in an error from the database layer.
-func TestFindOrCreateNetwork_InvalidAddress(t *testing.T) {
+// TestAdhocScan_LongestPrefixWins verifies that when two registered networks
+// both contain the target IP, the most-specific one is chosen.
+func TestAdhocScan_LongestPrefixWins(t *testing.T) {
 	database := setupTestDB(t)
 	if database == nil {
 		return
@@ -335,15 +311,30 @@ func TestFindOrCreateNetwork_InvalidAddress(t *testing.T) {
 	defer database.Close()
 
 	ctx := context.Background()
+	// Prophylactic cleanup: remove any leftover rows from a prior failed run so
+	// the unique constraints networks_name_key / networks_cidr_key don't collide.
+	cleanupNetworksByName(t, database, "corp")
+	cleanupNetworksByName(t, database, "dmz")
+	cleanupNetworksByCIDR(t, database, "10.0.0.0/16")
+	cleanupNetworksByCIDR(t, database, "10.0.0.0/24")
+	slash16 := uuid.New()
+	slash24 := uuid.New()
+	_, err := database.ExecContext(ctx, `
+		INSERT INTO networks (id, name, cidr, scan_ports, scan_type,
+		                     is_active, scan_enabled, discovery_method)
+		VALUES
+		  ($1, 'corp', '10.0.0.0/16', '22,80', 'connect', true, true, 'tcp'),
+		  ($2, 'dmz',  '10.0.0.0/24', '22,80', 'connect', true, true, 'tcp')
+	`, slash16, slash24)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = database.ExecContext(context.Background(),
+			`DELETE FROM networks WHERE id IN ($1, $2)`, slash16, slash24)
+	})
 
-	config := &ScanConfig{
-		Targets:  []string{"not-an-ip-address"},
-		ScanType: "connect",
-		Ports:    "80",
-	}
-
-	_, err := findOrCreateNetwork(ctx, database, config)
-	assert.Error(t, err, "should return error for invalid CIDR")
+	got, err := findContainingNetwork(ctx, database, "10.0.0.5")
+	require.NoError(t, err)
+	assert.Equal(t, slash24, got, "longest-prefix (/24) must win over /16")
 }
 
 // TestStoreHostResults_EmptyHosts tests handling of empty host list.
@@ -513,6 +504,22 @@ func cleanupHost(t *testing.T, database *db.DB, ip string) {
 	t.Helper()
 	_, _ = database.ExecContext(context.Background(),
 		`DELETE FROM hosts WHERE ip_address = $1::inet`, ip)
+}
+
+// cleanupNetworksByName removes network rows with the given name so tests that
+// insert fixed-name fixtures are re-runnable after a prior failure.
+func cleanupNetworksByName(t *testing.T, database *db.DB, name string) {
+	t.Helper()
+	_, _ = database.ExecContext(context.Background(),
+		`DELETE FROM networks WHERE name = $1`, name)
+}
+
+// cleanupNetworksByCIDR removes network rows with the given CIDR so tests that
+// insert fixed-CIDR fixtures are re-runnable after a prior failure.
+func cleanupNetworksByCIDR(t *testing.T, database *db.DB, cidr string) {
+	t.Helper()
+	_, _ = database.ExecContext(context.Background(),
+		`DELETE FROM networks WHERE cidr = $1::cidr`, cidr)
 }
 
 func TestStoreScanResults_ScanIDRoundTrip(t *testing.T) {
@@ -790,251 +797,6 @@ func TestStoreScanResults_OSFieldsPersisted(t *testing.T) {
 
 	require.NotNil(t, host.OSConfidence, "OSConfidence should be persisted")
 	assert.Equal(t, 96, *host.OSConfidence)
-}
-
-// TestFindOrCreateNetwork_LocalhostIP tests that "127.0.0.1" is accepted and
-// stored as a /32 CIDR (regression: the old hostname-based path accepted
-// "localhost" but the new CIDR-based path requires a resolvable address).
-func TestFindOrCreateNetwork_LocalhostIP(t *testing.T) {
-	database := setupTestDB(t)
-	if database == nil {
-		return
-	}
-	defer database.Close()
-
-	ctx := context.Background()
-	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '127.0.0.1/32'`)
-
-	config := &ScanConfig{
-		Targets:  []string{"127.0.0.1"},
-		ScanType: "connect",
-		Ports:    "80",
-	}
-
-	id, err := findOrCreateNetwork(ctx, database, config)
-	require.NoError(t, err, "findOrCreateNetwork should accept '127.0.0.1'")
-	assert.NotEqual(t, uuid.Nil, id)
-}
-
-// TestFindOrCreateNetwork_EmptyTargets verifies that an empty Targets slice
-// returns an error and uuid.Nil.
-func TestFindOrCreateNetwork_EmptyTargets(t *testing.T) {
-	database := setupTestDB(t)
-	if database == nil {
-		return
-	}
-	defer database.Close()
-
-	ctx := context.Background()
-
-	config := &ScanConfig{
-		Targets:  []string{},
-		ScanType: "connect",
-		Ports:    "80",
-	}
-
-	id, err := findOrCreateNetwork(ctx, database, config)
-	assert.Error(t, err, "should return error when no targets specified")
-	assert.Equal(t, uuid.Nil, id)
-}
-
-// TestFindOrCreateNetwork_IPv6 tests that an IPv6 address is stored as a /128 CIDR.
-func TestFindOrCreateNetwork_IPv6(t *testing.T) {
-	database := setupTestDB(t)
-	if database == nil {
-		return
-	}
-	defer database.Close()
-
-	ctx := context.Background()
-	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '::1/128'`)
-
-	config := &ScanConfig{
-		Targets:  []string{"::1"},
-		ScanType: "connect",
-		Ports:    "80",
-	}
-
-	id, err := findOrCreateNetwork(ctx, database, config)
-	require.NoError(t, err, "findOrCreateNetwork should accept IPv6 address '::1'")
-	assert.NotEqual(t, uuid.Nil, id)
-
-	var cidr string
-	require.NoError(t, database.QueryRowContext(ctx,
-		`SELECT cidr::text FROM networks WHERE id = $1`, id,
-	).Scan(&cidr))
-	assert.Equal(t, "::1/128", cidr)
-}
-
-// TestFindOrCreateNetwork_ScanTypeComprehensive verifies that the "comprehensive"
-// scan type is remapped to "connect" before being persisted.
-func TestFindOrCreateNetwork_ScanTypeComprehensive(t *testing.T) {
-	database := setupTestDB(t)
-	if database == nil {
-		return
-	}
-	defer database.Close()
-
-	ctx := context.Background()
-	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.253.0.1/32'`)
-
-	config := &ScanConfig{
-		Targets:  []string{"10.253.0.1"},
-		ScanType: "comprehensive",
-		Ports:    "80",
-	}
-
-	id, err := findOrCreateNetwork(ctx, database, config)
-	require.NoError(t, err, "findOrCreateNetwork should accept 'comprehensive' scan type")
-	assert.NotEqual(t, uuid.Nil, id)
-
-	var scanType string
-	require.NoError(t, database.QueryRowContext(ctx,
-		`SELECT scan_type FROM networks WHERE id = $1`, id,
-	).Scan(&scanType))
-	assert.Equal(t, "connect", scanType)
-}
-
-// TestFindOrCreateNetwork_ScanTypeStealth verifies that the "stealth"
-// scan type is remapped to "connect" before being persisted.
-func TestFindOrCreateNetwork_ScanTypeStealth(t *testing.T) {
-	database := setupTestDB(t)
-	if database == nil {
-		return
-	}
-	defer database.Close()
-
-	ctx := context.Background()
-	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.253.0.2/32'`)
-
-	config := &ScanConfig{
-		Targets:  []string{"10.253.0.2"},
-		ScanType: "stealth",
-		Ports:    "80",
-	}
-
-	id, err := findOrCreateNetwork(ctx, database, config)
-	require.NoError(t, err, "findOrCreateNetwork should accept 'stealth' scan type")
-	assert.NotEqual(t, uuid.Nil, id)
-
-	var scanType string
-	require.NoError(t, database.QueryRowContext(ctx,
-		`SELECT scan_type FROM networks WHERE id = $1`, id,
-	).Scan(&scanType))
-	assert.Equal(t, "connect", scanType)
-}
-
-// TestFindOrCreateNetwork_ScanTypeAggressive verifies that the "aggressive"
-// scan type is remapped to "connect" before being persisted.
-func TestFindOrCreateNetwork_ScanTypeAggressive(t *testing.T) {
-	database := setupTestDB(t)
-	if database == nil {
-		return
-	}
-	defer database.Close()
-
-	ctx := context.Background()
-	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.253.0.3/32'`)
-
-	config := &ScanConfig{
-		Targets:  []string{"10.253.0.3"},
-		ScanType: "aggressive",
-		Ports:    "80",
-	}
-
-	id, err := findOrCreateNetwork(ctx, database, config)
-	require.NoError(t, err, "findOrCreateNetwork should accept 'aggressive' scan type")
-	assert.NotEqual(t, uuid.Nil, id)
-
-	var scanType string
-	require.NoError(t, database.QueryRowContext(ctx,
-		`SELECT scan_type FROM networks WHERE id = $1`, id,
-	).Scan(&scanType))
-	assert.Equal(t, "connect", scanType)
-}
-
-// TestFindOrCreateNetwork_NameCollision verifies that when the preferred name
-// "Ad-hoc: <cidr>" is already taken by a different row, findOrCreateNetwork
-// falls back to using the CIDR itself as the name.
-func TestFindOrCreateNetwork_NameCollision(t *testing.T) {
-	database := setupTestDB(t)
-	if database == nil {
-		return
-	}
-	defer database.Close()
-
-	ctx := context.Background()
-
-	// Pre-insert a network that claims the name "Ad-hoc: 10.252.0.1/32" but
-	// uses a different CIDR, so the unique-name constraint will fire when
-	// findOrCreateNetwork tries its first INSERT.
-	colliderID := uuid.New()
-	_, err := database.ExecContext(ctx, `
-		INSERT INTO networks (
-			id, name, cidr,
-			discovery_method, is_active, scan_enabled,
-			scan_interval_seconds, scan_ports, scan_type
-		) VALUES (
-			$1, 'Ad-hoc: 10.252.0.1/32', '10.252.0.0/24',
-			'tcp', false, false, 0, '80', 'connect'
-		)`,
-		colliderID,
-	)
-	require.NoError(t, err, "pre-insert of collider row should succeed")
-
-	t.Cleanup(func() {
-		_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.252.0.0/24'`)
-		_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '10.252.0.1/32'`)
-	})
-
-	config := &ScanConfig{
-		Targets:  []string{"10.252.0.1"},
-		ScanType: "connect",
-		Ports:    "80",
-	}
-
-	id, err := findOrCreateNetwork(ctx, database, config)
-	require.NoError(t, err, "findOrCreateNetwork should succeed via fallback name")
-	assert.NotEqual(t, uuid.Nil, id)
-
-	var name string
-	require.NoError(t, database.QueryRowContext(ctx,
-		`SELECT name FROM networks WHERE id = $1`, id,
-	).Scan(&name))
-	assert.Equal(t, "10.252.0.1/32", name, "fallback name should be the CIDR itself")
-}
-
-// TestFindOrCreateNetwork_Hostname tests that a hostname target is resolved via
-// DNS and stored as an IP/32 (or IP/128) CIDR.  "localhost" reliably resolves
-// to 127.0.0.1 on any developer or CI machine without requiring network access.
-func TestFindOrCreateNetwork_Hostname(t *testing.T) {
-	database := setupTestDB(t)
-	if database == nil {
-		return
-	}
-	defer database.Close()
-
-	ctx := context.Background()
-	// Clean up any pre-existing row so the INSERT branch is exercised.
-	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '127.0.0.1/32'`)
-
-	config := &ScanConfig{
-		Targets:  []string{"localhost"},
-		ScanType: "connect",
-		Ports:    "80",
-	}
-
-	id, err := findOrCreateNetwork(ctx, database, config)
-	require.NoError(t, err, "hostname target should be accepted after DNS resolution")
-	assert.NotEqual(t, uuid.Nil, id)
-
-	// The stored CIDR must be an IP address, not the raw hostname.
-	var cidr string
-	require.NoError(t, database.QueryRowContext(ctx,
-		`SELECT cidr::text FROM networks WHERE id = $1`, id,
-	).Scan(&cidr))
-	assert.NotEqual(t, "localhost", cidr, "raw hostname must not be stored as a CIDR")
-	assert.NotEmpty(t, cidr)
 }
 
 // TestRunScanWithDB_IntegrationTest is an end-to-end test of scanning with database storage.
