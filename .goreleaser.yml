@@ -5,11 +5,13 @@ before:
     - go mod tidy
 
 builds:
+  # darwin builds are disabled until the zgrab2 → zmap/zcrypto/ct/x509
+  # no-cgo darwin/arm64 gap is resolved (missing loadSystemRoots). Mac users
+  # can `go install ./cmd/scanorama` locally where CGO defaults to on.
   - main: ./cmd/scanorama
     binary: scanorama
     goos:
       - linux
-      - darwin
     goarch:
       - amd64
       - arm64
