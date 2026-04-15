@@ -18,7 +18,7 @@ LDFLAGS     := -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT)' -X 'main.
 
 # Go
 GO      := go
-GOTEST  := $(GO) test
+GOTEST  := $(GO) test -race
 GOBUILD := $(GO) build
 
 # Docker compose

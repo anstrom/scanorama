@@ -1,5 +1,21 @@
 # Scanorama — Claude Code Rules
 
+## Project State & Planning
+
+**GitHub is the source of truth for current state and upcoming work.**
+
+To determine the current version and what comes next:
+
+```bash
+git describe --tags --abbrev=0          # current released version
+gh milestone list                       # active milestones = upcoming releases
+gh issue list --state open --milestone <name>  # issues in the next milestone
+```
+
+- Local planning docs (`docs/planning/`) may be stale — always cross-check against GitHub milestones and open issues
+- The next work items come from open issues on the active milestone, not from local docs
+- When starting a new feature, check `gh issue view <NNN>` for the canonical spec
+
 ## Release
 
 **Pushing a tag is the complete release action.** GoReleaser runs automatically via `.github/workflows/release.yml`.
@@ -74,6 +90,10 @@ git rebase --autosquash origin/main
 go test -race ./internal/...   # fuller than the hook's -short run (~30s)
 git push origin my-branch      # hook runs lint + swagger + tests automatically
 ```
+
+Run tests against the **committed** state, not the working tree. Unstaged changes can mask
+failures CI will catch — ensure `git status` shows no unstaged modifications to source or
+test files before running the suite.
 
 If either test suite is red, fix before pushing — CI round-trip is 2–3 min.
 
