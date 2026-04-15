@@ -291,10 +291,11 @@ func TestJSONB(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, j.String())
 
-			// Test Value method
+			// Test Value method — must return string, not []byte, so that pq uses
+			// the text wire protocol and avoids binary JSONB format corruption.
 			value, err := j.Value()
 			require.NoError(t, err)
-			assert.Equal(t, []byte(tt.expected), value)
+			assert.Equal(t, tt.expected, value)
 
 			// Test Scan with bytes
 			var j2 JSONB
@@ -339,6 +340,63 @@ func TestJSONBEdgeCases(t *testing.T) {
 	err = j.Scan(123)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot scan")
+}
+
+// TestJSONBBinaryFormat tests that JSONB.Scan handles the PostgreSQL binary
+// wire format correctly.  When pq reads a JSONB column over the binary protocol
+// it prepends a version byte (0x01) before the JSON text.  Scan must strip the
+// prefix and return only valid JSON — so MarshalJSON never emits garbage.
+func TestJSONBBinaryFormat(t *testing.T) {
+	t.Run("binary JSONB with 0x01 version prefix is stripped", func(t *testing.T) {
+		jsonText := `{"Server":"Apache","Content-Type":"text/html"}`
+		binary := append([]byte{0x01}, []byte(jsonText)...)
+
+		var j JSONB
+		require.NoError(t, j.Scan(binary))
+		assert.Equal(t, jsonText, j.String())
+
+		// MarshalJSON must succeed and produce the plain JSON text.
+		out, err := j.MarshalJSON()
+		require.NoError(t, err)
+		assert.JSONEq(t, jsonText, string(out))
+	})
+
+	t.Run("binary JSONB via Scan copies bytes, not aliasing driver buffer", func(t *testing.T) {
+		buf := []byte{0x01, '{', '"', 'k', '"', ':', '1', '}'}
+		var j JSONB
+		require.NoError(t, j.Scan(buf))
+
+		// Mutate the original buffer.
+		buf[2] = 'X'
+
+		// JSONB must still hold the original value.
+		assert.Equal(t, `{"k":1}`, j.String())
+	})
+
+	t.Run("corrupt binary bytes scan to nil without error", func(t *testing.T) {
+		// Simulate the corrupt bytes observed in the wild: not valid JSON,
+		// not a 0x01-prefixed JSONB.
+		corrupt := []byte{0x06, 0x00, 0x00, 0x04, 0xa0, 0x00, 0x08, 0xff}
+
+		var j JSONB
+		require.NoError(t, j.Scan(corrupt), "Scan must not error on invalid JSON")
+		assert.Nil(t, j, "corrupt bytes must produce a nil JSONB")
+
+		// MarshalJSON of nil must be "null", never an error.
+		out, err := j.MarshalJSON()
+		require.NoError(t, err)
+		assert.Equal(t, "null", string(out))
+	})
+
+	t.Run("Value returns string not []byte", func(t *testing.T) {
+		var j JSONB
+		require.NoError(t, j.Scan(`{"x":1}`))
+
+		v, err := j.Value()
+		require.NoError(t, err)
+		_, isString := v.(string)
+		assert.True(t, isString, "Value() must return a string so pq uses text protocol")
+	})
 }
 
 // TestConstantValues checks the actual string values of every constant.

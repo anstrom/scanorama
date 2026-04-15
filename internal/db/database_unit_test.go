@@ -246,8 +246,10 @@ func TestJSONBExtended(t *testing.T) {
 	t.Run("scan_invalid_json", func(t *testing.T) {
 		var j JSONB
 		err := j.Scan(`{invalid json`)
-		assert.NoError(t, err) // Scan doesn't validate JSON, just stores bytes
-		assert.Equal(t, `{invalid json`, string(j))
+		// Scan validates JSON; invalid bytes must silently produce nil rather
+		// than storing garbage that would later break MarshalJSON.
+		assert.NoError(t, err)
+		assert.Nil(t, []byte(j))
 	})
 
 	t.Run("scan_nil", func(t *testing.T) {
@@ -275,7 +277,9 @@ func TestJSONBExtended(t *testing.T) {
 		j := JSONB(`{"test": true}`)
 		val, err := j.Value()
 		assert.NoError(t, err)
-		assert.Equal(t, []byte(`{"test": true}`), val)
+		// Value() must return a string so pq uses text protocol (not binary
+		// bytea encoding which corrupts JSONB on read-back).
+		assert.Equal(t, `{"test": true}`, val)
 	})
 
 	t.Run("marshal_json", func(t *testing.T) {
