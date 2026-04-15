@@ -13,6 +13,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zmap/zgrab2"
+	zgrabhttp_lib "github.com/zmap/zgrab2/lib/http"
+	zgrabhttp "github.com/zmap/zgrab2/modules/http"
 )
 
 // ── parseBannerText ─────────────────────────────────────────────────────────
@@ -97,6 +100,42 @@ func TestKeyTypeFromCert_Unknown(t *testing.T) {
 	// Use a non-RSA/ECDSA public key type — a raw string satisfies interface{}.
 	cert := &x509.Certificate{PublicKey: "not-a-real-key"}
 	assert.Equal(t, "", keyTypeFromCert(cert))
+}
+
+// ── findTLSLog ──────────────────────────────────────────────────────────────
+
+// TestFindTLSLog_FromRedirectChain verifies that findTLSLog returns the TLS
+// log from the redirect chain before checking the final response.
+func TestFindTLSLog_FromRedirectChain(t *testing.T) {
+	tlsLog := &zgrab2.TLSLog{}
+	results := &zgrabhttp.Results{
+		RedirectResponseChain: []*zgrabhttp_lib.Response{
+			{Request: &zgrabhttp_lib.Request{TLSLog: tlsLog}},
+		},
+		Response: &zgrabhttp_lib.Response{}, // final response has no TLS
+	}
+	assert.Equal(t, tlsLog, findTLSLog(results), "redirect chain TLS log should take precedence")
+}
+
+// TestFindTLSLog_NilRequestInRedirectChain verifies that a nil Request in the
+// redirect chain is skipped and findTLSLog falls through to the final response.
+func TestFindTLSLog_NilRequestInRedirectChain(t *testing.T) {
+	tlsLog := &zgrab2.TLSLog{}
+	results := &zgrabhttp.Results{
+		RedirectResponseChain: []*zgrabhttp_lib.Response{
+			{Request: nil}, // no request — must be skipped
+		},
+		Response: &zgrabhttp_lib.Response{
+			Request: &zgrabhttp_lib.Request{TLSLog: tlsLog},
+		},
+	}
+	assert.Equal(t, tlsLog, findTLSLog(results))
+}
+
+// TestFindTLSLog_NilResponse verifies that nil Response returns nil.
+func TestFindTLSLog_NilResponse(t *testing.T) {
+	results := &zgrabhttp.Results{Response: nil}
+	assert.Nil(t, findTLSLog(results))
 }
 
 // ── tlsVersionString ────────────────────────────────────────────────────────
