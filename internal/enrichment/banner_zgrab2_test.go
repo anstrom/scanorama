@@ -209,3 +209,52 @@ func TestGrabZGrabSSH_UnreachableHost(t *testing.T) {
 	require.Error(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ── probeUnknown ─────────────────────────────────────────────────────────────
+
+// TestProbeUnknown_HTTP_StopsAfterSuccess verifies that when an HTTP server
+// responds on the port, probeUnknown does not attempt HTTPS or SSH and sets
+// the extended_probe_done flag.
+func TestProbeUnknown_HTTP_StopsAfterSuccess(t *testing.T) {
+	addr := startHTTPServer(t)
+	host, portStr, err := net.SplitHostPort(addr)
+	require.NoError(t, err)
+	var port int
+	parsePort(portStr, &port)
+
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+
+	// HTTP grab stores banner.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	// MarkExtendedProbeDone.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	target := BannerTarget{HostID: uuid.New(), IP: host}
+	g.probeUnknown(context.Background(), target, port)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestProbeUnknown_NoServer_SetsFlag verifies that probeUnknown sets
+// extended_probe_done even when all probes fail (nothing is listening).
+func TestProbeUnknown_NoServer_SetsFlag(t *testing.T) {
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+
+	// All probes fail; grabPlain finds nothing to store, but MarkExtendedProbeDone runs.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	target := BannerTarget{HostID: uuid.New(), IP: "127.0.0.1"}
+	g.probeUnknown(ctx, target, 19990)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
