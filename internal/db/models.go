@@ -745,6 +745,7 @@ type PortBanner struct {
 	HTTPRedirect        *string   `db:"http_redirect"          json:"http_redirect,omitempty"`
 	HTTPResponseHeaders JSONB     `db:"http_response_headers"  json:"http_response_headers,omitempty"`
 	ScannedAt           time.Time `db:"scanned_at"             json:"scanned_at"`
+	ExtendedProbeDone   bool      `db:"extended_probe_done"    json:"-"`
 }
 
 // SNMPInterface describes a single network interface collected via SNMP.
