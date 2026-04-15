@@ -15,6 +15,7 @@ import (
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 
 	"github.com/anstrom/scanorama/internal/db"
@@ -514,6 +515,153 @@ func TestForwardRecords_TXT(t *testing.T) {
 	require.Equal(t, "v=spf1 include:example.com ~all", txts[0])
 	require.NoError(t, resolverMock.ExpectationsWereMet())
 }
+
+// ─── EnrichHosts — loop body coverage ────────────────────────────────────────
+
+// TestEnrichHosts_ProcessesOneHost verifies that EnrichHosts enters the
+// per-host timeout loop for a non-cancelled context with a non-empty slice.
+func TestEnrichHosts_ProcessesOneHost(t *testing.T) {
+	resolverDB, resolverMock := newMockDB(t)
+	dnsDB, dnsMock := newMockDB(t)
+	hostDB, hostMock := newMockDB(t)
+
+	// PTR lookup returns ErrNoRecords → EnrichHost stores nothing and returns nil.
+	resolverMock.ExpectQuery("SELECT .+ FROM dns_cache WHERE direction").
+		WillReturnRows(sqlmock.NewRows(cacheQueryCols))
+	resolverMock.ExpectExec("INSERT INTO dns_cache").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	resolver := internaldns.New(resolverDB,
+		internaldns.WithLookupAddrFn(func(_ context.Context, _ string) ([]string, error) {
+			return nil, internaldns.ErrNoRecords
+		}),
+	)
+
+	enricher := NewDNSEnricher(resolver, db.NewDNSRepository(dnsDB), db.NewHostRepository(hostDB))
+	enricher.EnrichHosts(context.Background(), []*db.Host{makeHost("192.0.2.1")})
+
+	require.NoError(t, resolverMock.ExpectationsWereMet())
+	require.NoError(t, dnsMock.ExpectationsWereMet())
+	require.NoError(t, hostMock.ExpectationsWereMet())
+}
+
+// TestEnrichHosts_EnrichHostFails verifies that an error from EnrichHost is
+// logged but does not abort the loop (function returns without propagating).
+func TestEnrichHosts_EnrichHostFails(t *testing.T) {
+	resolverDB, resolverMock := newMockDB(t)
+	dnsDB, dnsMock := newMockDB(t)
+	hostDB, hostMock := newMockDB(t)
+
+	noOpCacheExpect(resolverMock)
+
+	resolver := internaldns.New(resolverDB,
+		internaldns.WithLookupAddrFn(func(_ context.Context, _ string) ([]string, error) {
+			return []string{"host.example.com"}, nil
+		}),
+	)
+
+	// DNS repo: BEGIN fails → UpsertDNSRecords returns an error.
+	dnsMock.ExpectBegin().WillReturnError(fmt.Errorf("db unavailable"))
+
+	host := makeHostWithHostname("192.0.2.1", "existing.example.com")
+	enricher := NewDNSEnricher(resolver, db.NewDNSRepository(dnsDB), db.NewHostRepository(hostDB))
+	// EnrichHosts must not panic and must not propagate the error.
+	enricher.EnrichHosts(context.Background(), []*db.Host{host})
+
+	require.NoError(t, resolverMock.ExpectationsWereMet())
+	require.NoError(t, dnsMock.ExpectationsWereMet())
+	require.NoError(t, hostMock.ExpectationsWereMet())
+}
+
+// ─── maybeSetHostname — error path ───────────────────────────────────────────
+
+// getHostCols lists the 26 columns scanned by GetHost in positional order,
+// followed by the columns for the sub-queries that GetHost also runs.
+var getHostCols = []string{
+	"id", "ip_address", "hostname", "mac_address", "vendor",
+	"os_family", "os_name", "os_version", "os_confidence",
+	"os_detected_at", "os_method", "os_details",
+	"discovery_method",
+	"response_time_ms", "response_time_min_ms", "response_time_max_ms", "response_time_avg_ms",
+	"ignore_scanning",
+	"first_seen", "last_seen", "status",
+	"status_changed_at", "previous_status", "timeout_count",
+	"tags",
+	"knowledge_score",
+}
+
+// TestMaybeSetHostname_UpdateHostSucceeds verifies that maybeSetHostname logs
+// a debug message when UpdateHost completes without error.
+func TestMaybeSetHostname_UpdateHostSucceeds(t *testing.T) {
+	resolverDB, _ := newMockDB(t)
+	dnsDB, _ := newMockDB(t)
+	hostDB, hostMock := newMockDB(t)
+
+	hostID := uuid.New()
+	hostname := "discovered.example.com"
+	now := time.Now().UTC()
+
+	// Full UpdateHost transaction sequence.
+	hostMock.ExpectBegin()
+	hostMock.ExpectQuery("SELECT EXISTS").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	hostMock.ExpectExec("UPDATE hosts").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	hostMock.ExpectCommit()
+	// GetHost after commit: main row + fetchHostPorts + fetchHostScanCount + GetHostGroups.
+	hostMock.ExpectQuery("SELECT").
+		WillReturnRows(sqlmock.NewRows(getHostCols).AddRow(
+			hostID, "192.0.2.1", &hostname, nil, nil,
+			nil, nil, nil, nil,
+			nil, nil, nil,
+			nil,
+			nil, nil, nil, nil,
+			false,
+			now, now, "up",
+			nil, nil, 0,
+			pq.StringArray{},
+			0,
+		))
+	hostMock.ExpectQuery("SELECT DISTINCT").
+		WillReturnRows(sqlmock.NewRows([]string{"port", "protocol", "state", "service_name", "scanned_at"}))
+	hostMock.ExpectQuery("SELECT COUNT").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	hostMock.ExpectQuery("SELECT hg.id").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "color"}))
+
+	resolver := internaldns.New(resolverDB)
+	enricher := NewDNSEnricher(resolver, db.NewDNSRepository(dnsDB), db.NewHostRepository(hostDB))
+
+	host := &db.Host{
+		ID:        hostID,
+		IPAddress: db.IPAddr{IP: net.ParseIP("192.0.2.1")},
+		// Hostname is nil — maybeSetHostname will call UpdateHost.
+	}
+	enricher.maybeSetHostname(context.Background(), host, hostname)
+
+	require.NoError(t, hostMock.ExpectationsWereMet())
+}
+
+// TestMaybeSetHostname_UpdateHostFails verifies that a DB error from
+// UpdateHost is only logged; maybeSetHostname must not propagate it.
+func TestMaybeSetHostname_UpdateHostFails(t *testing.T) {
+	resolverDB, _ := newMockDB(t)
+	dnsDB, _ := newMockDB(t)
+	hostDB, hostMock := newMockDB(t)
+
+	// UpdateHost fails immediately at BEGIN.
+	hostMock.ExpectBegin().WillReturnError(fmt.Errorf("db unavailable"))
+
+	resolver := internaldns.New(resolverDB)
+	enricher := NewDNSEnricher(resolver, db.NewDNSRepository(dnsDB), db.NewHostRepository(hostDB))
+
+	host := makeHost("192.0.2.1") // Hostname is nil — maybeSetHostname will attempt UpdateHost.
+	enricher.maybeSetHostname(context.Background(), host, "discovered.example.com")
+
+	require.NoError(t, hostMock.ExpectationsWereMet())
+}
+
+// ─── forwardRecords — SRV ─────────────────────────────────────────────────────
 
 func TestForwardRecords_SRV(t *testing.T) {
 	hostID := uuid.New()

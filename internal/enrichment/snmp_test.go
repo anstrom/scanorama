@@ -340,3 +340,26 @@ func TestMarshalInterfaces_MultipleEntries(t *testing.T) {
 	assert.Equal(t, "eth0", parsed[0]["name"])
 	assert.Equal(t, "lo", parsed[1]["name"])
 }
+
+// ── ifStatusString ────────────────────────────────────────────────────────────
+
+func TestIfStatusString(t *testing.T) {
+	cases := []struct {
+		code     int64
+		expected string
+	}{
+		{ifOperStatusUp, "up"},
+		{ifOperStatusDown, "down"},
+		{ifOperStatusTesting, "testing"},
+		{ifOperStatusUnknown, "unknown"},
+		{ifOperStatusDormant, "dormant"},
+		{ifOperStatusNotPresent, "notPresent"},
+		{ifOperStatusLowerLayerDown, "lowerLayerDown"},
+		{99, "unknown"}, // default case
+	}
+	for _, tc := range cases {
+		t.Run(tc.expected, func(t *testing.T) {
+			assert.Equal(t, tc.expected, ifStatusString(tc.code))
+		})
+	}
+}
