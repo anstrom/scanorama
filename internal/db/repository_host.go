@@ -1313,6 +1313,54 @@ func (r *HostRepository) GetHostGroups(ctx context.Context, hostID uuid.UUID) ([
 	return groups, nil
 }
 
+// GetHostNetworks returns every registered network whose CIDR contains the
+// host's IP address, ordered by longest prefix first. Backed by the
+// host_network_memberships view. Returns an empty slice (never nil) when
+// the host belongs to no registered network so JSON encodes as [] not null.
+func (r *HostRepository) GetHostNetworks(ctx context.Context, hostID uuid.UUID) ([]*Network, error) {
+	const query = `
+		SELECT n.id, n.name, n.cidr, n.description, n.discovery_method,
+		       n.is_active, n.scan_enabled, n.scan_interval_seconds,
+		       n.scan_ports, n.scan_type,
+		       n.last_discovery, n.last_scan,
+		       n.host_count, n.active_host_count,
+		       n.created_at, n.updated_at, n.created_by, n.modified_by
+		FROM host_network_memberships m
+		JOIN networks n ON n.id = m.network_id
+		WHERE m.host_id = $1
+		ORDER BY m.mask_len DESC
+	`
+	rows, err := r.db.QueryContext(ctx, query, hostID)
+	if err != nil {
+		return nil, sanitizeDBError("get host networks", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			slog.Warn("failed to close rows", "error", closeErr)
+		}
+	}()
+
+	networks := make([]*Network, 0)
+	for rows.Next() {
+		n := &Network{}
+		if err := rows.Scan(
+			&n.ID, &n.Name, &n.CIDR, &n.Description, &n.DiscoveryMethod,
+			&n.IsActive, &n.ScanEnabled, &n.ScanIntervalSeconds,
+			&n.ScanPorts, &n.ScanType,
+			&n.LastDiscovery, &n.LastScan,
+			&n.HostCount, &n.ActiveHostCount,
+			&n.CreatedAt, &n.UpdatedAt, &n.CreatedBy, &n.ModifiedBy,
+		); err != nil {
+			return nil, fmt.Errorf("scan network row: %w", err)
+		}
+		networks = append(networks, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate network rows: %w", err)
+	}
+	return networks, nil
+}
+
 // RecalculateKnowledgeScore recomputes the knowledge_score for a single host
 // using a SQL expression that joins enrichment tables directly. The score is
 // a 0–100 integer awarded in five 20-point increments:

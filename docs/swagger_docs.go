@@ -678,6 +678,22 @@ func DeleteHost(_ http.ResponseWriter, _ *http.Request) {}
 // @ID getHostScans
 func GetHostScans(_ http.ResponseWriter, _ *http.Request) {}
 
+// GetHostNetworks godoc
+// @Summary List networks a host is a member of
+// @Description List registered networks whose CIDR contains the host's IP, ordered by longest prefix first
+// @Tags Hosts
+// @Produce json
+// @Param hostId path string true "Host ID" format(uuid)
+// @Success 200 {array} NetworkResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /hosts/{hostId}/networks [get]
+// @ID getHostNetworks
+func GetHostNetworks(_ http.ResponseWriter, _ *http.Request) {}
+
 // ListProfiles godoc
 // @Summary List profiles
 // @Description Get paginated list of scan profiles

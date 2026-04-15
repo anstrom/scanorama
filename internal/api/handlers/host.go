@@ -413,6 +413,47 @@ func (h *HostHandler) GetHostScans(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetHostNetworks handles GET /api/v1/hosts/{id}/networks - list the registered
+// networks containing this host, ordered by longest prefix first. Membership is
+// derived from the host_network_memberships view via CIDR containment; no row
+// is persisted. Empty results encode as "[]" (never "null") for wire stability.
+func (h *HostHandler) GetHostNetworks(w http.ResponseWriter, r *http.Request) {
+	requestID := getRequestIDFromContext(r.Context())
+
+	hostID, err := extractUUIDFromPath(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	if _, err := h.service.GetHost(r.Context(), hostID); err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, fmt.Errorf("host not found"))
+			return
+		}
+		h.logger.Error("Failed to verify host existence",
+			"request_id", requestID, "host_id", hostID, "error", err)
+		writeError(w, r, http.StatusInternalServerError,
+			fmt.Errorf("failed to retrieve host: %w", err))
+		return
+	}
+
+	networks, err := h.service.GetHostNetworks(r.Context(), hostID)
+	if err != nil {
+		h.logger.Error("Failed to get host networks",
+			"request_id", requestID, "host_id", hostID, "error", err)
+		writeError(w, r, http.StatusInternalServerError,
+			fmt.Errorf("failed to list host networks: %w", err))
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, networks)
+
+	if h.metrics != nil {
+		h.metrics.Counter("api_host_networks_retrieved_total", nil)
+	}
+}
+
 // Helper methods
 
 // validateHostRequest validates a host request.

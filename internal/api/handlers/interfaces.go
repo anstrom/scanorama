@@ -86,6 +86,7 @@ type HostServicer interface {
 	RemoveHostTags(ctx context.Context, id uuid.UUID, tags []string) error
 	BulkUpdateTags(ctx context.Context, ids []uuid.UUID, tags []string, action string) error
 	GetHostGroups(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error)
+	GetHostNetworks(ctx context.Context, hostID uuid.UUID) ([]*db.Network, error)
 }
 
 // ProfileServicer is the service-level interface consumed by ProfileHandler.

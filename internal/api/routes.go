@@ -137,6 +137,7 @@ func (s *Server) setupHostRoutes(api *mux.Router, h *apihandlers.HostHandler) {
 	api.HandleFunc("/hosts/{id}", h.UpdateHost).Methods("PUT")
 	api.HandleFunc("/hosts/{id}", h.DeleteHost).Methods("DELETE")
 	api.HandleFunc("/hosts/{id}/scans", h.GetHostScans).Methods("GET")
+	api.HandleFunc("/hosts/{id}/networks", h.GetHostNetworks).Methods("GET")
 }
 
 // setupDiscoveryRoutes registers discovery job endpoints.
