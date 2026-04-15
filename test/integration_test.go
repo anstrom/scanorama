@@ -383,7 +383,7 @@ func TestDatabaseQueries(t *testing.T) {
 	t.Run("QueryScanJobsWithResults", func(t *testing.T) {
 		type jobRow struct {
 			JobID        uuid.UUID  `db:"job_id"`
-			TargetName   string     `db:"target_name"`
+			TargetName   *string    `db:"target_name"`
 			Status       string     `db:"status"`
 			HostsScanned int        `db:"hosts_scanned"`
 			CompletedAt  *time.Time `db:"completed_at"`
@@ -398,7 +398,7 @@ func TestDatabaseQueries(t *testing.T) {
 				COUNT(DISTINCT ps.host_id) AS hosts_scanned,
 				sj.completed_at
 			FROM scan_jobs sj
-			JOIN networks n ON sj.network_id = n.id
+			LEFT JOIN networks n ON sj.network_id = n.id
 			LEFT JOIN port_scans ps ON sj.id = ps.job_id
 			WHERE sj.created_at >= $1
 			GROUP BY sj.id, n.name, sj.status, sj.completed_at
