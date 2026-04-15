@@ -623,3 +623,93 @@ func TestBannerRepository_UpsertSSHPortData_DBError(t *testing.T) {
 	require.Error(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ── IsExtendedProbeDone ────────────────────────────────────────────────────
+
+func TestBannerRepository_IsExtendedProbeDone_NoRow(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	hostID := uuid.New()
+	mock.ExpectQuery("SELECT extended_probe_done FROM port_banners").
+		WithArgs(hostID, 9999, ProtocolTCP).
+		WillReturnRows(sqlmock.NewRows([]string{"extended_probe_done"}))
+
+	done, err := repo.IsExtendedProbeDone(context.Background(), hostID, 9999)
+	require.NoError(t, err)
+	assert.False(t, done)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBannerRepository_IsExtendedProbeDone_FalseRow(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	hostID := uuid.New()
+	mock.ExpectQuery("SELECT extended_probe_done FROM port_banners").
+		WithArgs(hostID, 80, ProtocolTCP).
+		WillReturnRows(sqlmock.NewRows([]string{"extended_probe_done"}).AddRow(false))
+
+	done, err := repo.IsExtendedProbeDone(context.Background(), hostID, 80)
+	require.NoError(t, err)
+	assert.False(t, done)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBannerRepository_IsExtendedProbeDone_TrueRow(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	hostID := uuid.New()
+	mock.ExpectQuery("SELECT extended_probe_done FROM port_banners").
+		WithArgs(hostID, 8080, ProtocolTCP).
+		WillReturnRows(sqlmock.NewRows([]string{"extended_probe_done"}).AddRow(true))
+
+	done, err := repo.IsExtendedProbeDone(context.Background(), hostID, 8080)
+	require.NoError(t, err)
+	assert.True(t, done)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBannerRepository_IsExtendedProbeDone_DBError(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	hostID := uuid.New()
+	mock.ExpectQuery("SELECT extended_probe_done FROM port_banners").
+		WillReturnError(fmt.Errorf("connection lost"))
+
+	done, err := repo.IsExtendedProbeDone(context.Background(), hostID, 22)
+	require.Error(t, err)
+	assert.False(t, done)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ── MarkExtendedProbeDone ─────────────────────────────────────────────────
+
+func TestBannerRepository_MarkExtendedProbeDone_OK(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	hostID := uuid.New()
+	mock.ExpectExec("INSERT INTO port_banners").
+		WithArgs(sqlmock.AnyArg(), hostID, 9999, ProtocolTCP, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	err := repo.MarkExtendedProbeDone(context.Background(), hostID, 9999)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBannerRepository_MarkExtendedProbeDone_DBError(t *testing.T) {
+	database, mock := newMockDB(t)
+	repo := NewBannerRepository(database)
+
+	hostID := uuid.New()
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnError(fmt.Errorf("disk full"))
+
+	err := repo.MarkExtendedProbeDone(context.Background(), hostID, 9999)
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
