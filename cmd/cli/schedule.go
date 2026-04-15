@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -24,7 +25,10 @@ const (
 	maxJobNameLength        = 20  // max job name length before truncation
 	maxPortsDisplay         = 5   // max ports to show before truncation
 	// Display text constants
-	yesText = "Yes"
+	yesText          = "Yes"
+	outputFormatJSON = "json"
+	// API endpoint for server-computed next-run.
+	nextRunEndpoint = "/schedules/%s/next-run"
 )
 
 // scheduleCmd represents the schedule command.
@@ -112,6 +116,10 @@ var (
 	// Flags for add-discovery command.
 	scheduleDetectOS bool
 	scheduleMethod   string
+
+	// Output format flags.
+	scheduleListOutput string
+	scheduleShowOutput string
 )
 
 func init() {
@@ -143,6 +151,10 @@ func init() {
 	scheduleAddScanCmd.Flags().Lookup("live-hosts").Usage = "Scan all discovered live hosts in scheduled job"
 	scheduleAddScanCmd.Flags().Lookup("type").Usage = "Scan type: connect, syn, version, " +
 		"comprehensive, aggressive, stealth"
+
+	// Output format flags
+	scheduleListCmd.Flags().StringVarP(&scheduleListOutput, "output", "o", "table", "Output format (table, json)")
+	scheduleShowCmd.Flags().StringVarP(&scheduleShowOutput, "output", "o", "table", "Output format (table, json)")
 }
 
 func runScheduleList(_ *cobra.Command, _ []string) {
@@ -153,6 +165,10 @@ func runScheduleList(_ *cobra.Command, _ []string) {
 			os.Exit(1)
 		}
 
+		if scheduleListOutput == outputFormatJSON {
+			displayScheduledJobsJSON(jobs)
+			return
+		}
 		displayScheduledJobs(jobs)
 	})
 }
@@ -275,6 +291,11 @@ func runScheduleShow(_ *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 
+		if scheduleShowOutput == outputFormatJSON {
+			serverNextRun := fetchServerNextRun(job.ID)
+			displayScheduledJobDetailsJSON(job, serverNextRun)
+			return
+		}
 		displayScheduledJobDetails(job)
 	})
 }
@@ -531,4 +552,106 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+// fetchServerNextRun calls GET /schedules/{id}/next-run and returns the
+// server-computed next run time. Returns nil on any error (best-effort).
+func fetchServerNextRun(jobID string) *time.Time {
+	client, err := NewAPIClient()
+	if err != nil {
+		return nil
+	}
+
+	endpoint := fmt.Sprintf(nextRunEndpoint, jobID)
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return nil
+	}
+
+	data, ok := resp.Data.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	nextRunStr, ok := data["next_run"].(string)
+	if !ok {
+		return nil
+	}
+
+	t, err := time.Parse(time.RFC3339, nextRunStr)
+	if err != nil {
+		return nil
+	}
+
+	return &t
+}
+
+// scheduledJobJSON is the wire representation of a scheduled job for JSON output.
+type scheduledJobJSON struct {
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	JobType   string     `json:"job_type"`
+	CronExpr  string     `json:"cron_expr"`
+	IsActive  bool       `json:"is_active"`
+	CreatedAt time.Time  `json:"created_at"`
+	LastRun   *time.Time `json:"last_run"`
+	NextRun   time.Time  `json:"next_run"`
+	RunCount  int        `json:"run_count"`
+}
+
+func toScheduledJobJSON(job *ScheduledJob, serverNextRun *time.Time) scheduledJobJSON {
+	nextRun := job.NextRun
+	if serverNextRun != nil {
+		nextRun = *serverNextRun
+	}
+
+	return scheduledJobJSON{
+		ID:        job.ID,
+		Name:      job.Name,
+		JobType:   job.JobType,
+		CronExpr:  job.CronExpr,
+		IsActive:  job.IsActive,
+		CreatedAt: job.CreatedAt,
+		LastRun:   job.LastRun,
+		NextRun:   nextRun,
+		RunCount:  job.RunCount,
+	}
+}
+
+// displayScheduledJobsJSON emits the job list as JSON: {"jobs":[...],"count":N}.
+func displayScheduledJobsJSON(jobs []ScheduledJob) {
+	items := make([]scheduledJobJSON, len(jobs))
+	for i := range jobs {
+		items[i] = toScheduledJobJSON(&jobs[i], nil)
+	}
+
+	output := struct {
+		Jobs  []scheduledJobJSON `json:"jobs"`
+		Count int                `json:"count"`
+	}{
+		Jobs:  items,
+		Count: len(items),
+	}
+
+	jsonData, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error marshaling JSON: %v\n", err)
+		return
+	}
+
+	fmt.Println(string(jsonData))
+}
+
+// displayScheduledJobDetailsJSON emits a single job as JSON. When serverNextRun
+// is non-nil, the server-computed value overrides the locally computed NextRun.
+func displayScheduledJobDetailsJSON(job *ScheduledJob, serverNextRun *time.Time) {
+	item := toScheduledJobJSON(job, serverNextRun)
+
+	jsonData, err := json.MarshalIndent(item, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error marshaling JSON: %v\n", err)
+		return
+	}
+
+	fmt.Println(string(jsonData))
 }
