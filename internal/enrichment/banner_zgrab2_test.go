@@ -258,3 +258,87 @@ func TestProbeUnknown_NoServer_SetsFlag(t *testing.T) {
 
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ── grabOne routing ───────────────────────────────────────────────────────────
+
+// TestGrabOne_UnknownService_AllowedAndNotDone verifies that grabOne runs
+// probeUnknown (extended sequence) when service is empty, AllowExtendedProbe
+// is true, and the DB reports extended_probe_done = false.
+func TestGrabOne_UnknownService_AllowedAndNotDone(t *testing.T) {
+	addr := startHTTPServer(t)
+	host, portStr, err := net.SplitHostPort(addr)
+	require.NoError(t, err)
+	var port int
+	parsePort(portStr, &port)
+
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+
+	// IsExtendedProbeDone returns false (no row) → probeUnknown runs.
+	mock.ExpectQuery("SELECT extended_probe_done FROM port_banners").
+		WillReturnRows(sqlmock.NewRows([]string{"extended_probe_done"}))
+	// HTTP grab succeeds → banner INSERT.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	// MarkExtendedProbeDone → flag INSERT.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	pi := PortInfo{Number: port, Service: "", AllowExtendedProbe: true}
+	g.grabOne(context.Background(), BannerTarget{HostID: uuid.New(), IP: host}, pi)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestGrabOne_UnknownService_AlreadyDone verifies that grabOne falls back to
+// plain TCP when extended_probe_done is already true, without calling probeUnknown.
+func TestGrabOne_UnknownService_AlreadyDone(t *testing.T) {
+	banner := "CUSTOM PROTO 1.0\r\n"
+	addr := startTCPServer(t, banner)
+	host, portStr, err := net.SplitHostPort(addr)
+	require.NoError(t, err)
+	var port int
+	parsePort(portStr, &port)
+
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+
+	// IsExtendedProbeDone returns true → skip probeUnknown, go to grabPlain.
+	mock.ExpectQuery("SELECT extended_probe_done FROM port_banners").
+		WillReturnRows(sqlmock.NewRows([]string{"extended_probe_done"}).AddRow(true))
+	// grabPlain stores the banner.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	pi := PortInfo{Number: port, Service: "", AllowExtendedProbe: true}
+	g.grabOne(context.Background(), BannerTarget{HostID: uuid.New(), IP: host}, pi)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestGrabOne_UnknownService_CapExceeded verifies that when AllowExtendedProbe
+// is false (cap exceeded), grabOne goes directly to grabPlain without checking
+// the DB or running probeUnknown.
+func TestGrabOne_UnknownService_CapExceeded(t *testing.T) {
+	banner := "CUSTOM PROTO 1.0\r\n"
+	addr := startTCPServer(t, banner)
+	host, portStr, err := net.SplitHostPort(addr)
+	require.NoError(t, err)
+	var port int
+	parsePort(portStr, &port)
+
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+
+	// No DB query expected — cap exceeded, probeUnknown skipped entirely.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	pi := PortInfo{Number: port, Service: "", AllowExtendedProbe: false}
+	g.grabOne(context.Background(), BannerTarget{HostID: uuid.New(), IP: host}, pi)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
