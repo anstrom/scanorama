@@ -493,8 +493,12 @@ func (g *BannerGrabber) grabZGrabSSH(ctx context.Context, t BannerTarget, port i
 	}
 	// err may be non-nil when DontAuthenticate causes the server to close the
 	// connection after the key exchange — we still got the data we need.
-	if err != nil && capturedFingerprint == "" && connLog.ServerID == nil {
-		return fmt.Errorf("ssh handshake: %w", err)
+	// If neither fingerprint nor serverID were captured, the host is not SSH.
+	if capturedFingerprint == "" && connLog.ServerID == nil {
+		if err != nil {
+			return fmt.Errorf("ssh handshake: %w", err)
+		}
+		return fmt.Errorf("ssh: connected but no SSH evidence captured")
 	}
 
 	var serverVersion string

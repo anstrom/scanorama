@@ -12,10 +12,15 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -97,6 +102,132 @@ func startSSHServer(t *testing.T) string {
 
 	return ln.Addr().String()
 }
+
+// startTLSSniffingHTTPServer starts a TCP server that peeks at the first byte of
+// each incoming connection. If the byte is 0x16 (TLS ClientHello record type),
+// it wraps the connection in TLS and serves HTTP; otherwise it drops the
+// connection immediately. This lets grabZGrabHTTP fail (connection reset) while
+// grabZGrabHTTPS succeeds, enabling probeUnknown HTTPS-branch tests.
+func startTLSSniffingHTTPServer(t *testing.T) string {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test.local"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	require.NoError(t, err)
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	require.NoError(t, err)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
+	require.NoError(t, err)
+
+	tlsCfg := &tls.Config{Certificates: []tls.Certificate{tlsCert}, MinVersion: tls.VersionTLS12}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Server", "TestHTTPSOnly/1.0")
+		w.WriteHeader(http.StatusOK)
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				buf := make([]byte, 1)
+				_ = c.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+				n, err := c.Read(buf)
+				_ = c.SetReadDeadline(time.Time{})
+				if err != nil || n == 0 {
+					return // plain HTTP or timeout: drop connection
+				}
+				if buf[0] != 0x16 {
+					return // not a TLS ClientHello: drop connection
+				}
+				// Reconnect as TLS, prepending the peeked byte.
+				tlsConn := tls.Server(&prependByteConn{Conn: c, b: buf[0]}, tlsCfg)
+				if err := tlsConn.Handshake(); err != nil {
+					return
+				}
+				srv := &http.Server{Handler: mux}
+				_ = srv.Serve(newOneConnListener(tlsConn))
+			}(conn)
+		}
+	}()
+
+	return ln.Addr().String()
+}
+
+// prependByteConn is a net.Conn that re-emits one peeked byte before delegating
+// further reads to the underlying connection.
+type prependByteConn struct {
+	net.Conn
+	b    byte
+	sent bool
+}
+
+func (p *prependByteConn) Read(b []byte) (int, error) {
+	if !p.sent {
+		p.sent = true
+		b[0] = p.b
+		return 1, nil
+	}
+	return p.Conn.Read(b)
+}
+
+// oneConnListener is a net.Listener that yields exactly one connection and
+// then blocks until Close() is called. This keeps http.Server.Serve alive
+// while the handler goroutine writes its response, without leaking permanently:
+// Close() unblocks Accept() so Serve can return.
+type oneConnListener struct {
+	conn net.Conn
+	addr net.Addr
+	done chan struct{}
+	once sync.Once
+}
+
+func newOneConnListener(conn net.Conn) *oneConnListener {
+	return &oneConnListener{
+		conn: conn,
+		addr: conn.LocalAddr(),
+		done: make(chan struct{}),
+	}
+}
+
+func (o *oneConnListener) Accept() (net.Conn, error) {
+	var c net.Conn
+	o.once.Do(func() { c = o.conn })
+	if c != nil {
+		return c, nil
+	}
+	<-o.done
+	return nil, net.ErrClosed
+}
+
+func (o *oneConnListener) Close() error {
+	select {
+	case <-o.done:
+	default:
+		close(o.done)
+	}
+	return nil
+}
+
+func (o *oneConnListener) Addr() net.Addr { return o.addr }
 
 // ── grabZGrabHTTP ─────────────────────────────────────────────────────────────
 
@@ -239,6 +370,67 @@ func TestProbeUnknown_HTTP_StopsAfterSuccess(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+// TestProbeUnknown_HTTPS_StopsAfterSuccess verifies that when a TLS-only HTTPS
+// server responds on the port, probeUnknown stops after HTTPS succeeds and does
+// not attempt SSH. It uses startTLSSniffingHTTPServer, which drops plain-HTTP
+// connections so that grabZGrabHTTP returns an error, while grabZGrabHTTPS
+// succeeds after a full TLS handshake.
+func TestProbeUnknown_HTTPS_StopsAfterSuccess(t *testing.T) {
+	addr := startTLSSniffingHTTPServer(t)
+	host, portStr, err := net.SplitHostPort(addr)
+	require.NoError(t, err)
+	var port int
+	parsePort(portStr, &port)
+
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+
+	// HTTP probe fails (connection reset by sniffing server) → no INSERT.
+	// HTTPS probe succeeds: certificate INSERT + banner INSERT.
+	mock.ExpectExec("INSERT INTO certificates").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	// MarkExtendedProbeDone.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	target := BannerTarget{HostID: uuid.New(), IP: host}
+	g.probeUnknown(context.Background(), target, port)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestProbeUnknown_SSH_StopsAfterSuccess verifies that when an SSH server
+// responds on the port, probeUnknown stops after SSH succeeds (HTTP and HTTPS
+// fail first) and does not fall back to plain TCP.
+func TestProbeUnknown_SSH_StopsAfterSuccess(t *testing.T) {
+	addr := startSSHServer(t)
+	host, portStr, err := net.SplitHostPort(addr)
+	require.NoError(t, err)
+	var port int
+	parsePort(portStr, &port)
+
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+
+	// HTTP probe fails (SSH server drops non-HTTP traffic) → no INSERT.
+	// HTTPS probe fails (no TLS on an SSH port) → no INSERT.
+	// SSH probe succeeds → banner INSERT.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	// MarkExtendedProbeDone → flag INSERT.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	target := BannerTarget{HostID: uuid.New(), IP: host}
+	g.probeUnknown(context.Background(), target, port)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 // TestProbeUnknown_NoServer_SetsFlag verifies that probeUnknown sets
 // extended_probe_done even when all probes fail (nothing is listening).
 func TestProbeUnknown_NoServer_SetsFlag(t *testing.T) {
@@ -253,8 +445,18 @@ func TestProbeUnknown_NoServer_SetsFlag(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
+	// Get a free port then immediately close — ensures no server is listening.
+	ln, lnErr := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, lnErr)
+	freeAddr := ln.Addr().String()
+	require.NoError(t, ln.Close())
+	_, portStr, splitErr := net.SplitHostPort(freeAddr)
+	require.NoError(t, splitErr)
+	var port int
+	parsePort(portStr, &port)
+
 	target := BannerTarget{HostID: uuid.New(), IP: "127.0.0.1"}
-	g.probeUnknown(ctx, target, 19990)
+	g.probeUnknown(ctx, target, port)
 
 	require.NoError(t, mock.ExpectationsWereMet())
 }
