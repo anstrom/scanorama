@@ -27,10 +27,11 @@ import (
 )
 
 const (
-	bannerReadBytes   = 1024
-	bannerDialTimeout = 5 * time.Second
-	bannerReadTimeout = 3 * time.Second
-	bannerConcurrency = 10
+	bannerReadBytes          = 1024
+	bannerDialTimeout        = 5 * time.Second
+	bannerReadTimeout        = 3 * time.Second
+	bannerConcurrency        = 10
+	maxExtendedProbesPerHost = 20
 
 	zgrabUserAgent    = "Mozilla/5.0 zgrab/0.x"
 	zgrabMaxSizeKB    = 256
@@ -62,8 +63,9 @@ var interestingHTTPHeaders = []string{
 
 // PortInfo carries a port number and its nmap-detected service name.
 type PortInfo struct {
-	Number  int
-	Service string // nmap-detected service name, e.g. "http", "ssh", "ftp"
+	Number             int
+	Service            string // nmap-detected service name, e.g. "http", "ssh", ""
+	AllowExtendedProbe bool   // set by EnrichHosts; true when within per-host extended-probe cap
 }
 
 // BannerTarget describes a host and its open TCP ports to probe.
@@ -93,9 +95,24 @@ func NewBannerGrabber(repo *db.BannerRepository, logger *slog.Logger, extraFinge
 
 // EnrichHosts grabs banners for all targets concurrently.
 // Errors are logged rather than returned — enrichment is best-effort.
+// For each host, at most maxExtendedProbesPerHost ports with an unidentified
+// service are eligible for extended protocol probing.
 func (g *BannerGrabber) EnrichHosts(ctx context.Context, targets []BannerTarget) {
 	if len(targets) == 0 {
 		return
+	}
+
+	// Mark which unknown-service ports are within the per-host extended-probe cap.
+	unknownCount := make(map[uuid.UUID]int, len(targets))
+	for i := range targets {
+		for j := range targets[i].Ports {
+			if targets[i].Ports[j].Service == "" {
+				unknownCount[targets[i].HostID]++
+				if unknownCount[targets[i].HostID] <= maxExtendedProbesPerHost {
+					targets[i].Ports[j].AllowExtendedProbe = true
+				}
+			}
+		}
 	}
 
 	sem := make(chan struct{}, bannerConcurrency)
@@ -147,7 +164,50 @@ func (g *BannerGrabber) grabOne(ctx context.Context, t BannerTarget, pi PortInfo
 		}
 
 	default:
+		if pi.Service == "" && pi.AllowExtendedProbe {
+			done, err := g.repo.IsExtendedProbeDone(ctx, t.HostID, pi.Number)
+			if err != nil {
+				g.logger.Warn("failed to check extended probe status, proceeding with probe",
+					"host_id", t.HostID, "port", pi.Number, "error", err)
+			}
+			if !done {
+				g.probeUnknown(ctx, t, pi.Number)
+				return
+			}
+		}
 		g.grabPlain(ctx, t, pi.Number, addr)
+	}
+}
+
+// probeUnknown tries HTTP → HTTPS → SSH → plain TCP in sequence for a port
+// with no nmap-identified service. Stops after the first probe that succeeds
+// (returns no error). Always calls MarkExtendedProbeDone when finished so the
+// sequence never repeats for this (host, port) pair.
+func (g *BannerGrabber) probeUnknown(ctx context.Context, t BannerTarget, port int) {
+	addr := fmt.Sprintf("%s:%d", t.IP, port)
+
+	if err := g.grabZGrabHTTP(ctx, t, port); err == nil {
+		g.markProbeDone(ctx, t.HostID, port)
+		return
+	}
+	if err := g.grabZGrabHTTPS(ctx, t, port); err == nil {
+		g.markProbeDone(ctx, t.HostID, port)
+		return
+	}
+	if err := g.grabZGrabSSH(ctx, t, port, addr); err == nil {
+		g.markProbeDone(ctx, t.HostID, port)
+		return
+	}
+	g.grabPlain(ctx, t, port, addr)
+	g.markProbeDone(ctx, t.HostID, port)
+}
+
+// markProbeDone calls MarkExtendedProbeDone and logs a warning on failure.
+// Probe results are already stored; this is best-effort bookkeeping.
+func (g *BannerGrabber) markProbeDone(ctx context.Context, hostID uuid.UUID, port int) {
+	if err := g.repo.MarkExtendedProbeDone(ctx, hostID, port); err != nil {
+		g.logger.Warn("failed to mark extended probe done",
+			"host_id", hostID, "port", port, "error", err)
 	}
 }
 
