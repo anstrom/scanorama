@@ -1409,6 +1409,112 @@ func TestHostHandler_GetHostScans_Mock(t *testing.T) {
 	})
 }
 
+func TestHostHandler_GetHostNetworks_Mock(t *testing.T) {
+	t.Run("returns containing networks ordered by prefix length", func(t *testing.T) {
+		h, store, ctrl := newHostHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		hostID := uuid.New()
+		netA := makeNetwork(uuid.New(), "dmz", "10.0.0.0/24")
+		netB := makeNetwork(uuid.New(), "corp", "10.0.0.0/16")
+
+		store.EXPECT().
+			GetHost(gomock.Any(), hostID).
+			Return(makeHost(hostID, "10.0.0.5"), nil)
+		store.EXPECT().
+			GetHostNetworks(gomock.Any(), hostID).
+			Return([]*db.Network{netA, netB}, nil)
+
+		router, _ := routerWithID(http.MethodGet, "/api/v1/hosts/{id}/networks", h.GetHostNetworks)
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/hosts/%s/networks", hostID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var body []map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+		require.Len(t, body, 2)
+		assert.Equal(t, "dmz", body[0]["name"])
+		assert.Equal(t, "10.0.0.0/24", body[0]["cidr"])
+		assert.Equal(t, "corp", body[1]["name"])
+		assert.Equal(t, "10.0.0.0/16", body[1]["cidr"])
+	})
+
+	t.Run("empty result encodes as empty JSON array", func(t *testing.T) {
+		h, store, ctrl := newHostHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		hostID := uuid.New()
+		store.EXPECT().
+			GetHost(gomock.Any(), hostID).
+			Return(makeHost(hostID, "192.0.2.1"), nil)
+		store.EXPECT().
+			GetHostNetworks(gomock.Any(), hostID).
+			Return([]*db.Network{}, nil)
+
+		router, _ := routerWithID(http.MethodGet, "/api/v1/hosts/{id}/networks", h.GetHostNetworks)
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/hosts/%s/networks", hostID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var decoded []any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &decoded))
+		assert.Empty(t, decoded)
+		assert.NotContains(t, w.Body.String(), "null",
+			"empty networks must serialize as [] not null")
+	})
+
+	t.Run("returns 400 for invalid UUID", func(t *testing.T) {
+		h, _, ctrl := newHostHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		router, _ := routerWithID(http.MethodGet, "/api/v1/hosts/{id}/networks", h.GetHostNetworks)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/hosts/not-a-uuid/networks", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("returns 404 when host not found", func(t *testing.T) {
+		h, store, ctrl := newHostHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		hostID := uuid.New()
+		store.EXPECT().
+			GetHost(gomock.Any(), hostID).
+			Return(nil, errors.ErrNotFoundWithID("host", hostID.String()))
+
+		router, _ := routerWithID(http.MethodGet, "/api/v1/hosts/{id}/networks", h.GetHostNetworks)
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/hosts/%s/networks", hostID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("returns 500 on store error", func(t *testing.T) {
+		h, store, ctrl := newHostHandlerWithMock(t)
+		defer ctrl.Finish()
+
+		hostID := uuid.New()
+		store.EXPECT().
+			GetHost(gomock.Any(), hostID).
+			Return(makeHost(hostID, "10.0.0.1"), nil)
+		store.EXPECT().
+			GetHostNetworks(gomock.Any(), hostID).
+			Return(nil, fmt.Errorf("db error"))
+
+		router, _ := routerWithID(http.MethodGet, "/api/v1/hosts/{id}/networks", h.GetHostNetworks)
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/hosts/%s/networks", hostID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
 // ── ProfileHandler ────────────────────────────────────────────────────────────
 
 func TestProfileHandler_ListProfiles_Mock(t *testing.T) {

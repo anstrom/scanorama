@@ -42,6 +42,121 @@ func (m *MockHostServicer) EXPECT() *MockHostServicerMockRecorder {
 	return m.recorder
 }
 
+// AddHostTags mocks base method.
+func (m *MockHostServicer) AddHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddHostTags", ctx, id, tags)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddHostTags indicates an expected call of AddHostTags.
+func (mr *MockHostServicerMockRecorder) AddHostTags(ctx, id, tags any) *MockHostServicerAddHostTagsCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddHostTags", reflect.TypeOf((*MockHostServicer)(nil).AddHostTags), ctx, id, tags)
+	return &MockHostServicerAddHostTagsCall{Call: call}
+}
+
+// MockHostServicerAddHostTagsCall wrap *gomock.Call
+type MockHostServicerAddHostTagsCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockHostServicerAddHostTagsCall) Return(arg0 error) *MockHostServicerAddHostTagsCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockHostServicerAddHostTagsCall) Do(f func(context.Context, uuid.UUID, []string) error) *MockHostServicerAddHostTagsCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockHostServicerAddHostTagsCall) DoAndReturn(f func(context.Context, uuid.UUID, []string) error) *MockHostServicerAddHostTagsCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// BulkDeleteHosts mocks base method.
+func (m *MockHostServicer) BulkDeleteHosts(ctx context.Context, ids []uuid.UUID) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BulkDeleteHosts", ctx, ids)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BulkDeleteHosts indicates an expected call of BulkDeleteHosts.
+func (mr *MockHostServicerMockRecorder) BulkDeleteHosts(ctx, ids any) *MockHostServicerBulkDeleteHostsCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BulkDeleteHosts", reflect.TypeOf((*MockHostServicer)(nil).BulkDeleteHosts), ctx, ids)
+	return &MockHostServicerBulkDeleteHostsCall{Call: call}
+}
+
+// MockHostServicerBulkDeleteHostsCall wrap *gomock.Call
+type MockHostServicerBulkDeleteHostsCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockHostServicerBulkDeleteHostsCall) Return(arg0 int64, arg1 error) *MockHostServicerBulkDeleteHostsCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockHostServicerBulkDeleteHostsCall) Do(f func(context.Context, []uuid.UUID) (int64, error)) *MockHostServicerBulkDeleteHostsCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockHostServicerBulkDeleteHostsCall) DoAndReturn(f func(context.Context, []uuid.UUID) (int64, error)) *MockHostServicerBulkDeleteHostsCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// BulkUpdateTags mocks base method.
+func (m *MockHostServicer) BulkUpdateTags(ctx context.Context, ids []uuid.UUID, tags []string, action string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BulkUpdateTags", ctx, ids, tags, action)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// BulkUpdateTags indicates an expected call of BulkUpdateTags.
+func (mr *MockHostServicerMockRecorder) BulkUpdateTags(ctx, ids, tags, action any) *MockHostServicerBulkUpdateTagsCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BulkUpdateTags", reflect.TypeOf((*MockHostServicer)(nil).BulkUpdateTags), ctx, ids, tags, action)
+	return &MockHostServicerBulkUpdateTagsCall{Call: call}
+}
+
+// MockHostServicerBulkUpdateTagsCall wrap *gomock.Call
+type MockHostServicerBulkUpdateTagsCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockHostServicerBulkUpdateTagsCall) Return(arg0 error) *MockHostServicerBulkUpdateTagsCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockHostServicerBulkUpdateTagsCall) Do(f func(context.Context, []uuid.UUID, []string, string) error) *MockHostServicerBulkUpdateTagsCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockHostServicerBulkUpdateTagsCall) DoAndReturn(f func(context.Context, []uuid.UUID, []string, string) error) *MockHostServicerBulkUpdateTagsCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // CreateHost mocks base method.
 func (m *MockHostServicer) CreateHost(ctx context.Context, input db.CreateHostInput) (*db.Host, error) {
 	m.ctrl.T.Helper()
@@ -158,6 +273,84 @@ func (c *MockHostServicerGetHostCall) DoAndReturn(f func(context.Context, uuid.U
 	return c
 }
 
+// GetHostGroups mocks base method.
+func (m *MockHostServicer) GetHostGroups(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetHostGroups", ctx, hostID)
+	ret0, _ := ret[0].([]db.HostGroupSummary)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetHostGroups indicates an expected call of GetHostGroups.
+func (mr *MockHostServicerMockRecorder) GetHostGroups(ctx, hostID any) *MockHostServicerGetHostGroupsCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHostGroups", reflect.TypeOf((*MockHostServicer)(nil).GetHostGroups), ctx, hostID)
+	return &MockHostServicerGetHostGroupsCall{Call: call}
+}
+
+// MockHostServicerGetHostGroupsCall wrap *gomock.Call
+type MockHostServicerGetHostGroupsCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockHostServicerGetHostGroupsCall) Return(arg0 []db.HostGroupSummary, arg1 error) *MockHostServicerGetHostGroupsCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockHostServicerGetHostGroupsCall) Do(f func(context.Context, uuid.UUID) ([]db.HostGroupSummary, error)) *MockHostServicerGetHostGroupsCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockHostServicerGetHostGroupsCall) DoAndReturn(f func(context.Context, uuid.UUID) ([]db.HostGroupSummary, error)) *MockHostServicerGetHostGroupsCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// GetHostNetworks mocks base method.
+func (m *MockHostServicer) GetHostNetworks(ctx context.Context, hostID uuid.UUID) ([]*db.Network, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetHostNetworks", ctx, hostID)
+	ret0, _ := ret[0].([]*db.Network)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetHostNetworks indicates an expected call of GetHostNetworks.
+func (mr *MockHostServicerMockRecorder) GetHostNetworks(ctx, hostID any) *MockHostServicerGetHostNetworksCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHostNetworks", reflect.TypeOf((*MockHostServicer)(nil).GetHostNetworks), ctx, hostID)
+	return &MockHostServicerGetHostNetworksCall{Call: call}
+}
+
+// MockHostServicerGetHostNetworksCall wrap *gomock.Call
+type MockHostServicerGetHostNetworksCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockHostServicerGetHostNetworksCall) Return(arg0 []*db.Network, arg1 error) *MockHostServicerGetHostNetworksCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockHostServicerGetHostNetworksCall) Do(f func(context.Context, uuid.UUID) ([]*db.Network, error)) *MockHostServicerGetHostNetworksCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockHostServicerGetHostNetworksCall) DoAndReturn(f func(context.Context, uuid.UUID) ([]*db.Network, error)) *MockHostServicerGetHostNetworksCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // GetHostScans mocks base method.
 func (m *MockHostServicer) GetHostScans(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*db.Scan, int64, error) {
 	m.ctrl.T.Helper()
@@ -238,84 +431,6 @@ func (c *MockHostServicerListHostsCall) DoAndReturn(f func(context.Context, *db.
 	return c
 }
 
-// UpdateHost mocks base method.
-func (m *MockHostServicer) UpdateHost(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateHost", ctx, id, input)
-	ret0, _ := ret[0].(*db.Host)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// UpdateHost indicates an expected call of UpdateHost.
-func (mr *MockHostServicerMockRecorder) UpdateHost(ctx, id, input any) *MockHostServicerUpdateHostCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateHost", reflect.TypeOf((*MockHostServicer)(nil).UpdateHost), ctx, id, input)
-	return &MockHostServicerUpdateHostCall{Call: call}
-}
-
-// MockHostServicerUpdateHostCall wrap *gomock.Call
-type MockHostServicerUpdateHostCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *MockHostServicerUpdateHostCall) Return(arg0 *db.Host, arg1 error) *MockHostServicerUpdateHostCall {
-	c.Call = c.Call.Return(arg0, arg1)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *MockHostServicerUpdateHostCall) Do(f func(context.Context, uuid.UUID, db.UpdateHostInput) (*db.Host, error)) *MockHostServicerUpdateHostCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockHostServicerUpdateHostCall) DoAndReturn(f func(context.Context, uuid.UUID, db.UpdateHostInput) (*db.Host, error)) *MockHostServicerUpdateHostCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// BulkDeleteHosts mocks base method.
-func (m *MockHostServicer) BulkDeleteHosts(ctx context.Context, ids []uuid.UUID) (int64, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "BulkDeleteHosts", ctx, ids)
-	ret0, _ := ret[0].(int64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// BulkDeleteHosts indicates an expected call of BulkDeleteHosts.
-func (mr *MockHostServicerMockRecorder) BulkDeleteHosts(ctx, ids any) *MockHostServicerBulkDeleteHostsCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BulkDeleteHosts", reflect.TypeOf((*MockHostServicer)(nil).BulkDeleteHosts), ctx, ids)
-	return &MockHostServicerBulkDeleteHostsCall{Call: call}
-}
-
-// MockHostServicerBulkDeleteHostsCall wrap *gomock.Call
-type MockHostServicerBulkDeleteHostsCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *MockHostServicerBulkDeleteHostsCall) Return(arg0 int64, arg1 error) *MockHostServicerBulkDeleteHostsCall {
-	c.Call = c.Call.Return(arg0, arg1)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *MockHostServicerBulkDeleteHostsCall) Do(f func(context.Context, []uuid.UUID) (int64, error)) *MockHostServicerBulkDeleteHostsCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockHostServicerBulkDeleteHostsCall) DoAndReturn(f func(context.Context, []uuid.UUID) (int64, error)) *MockHostServicerBulkDeleteHostsCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
 // ListTags mocks base method.
 func (m *MockHostServicer) ListTags(ctx context.Context) ([]string, error) {
 	m.ctrl.T.Helper()
@@ -351,82 +466,6 @@ func (c *MockHostServicerListTagsCall) Do(f func(context.Context) ([]string, err
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
 func (c *MockHostServicerListTagsCall) DoAndReturn(f func(context.Context) ([]string, error)) *MockHostServicerListTagsCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// UpdateHostTags mocks base method.
-func (m *MockHostServicer) UpdateHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateHostTags", ctx, id, tags)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// UpdateHostTags indicates an expected call of UpdateHostTags.
-func (mr *MockHostServicerMockRecorder) UpdateHostTags(ctx, id, tags any) *MockHostServicerUpdateHostTagsCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateHostTags", reflect.TypeOf((*MockHostServicer)(nil).UpdateHostTags), ctx, id, tags)
-	return &MockHostServicerUpdateHostTagsCall{Call: call}
-}
-
-// MockHostServicerUpdateHostTagsCall wrap *gomock.Call
-type MockHostServicerUpdateHostTagsCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *MockHostServicerUpdateHostTagsCall) Return(arg0 error) *MockHostServicerUpdateHostTagsCall {
-	c.Call = c.Call.Return(arg0)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *MockHostServicerUpdateHostTagsCall) Do(f func(context.Context, uuid.UUID, []string) error) *MockHostServicerUpdateHostTagsCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockHostServicerUpdateHostTagsCall) DoAndReturn(f func(context.Context, uuid.UUID, []string) error) *MockHostServicerUpdateHostTagsCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// AddHostTags mocks base method.
-func (m *MockHostServicer) AddHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddHostTags", ctx, id, tags)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// AddHostTags indicates an expected call of AddHostTags.
-func (mr *MockHostServicerMockRecorder) AddHostTags(ctx, id, tags any) *MockHostServicerAddHostTagsCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddHostTags", reflect.TypeOf((*MockHostServicer)(nil).AddHostTags), ctx, id, tags)
-	return &MockHostServicerAddHostTagsCall{Call: call}
-}
-
-// MockHostServicerAddHostTagsCall wrap *gomock.Call
-type MockHostServicerAddHostTagsCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *MockHostServicerAddHostTagsCall) Return(arg0 error) *MockHostServicerAddHostTagsCall {
-	c.Call = c.Call.Return(arg0)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *MockHostServicerAddHostTagsCall) Do(f func(context.Context, uuid.UUID, []string) error) *MockHostServicerAddHostTagsCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockHostServicerAddHostTagsCall) DoAndReturn(f func(context.Context, uuid.UUID, []string) error) *MockHostServicerAddHostTagsCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -469,79 +508,79 @@ func (c *MockHostServicerRemoveHostTagsCall) DoAndReturn(f func(context.Context,
 	return c
 }
 
-// BulkUpdateTags mocks base method.
-func (m *MockHostServicer) BulkUpdateTags(ctx context.Context, ids []uuid.UUID, tags []string, action string) error {
+// UpdateHost mocks base method.
+func (m *MockHostServicer) UpdateHost(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "BulkUpdateTags", ctx, ids, tags, action)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// BulkUpdateTags indicates an expected call of BulkUpdateTags.
-func (mr *MockHostServicerMockRecorder) BulkUpdateTags(ctx, ids, tags, action any) *MockHostServicerBulkUpdateTagsCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BulkUpdateTags", reflect.TypeOf((*MockHostServicer)(nil).BulkUpdateTags), ctx, ids, tags, action)
-	return &MockHostServicerBulkUpdateTagsCall{Call: call}
-}
-
-// MockHostServicerBulkUpdateTagsCall wrap *gomock.Call
-type MockHostServicerBulkUpdateTagsCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *MockHostServicerBulkUpdateTagsCall) Return(arg0 error) *MockHostServicerBulkUpdateTagsCall {
-	c.Call = c.Call.Return(arg0)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *MockHostServicerBulkUpdateTagsCall) Do(f func(context.Context, []uuid.UUID, []string, string) error) *MockHostServicerBulkUpdateTagsCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockHostServicerBulkUpdateTagsCall) DoAndReturn(f func(context.Context, []uuid.UUID, []string, string) error) *MockHostServicerBulkUpdateTagsCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// GetHostGroups mocks base method.
-func (m *MockHostServicer) GetHostGroups(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetHostGroups", ctx, hostID)
-	ret0, _ := ret[0].([]db.HostGroupSummary)
+	ret := m.ctrl.Call(m, "UpdateHost", ctx, id, input)
+	ret0, _ := ret[0].(*db.Host)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetHostGroups indicates an expected call of GetHostGroups.
-func (mr *MockHostServicerMockRecorder) GetHostGroups(ctx, hostID any) *MockHostServicerGetHostGroupsCall {
+// UpdateHost indicates an expected call of UpdateHost.
+func (mr *MockHostServicerMockRecorder) UpdateHost(ctx, id, input any) *MockHostServicerUpdateHostCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHostGroups", reflect.TypeOf((*MockHostServicer)(nil).GetHostGroups), ctx, hostID)
-	return &MockHostServicerGetHostGroupsCall{Call: call}
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateHost", reflect.TypeOf((*MockHostServicer)(nil).UpdateHost), ctx, id, input)
+	return &MockHostServicerUpdateHostCall{Call: call}
 }
 
-// MockHostServicerGetHostGroupsCall wrap *gomock.Call
-type MockHostServicerGetHostGroupsCall struct {
+// MockHostServicerUpdateHostCall wrap *gomock.Call
+type MockHostServicerUpdateHostCall struct {
 	*gomock.Call
 }
 
 // Return rewrite *gomock.Call.Return
-func (c *MockHostServicerGetHostGroupsCall) Return(arg0 []db.HostGroupSummary, arg1 error) *MockHostServicerGetHostGroupsCall {
+func (c *MockHostServicerUpdateHostCall) Return(arg0 *db.Host, arg1 error) *MockHostServicerUpdateHostCall {
 	c.Call = c.Call.Return(arg0, arg1)
 	return c
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockHostServicerGetHostGroupsCall) Do(f func(context.Context, uuid.UUID) ([]db.HostGroupSummary, error)) *MockHostServicerGetHostGroupsCall {
+func (c *MockHostServicerUpdateHostCall) Do(f func(context.Context, uuid.UUID, db.UpdateHostInput) (*db.Host, error)) *MockHostServicerUpdateHostCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockHostServicerGetHostGroupsCall) DoAndReturn(f func(context.Context, uuid.UUID) ([]db.HostGroupSummary, error)) *MockHostServicerGetHostGroupsCall {
+func (c *MockHostServicerUpdateHostCall) DoAndReturn(f func(context.Context, uuid.UUID, db.UpdateHostInput) (*db.Host, error)) *MockHostServicerUpdateHostCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// UpdateHostTags mocks base method.
+func (m *MockHostServicer) UpdateHostTags(ctx context.Context, id uuid.UUID, tags []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateHostTags", ctx, id, tags)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateHostTags indicates an expected call of UpdateHostTags.
+func (mr *MockHostServicerMockRecorder) UpdateHostTags(ctx, id, tags any) *MockHostServicerUpdateHostTagsCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateHostTags", reflect.TypeOf((*MockHostServicer)(nil).UpdateHostTags), ctx, id, tags)
+	return &MockHostServicerUpdateHostTagsCall{Call: call}
+}
+
+// MockHostServicerUpdateHostTagsCall wrap *gomock.Call
+type MockHostServicerUpdateHostTagsCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockHostServicerUpdateHostTagsCall) Return(arg0 error) *MockHostServicerUpdateHostTagsCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockHostServicerUpdateHostTagsCall) Do(f func(context.Context, uuid.UUID, []string) error) *MockHostServicerUpdateHostTagsCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockHostServicerUpdateHostTagsCall) DoAndReturn(f func(context.Context, uuid.UUID, []string) error) *MockHostServicerUpdateHostTagsCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

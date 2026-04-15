@@ -30,6 +30,7 @@ type hostRepository interface {
 	RemoveHostTags(ctx context.Context, id uuid.UUID, tags []string) error
 	BulkUpdateTags(ctx context.Context, ids []uuid.UUID, tags []string, action string) error
 	GetHostGroups(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error)
+	GetHostNetworks(ctx context.Context, hostID uuid.UUID) ([]*db.Network, error)
 }
 
 // HostService handles business logic for host management.
@@ -118,4 +119,12 @@ func (s *HostService) BulkUpdateTags(ctx context.Context, ids []uuid.UUID, tags 
 // GetHostGroups returns the groups the given host belongs to.
 func (s *HostService) GetHostGroups(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error) {
 	return s.repo.GetHostGroups(ctx, hostID)
+}
+
+// GetHostNetworks returns the registered networks that contain the host's
+// IP address, ordered by longest prefix first. Membership is derived from
+// the host_network_memberships view; no row is stored. An empty slice
+// (never nil) is returned when the host belongs to no registered network.
+func (s *HostService) GetHostNetworks(ctx context.Context, hostID uuid.UUID) ([]*db.Network, error) {
+	return s.repo.GetHostNetworks(ctx, hostID)
 }

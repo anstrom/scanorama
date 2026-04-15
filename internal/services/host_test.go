@@ -33,6 +33,14 @@ type mockHostRepo struct {
 	removeHostTagsFn  func(ctx context.Context, id uuid.UUID, tags []string) error
 	bulkUpdateTagsFn  func(ctx context.Context, ids []uuid.UUID, tags []string, action string) error
 	getHostGroupsFn   func(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error)
+	getHostNetworksFn func(ctx context.Context, hostID uuid.UUID) ([]*db.Network, error)
+}
+
+func (m *mockHostRepo) GetHostNetworks(ctx context.Context, hostID uuid.UUID) ([]*db.Network, error) {
+	if m.getHostNetworksFn == nil {
+		return []*db.Network{}, nil
+	}
+	return m.getHostNetworksFn(ctx, hostID)
 }
 
 func (m *mockHostRepo) ListHosts(
@@ -578,4 +586,65 @@ func TestGetHostGroups_ReturnsEmptySliceForHostWithNoGroups(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, got)
 	assert.Empty(t, got)
+}
+
+// ---------------------------------------------------------------------------
+// GetHostNetworks
+// ---------------------------------------------------------------------------
+
+func TestGetHostNetworks_DelegatesToRepository(t *testing.T) {
+	ctx := context.Background()
+	hostID := uuid.New()
+	netA := &db.Network{ID: uuid.New(), Name: "dmz"}
+	netB := &db.Network{ID: uuid.New(), Name: "corp"}
+
+	var gotHostID uuid.UUID
+	repo := &mockHostRepo{
+		getHostNetworksFn: func(_ context.Context, h uuid.UUID) ([]*db.Network, error) {
+			gotHostID = h
+			return []*db.Network{netA, netB}, nil
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	got, err := svc.GetHostNetworks(ctx, hostID)
+
+	require.NoError(t, err)
+	assert.Equal(t, hostID, gotHostID)
+	require.Len(t, got, 2)
+	assert.Equal(t, netA.ID, got[0].ID)
+	assert.Equal(t, netB.ID, got[1].ID)
+}
+
+func TestGetHostNetworks_ReturnsEmptySliceForUnmatchedHost(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &mockHostRepo{
+		getHostNetworksFn: func(_ context.Context, _ uuid.UUID) ([]*db.Network, error) {
+			return []*db.Network{}, nil
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	got, err := svc.GetHostNetworks(ctx, uuid.New())
+
+	require.NoError(t, err)
+	assert.NotNil(t, got, "empty result must be [] not nil for JSON encoding")
+	assert.Empty(t, got)
+}
+
+func TestGetHostNetworks_PropagatesRepositoryError(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &mockHostRepo{
+		getHostNetworksFn: func(_ context.Context, _ uuid.UUID) ([]*db.Network, error) {
+			return nil, fmt.Errorf("db down")
+		},
+	}
+
+	svc := NewHostService(repo, slog.Default())
+	got, err := svc.GetHostNetworks(ctx, uuid.New())
+
+	require.Error(t, err)
+	assert.Nil(t, got)
 }

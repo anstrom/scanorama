@@ -179,6 +179,9 @@ func (nilHostServicer) BulkUpdateTags(_ context.Context, _ []uuid.UUID, _ []stri
 func (nilHostServicer) GetHostGroups(_ context.Context, _ uuid.UUID) ([]db.HostGroupSummary, error) {
 	panic("nilHostServicer: GetHostGroups called unexpectedly")
 }
+func (nilHostServicer) GetHostNetworks(_ context.Context, _ uuid.UUID) ([]*db.Network, error) {
+	panic("nilHostServicer: GetHostNetworks called unexpectedly")
+}
 
 // nilProfileServicer is a ProfileServicer that panics if any method is called.
 type nilProfileServicer struct{}

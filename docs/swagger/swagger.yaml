@@ -1857,6 +1857,48 @@ paths:
       summary: Update host
       tags:
       - Hosts
+  /hosts/{hostId}/networks:
+    get:
+      description: List registered networks whose CIDR contains the host's IP, ordered
+        by longest prefix first
+      operationId: getHostNetworks
+      parameters:
+      - description: Host ID
+        format: uuid
+        in: path
+        name: hostId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/docs.NetworkResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List networks a host is a member of
+      tags:
+      - Hosts
   /hosts/{hostId}/scans:
     get:
       description: Get scans associated with a specific host

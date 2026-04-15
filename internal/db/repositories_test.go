@@ -1119,6 +1119,77 @@ func TestHostRepository_GetHostScans(t *testing.T) {
 	assert.Equal(t, jobID, scans[0].ID)
 }
 
+// TestHostRepository_GetHostNetworks verifies that the derived membership view
+// returns every registered network whose CIDR contains the host's IP, ordered
+// by longest prefix first, and returns an empty (non-nil) slice when no network
+// contains the host.
+func TestHostRepository_GetHostNetworks(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Prophylactic cleanup from any prior failed run.
+	_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = '10.77.0.5'::inet")
+	_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE ip_address = '198.51.100.5'::inet")
+	_, _ = db.ExecContext(ctx,
+		"DELETE FROM networks WHERE name IN ('hnm-slash16','hnm-slash24','hnm-unrelated')")
+
+	hostRepo := NewHostRepository(db)
+
+	// Host that is contained by two of three networks.
+	containedID := uuid.New()
+	require.NoError(t, hostRepo.CreateOrUpdate(ctx, &Host{
+		ID:        containedID,
+		IPAddress: IPAddr{IP: net.ParseIP("10.77.0.5")},
+		Status:    HostStatusUp,
+	}))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE id = $1", containedID)
+	})
+
+	// Host that belongs to none of the registered networks.
+	uncontainedID := uuid.New()
+	require.NoError(t, hostRepo.CreateOrUpdate(ctx, &Host{
+		ID:        uncontainedID,
+		IPAddress: IPAddr{IP: net.ParseIP("198.51.100.5")},
+		Status:    HostStatusUp,
+	}))
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM hosts WHERE id = $1", uncontainedID)
+	})
+
+	slash16 := uuid.New()
+	slash24 := uuid.New()
+	unrelated := uuid.New()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO networks (
+			id, name, cidr,
+			discovery_method, is_active, scan_enabled,
+			scan_interval_seconds, scan_ports, scan_type
+		) VALUES
+		  ($1, 'hnm-slash16',   '10.77.0.0/16', 'tcp', true, true, 0, '22', 'connect'),
+		  ($2, 'hnm-slash24',   '10.77.0.0/24', 'tcp', true, true, 0, '22', 'connect'),
+		  ($3, 'hnm-unrelated', '192.168.44.0/24', 'tcp', true, true, 0, '22', 'connect')
+	`, slash16, slash24, unrelated)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, "DELETE FROM networks WHERE id IN ($1,$2,$3)",
+			slash16, slash24, unrelated)
+	})
+
+	got, err := hostRepo.GetHostNetworks(ctx, containedID)
+	require.NoError(t, err)
+	require.Len(t, got, 2, "contained host should match exactly two networks")
+	assert.Equal(t, slash24, got[0].ID, "longest prefix (/24) must come first")
+	assert.Equal(t, slash16, got[1].ID)
+
+	empty, err := hostRepo.GetHostNetworks(ctx, uncontainedID)
+	require.NoError(t, err)
+	assert.NotNil(t, empty, "must return empty slice (not nil) for JSON [] encoding")
+	assert.Empty(t, empty)
+}
+
 // ── Migrator tests ────────────────────────────────────────────────────────────
 
 func TestMigrator_Reset(t *testing.T) {
