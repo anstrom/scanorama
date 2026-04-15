@@ -4,6 +4,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	stderrors "errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -328,4 +329,39 @@ func (r *BannerRepository) ListExpiringCertificatesWithHosts(
 		result = []ExpiringCertificate{}
 	}
 	return result, nil
+}
+
+// IsExtendedProbeDone reports whether extended protocol probing has already
+// been attempted for the given host/port pair over TCP.
+// Returns false when no banner row exists yet — caller should proceed with probing.
+func (r *BannerRepository) IsExtendedProbeDone(ctx context.Context, hostID uuid.UUID, port int) (bool, error) {
+	var done bool
+	err := r.db.QueryRowContext(ctx,
+		`SELECT extended_probe_done FROM port_banners
+		 WHERE host_id = $1 AND port = $2 AND protocol = $3`,
+		hostID, port, ProtocolTCP,
+	).Scan(&done)
+	if err != nil {
+		if stderrors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, sanitizeDBError("is extended probe done", err)
+	}
+	return done, nil
+}
+
+// MarkExtendedProbeDone records that extended protocol probing has been
+// attempted for the given host/port pair. Inserts a minimal row if none
+// exists; otherwise sets extended_probe_done = true on the existing row.
+func (r *BannerRepository) MarkExtendedProbeDone(ctx context.Context, hostID uuid.UUID, port int) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO port_banners (id, host_id, port, protocol, extended_probe_done, scanned_at)
+		VALUES ($1, $2, $3, $4, true, $5)
+		ON CONFLICT (host_id, port, protocol) DO UPDATE SET
+			extended_probe_done = true`,
+		uuid.New(), hostID, port, ProtocolTCP, time.Now().UTC())
+	if err != nil {
+		return sanitizeDBError("mark extended probe done", err)
+	}
+	return nil
 }
