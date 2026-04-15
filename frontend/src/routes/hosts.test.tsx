@@ -12,6 +12,17 @@ vi.mock("../api/hooks/use-hosts", () => ({
   useBulkDeleteHosts: vi.fn(),
 }));
 
+vi.mock("../api/hooks/use-host-networks", () => ({
+  useHostNetworks: vi.fn(() => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+    isSuccess: true,
+    fetchStatus: "idle",
+  })),
+}));
+
 vi.mock("../api/hooks/use-tags", () => ({
   useTags: vi.fn(() => ({ data: [] })),
   useUpdateHostTags: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
@@ -354,7 +365,7 @@ function makeDeleteMutationResult(overrides = {}) {
   } as unknown as ReturnType<typeof useDeleteHost>;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
   mockUseHosts.mockReturnValue(makeUseHostsResult());
   mockUseHost.mockReturnValue(makeUseHostResult());
@@ -362,6 +373,16 @@ beforeEach(() => {
   mockUseUpdateHost.mockReturnValue(makeMutationResult());
   mockUseDeleteHost.mockReturnValue(makeDeleteMutationResult());
   mockUseBulkDeleteHosts.mockReturnValue(makeDeleteMutationResult());
+
+  const { useHostNetworks } = await import("../api/hooks/use-host-networks");
+  vi.mocked(useHostNetworks).mockReturnValue({
+    data: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+    isSuccess: true,
+    fetchStatus: "idle",
+  } as unknown as ReturnType<typeof useHostNetworks>);
 });
 
 describe("HostsPage", () => {
@@ -842,6 +863,32 @@ describe("HostsPage", () => {
       const panel = await openPanel();
       expect(within(panel).getByText("Linux")).toBeInTheDocument();
       expect(within(panel).getByText("Linux 5.4")).toBeInTheDocument();
+    });
+
+    it("renders 'Member of' section when host belongs to networks", async () => {
+      const { useHostNetworks } = await import(
+        "../api/hooks/use-host-networks"
+      );
+      vi.mocked(useHostNetworks).mockReturnValue({
+        data: [{ id: "a", name: "dmz", cidr: "10.0.0.0/24" }],
+        isLoading: false,
+        isError: false,
+        error: null,
+        isSuccess: true,
+        fetchStatus: "idle",
+      } as unknown as ReturnType<typeof useHostNetworks>);
+
+      const panel = await openPanel();
+      expect(within(panel).getByTestId("host-networks")).toBeInTheDocument();
+      expect(within(panel).getByText("10.0.0.0/24")).toBeInTheDocument();
+      expect(within(panel).getByText("dmz")).toBeInTheDocument();
+    });
+
+    it("hides 'Member of' section when host has no network memberships", async () => {
+      const panel = await openPanel();
+      expect(
+        within(panel).queryByTestId("host-networks"),
+      ).not.toBeInTheDocument();
     });
 
     it("hides the OS section when no OS data is present", async () => {

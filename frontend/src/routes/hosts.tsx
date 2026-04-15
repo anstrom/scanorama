@@ -30,6 +30,7 @@ import {
   useDeleteHost,
   useBulkDeleteHosts,
 } from "../api/hooks/use-hosts";
+import { useHostNetworks } from "../api/hooks/use-host-networks";
 import { useToast } from "../components/toast-provider";
 import {
   StatusBadge,
@@ -284,6 +285,7 @@ function HostDetailPanel({
     host.id ?? "",
     { page: scanHistoryPage, page_size: SCAN_HISTORY_PAGE_SIZE },
   );
+  const { data: memberships } = useHostNetworks(host.id ?? "");
 
   // Smart Scan
   const [showSmartScanPreview, setShowSmartScanPreview] = useState(false);
@@ -689,6 +691,26 @@ function HostDetailPanel({
               </div>
             )}
           </section>
+
+          {/* Network memberships */}
+          {memberships && memberships.length > 0 && (
+            <section data-testid="host-networks">
+              <h3 className="text-xs font-medium text-text-primary mb-3">
+                Member of ({memberships.length})
+              </h3>
+              <ul className="space-y-1">
+                {memberships.map((n) => (
+                  <li
+                    key={n.id}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <span className="font-mono text-text-primary">{n.cidr}</span>
+                    <span className="text-text-muted">{n.name}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {/* Network / Response Time */}
           {!isLoading &&
