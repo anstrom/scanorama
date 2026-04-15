@@ -146,6 +146,12 @@ func (c *APIClient) Delete(endpoint string) (*APIResponse, error) {
 	return c.request("DELETE", endpoint, nil)
 }
 
+// DeleteWithBody performs a DELETE request with a JSON payload.
+// Some APIs require a request body on DELETE (e.g. bulk-remove operations).
+func (c *APIClient) DeleteWithBody(endpoint string, payload interface{}) (*APIResponse, error) {
+	return c.request("DELETE", endpoint, payload)
+}
+
 // request performs the actual HTTP request with authentication
 func (c *APIClient) request(method, endpoint string, payload interface{}) (*APIResponse, error) {
 	reqURL := c.baseURL + endpoint
@@ -198,13 +204,7 @@ func (c *APIClient) request(method, endpoint string, payload interface{}) (*APIR
 	}
 
 	// Parse JSON response
-	var apiResp APIResponse
-	if len(bodyBytes) > 0 {
-		if err := json.Unmarshal(bodyBytes, &apiResp); err != nil {
-			// If JSON parsing fails, treat as plain text error
-			apiResp.Error = string(bodyBytes)
-		}
-	}
+	apiResp := parseAPIResponse(bodyBytes)
 
 	// Handle HTTP error status codes
 	if resp.StatusCode >= StatusBadRequest {
@@ -225,6 +225,25 @@ func (c *APIClient) request(method, endpoint string, payload interface{}) (*APIR
 	}
 
 	return &apiResp, nil
+}
+
+// parseAPIResponse decodes raw response bytes into an APIResponse.
+// When the server doesn't use a {"data": ...} envelope (Data==nil after decode),
+// the entire body is stored as json.RawMessage so callers can unmarshal it into
+// their target types regardless of the server's envelope style.
+func parseAPIResponse(bodyBytes []byte) APIResponse {
+	var apiResp APIResponse
+	if len(bodyBytes) == 0 {
+		return apiResp
+	}
+	if err := json.Unmarshal(bodyBytes, &apiResp); err != nil {
+		apiResp.Error = string(bodyBytes)
+		return apiResp
+	}
+	if apiResp.Data == nil && apiResp.Error == "" {
+		apiResp.Data = json.RawMessage(bodyBytes)
+	}
+	return apiResp
 }
 
 // TestConnection tests the API connection and authentication

@@ -599,7 +599,9 @@ func TestGetServerInfo_HTTPError(t *testing.T) {
 
 func TestGetServerInfo_UnexpectedResponseFormat(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Return a string in Data, not a map.
+		// Return a response with no "data" field: parseAPIResponse stores the body
+		// as json.RawMessage, the type assertion in GetServerInfo fails, and
+		// "unexpected response format" is returned.
 		stdJSONResponse(w, http.StatusOK, &APIResponse{
 			Message: "ok but data is wrong shape",
 		})
@@ -746,6 +748,65 @@ func TestHandleAPIError_DefaultCase_WritesStatusAndMessage(t *testing.T) {
 	output := string(buf[:n])
 
 	assert.Contains(t, output, "conflict detected")
+}
+
+// ── parseAPIResponse ──────────────────────────────────────────────────────────
+
+func TestParseAPIResponse_EmptyBody_ReturnsZeroValue(t *testing.T) {
+	resp := parseAPIResponse(nil)
+	assert.Nil(t, resp.Data)
+	assert.Empty(t, resp.Error)
+}
+
+func TestParseAPIResponse_EnvelopedData_SetsDataField(t *testing.T) {
+	// Server response uses a {"data": ...} envelope — Data must be populated
+	// from the "data" key and the fallback must NOT trigger.
+	body := []byte(`{"data":{"groups":[{"id":"abc"}],"total":1}}`)
+	resp := parseAPIResponse(body)
+
+	// Data should be the decoded value of the "data" key, not the whole body.
+	raw, ok := resp.Data.(map[string]interface{})
+	require.True(t, ok, "expected map, got %T", resp.Data)
+	assert.Contains(t, raw, "groups")
+}
+
+func TestParseAPIResponse_NonEnvelopedData_FallsBackToRawBody(t *testing.T) {
+	// Server response has no "data" key (e.g. {"groups": [...], "total": N}).
+	// The fallback must store the entire body so callers can decode it.
+	body := []byte(`{"groups":[{"id":"xyz","name":"prod"}],"total":1}`)
+	resp := parseAPIResponse(body)
+
+	raw, ok := resp.Data.(json.RawMessage)
+	require.True(t, ok, "expected json.RawMessage fallback, got %T", resp.Data)
+
+	// Verify the raw bytes round-trip into the target struct correctly.
+	var parsed struct {
+		Groups []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"groups"`
+		Total int `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &parsed))
+	require.Len(t, parsed.Groups, 1)
+	assert.Equal(t, "xyz", parsed.Groups[0].ID)
+	assert.Equal(t, "prod", parsed.Groups[0].Name)
+	assert.Equal(t, 1, parsed.Total)
+}
+
+func TestParseAPIResponse_InvalidJSON_SetsErrorField(t *testing.T) {
+	body := []byte("not json")
+	resp := parseAPIResponse(body)
+	assert.Equal(t, "not json", resp.Error)
+	assert.Nil(t, resp.Data)
+}
+
+func TestParseAPIResponse_ErrorFieldPresent_DoesNotFallback(t *testing.T) {
+	// When the response has an "error" field, the fallback must not overwrite Data.
+	body := []byte(`{"error":"something went wrong"}`)
+	resp := parseAPIResponse(body)
+	assert.Equal(t, "something went wrong", resp.Error)
+	assert.Nil(t, resp.Data, "fallback must not fire when error field is set")
 }
 
 // ── WithAPIClient ─────────────────────────────────────────────────────────────
