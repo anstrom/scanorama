@@ -23,7 +23,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/http-swagger/v2 v2.0.2
 	github.com/swaggo/swag v1.16.6
-	github.com/zmap/zcrypto v0.0.0-20250618174828-7ca6a82cf2d4
+	github.com/zmap/zcrypto v0.0.0-20260413215825-aacf0e34cc16
 	github.com/zmap/zgrab2 v1.0.0
 	go.uber.org/mock v0.6.0
 	golang.org/x/crypto v0.50.0
@@ -73,13 +73,13 @@ require (
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
-	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/swaggo/files/v2 v2.0.2 // indirect
-	github.com/weppos/publicsuffix-go v0.40.3-0.20250617082559-9b2e24a9e482 // indirect
+	github.com/weppos/publicsuffix-go v0.50.3 // indirect
 	github.com/zmap/zflags v1.4.0-beta.1.0.20251126025438-ec78c6d2f8e9 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
