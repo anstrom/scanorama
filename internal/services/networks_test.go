@@ -835,3 +835,73 @@ func TestNetworkService_UpdateNetwork_NotFound_Integration(t *testing.T) {
 	_, err := service.UpdateNetwork(ctx, uuid.New(), "Test", "10.0.0.0/24", "Test", "ping", true)
 	assert.Error(t, err)
 }
+
+// TestCreateNetwork_BackfillsHostCount verifies that when a network is
+// registered after hosts already exist inside its CIDR, host_count and
+// active_host_count reflect those existing hosts (not 0).
+func TestCreateNetwork_BackfillsHostCount(t *testing.T) {
+	database, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Use a CIDR that's unlikely to overlap with other fixtures.
+	const (
+		cidr        = "172.30.77.0/24"
+		networkName = "backfill-test"
+	)
+
+	const outOfRangeHost = "172.31.0.1"
+
+	// Ensure clean slate — covers both in-range hosts and the out-of-range
+	// sentinel, plus any leftover network rows from a prior failed run.
+	_, _ = database.ExecContext(ctx,
+		`DELETE FROM networks WHERE name = $1 OR cidr::text = $2`, networkName, cidr)
+	_, _ = database.ExecContext(ctx,
+		`DELETE FROM hosts WHERE ip_address <<= $1::inet OR ip_address = $2::inet`,
+		cidr, outOfRangeHost)
+
+	// Seed four hosts inside the CIDR; three up, one down.
+	_, err := database.ExecContext(ctx, `
+		INSERT INTO hosts (ip_address, status)
+		VALUES ('172.30.77.1', 'up'),
+		       ('172.30.77.2', 'up'),
+		       ('172.30.77.3', 'up'),
+		       ('172.30.77.4', 'down')
+	`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = database.ExecContext(context.Background(),
+			`DELETE FROM hosts WHERE ip_address <<= $1::inet`, cidr)
+	})
+
+	// One host outside the range — must not be counted.
+	_, err = database.ExecContext(ctx,
+		`INSERT INTO hosts (ip_address, status) VALUES ($1::inet, 'up')`, outOfRangeHost)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = database.ExecContext(context.Background(),
+			`DELETE FROM hosts WHERE ip_address = $1::inet`, outOfRangeHost)
+	})
+
+	svc := NewNetworkService(database)
+	network, err := svc.CreateNetwork(ctx, networkName, cidr, "", "tcp", true, true)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = database.ExecContext(context.Background(),
+			`DELETE FROM networks WHERE id = $1`, network.ID)
+	})
+
+	// Assert the in-memory struct reflects backfill.
+	assert.Equal(t, 4, network.HostCount, "CreateNetwork return value must include backfilled host_count")
+	assert.Equal(t, 3, network.ActiveHostCount, "CreateNetwork return value must include backfilled active_host_count")
+
+	// Re-read to confirm persistence.
+	var hostCount, activeCount int
+	require.NoError(t, database.QueryRowContext(ctx,
+		`SELECT host_count, active_host_count FROM networks WHERE id = $1`, network.ID,
+	).Scan(&hostCount, &activeCount))
+
+	assert.Equal(t, 4, hostCount, "all four in-range hosts counted")
+	assert.Equal(t, 3, activeCount, "only three up hosts counted as active")
+}

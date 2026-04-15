@@ -705,6 +705,29 @@ func (s *NetworkService) CreateNetwork(
 		return nil, fmt.Errorf("failed to insert network: %w", err)
 	}
 
+	// Backfill host counts from any pre-existing hosts that fall inside
+	// the newly registered CIDR. The update_network_host_counts trigger
+	// only fires on hosts INSERT/UPDATE/DELETE, so without this step
+	// host_count stays at zero until something touches the hosts table.
+	const backfillQuery = `
+		UPDATE networks
+		SET
+			host_count = (
+				SELECT COUNT(*) FROM hosts WHERE ip_address <<= $1
+			),
+			active_host_count = (
+				SELECT COUNT(*) FROM hosts
+				WHERE ip_address <<= $1 AND status = 'up'
+			),
+			updated_at = NOW()
+		WHERE id = $2
+		RETURNING host_count, active_host_count, updated_at`
+	if err := s.database.QueryRowContext(
+		ctx, backfillQuery, cidr, network.ID,
+	).Scan(&network.HostCount, &network.ActiveHostCount, &network.UpdatedAt); err != nil {
+		return nil, fmt.Errorf("failed to backfill host counts: %w", err)
+	}
+
 	return network, nil
 }
 
