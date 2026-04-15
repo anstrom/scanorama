@@ -153,6 +153,14 @@ func TestNetworkService_CreateNetwork_ValidMethodsAccepted(t *testing.T) {
 					true, true, nil, nil, 0, 0, now, now, nil,
 				))
 
+			// Expect the backfill UPDATE … RETURNING query that runs right
+			// after the INSERT to populate host_count from existing hosts.
+			mock.ExpectQuery(`UPDATE networks`).
+				WithArgs("10.0.0.0/8", id).
+				WillReturnRows(sqlmock.NewRows(
+					[]string{"host_count", "active_host_count", "updated_at"},
+				).AddRow(0, 0, now))
+
 			network, err := svc.CreateNetwork(
 				context.Background(),
 				"net-1", "10.0.0.0/8", "desc", method, true, true,
