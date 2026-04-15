@@ -701,6 +701,39 @@ func storeScanResults(
 	return nil
 }
 
+// normaliseToCIDR converts a raw scan target into a CIDR string suitable for
+// the PostgreSQL inet column.  IP addresses get a /32 (IPv4) or /128 (IPv6)
+// host-route suffix.  Hostnames are resolved via DNS; if the first returned
+// address is an IP, it is used.  Plain CIDR strings are returned unchanged.
+// If no normalisation is possible, the original string is returned and the
+// caller will receive a DB-level error.
+func normaliseToCIDR(target string) string {
+	if ip := net.ParseIP(target); ip != nil {
+		if ip.To4() != nil {
+			return ip.String() + "/32"
+		}
+		return ip.String() + "/128"
+	}
+
+	// Already a CIDR — pass through unchanged.
+	if strings.Contains(target, "/") {
+		return target
+	}
+
+	// Hostname — resolve and use the first address.
+	addrs, err := net.LookupHost(target)
+	if err != nil || len(addrs) == 0 {
+		return target // fallback: DB will reject invalid inet values
+	}
+	if resolved := net.ParseIP(addrs[0]); resolved != nil {
+		if resolved.To4() != nil {
+			return resolved.String() + "/32"
+		}
+		return resolved.String() + "/128"
+	}
+	return target
+}
+
 // findOrCreateNetwork finds an existing network by CIDR or creates a new one
 // for ad-hoc (non-API) scan runs.  Returns the network UUID to store as
 // scan_jobs.network_id.
@@ -712,15 +745,7 @@ func findOrCreateNetwork(ctx context.Context, database *db.DB, config *ScanConfi
 	firstTarget := config.Targets[0]
 
 	// Normalise to a CIDR string.
-	cidr := firstTarget
-	ip := net.ParseIP(firstTarget)
-	if ip != nil {
-		if ip.To4() != nil {
-			cidr = ip.String() + "/32"
-		} else {
-			cidr = ip.String() + "/128"
-		}
-	}
+	cidr := normaliseToCIDR(firstTarget)
 
 	// Reuse the network if this CIDR is already known.
 	var id uuid.UUID

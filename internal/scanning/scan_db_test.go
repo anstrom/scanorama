@@ -1004,6 +1004,39 @@ func TestFindOrCreateNetwork_NameCollision(t *testing.T) {
 	assert.Equal(t, "10.252.0.1/32", name, "fallback name should be the CIDR itself")
 }
 
+// TestFindOrCreateNetwork_Hostname tests that a hostname target is resolved via
+// DNS and stored as an IP/32 (or IP/128) CIDR.  "localhost" reliably resolves
+// to 127.0.0.1 on any developer or CI machine without requiring network access.
+func TestFindOrCreateNetwork_Hostname(t *testing.T) {
+	database := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	// Clean up any pre-existing row so the INSERT branch is exercised.
+	_, _ = database.ExecContext(ctx, `DELETE FROM networks WHERE cidr = '127.0.0.1/32'`)
+
+	config := &ScanConfig{
+		Targets:  []string{"localhost"},
+		ScanType: "connect",
+		Ports:    "80",
+	}
+
+	id, err := findOrCreateNetwork(ctx, database, config)
+	require.NoError(t, err, "hostname target should be accepted after DNS resolution")
+	assert.NotEqual(t, uuid.Nil, id)
+
+	// The stored CIDR must be an IP address, not the raw hostname.
+	var cidr string
+	require.NoError(t, database.QueryRowContext(ctx,
+		`SELECT cidr::text FROM networks WHERE id = $1`, id,
+	).Scan(&cidr))
+	assert.NotEqual(t, "localhost", cidr, "raw hostname must not be stored as a CIDR")
+	assert.NotEmpty(t, cidr)
+}
+
 // TestRunScanWithDB_IntegrationTest is an end-to-end test of scanning with database storage.
 func TestRunScanWithDB_IntegrationTest(t *testing.T) {
 	database := setupTestDB(t)
