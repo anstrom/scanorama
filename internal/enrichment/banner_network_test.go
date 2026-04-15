@@ -1,5 +1,10 @@
+//go:build !race
+
 // Package enrichment — network-level tests for banner grabbing using
-// in-process test TCP/TLS servers.
+// in-process test TCP/TLS servers. These tests exercise zgrab2-based grabbers
+// (grabZGrabHTTP, grabZGrabHTTPS, grabZGrabSSH) which internally have a known
+// data race in TimeoutConnection.SaturateTimeoutsToReadAndWriteTimeouts that is
+// upstream and not fixable here.
 package enrichment
 
 import (
