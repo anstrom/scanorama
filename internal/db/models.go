@@ -175,30 +175,54 @@ func (mac MACAddr) String() string {
 type JSONB json.RawMessage
 
 // Scan implements sql.Scanner for PostgreSQL JSONB type.
+// When the pq driver uses binary wire protocol for a JSONB column it prepends a
+// one-byte version marker (0x01) before the JSON text.  We strip that prefix
+// so callers always receive well-formed JSON bytes.  If the resulting bytes are
+// not valid JSON (e.g. the column contains unexpected binary data), Scan stores
+// nil rather than propagating garbage that would later cause MarshalJSON to fail.
 func (j *JSONB) Scan(value interface{}) error {
 	if value == nil {
 		*j = nil
 		return nil
 	}
 
+	var raw []byte
 	switch v := value.(type) {
 	case []byte:
-		*j = JSONB(v)
-		return nil
+		// Make a copy so we don't hold a reference to the driver-owned buffer.
+		raw = make([]byte, len(v))
+		copy(raw, v)
 	case string:
-		*j = JSONB([]byte(v))
-		return nil
+		raw = []byte(v)
 	default:
 		return fmt.Errorf("cannot scan %T into JSONB", value)
 	}
+
+	// PostgreSQL JSONB binary format: first byte is version 0x01 followed by
+	// JSON text.  Strip the version byte when present.
+	if len(raw) > 1 && raw[0] == 0x01 {
+		raw = raw[1:]
+	}
+
+	if !json.Valid(raw) {
+		*j = nil
+		return nil
+	}
+
+	*j = JSONB(raw)
+	return nil
 }
 
 // Value implements driver.Valuer for PostgreSQL JSONB type.
+// Returning a string (not []byte) ensures pq uses the text wire protocol when
+// binding this value as a query parameter.  This prevents pq from encoding the
+// value as a PostgreSQL bytea in binary mode, which would corrupt the stored
+// JSONB data.
 func (j JSONB) Value() (driver.Value, error) {
 	if j == nil {
 		return nil, nil
 	}
-	return []byte(j), nil
+	return string(j), nil
 }
 
 // String returns the JSON string.
