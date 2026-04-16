@@ -126,6 +126,21 @@ type NetworkServicer interface {
 	GetNetworkStats(ctx context.Context) (map[string]interface{}, error)
 }
 
+// DeviceServicer is the service-level interface consumed by DeviceHandler.
+//
+//go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_device_servicer.go -package mocks github.com/anstrom/scanorama/internal/api/handlers DeviceServicer
+type DeviceServicer interface {
+	ListDevices(ctx context.Context) ([]db.DeviceSummary, error)
+	CreateDevice(ctx context.Context, input db.CreateDeviceInput) (*db.Device, error)
+	GetDeviceDetail(ctx context.Context, id uuid.UUID) (*db.DeviceDetail, error)
+	UpdateDevice(ctx context.Context, id uuid.UUID, input db.UpdateDeviceInput) (*db.Device, error)
+	DeleteDevice(ctx context.Context, id uuid.UUID) error
+	AttachHost(ctx context.Context, deviceID, hostID uuid.UUID) error
+	DetachHost(ctx context.Context, deviceID, hostID uuid.UUID) error
+	AcceptSuggestion(ctx context.Context, suggestionID uuid.UUID) error
+	DismissSuggestion(ctx context.Context, suggestionID uuid.UUID) error
+}
+
 // GroupServicer is the service-level interface consumed by GroupHandler.
 //
 //go:generate go run go.uber.org/mock/mockgen -typed -destination mocks/mock_group_servicer.go -package mocks github.com/anstrom/scanorama/internal/api/handlers GroupServicer
