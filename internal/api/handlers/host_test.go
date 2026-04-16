@@ -1436,3 +1436,127 @@ func TestHostHandler_CreateHost_Conflict(t *testing.T) {
 		assert.Contains(t, errResp["message"], "192.168.1.50")
 	})
 }
+
+// ── UpdateCustomName ─────────────────────────────────────────────────────────
+
+func TestHostHandler_UpdateCustomName_Success(t *testing.T) {
+	h, store, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	hostID := uuid.New()
+	customName := "office-router"
+	returned := &db.Host{
+		ID:         hostID,
+		IPAddress:  db.IPAddr{IP: net.ParseIP("192.168.1.10")},
+		Status:     db.HostStatusUp,
+		CustomName: &customName,
+	}
+
+	store.EXPECT().
+		UpdateCustomName(gomock.Any(), hostID, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ uuid.UUID, name *string) (*db.Host, error) {
+			require.NotNil(t, name)
+			assert.Equal(t, "office-router", *name)
+			return returned, nil
+		})
+
+	body, err := json.Marshal(CustomNameRequest{CustomName: &customName})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPatch,
+		"/api/v1/hosts/"+hostID.String()+"/custom-name", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = mux.SetURLVars(req, map[string]string{"id": hostID.String()})
+	w := httptest.NewRecorder()
+
+	h.UpdateCustomName(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "office-router", resp["custom_name"])
+}
+
+func TestHostHandler_UpdateCustomName_ClearsOverride(t *testing.T) {
+	// {"custom_name": "  "} and {"custom_name": null} both clear — verify the
+	// handler normalizes whitespace to nil before calling the service.
+	h, store, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	hostID := uuid.New()
+	store.EXPECT().
+		UpdateCustomName(gomock.Any(), hostID, gomock.Nil()).
+		Return(&db.Host{ID: hostID, IPAddress: db.IPAddr{IP: net.ParseIP("192.168.1.10")}}, nil)
+
+	body := []byte(`{"custom_name": "   "}`)
+	req := httptest.NewRequest(http.MethodPatch,
+		"/api/v1/hosts/"+hostID.String()+"/custom-name", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = mux.SetURLVars(req, map[string]string{"id": hostID.String()})
+	w := httptest.NewRecorder()
+
+	h.UpdateCustomName(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHostHandler_UpdateCustomName_TooLong_Returns400(t *testing.T) {
+	h, _, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	hostID := uuid.New()
+	long := strings.Repeat("a", 256)
+	body, err := json.Marshal(CustomNameRequest{CustomName: &long})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPatch,
+		"/api/v1/hosts/"+hostID.String()+"/custom-name", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = mux.SetURLVars(req, map[string]string{"id": hostID.String()})
+	w := httptest.NewRecorder()
+
+	h.UpdateCustomName(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHostHandler_UpdateCustomName_NotFound_Returns404(t *testing.T) {
+	h, store, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	hostID := uuid.New()
+	store.EXPECT().
+		UpdateCustomName(gomock.Any(), hostID, gomock.Any()).
+		Return(nil, notFoundErr("host", hostID.String()))
+
+	name := "x"
+	body, err := json.Marshal(CustomNameRequest{CustomName: &name})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPatch,
+		"/api/v1/hosts/"+hostID.String()+"/custom-name", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = mux.SetURLVars(req, map[string]string{"id": hostID.String()})
+	w := httptest.NewRecorder()
+
+	h.UpdateCustomName(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestHostHandler_UpdateCustomName_InvalidUUID_Returns400(t *testing.T) {
+	h, _, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	body := []byte(`{"custom_name": "x"}`)
+	req := httptest.NewRequest(http.MethodPatch,
+		"/api/v1/hosts/not-a-uuid/custom-name", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", "not-a-uuid")
+	w := httptest.NewRecorder()
+
+	h.UpdateCustomName(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}

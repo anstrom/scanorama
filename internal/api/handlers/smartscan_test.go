@@ -81,6 +81,7 @@ func routeSmartScan(h *SmartScanHandler, method, path string, body []byte) *http
 	r.HandleFunc("/api/v1/smart-scan/profile-recommendations", h.GetProfileRecommendations).Methods("GET")
 	r.HandleFunc("/api/v1/smart-scan/hosts/{id}/stage", h.EvaluateHost).Methods("GET")
 	r.HandleFunc("/api/v1/smart-scan/hosts/{id}/trigger", h.TriggerHost).Methods("POST")
+	r.HandleFunc("/api/v1/smart-scan/hosts/{id}/refresh-identity", h.RefreshIdentity).Methods("POST")
 	r.HandleFunc("/api/v1/smart-scan/trigger-batch", h.TriggerBatch).Methods("POST")
 
 	var req *http.Request
@@ -240,6 +241,49 @@ func TestSmartScan_TriggerHost_QueueFull_Returns429(t *testing.T) {
 
 	w := routeSmartScan(newSmartScanHandler(svc), "POST",
 		"/api/v1/smart-scan/hosts/"+hostID.String()+"/trigger", nil)
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
+}
+
+// ── RefreshIdentity ───────────────────────────────────────────────────────────
+
+func TestSmartScan_RefreshIdentity_Returns202WithScanID(t *testing.T) {
+	hostID := uuid.New()
+	scanID := uuid.New()
+	svc := &mockSmartScanServicer{
+		queueIdentityEnrichmentFn: func(_ context.Context, id uuid.UUID) (uuid.UUID, error) {
+			assert.Equal(t, hostID, id)
+			return scanID, nil
+		},
+	}
+
+	w := routeSmartScan(newSmartScanHandler(svc), "POST",
+		"/api/v1/smart-scan/hosts/"+hostID.String()+"/refresh-identity", nil)
+	require.Equal(t, http.StatusAccepted, w.Code)
+
+	var resp triggerHostResponse
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.True(t, resp.Queued)
+	assert.Equal(t, scanID.String(), resp.ScanID)
+	assert.Equal(t, hostID.String(), resp.HostID)
+}
+
+func TestSmartScan_RefreshIdentity_BadUUID_Returns400(t *testing.T) {
+	svc := &mockSmartScanServicer{}
+	w := routeSmartScan(newSmartScanHandler(svc), "POST",
+		"/api/v1/smart-scan/hosts/not-a-uuid/refresh-identity", nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestSmartScan_RefreshIdentity_QueueFull_Returns429(t *testing.T) {
+	hostID := uuid.New()
+	svc := &mockSmartScanServicer{
+		queueIdentityEnrichmentFn: func(_ context.Context, _ uuid.UUID) (uuid.UUID, error) {
+			return uuid.Nil, scanning.ErrQueueFull
+		},
+	}
+
+	w := routeSmartScan(newSmartScanHandler(svc), "POST",
+		"/api/v1/smart-scan/hosts/"+hostID.String()+"/refresh-identity", nil)
 	assert.Equal(t, http.StatusTooManyRequests, w.Code)
 }
 
