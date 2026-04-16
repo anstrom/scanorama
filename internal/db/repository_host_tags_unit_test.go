@@ -354,7 +354,7 @@ func TestHostRepository_GetHost_PopulatesTags(t *testing.T) {
 	id := uuid.New()
 	now := time.Now().UTC()
 
-	// Main host SELECT — includes the tags column and knowledge_score column.
+	// Main host SELECT — includes the tags, knowledge_score, and device columns.
 	mock.ExpectQuery("SELECT").
 		WillReturnRows(sqlmock.NewRows(getHostColumns).
 			AddRow(
@@ -370,6 +370,7 @@ func TestHostRepository_GetHost_PopulatesTags(t *testing.T) {
 				nil, nil, 0, // status_changed_at, previous_status, timeout_count
 				pq.StringArray{"prod", "web"}, // tags
 				0,                             // knowledge_score
+				nil, nil, nil,                 // device_id, mdns_name, device_name
 			))
 
 	// fetchHostPorts — no ports.
@@ -412,7 +413,8 @@ func TestHostRepository_GetHost_EmptyTags(t *testing.T) {
 				now, now, "up",
 				nil, nil, 0,
 				pq.StringArray{},
-				0, // knowledge_score
+				0,             // knowledge_score
+				nil, nil, nil, // device_id, mdns_name, device_name
 			))
 
 	mock.ExpectQuery("SELECT DISTINCT").
@@ -441,9 +443,14 @@ func TestHostRepository_ScanHostRows_PopulatesTags(t *testing.T) {
 	id := uuid.New()
 	now := time.Now().UTC()
 
-	// The listHosts query selects tags as one of the columns before the
-	// aggregate open_ports / total_ports_scanned / scan_count columns.
-	listCols := append(append([]string{}, getHostColumns...), "open_ports", "total_ports_scanned", "scan_count")
+	// The listHosts query selects aggregate columns then device columns after
+	// the standard host columns (excluding device cols from getHostColumns
+	// which are for the GetHost detail query only).
+	hostBaseCols := getHostColumns[:len(getHostColumns)-3] // strip device_id, mdns_name, device_name
+	listCols := append(append([]string{}, hostBaseCols...),
+		"open_ports", "total_ports_scanned", "scan_count",
+		"device_id", "mdns_name", "device_name",
+	)
 
 	// getHostCount runs first in ListHosts.
 	mock.ExpectQuery("SELECT COUNT").
@@ -466,6 +473,7 @@ func TestHostRepository_ScanHostRows_PopulatesTags(t *testing.T) {
 				sql.NullInt64{Int64: 2, Valid: true}, // open_ports
 				int64(3),                             // total_ports_scanned
 				sql.NullInt64{Int64: 1, Valid: true}, // scan_count
+				nil, nil, nil,                        // device_id, mdns_name, device_name
 			))
 
 	filters := &HostFilters{}

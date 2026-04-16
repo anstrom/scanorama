@@ -376,6 +376,12 @@ type Host struct {
 	ScanCount  int        `db:"-" json:"-"`
 	// Groups the host belongs to. Populated by GetHost (detail view only, not list).
 	Groups []HostGroupSummary `db:"-" json:"groups,omitempty"`
+	// DeviceID is the stable device this host is currently attached to, if any.
+	DeviceID *uuid.UUID `db:"device_id" json:"device_id,omitempty"`
+	// MDNSName is the most recently resolved mDNS .local name for this host/IP.
+	MDNSName *string `db:"mdns_name" json:"mdns_name,omitempty"`
+	// DeviceName is the name of the attached device, populated by JOIN in GetHost/ListHosts.
+	DeviceName *string `db:"-" json:"device_name,omitempty"`
 }
 
 // GetOSFingerprint returns the OS fingerprint information.
