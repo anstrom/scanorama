@@ -382,6 +382,13 @@ type Host struct {
 	MDNSName *string `db:"mdns_name" json:"mdns_name,omitempty"`
 	// DeviceName is the name of the attached device, populated by JOIN in GetHost/ListHosts.
 	DeviceName *string `db:"-" json:"device_name,omitempty"`
+	// CustomName is a user-defined display-name override. When non-null it wins
+	// over any auto-discovered candidate in display_name resolution. Enrichers
+	// never write this column; only the Identity tab's custom-name input does.
+	CustomName *string `db:"custom_name" json:"custom_name,omitempty"`
+	// HostnameSource tags the provenance of Hostname: one of
+	// manual|ptr|mdns|snmp|cert. NULL means unknown/legacy.
+	HostnameSource *string `db:"hostname_source" json:"hostname_source,omitempty"`
 }
 
 // GetOSFingerprint returns the OS fingerprint information.
