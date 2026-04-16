@@ -44,6 +44,8 @@ func (s *Server) setupRoutes() {
 		WithScanService(services.NewScanService(db.NewScanRepository(s.database), s.logger))
 	groupHandler := apihandlers.NewGroupHandler(
 		services.NewGroupService(db.NewGroupRepository(s.database), s.logger), s.logger, s.metrics)
+	deviceHandler := apihandlers.NewDeviceHandler(
+		services.NewDeviceService(db.NewDeviceRepository(s.database), s.logger), s.logger, s.metrics)
 	portHandler := apihandlers.NewPortHandler(db.NewPortRepository(s.database), s.logger, s.metrics)
 	certHandler := apihandlers.NewCertificateHandler(db.NewBannerRepository(s.database), s.logger, s.metrics)
 	profileManager := profiles.NewManager(s.database)
@@ -70,6 +72,7 @@ func (s *Server) setupRoutes() {
 	s.setupHostRoutes(api, hostHandler)
 	s.setupTagRoutes(api, hostHandler)
 	s.setupGroupRoutes(api, groupHandler)
+	s.setupDeviceRoutes(api, deviceHandler)
 	s.setupDiscoveryRoutes(api, discoveryHandler)
 	s.setupProfileRoutes(api, profileHandler)
 	s.setupScheduleRoutes(api, scheduleHandler)
@@ -206,6 +209,20 @@ func (s *Server) setupTagRoutes(api *mux.Router, h *apihandlers.HostHandler) {
 	api.HandleFunc("/hosts/{id}/tags", h.ReplaceHostTags).Methods("PUT")
 	api.HandleFunc("/hosts/{id}/tags", h.AddHostTags).Methods("POST")
 	api.HandleFunc("/hosts/{id}/tags", h.DeleteHostTags).Methods("DELETE")
+}
+
+// setupDeviceRoutes registers device identity CRUD, host attachment, and suggestion endpoints.
+func (s *Server) setupDeviceRoutes(api *mux.Router, h *apihandlers.DeviceHandler) {
+	// Fixed-path routes must be registered before /devices/{id} to avoid mux ambiguity.
+	api.HandleFunc("/devices/suggestions/{id}/accept", h.AcceptSuggestion).Methods("POST")
+	api.HandleFunc("/devices/suggestions/{id}/dismiss", h.DismissSuggestion).Methods("POST")
+	api.HandleFunc("/devices", h.ListDevices).Methods("GET")
+	api.HandleFunc("/devices", h.CreateDevice).Methods("POST")
+	api.HandleFunc("/devices/{id}", h.GetDevice).Methods("GET")
+	api.HandleFunc("/devices/{id}", h.UpdateDevice).Methods("PUT")
+	api.HandleFunc("/devices/{id}", h.DeleteDevice).Methods("DELETE")
+	api.HandleFunc("/devices/{id}/hosts/{host_id}", h.AttachHost).Methods("POST")
+	api.HandleFunc("/devices/{id}/hosts/{host_id}", h.DetachHost).Methods("DELETE")
 }
 
 // setupGroupRoutes registers host group CRUD and membership endpoints.
