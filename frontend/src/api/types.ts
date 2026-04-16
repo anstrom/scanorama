@@ -45,6 +45,122 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List devices
+         * @description Returns all known devices with MAC and host counts.
+         */
+        get: operations["listDevices"];
+        put?: never;
+        /**
+         * Create device
+         * @description Creates a new stable device identity record.
+         */
+        post: operations["createDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/suggestions/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept device suggestion
+         * @description Accepts a device suggestion, attaching the host to the device and removing the suggestion.
+         */
+        post: operations["acceptDeviceSuggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/suggestions/{id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss device suggestion
+         * @description Marks a device suggestion as dismissed so it is not surfaced again.
+         */
+        post: operations["dismissDeviceSuggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get device
+         * @description Returns the full device view including known MACs, known names, and attached hosts.
+         */
+        get: operations["getDevice"];
+        /**
+         * Update device
+         * @description Updates a device name and/or notes. Omitted fields are left unchanged.
+         */
+        put: operations["updateDevice"];
+        post?: never;
+        /**
+         * Delete device
+         * @description Removes a device. Attached hosts have their device_id set to NULL.
+         */
+        delete: operations["deleteDevice"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/{id}/hosts/{host_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Attach host to device
+         * @description Associates a host with a device by setting hosts.device_id.
+         */
+        post: operations["attachHost"];
+        /**
+         * Detach host from device
+         * @description Removes the association between a host and its device.
+         */
+        delete: operations["detachHost"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/discovery": {
         parameters: {
             query?: never;
@@ -1032,6 +1148,23 @@ export interface components {
             };
             timestamp?: string;
         };
+        "docs.AttachedHostResponse": {
+            first_seen?: string;
+            /** @example router.local */
+            hostname?: string;
+            id?: string;
+            /** @example 192.168.1.1 */
+            ip_address?: string;
+            last_seen?: string;
+            /** @example 00:1B:44:11:3A:B7 */
+            mac_address?: string;
+            /** @example Linux */
+            os_family?: string;
+            /** @example up */
+            status?: string;
+            /** @example Netgear */
+            vendor?: string;
+        };
         "docs.BatchDetailEntryResponse": {
             /** @example 550e8400-e29b-41d4-a716-446655440000 */
             host_id?: string;
@@ -1072,6 +1205,12 @@ export interface components {
             subject_cn?: string;
             /** @example TLS 1.3 */
             tls_version?: string;
+        };
+        "docs.CreateDeviceRequest": {
+            /** @example Living Room Router */
+            name?: string;
+            /** @example Primary home router */
+            notes?: string;
         };
         "docs.CreateDiscoveryJobRequest": {
             description?: string;
@@ -1185,6 +1324,61 @@ export interface components {
             ttl?: number;
             /** @example server01.local */
             value?: string;
+        };
+        "docs.DeviceDetailResponse": {
+            created_at?: string;
+            hosts?: components["schemas"]["docs.AttachedHostResponse"][];
+            /** @example 550e8400-e29b-41d4-a716-446655440099 */
+            id?: string;
+            known_macs?: components["schemas"]["docs.DeviceKnownMACResponse"][];
+            known_names?: components["schemas"]["docs.DeviceKnownNameResponse"][];
+            /** @example Living Room Router */
+            name?: string;
+            /** @example Primary home router */
+            notes?: string;
+            updated_at?: string;
+        };
+        "docs.DeviceKnownMACResponse": {
+            first_seen?: string;
+            id?: string;
+            last_seen?: string;
+            /** @example 00:1B:44:11:3A:B7 */
+            mac_address?: string;
+        };
+        "docs.DeviceKnownNameResponse": {
+            first_seen?: string;
+            id?: string;
+            last_seen?: string;
+            /** @example myrouter.local */
+            name?: string;
+            /**
+             * @example mdns
+             * @enum {string}
+             */
+            source?: "mdns" | "dns" | "snmp" | "netbios" | "user";
+        };
+        "docs.DeviceListResponse": {
+            devices?: components["schemas"]["docs.DeviceSummaryResponse"][];
+        };
+        "docs.DeviceResponse": {
+            created_at?: string;
+            /** @example 550e8400-e29b-41d4-a716-446655440099 */
+            id?: string;
+            /** @example Living Room Router */
+            name?: string;
+            /** @example Primary home router */
+            notes?: string;
+            updated_at?: string;
+        };
+        "docs.DeviceSummaryResponse": {
+            /** @example 1 */
+            host_count?: number;
+            /** @example 550e8400-e29b-41d4-a716-446655440099 */
+            id?: string;
+            /** @example 2 */
+            mac_count?: number;
+            /** @example Living Room Router */
+            name?: string;
         };
         "docs.DiscoveryJobResponse": {
             completed_at?: string;
@@ -1743,6 +1937,12 @@ export interface components {
             /** @example 550e8400-e29b-41d4-a716-446655440001 */
             scan_id?: string;
         };
+        "docs.UpdateDeviceRequest": {
+            /** @example Updated Router Name */
+            name?: string;
+            /** @example Updated notes */
+            notes?: string;
+        };
         "docs.UpdateNetworkRequest": {
             /** @example 192.168.1.0/24 */
             cidr?: string;
@@ -1893,6 +2093,508 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.DeviceListResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Device name and optional notes */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["docs.CreateDeviceRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.DeviceResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    acceptDeviceSuggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Suggestion ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successfully accepted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    dismissDeviceSuggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Suggestion ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successfully dismissed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Device ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.DeviceDetailResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Device ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Fields to update */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["docs.UpdateDeviceRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.DeviceResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Device ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successfully deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    attachHost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Device ID */
+                id: string;
+                /** @description Host ID */
+                host_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successfully attached */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    detachHost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Device ID */
+                id: string;
+                /** @description Host ID */
+                host_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successfully detached */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
                 };
             };
         };

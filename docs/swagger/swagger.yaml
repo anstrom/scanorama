@@ -11,6 +11,33 @@ definitions:
       timestamp:
         type: string
     type: object
+  docs.AttachedHostResponse:
+    properties:
+      first_seen:
+        type: string
+      hostname:
+        example: router.local
+        type: string
+      id:
+        type: string
+      ip_address:
+        example: 192.168.1.1
+        type: string
+      last_seen:
+        type: string
+      mac_address:
+        example: 00:1B:44:11:3A:B7
+        type: string
+      os_family:
+        example: Linux
+        type: string
+      status:
+        example: up
+        type: string
+      vendor:
+        example: Netgear
+        type: string
+    type: object
   docs.BatchDetailEntryResponse:
     properties:
       host_id:
@@ -72,6 +99,15 @@ definitions:
         type: string
       tls_version:
         example: TLS 1.3
+        type: string
+    type: object
+  docs.CreateDeviceRequest:
+    properties:
+      name:
+        example: Living Room Router
+        type: string
+      notes:
+        example: Primary home router
         type: string
     type: object
   docs.CreateDiscoveryJobRequest:
@@ -248,6 +284,105 @@ definitions:
         type: integer
       value:
         example: server01.local
+        type: string
+    type: object
+  docs.DeviceDetailResponse:
+    properties:
+      created_at:
+        type: string
+      hosts:
+        items:
+          $ref: '#/definitions/docs.AttachedHostResponse'
+        type: array
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440099
+        type: string
+      known_macs:
+        items:
+          $ref: '#/definitions/docs.DeviceKnownMACResponse'
+        type: array
+      known_names:
+        items:
+          $ref: '#/definitions/docs.DeviceKnownNameResponse'
+        type: array
+      name:
+        example: Living Room Router
+        type: string
+      notes:
+        example: Primary home router
+        type: string
+      updated_at:
+        type: string
+    type: object
+  docs.DeviceKnownMACResponse:
+    properties:
+      first_seen:
+        type: string
+      id:
+        type: string
+      last_seen:
+        type: string
+      mac_address:
+        example: 00:1B:44:11:3A:B7
+        type: string
+    type: object
+  docs.DeviceKnownNameResponse:
+    properties:
+      first_seen:
+        type: string
+      id:
+        type: string
+      last_seen:
+        type: string
+      name:
+        example: myrouter.local
+        type: string
+      source:
+        enum:
+        - mdns
+        - dns
+        - snmp
+        - netbios
+        - user
+        example: mdns
+        type: string
+    type: object
+  docs.DeviceListResponse:
+    properties:
+      devices:
+        items:
+          $ref: '#/definitions/docs.DeviceSummaryResponse'
+        type: array
+    type: object
+  docs.DeviceResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440099
+        type: string
+      name:
+        example: Living Room Router
+        type: string
+      notes:
+        example: Primary home router
+        type: string
+      updated_at:
+        type: string
+    type: object
+  docs.DeviceSummaryResponse:
+    properties:
+      host_count:
+        example: 1
+        type: integer
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440099
+        type: string
+      mac_count:
+        example: 2
+        type: integer
+      name:
+        example: Living Room Router
         type: string
     type: object
   docs.DiscoveryJobResponse:
@@ -1125,6 +1260,15 @@ definitions:
         example: 550e8400-e29b-41d4-a716-446655440001
         type: string
     type: object
+  docs.UpdateDeviceRequest:
+    properties:
+      name:
+        example: Updated Router Name
+        type: string
+      notes:
+        example: Updated notes
+        type: string
+    type: object
   docs.UpdateNetworkRequest:
     properties:
       cidr:
@@ -1295,6 +1439,338 @@ paths:
       summary: List expiring TLS certificates
       tags:
       - certificates
+  /devices:
+    get:
+      description: Returns all known devices with MAC and host counts.
+      operationId: listDevices
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.DeviceListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List devices
+      tags:
+      - Devices
+    post:
+      consumes:
+      - application/json
+      description: Creates a new stable device identity record.
+      operationId: createDevice
+      parameters:
+      - description: Device name and optional notes
+        in: body
+        name: device
+        required: true
+        schema:
+          $ref: '#/definitions/docs.CreateDeviceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/docs.DeviceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create device
+      tags:
+      - Devices
+  /devices/{id}:
+    delete:
+      description: Removes a device. Attached hosts have their device_id set to NULL.
+      operationId: deleteDevice
+      parameters:
+      - description: Device ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Successfully deleted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete device
+      tags:
+      - Devices
+    get:
+      description: Returns the full device view including known MACs, known names,
+        and attached hosts.
+      operationId: getDevice
+      parameters:
+      - description: Device ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.DeviceDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get device
+      tags:
+      - Devices
+    put:
+      consumes:
+      - application/json
+      description: Updates a device name and/or notes. Omitted fields are left unchanged.
+      operationId: updateDevice
+      parameters:
+      - description: Device ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: device
+        required: true
+        schema:
+          $ref: '#/definitions/docs.UpdateDeviceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.DeviceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update device
+      tags:
+      - Devices
+  /devices/{id}/hosts/{host_id}:
+    delete:
+      description: Removes the association between a host and its device.
+      operationId: detachHost
+      parameters:
+      - description: Device ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Host ID
+        format: uuid
+        in: path
+        name: host_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Successfully detached
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Detach host from device
+      tags:
+      - Devices
+    post:
+      description: Associates a host with a device by setting hosts.device_id.
+      operationId: attachHost
+      parameters:
+      - description: Device ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Host ID
+        format: uuid
+        in: path
+        name: host_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Successfully attached
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Attach host to device
+      tags:
+      - Devices
+  /devices/suggestions/{id}/accept:
+    post:
+      description: Accepts a device suggestion, attaching the host to the device and
+        removing the suggestion.
+      operationId: acceptDeviceSuggestion
+      parameters:
+      - description: Suggestion ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Successfully accepted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Accept device suggestion
+      tags:
+      - Devices
+  /devices/suggestions/{id}/dismiss:
+    post:
+      description: Marks a device suggestion as dismissed so it is not surfaced again.
+      operationId: dismissDeviceSuggestion
+      parameters:
+      - description: Suggestion ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Successfully dismissed
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Dismiss device suggestion
+      tags:
+      - Devices
   /discovery:
     get:
       description: Get paginated list of discovery jobs

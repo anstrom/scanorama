@@ -112,6 +112,512 @@ const docTemplate = `{
                 }
             }
         },
+        "/devices": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns all known devices with MAC and host counts.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "List devices",
+                "operationId": "listDevices",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.DeviceListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Creates a new stable device identity record.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Create device",
+                "operationId": "createDevice",
+                "parameters": [
+                    {
+                        "description": "Device name and optional notes",
+                        "name": "device",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/docs.CreateDeviceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/docs.DeviceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/suggestions/{id}/accept": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Accepts a device suggestion, attaching the host to the device and removing the suggestion.",
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Accept device suggestion",
+                "operationId": "acceptDeviceSuggestion",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Suggestion ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Successfully accepted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/suggestions/{id}/dismiss": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Marks a device suggestion as dismissed so it is not surfaced again.",
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Dismiss device suggestion",
+                "operationId": "dismissDeviceSuggestion",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Suggestion ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Successfully dismissed"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns the full device view including known MACs, known names, and attached hosts.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Get device",
+                "operationId": "getDevice",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Device ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.DeviceDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Updates a device name and/or notes. Omitted fields are left unchanged.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Update device",
+                "operationId": "updateDevice",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Device ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "device",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/docs.UpdateDeviceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.DeviceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Removes a device. Attached hosts have their device_id set to NULL.",
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Delete device",
+                "operationId": "deleteDevice",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Device ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Successfully deleted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/{id}/hosts/{host_id}": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Associates a host with a device by setting hosts.device_id.",
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Attach host to device",
+                "operationId": "attachHost",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Device ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Host ID",
+                        "name": "host_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Successfully attached"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Removes the association between a host and its device.",
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Detach host from device",
+                "operationId": "detachHost",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Device ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Host ID",
+                        "name": "host_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Successfully detached"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/discovery": {
             "get": {
                 "security": [
@@ -3910,6 +4416,44 @@ const docTemplate = `{
                 }
             }
         },
+        "docs.AttachedHostResponse": {
+            "type": "object",
+            "properties": {
+                "first_seen": {
+                    "type": "string"
+                },
+                "hostname": {
+                    "type": "string",
+                    "example": "router.local"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip_address": {
+                    "type": "string",
+                    "example": "192.168.1.1"
+                },
+                "last_seen": {
+                    "type": "string"
+                },
+                "mac_address": {
+                    "type": "string",
+                    "example": "00:1B:44:11:3A:B7"
+                },
+                "os_family": {
+                    "type": "string",
+                    "example": "Linux"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "up"
+                },
+                "vendor": {
+                    "type": "string",
+                    "example": "Netgear"
+                }
+            }
+        },
         "docs.BatchDetailEntryResponse": {
             "type": "object",
             "properties": {
@@ -3997,6 +4541,19 @@ const docTemplate = `{
                 "tls_version": {
                     "type": "string",
                     "example": "TLS 1.3"
+                }
+            }
+        },
+        "docs.CreateDeviceRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "Living Room Router"
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Primary home router"
                 }
             }
         },
@@ -4238,6 +4795,149 @@ const docTemplate = `{
                 "value": {
                     "type": "string",
                     "example": "server01.local"
+                }
+            }
+        },
+        "docs.DeviceDetailResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "hosts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.AttachedHostResponse"
+                    }
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440099"
+                },
+                "known_macs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.DeviceKnownMACResponse"
+                    }
+                },
+                "known_names": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.DeviceKnownNameResponse"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Living Room Router"
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Primary home router"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "docs.DeviceKnownMACResponse": {
+            "type": "object",
+            "properties": {
+                "first_seen": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_seen": {
+                    "type": "string"
+                },
+                "mac_address": {
+                    "type": "string",
+                    "example": "00:1B:44:11:3A:B7"
+                }
+            }
+        },
+        "docs.DeviceKnownNameResponse": {
+            "type": "object",
+            "properties": {
+                "first_seen": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_seen": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "myrouter.local"
+                },
+                "source": {
+                    "type": "string",
+                    "enum": [
+                        "mdns",
+                        "dns",
+                        "snmp",
+                        "netbios",
+                        "user"
+                    ],
+                    "example": "mdns"
+                }
+            }
+        },
+        "docs.DeviceListResponse": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.DeviceSummaryResponse"
+                    }
+                }
+            }
+        },
+        "docs.DeviceResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440099"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Living Room Router"
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Primary home router"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "docs.DeviceSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "host_count": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440099"
+                },
+                "mac_count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Living Room Router"
                 }
             }
         },
@@ -5457,6 +6157,19 @@ const docTemplate = `{
                 "scan_id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440001"
+                }
+            }
+        },
+        "docs.UpdateDeviceRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "Updated Router Name"
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Updated notes"
                 }
             }
         },
