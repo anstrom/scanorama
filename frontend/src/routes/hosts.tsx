@@ -22,6 +22,7 @@ import {
 import { SortHeader } from "../components/sort-header";
 import type { SortOrder } from "../components/sort-header";
 import { Button } from "../components/button";
+import { HostIdentityPanel } from "../components/host-identity-panel";
 import {
   useHosts,
   useHost,
@@ -196,8 +197,13 @@ function HostDetailPanel({
   const { data: full, isLoading, isError, error } = useHost(host.id ?? "");
   const h = (full ?? host) as HostWithDetails;
 
-  // Active detail tab — "interfaces" only shown when SNMP interface data is present
-  const [detailTab, setDetailTab] = useState<"overview" | "interfaces">("overview");
+  // Active detail tab. "interfaces" is only shown when SNMP interface data is
+  // present; "identity" is always available.
+  const [detailTab, setDetailTab] = useState<
+    "overview" | "identity" | "interfaces"
+  >("overview");
+  // Controls the inline chevron panel on the Overview tab's Identity row.
+  const [identityExpanded, setIdentityExpanded] = useState(false);
 
   // Expanded port banners: Set of "port-protocol" keys with banner expanded
   const [expandedBanners, setExpandedBanners] = useState<Set<string>>(new Set());
@@ -388,26 +394,33 @@ function HostDetailPanel({
           </button>
         </div>
 
-        {/* Tab bar — shown only when SNMP interface data is present */}
-        {h.snmp_data?.interfaces && h.snmp_data.interfaces.length > 0 && (
-          <div className="flex border-b border-border shrink-0">
-            {(["overview", "interfaces"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setDetailTab(tab)}
-                className={cn(
-                  "px-5 py-2.5 text-xs font-medium capitalize transition-colors border-b-2 -mb-px",
-                  detailTab === tab
-                    ? "border-accent text-text-primary"
-                    : "border-transparent text-text-muted hover:text-text-secondary",
-                )}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Tab bar — identity is always available; interfaces only shows
+            when SNMP interface data is present. */}
+        <div className="flex border-b border-border shrink-0">
+          {(
+            [
+              "overview",
+              "identity",
+              ...(h.snmp_data?.interfaces && h.snmp_data.interfaces.length > 0
+                ? (["interfaces"] as const)
+                : []),
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setDetailTab(tab)}
+              className={cn(
+                "px-5 py-2.5 text-xs font-medium capitalize transition-colors border-b-2 -mb-px",
+                detailTab === tab
+                  ? "border-accent text-text-primary"
+                  : "border-transparent text-text-muted hover:text-text-secondary",
+              )}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
@@ -467,9 +480,43 @@ function HostDetailPanel({
 
           {/* Identity */}
           <section>
-            <h3 className="text-xs font-medium text-text-primary mb-3">
-              Identity
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-medium text-text-primary flex items-center gap-1.5">
+                Identity
+                {h.display_name_source && h.display_name_source !== "ip" ? (
+                  <span className="text-[10px] uppercase tracking-wide text-text-muted">
+                    ({h.display_name_source})
+                  </span>
+                ) : null}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIdentityExpanded((v) => !v)}
+                className="flex items-center gap-1 text-[11px] text-text-muted hover:text-text-primary"
+                aria-expanded={identityExpanded}
+                aria-label={
+                  identityExpanded ? "Collapse name sources" : "Expand name sources"
+                }
+              >
+                {identityExpanded ? (
+                  <ChevronDown className="h-3 w-3" />
+                ) : (
+                  <ChevronRight className="h-3 w-3" />
+                )}
+                {(h.name_candidates?.length ?? 0) > 0
+                  ? `${h.name_candidates?.length ?? 0} sources`
+                  : "sources"}
+              </button>
+            </div>
+            {identityExpanded && (
+              <div className="mb-4">
+                <HostIdentityPanel
+                  host={h}
+                  mode="compact"
+                  onManageClick={() => setDetailTab("identity")}
+                />
+              </div>
+            )}
             {isLoading ? (
               <div className="space-y-2">
                 {Array.from({ length: 5 }).map((_, i) => (
@@ -1248,6 +1295,16 @@ function HostDetailPanel({
           </section>
 
           </> /* end overview tab */}
+
+          {/* Identity tab — full candidate list + custom-name override */}
+          {detailTab === "identity" && (
+            <section>
+              <h3 className="text-xs font-medium text-text-primary mb-3">
+                Identity
+              </h3>
+              <HostIdentityPanel host={h} mode="full" />
+            </section>
+          )}
 
           {/* Interfaces tab */}
           {detailTab === "interfaces" && h.snmp_data?.interfaces && (
@@ -2083,7 +2140,9 @@ export function HostsPage() {
                         </td>
                         {colVis.hostname && (
                           <td className="py-3 pr-4 text-text-secondary">
-                            {host.hostname ?? "—"}
+                            {(host as HostWithDetails).display_name ??
+                              host.hostname ??
+                              "—"}
                           </td>
                         )}
                         <td className="py-3 pr-4">
