@@ -519,8 +519,30 @@ definitions:
         items:
           $ref: '#/definitions/docs.CertificateResponse'
         type: array
+      custom_name:
+        description: CustomName is the user-defined display-name override (null when
+          unset).
+        example: office-router
+        type: string
       description:
         example: Primary web server
+        type: string
+      display_name:
+        description: |-
+          DisplayName is the winning display name chosen by the identity resolver.
+          Always set; falls back to IPAddress when no source produced a usable name.
+        example: sams-macbook.local
+        type: string
+      display_name_source:
+        description: 'DisplayNameSource tags where DisplayName came from: custom|mdns|snmp|ptr|cert|ip.'
+        enum:
+        - custom
+        - mdns
+        - snmp
+        - ptr
+        - cert
+        - ip
+        example: mdns
         type: string
       dns_records:
         description: DNSRecords are populated when DNS enrichment has run for this
@@ -532,6 +554,16 @@ definitions:
         type: string
       hostname:
         example: server01.local
+        type: string
+      hostname_source:
+        description: 'HostnameSource is the provenance tag for Hostname: manual|ptr|mdns|snmp|cert.'
+        enum:
+        - manual
+        - ptr
+        - mdns
+        - snmp
+        - cert
+        example: ptr
         type: string
       id:
         example: 550e8400-e29b-41d4-a716-446655440002
@@ -549,6 +581,14 @@ definitions:
       mac_address:
         example: 00:1B:44:11:3A:B7
         type: string
+      name_candidates:
+        description: |-
+          NameCandidates enumerates every automatic name candidate observed for this
+          host (usable or not). Only populated on GET /hosts/{id}; list responses
+          leave it as an empty array.
+        items:
+          $ref: '#/definitions/docs.NameCandidateResponse'
+        type: array
       network_id:
         description: NetworkID is the network this host belongs to, if any.
         type: string
@@ -613,6 +653,29 @@ definitions:
       uptime:
         example: 2h30m45s
         type: string
+    type: object
+  docs.NameCandidateResponse:
+    properties:
+      name:
+        example: sams-macbook.local
+        type: string
+      not_usable_reason:
+        example: 'filtered: unusable PTR pattern'
+        type: string
+      observed_at:
+        type: string
+      source:
+        enum:
+        - custom
+        - mdns
+        - snmp
+        - ptr
+        - cert
+        example: mdns
+        type: string
+      usable:
+        example: true
+        type: boolean
     type: object
   docs.NetworkExclusionResponse:
     properties:

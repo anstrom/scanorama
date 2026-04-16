@@ -15,6 +15,7 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 	"github.com/anstrom/scanorama/internal/errors"
 	"github.com/anstrom/scanorama/internal/metrics"
+	"github.com/anstrom/scanorama/internal/services"
 )
 
 // Validation constants for host fields.
@@ -125,6 +126,32 @@ type HostResponse struct {
 	Certificates      []*db.Certificate     `json:"certificates"`
 	SNMPData          *db.HostSNMPData      `json:"snmp_data"`
 	KnowledgeScore    int                   `json:"knowledge_score"`
+	// DisplayName is the winning name chosen by the identity resolver.
+	// Always set — falls back to IPAddress when no source produced a usable name.
+	DisplayName string `json:"display_name"`
+	// DisplayNameSource tags where DisplayName came from:
+	// custom|mdns|snmp|ptr|cert|ip.
+	DisplayNameSource string `json:"display_name_source"`
+	// CustomName is the user-defined override (nil when unset).
+	CustomName *string `json:"custom_name,omitempty"`
+	// HostnameSource is the provenance tag for Hostname: manual|ptr|mdns|snmp|cert.
+	HostnameSource *string `json:"hostname_source,omitempty"`
+	// NameCandidates is every automatic name candidate (usable or not) observed
+	// for this host. Always present — make([]..., 0) rather than nil so it
+	// serializes as [] not null. Empty on list responses (computed only on
+	// GET /hosts/{id} where the related tables are joined).
+	NameCandidates []NameCandidateResponse `json:"name_candidates"`
+}
+
+// NameCandidateResponse is one entry in HostResponse.NameCandidates — a
+// single name value from an auto-discovery source, tagged with whether it
+// was deemed usable and why not (when applicable).
+type NameCandidateResponse struct {
+	Name            string     `json:"name"`
+	Source          string     `json:"source"`
+	Usable          bool       `json:"usable"`
+	NotUsableReason string     `json:"not_usable_reason,omitempty"`
+	ObservedAt      *time.Time `json:"observed_at,omitempty"`
 }
 
 // HostScanResponse represents a scan associated with a host.
@@ -244,6 +271,10 @@ func (h *HostHandler) GetHost(w http.ResponseWriter, r *http.Request) {
 					resp.SNMPData = snmpData
 				}
 			}
+			// Refine display_name using the full candidate set now that the
+			// related-table data is loaded, and populate name_candidates for
+			// the Identity tab.
+			h.augmentWithFullIdentity(&resp, host, resp.DNSRecords, resp.Certificates, resp.SNMPData)
 			return resp
 		},
 		"api_hosts_retrieved_total")
@@ -650,13 +681,26 @@ func populateResponseTimeFields(r *HostResponse, host *db.Host) {
 
 func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 	response := HostResponse{
-		ID:        host.ID.String(),
-		IPAddress: host.IPAddress.String(),
-		Status:    host.Status,
-		FirstSeen: host.FirstSeen,
-		CreatedAt: host.FirstSeen,
-		UpdatedAt: host.LastSeen,
+		ID:             host.ID.String(),
+		IPAddress:      host.IPAddress.String(),
+		Status:         host.Status,
+		FirstSeen:      host.FirstSeen,
+		CreatedAt:      host.FirstSeen,
+		UpdatedAt:      host.LastSeen,
+		CustomName:     host.CustomName,
+		HostnameSource: host.HostnameSource,
+		NameCandidates: []NameCandidateResponse{},
 	}
+
+	// Best-effort display name using only fields on the Host row. GetHost
+	// overrides this later with the full-fat resolution that includes DNS
+	// records, cert subjects and SNMP data.
+	resolution := services.ResolveDisplayName(
+		basicIdentityInputs(host),
+		services.DefaultIdentityRankOrder,
+	)
+	response.DisplayName = resolution.Name
+	response.DisplayNameSource = string(resolution.Source)
 
 	// Handle optional fields
 	if host.Hostname != nil {
