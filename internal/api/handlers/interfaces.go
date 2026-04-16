@@ -77,6 +77,7 @@ type HostServicer interface {
 	CreateHost(ctx context.Context, input db.CreateHostInput) (*db.Host, error)
 	GetHost(ctx context.Context, id uuid.UUID) (*db.Host, error)
 	UpdateHost(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error)
+	UpdateCustomName(ctx context.Context, id uuid.UUID, name *string) (*db.Host, error)
 	DeleteHost(ctx context.Context, id uuid.UUID) error
 	BulkDeleteHosts(ctx context.Context, ids []uuid.UUID) (int64, error)
 	GetHostScans(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*db.Scan, int64, error)

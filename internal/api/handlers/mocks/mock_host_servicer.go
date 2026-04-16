@@ -508,6 +508,45 @@ func (c *MockHostServicerRemoveHostTagsCall) DoAndReturn(f func(context.Context,
 	return c
 }
 
+// UpdateCustomName mocks base method.
+func (m *MockHostServicer) UpdateCustomName(ctx context.Context, id uuid.UUID, name *string) (*db.Host, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateCustomName", ctx, id, name)
+	ret0, _ := ret[0].(*db.Host)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateCustomName indicates an expected call of UpdateCustomName.
+func (mr *MockHostServicerMockRecorder) UpdateCustomName(ctx, id, name any) *MockHostServicerUpdateCustomNameCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateCustomName", reflect.TypeOf((*MockHostServicer)(nil).UpdateCustomName), ctx, id, name)
+	return &MockHostServicerUpdateCustomNameCall{Call: call}
+}
+
+// MockHostServicerUpdateCustomNameCall wrap *gomock.Call
+type MockHostServicerUpdateCustomNameCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockHostServicerUpdateCustomNameCall) Return(arg0 *db.Host, arg1 error) *MockHostServicerUpdateCustomNameCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockHostServicerUpdateCustomNameCall) Do(f func(context.Context, uuid.UUID, *string) (*db.Host, error)) *MockHostServicerUpdateCustomNameCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockHostServicerUpdateCustomNameCall) DoAndReturn(f func(context.Context, uuid.UUID, *string) (*db.Host, error)) *MockHostServicerUpdateCustomNameCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // UpdateHost mocks base method.
 func (m *MockHostServicer) UpdateHost(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error) {
 	m.ctrl.T.Helper()

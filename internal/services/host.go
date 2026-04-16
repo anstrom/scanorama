@@ -21,6 +21,7 @@ type hostRepository interface {
 	CreateHost(ctx context.Context, input db.CreateHostInput) (*db.Host, error)
 	GetHost(ctx context.Context, id uuid.UUID) (*db.Host, error)
 	UpdateHost(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error)
+	UpdateCustomName(ctx context.Context, id uuid.UUID, name *string) (*db.Host, error)
 	DeleteHost(ctx context.Context, id uuid.UUID) error
 	BulkDeleteHosts(ctx context.Context, ids []uuid.UUID) (int64, error)
 	GetHostScans(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*db.Scan, int64, error)
@@ -72,6 +73,14 @@ func (s *HostService) GetHost(ctx context.Context, id uuid.UUID) (*db.Host, erro
 // UpdateHost applies the provided changes to an existing host record.
 func (s *HostService) UpdateHost(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error) {
 	return s.repo.UpdateHost(ctx, id, input)
+}
+
+// UpdateCustomName sets or clears the user-defined display-name override for
+// a host. Pass nil to clear.
+func (s *HostService) UpdateCustomName(
+	ctx context.Context, id uuid.UUID, name *string,
+) (*db.Host, error) {
+	return s.repo.UpdateCustomName(ctx, id, name)
 }
 
 // DeleteHost removes a host record by its UUID.

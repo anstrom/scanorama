@@ -23,6 +23,7 @@ type smartScanServicer interface {
 	GetProfileRecommendations(ctx context.Context) ([]services.ProfileRecommendation, error)
 	EvaluateHostByID(ctx context.Context, hostID uuid.UUID) (*services.ScanStage, error)
 	QueueSmartScan(ctx context.Context, hostID uuid.UUID) (uuid.UUID, error)
+	QueueIdentityEnrichment(ctx context.Context, hostID uuid.UUID) (uuid.UUID, error)
 	QueueBatch(ctx context.Context, filter services.BatchFilter) (*services.BatchResult, error)
 }
 
@@ -144,6 +145,52 @@ type triggerHostResponse struct {
 	Queued  bool   `json:"queued"`
 	ScanID  string `json:"scan_id,omitempty"`
 	Message string `json:"message,omitempty"`
+}
+
+// RefreshIdentity handles POST /api/v1/smart-scan/hosts/{id}/refresh-identity.
+// It unconditionally queues an identity_enrichment scan for the host —
+// bypassing the usual "does the host need this?" evaluation because the
+// user asked explicitly via the Identity tab's "Refresh identity now" button.
+//
+//	@Summary		Refresh host identity
+//	@Description	Queues an identity_enrichment scan for the host, probing mDNS/SNMP/DNS/TLS surfaces so post-scan
+//	@Description	enrichment can fill in name signals. Runs even when the host already has a usable name.
+//	@Tags			smart-scan
+//	@Produce		json
+//	@Param			id	path		string	true	"Host UUID"
+//	@Success		202	{object}	triggerHostResponse
+//	@Failure		400	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Failure		429	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Router			/smart-scan/hosts/{id}/refresh-identity [post]
+func (h *SmartScanHandler) RefreshIdentity(w http.ResponseWriter, r *http.Request) {
+	hostID, err := parseHostID(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	scanID, err := h.service.QueueIdentityEnrichment(r.Context(), hostID)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, err)
+			return
+		}
+		if stderrors.Is(err, scanning.ErrQueueFull) {
+			writeError(w, r, http.StatusTooManyRequests, err)
+			return
+		}
+		h.logger.Error("Failed to refresh host identity", "host_id", hostID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, r, http.StatusAccepted, triggerHostResponse{
+		HostID: hostID.String(),
+		Queued: true,
+		ScanID: scanID.String(),
+	})
 }
 
 // TriggerBatch handles POST /api/v1/smart-scan/trigger-batch.

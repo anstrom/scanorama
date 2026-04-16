@@ -260,6 +260,12 @@ definitions:
         example: scan
         type: string
     type: object
+  docs.CustomNameRequest:
+    properties:
+      custom_name:
+        example: office-router
+        type: string
+    type: object
   docs.DNSRecordResponse:
     properties:
       host_id:
@@ -1001,6 +1007,18 @@ definitions:
       unique_hosts:
         example: 7
         type: integer
+    type: object
+  docs.RefreshIdentityResponse:
+    properties:
+      host_id:
+        example: 550e8400-e29b-41d4-a716-446655440002
+        type: string
+      queued:
+        example: true
+        type: boolean
+      scan_id:
+        example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+        type: string
     type: object
   docs.RenameNetworkRequest:
     properties:
@@ -2485,6 +2503,54 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get host scans
+      tags:
+      - Hosts
+  /hosts/{id}/custom-name:
+    patch:
+      consumes:
+      - application/json
+      description: 'PATCH the user-defined display-name override. Pass {"custom_name":
+        null} or empty string to clear.'
+      operationId: updateHostCustomName
+      parameters:
+      - description: Host UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Custom name payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/docs.CustomNameRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.HostResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Set or clear a host's custom display name
       tags:
       - Hosts
   /liveness:
@@ -4092,6 +4158,51 @@ paths:
       summary: Enable schedule
       tags:
       - Schedules
+  /smart-scan/hosts/{id}/refresh-identity:
+    post:
+      description: Queues an identity_enrichment scan for a host, probing mDNS/SNMP/DNS/TLS
+        surfaces so post-scan enrichment can fill in name signals. Runs even when
+        the host already has a usable name.
+      operationId: refreshHostIdentity
+      parameters:
+      - description: Host UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/docs.RefreshIdentityResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Refresh host identity
+      tags:
+      - Smart Scan
   /smart-scan/hosts/{id}/stage:
     get:
       description: Returns the recommended next scan stage for the specified host.

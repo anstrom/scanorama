@@ -250,6 +250,22 @@ type NameCandidateResponse struct {
 	ObservedAt      *time.Time `json:"observed_at,omitempty"`
 }
 
+// CustomNameRequest is the body of PATCH /hosts/{id}/custom-name. Pass null
+// or an empty/whitespace-only string to clear the override.
+type CustomNameRequest struct {
+	CustomName *string `json:"custom_name" example:"office-router"`
+}
+
+// RefreshIdentityResponse is the 202 response body for
+// POST /smart-scan/hosts/{id}/refresh-identity. Mirrors TriggerHostResponse
+// but documented separately so the endpoint's semantics are clearer in the
+// generated OpenAPI.
+type RefreshIdentityResponse struct {
+	HostID string `json:"host_id" example:"550e8400-e29b-41d4-a716-446655440002"`
+	Queued bool   `json:"queued" example:"true"`
+	ScanID string `json:"scan_id,omitempty" example:"7c9e6679-7425-40de-944b-e07fc1f90ae7"`
+}
+
 // ProfileResponse represents a scan profile
 type ProfileResponse struct {
 	ID          string            `json:"id" example:"550e8400-e29b-41d4-a716-446655440003"`
@@ -1419,6 +1435,41 @@ func EvaluateHostStage(_ http.ResponseWriter, _ *http.Request) {}
 // @Router /smart-scan/hosts/{id}/trigger [post]
 // @ID triggerSmartScan
 func TriggerSmartScan(_ http.ResponseWriter, _ *http.Request) {}
+
+// RefreshHostIdentity godoc
+// @Summary Refresh host identity
+// @Description Queues an identity_enrichment scan for a host, probing mDNS/SNMP/DNS/TLS surfaces so post-scan enrichment can fill in name signals. Runs even when the host already has a usable name.
+// @Tags Smart Scan
+// @Produce json
+// @Param id path string true "Host UUID" format(uuid)
+// @Success 202 {object} RefreshIdentityResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 429 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /smart-scan/hosts/{id}/refresh-identity [post]
+// @ID refreshHostIdentity
+func RefreshHostIdentity(_ http.ResponseWriter, _ *http.Request) {}
+
+// UpdateHostCustomName godoc
+// @Summary Set or clear a host's custom display name
+// @Description PATCH the user-defined display-name override. Pass {"custom_name": null} or empty string to clear.
+// @Tags Hosts
+// @Accept json
+// @Produce json
+// @Param id path string true "Host UUID" format(uuid)
+// @Param body body CustomNameRequest true "Custom name payload"
+// @Success 200 {object} HostResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /hosts/{id}/custom-name [patch]
+// @ID updateHostCustomName
+func UpdateHostCustomName(_ http.ResponseWriter, _ *http.Request) {}
 
 // TriggerSmartScanBatch godoc
 // @Summary Batch trigger Smart Scan

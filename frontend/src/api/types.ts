@@ -401,6 +401,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/hosts/{id}/custom-name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set or clear a host's custom display name
+         * @description PATCH the user-defined display-name override. Pass {"custom_name": null} or empty string to clear.
+         */
+        patch: operations["updateHostCustomName"];
+        trace?: never;
+    };
     "/liveness": {
         parameters: {
             query?: never;
@@ -996,6 +1016,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/smart-scan/hosts/{id}/refresh-identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh host identity
+         * @description Queues an identity_enrichment scan for a host, probing mDNS/SNMP/DNS/TLS surfaces so post-scan enrichment can fill in name signals. Runs even when the host already has a usable name.
+         */
+        post: operations["refreshHostIdentity"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/smart-scan/hosts/{id}/stage": {
         parameters: {
             query?: never;
@@ -1310,6 +1350,10 @@ export interface components {
              * @enum {string}
              */
             type?: "scan" | "discovery";
+        };
+        "docs.CustomNameRequest": {
+            /** @example office-router */
+            custom_name?: string;
         };
         "docs.DNSRecordResponse": {
             host_id?: string;
@@ -1776,6 +1820,14 @@ export interface components {
             total_scans?: number;
             /** @example 7 */
             unique_hosts?: number;
+        };
+        "docs.RefreshIdentityResponse": {
+            /** @example 550e8400-e29b-41d4-a716-446655440002 */
+            host_id?: string;
+            /** @example true */
+            queued?: boolean;
+            /** @example 7c9e6679-7425-40de-944b-e07fc1f90ae7 */
+            scan_id?: string;
         };
         "docs.RenameNetworkRequest": {
             /** @example New Office Network */
@@ -3550,6 +3602,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["docs.PaginatedScansResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateHostCustomName: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Host UUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Custom name payload */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["docs.CustomNameRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.HostResponse"];
                 };
             };
             /** @description Bad Request */
@@ -5903,6 +6019,74 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    refreshHostIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Host UUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.RefreshIdentityResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

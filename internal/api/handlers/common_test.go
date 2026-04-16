@@ -152,6 +152,9 @@ func (nilHostServicer) GetHost(_ context.Context, _ uuid.UUID) (*db.Host, error)
 func (nilHostServicer) UpdateHost(_ context.Context, _ uuid.UUID, _ db.UpdateHostInput) (*db.Host, error) {
 	panic("nilHostServicer: UpdateHost called unexpectedly")
 }
+func (nilHostServicer) UpdateCustomName(_ context.Context, _ uuid.UUID, _ *string) (*db.Host, error) {
+	panic("nilHostServicer: UpdateCustomName called unexpectedly")
+}
 func (nilHostServicer) DeleteHost(_ context.Context, _ uuid.UUID) error {
 	panic("nilHostServicer: DeleteHost called unexpectedly")
 }

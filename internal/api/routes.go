@@ -116,6 +116,7 @@ func (s *Server) setupSmartScanRoutes(api *mux.Router, h *apihandlers.SmartScanH
 	api.HandleFunc("/smart-scan/profile-recommendations", h.GetProfileRecommendations).Methods("GET")
 	api.HandleFunc("/smart-scan/hosts/{id}/stage", h.EvaluateHost).Methods("GET")
 	api.HandleFunc("/smart-scan/hosts/{id}/trigger", h.TriggerHost).Methods("POST")
+	api.HandleFunc("/smart-scan/hosts/{id}/refresh-identity", h.RefreshIdentity).Methods("POST")
 	api.HandleFunc("/smart-scan/trigger-batch", h.TriggerBatch).Methods("POST")
 }
 
@@ -139,6 +140,7 @@ func (s *Server) setupHostRoutes(api *mux.Router, h *apihandlers.HostHandler) {
 	api.HandleFunc("/hosts/{id}", h.GetHost).Methods("GET")
 	api.HandleFunc("/hosts/{id}", h.UpdateHost).Methods("PUT")
 	api.HandleFunc("/hosts/{id}", h.DeleteHost).Methods("DELETE")
+	api.HandleFunc("/hosts/{id}/custom-name", h.UpdateCustomName).Methods("PATCH")
 	api.HandleFunc("/hosts/{id}/scans", h.GetHostScans).Methods("GET")
 	api.HandleFunc("/hosts/{id}/networks", h.GetHostNetworks).Methods("GET")
 }

@@ -737,6 +737,35 @@ func (r *HostRepository) UpdateHost(ctx context.Context, id uuid.UUID, input Upd
 	return r.GetHost(ctx, id)
 }
 
+// UpdateCustomName sets or clears the user-defined display-name override
+// for a host. Pass nil to clear. Returns ErrNotFound when the host does
+// not exist. Unlike UpdateHost this is a single-column, single-purpose
+// update: it never touches last_seen (this is a user edit, not an
+// observation) and bypasses the dynamic SET-clause builder entirely.
+func (r *HostRepository) UpdateCustomName(ctx context.Context, id uuid.UUID, name *string) (*Host, error) {
+	var sv sql.NullString
+	if name != nil {
+		sv = sql.NullString{String: *name, Valid: true}
+	}
+
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE hosts SET custom_name = $1 WHERE id = $2`,
+		sv, id)
+	if err != nil {
+		return nil, sanitizeDBError("update host custom_name", err)
+	}
+
+	rows, rErr := result.RowsAffected()
+	if rErr != nil {
+		return nil, fmt.Errorf("custom_name update: rows affected: %w", rErr)
+	}
+	if rows == 0 {
+		return nil, errors.ErrNotFoundWithID("host", id.String())
+	}
+
+	return r.GetHost(ctx, id)
+}
+
 // DeleteHost deletes a host by ID.
 func (r *HostRepository) DeleteHost(ctx context.Context, id uuid.UUID) error {
 	// Start a transaction.

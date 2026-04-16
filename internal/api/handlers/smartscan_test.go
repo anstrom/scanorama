@@ -27,6 +27,7 @@ type mockSmartScanServicer struct {
 	getProfileRecommendationsFn func(ctx context.Context) ([]services.ProfileRecommendation, error)
 	evaluateHostByIDFn          func(ctx context.Context, id uuid.UUID) (*services.ScanStage, error)
 	queueSmartScanFn            func(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	queueIdentityEnrichmentFn   func(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	queueBatchFn                func(ctx context.Context, f services.BatchFilter) (*services.BatchResult, error)
 }
 
@@ -49,6 +50,15 @@ func (m *mockSmartScanServicer) EvaluateHostByID(ctx context.Context, id uuid.UU
 
 func (m *mockSmartScanServicer) QueueSmartScan(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
 	return m.queueSmartScanFn(ctx, id)
+}
+
+func (m *mockSmartScanServicer) QueueIdentityEnrichment(
+	ctx context.Context, id uuid.UUID,
+) (uuid.UUID, error) {
+	if m.queueIdentityEnrichmentFn == nil {
+		return uuid.Nil, nil
+	}
+	return m.queueIdentityEnrichmentFn(ctx, id)
 }
 
 func (m *mockSmartScanServicer) QueueBatch(

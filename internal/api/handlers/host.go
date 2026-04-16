@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -299,6 +300,73 @@ func (h *HostHandler) UpdateHost(w http.ResponseWriter, r *http.Request) {
 			return h.hostToResponse(host)
 		},
 		"api_hosts_updated_total")
+}
+
+// CustomNameRequest is the body of PATCH /hosts/{id}/custom-name.
+// Nil CustomName clears the override; non-nil (after trim) sets it.
+type CustomNameRequest struct {
+	CustomName *string `json:"custom_name"`
+}
+
+const maxCustomNameLength = 255
+
+// UpdateCustomName handles PATCH /api/v1/hosts/{id}/custom-name.
+// Sets or clears the user-defined display-name override for a host.
+// Pass null or an empty/whitespace-only string to clear.
+//
+//	@Summary		Set or clear a host's custom display name
+//	@Description	PATCH the user-defined display-name override. Pass {"custom_name": null} or empty string to clear.
+//	@Tags			hosts
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string				true	"Host UUID"
+//	@Param			body	body		CustomNameRequest	true	"Custom name payload"
+//	@Success		200		{object}	HostResponse
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		404		{object}	ErrorResponse
+//	@Failure		500		{object}	ErrorResponse
+//	@Router			/hosts/{id}/custom-name [patch]
+func (h *HostHandler) UpdateCustomName(w http.ResponseWriter, r *http.Request) {
+	hostID, err := extractUUIDFromPath(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	var req CustomNameRequest
+	if parseErr := parseJSON(r, &req); parseErr != nil {
+		writeError(w, r, http.StatusBadRequest, parseErr)
+		return
+	}
+
+	// Normalize: whitespace-only = clear. Over-length = 400.
+	var name *string
+	if req.CustomName != nil {
+		trimmed := strings.TrimSpace(*req.CustomName)
+		switch {
+		case trimmed == "":
+			name = nil
+		case len(trimmed) > maxCustomNameLength:
+			writeError(w, r, http.StatusBadRequest,
+				fmt.Errorf("custom_name too long (max %d characters)", maxCustomNameLength))
+			return
+		default:
+			name = &trimmed
+		}
+	}
+
+	host, err := h.service.UpdateCustomName(r.Context(), hostID, name)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			writeError(w, r, http.StatusNotFound, err)
+			return
+		}
+		h.logger.Error("Failed to update custom_name", "host_id", hostID, "error", err)
+		writeError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, h.hostToResponse(host))
 }
 
 // DeleteHost handles DELETE /api/v1/hosts/{id} - delete a host.
