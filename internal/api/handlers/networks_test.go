@@ -136,13 +136,13 @@ func TestNetworkHandler_ListNetworks(t *testing.T) {
 	}{
 		{
 			name:             "list all active networks",
-			queryParams:      map[string]string{},
+			queryParams:      map[string]string{"name": "HandlerTest"},
 			expectedCount:    2,
 			expectedContains: []string{activeNetworkName, anotherActiveNetworkName},
 		},
 		{
 			name:             "list all networks including inactive",
-			queryParams:      map[string]string{"show_inactive": "true"},
+			queryParams:      map[string]string{"name": "HandlerTest", "show_inactive": "true"},
 			expectedCount:    3,
 			expectedContains: []string{activeNetworkName, inactiveNetworkName, anotherActiveNetworkName},
 		},
