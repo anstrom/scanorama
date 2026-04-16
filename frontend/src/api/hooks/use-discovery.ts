@@ -28,12 +28,23 @@ export interface DiscoveryDiffHost {
   first_seen: string;
 }
 
+export interface DeviceSuggestion {
+  id: string;
+  host_id: string;
+  device_id: string;
+  confidence_score: number;
+  confidence_reason?: string;
+  dismissed: boolean;
+  created_at: string;
+}
+
 export interface DiscoveryDiff {
   job_id: string;
   new_hosts: DiscoveryDiffHost[];
   gone_hosts: DiscoveryDiffHost[];
   changed_hosts: DiscoveryDiffHost[];
   unchanged_count: number;
+  suggestions: DeviceSuggestion[];
 }
 
 // ── Queries ──────────────────────────────────────────────────────────────────

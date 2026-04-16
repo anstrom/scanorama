@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 
 	"github.com/anstrom/scanorama/internal/errors"
 )
@@ -448,13 +449,73 @@ func (r *DiscoveryRepository) GetDiscoveryDiff(ctx context.Context, jobID uuid.U
 		unchanged = 0
 	}
 
+	// ── device suggestions for new and changed hosts ────────────────────────
+	suggestions, err := r.queryDiffSuggestions(ctx, newHosts, changedHosts)
+	if err != nil {
+		return nil, err
+	}
+
 	return &DiscoveryDiff{
 		JobID:          jobID,
 		NewHosts:       newHosts,
 		GoneHosts:      goneHosts,
 		ChangedHosts:   changedHosts,
 		UnchangedCount: unchanged,
+		Suggestions:    suggestions,
 	}, nil
+}
+
+// queryDiffSuggestions returns non-dismissed DeviceSuggestion rows for all
+// hosts that appear in newHosts or changedHosts. Returns an empty (non-nil)
+// slice when none of the hosts have suggestions.
+func (r *DiscoveryRepository) queryDiffSuggestions(
+	ctx context.Context, newHosts, changedHosts []DiffHost,
+) ([]DeviceSuggestion, error) {
+	suggestions := make([]DeviceSuggestion, 0)
+
+	hostIDs := make([]uuid.UUID, 0, len(newHosts)+len(changedHosts))
+	for i := range newHosts {
+		hostIDs = append(hostIDs, newHosts[i].ID)
+	}
+	for i := range changedHosts {
+		hostIDs = append(hostIDs, changedHosts[i].ID)
+	}
+	if len(hostIDs) == 0 {
+		return suggestions, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, host_id, device_id, confidence_score, confidence_reason, dismissed, created_at
+		FROM device_suggestions
+		WHERE host_id = ANY($1)
+		  AND dismissed = FALSE
+		ORDER BY confidence_score DESC, created_at ASC`,
+		pq.Array(hostIDs),
+	)
+	if err != nil {
+		return nil, sanitizeDBError("query device suggestions for diff", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Warn("failed to close suggestion rows", "error", err)
+		}
+	}()
+
+	for rows.Next() {
+		var s DeviceSuggestion
+		if err := rows.Scan(
+			&s.ID, &s.HostID, &s.DeviceID,
+			&s.ConfidenceScore, &s.ConfidenceReason,
+			&s.Dismissed, &s.CreatedAt,
+		); err != nil {
+			return nil, sanitizeDBError("scan device suggestion for diff", err)
+		}
+		suggestions = append(suggestions, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate suggestion rows: %w", err)
+	}
+	return suggestions, nil
 }
 
 // queryDiffHosts runs a single diff-host query and scans the results into a

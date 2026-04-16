@@ -95,6 +95,7 @@ func TestDiscoveryHandler_GetDiscoveryDiff(t *testing.T) {
 			GoneHosts:      []db.DiffHost{},
 			ChangedHosts:   []db.DiffHost{},
 			UnchangedCount: 3,
+			Suggestions:    make([]db.DeviceSuggestion, 0),
 		}
 
 		store.EXPECT().

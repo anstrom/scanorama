@@ -21,8 +21,21 @@ var diffHostColumns = []string{
 	"vendor", "mac_address", "last_seen", "first_seen",
 }
 
+// suggestionColumns are the columns returned by the device suggestions query.
+var suggestionColumns = []string{
+	"id", "host_id", "device_id", "confidence_score", "confidence_reason",
+	"dismissed", "created_at",
+}
+
 // diffStrPtr returns a pointer to the given string — test helper for nullable columns.
 func diffStrPtr(s string) *string { return &s }
+
+// expectEmptySuggestions sets up a mock expectation for the suggestions query
+// returning an empty result set (the common case when no matches exist).
+func expectEmptySuggestions(mock sqlmock.Sqlmock) {
+	mock.ExpectQuery("device_suggestions").
+		WillReturnRows(sqlmock.NewRows(suggestionColumns))
+}
 
 // ── TestGetDiscoveryDiff_Unit ─────────────────────────────────────────────────
 
@@ -100,6 +113,9 @@ func TestGetDiscoveryDiff_Unit(t *testing.T) {
 		mock.ExpectQuery("COUNT").
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(10))
 
+		// 6. suggestions for new + changed hosts — empty in this case
+		expectEmptySuggestions(mock)
+
 		diff, err := NewDiscoveryRepository(mockDB).GetDiscoveryDiff(ctx, jobID)
 
 		require.NoError(t, err)
@@ -127,6 +143,7 @@ func TestGetDiscoveryDiff_Unit(t *testing.T) {
 		assert.Equal(t, "up", diff.ChangedHosts[0].Status)
 
 		assert.Equal(t, 7, diff.UnchangedCount)
+		assert.Empty(t, diff.Suggestions)
 
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -156,6 +173,9 @@ func TestGetDiscoveryDiff_Unit(t *testing.T) {
 		mock.ExpectQuery("COUNT").
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
 
+		// 6. no host IDs → suggestions query is skipped entirely
+		// (no mock expectation needed when both new and changed are empty)
+
 		diff, err := NewDiscoveryRepository(mockDB).GetDiscoveryDiff(ctx, jobID)
 
 		require.NoError(t, err)
@@ -165,6 +185,9 @@ func TestGetDiscoveryDiff_Unit(t *testing.T) {
 		assert.Empty(t, diff.GoneHosts)
 		assert.Empty(t, diff.ChangedHosts)
 		assert.Equal(t, 5, diff.UnchangedCount)
+		// Suggestions serializes as [] not null even when empty.
+		require.NotNil(t, diff.Suggestions)
+		assert.Empty(t, diff.Suggestions)
 
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -201,11 +224,73 @@ func TestGetDiscoveryDiff_Unit(t *testing.T) {
 		mock.ExpectQuery("COUNT").
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 
+		// 6. suggestions for new host (hostID1); changed is empty
+		expectEmptySuggestions(mock)
+
 		diff, err := NewDiscoveryRepository(mockDB).GetDiscoveryDiff(ctx, jobID)
 
 		require.NoError(t, err)
 		require.NotNil(t, diff)
 		assert.Equal(t, 0, diff.UnchangedCount, "unchanged count should be clamped to 0, not negative")
+
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	// ── suggestions populated ─────────────────────────────────────────────────
+
+	t.Run("suggestions returned for new and changed hosts", func(t *testing.T) {
+		mockDB, mock := newMockDB(t)
+
+		hostID1 := uuid.New()
+		hostID2 := uuid.New()
+		deviceID := uuid.New()
+		suggestionID := uuid.New()
+		reason := "MAC:stable"
+
+		// 1. existence check
+		mock.ExpectQuery("EXISTS").
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+
+		// 2. new hosts: 1 row
+		mock.ExpectQuery("first_seen >= dj").
+			WillReturnRows(sqlmock.NewRows(diffHostColumns).AddRow(
+				hostID1, "10.0.0.1", nil, "up", nil, nil, nil, now, now,
+			))
+
+		// 3. gone hosts: empty
+		mock.ExpectQuery("host_timeout_events").
+			WillReturnRows(sqlmock.NewRows(diffHostColumns))
+
+		// 4. changed hosts: 1 row
+		mock.ExpectQuery("DISTINCT ON").
+			WillReturnRows(sqlmock.NewRows(diffHostColumns).AddRow(
+				hostID2, "10.0.0.2", nil, "up", diffStrPtr("down"), nil, nil, now, now,
+			))
+
+		// 5. total count: 5
+		mock.ExpectQuery("COUNT").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+
+		// 6. suggestions: 1 row for hostID1
+		mock.ExpectQuery("device_suggestions").
+			WillReturnRows(sqlmock.NewRows(suggestionColumns).AddRow(
+				suggestionID, hostID1, deviceID, 3, &reason, false, now,
+			))
+
+		diff, err := NewDiscoveryRepository(mockDB).GetDiscoveryDiff(ctx, jobID)
+
+		require.NoError(t, err)
+		require.NotNil(t, diff)
+
+		require.Len(t, diff.Suggestions, 1)
+		s := diff.Suggestions[0]
+		assert.Equal(t, suggestionID, s.ID)
+		assert.Equal(t, hostID1, s.HostID)
+		assert.Equal(t, deviceID, s.DeviceID)
+		assert.Equal(t, 3, s.ConfidenceScore)
+		require.NotNil(t, s.ConfidenceReason)
+		assert.Equal(t, reason, *s.ConfidenceReason)
+		assert.False(t, s.Dismissed)
 
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
