@@ -90,5 +90,8 @@ act-*
 .claude/HANDOFF.md
 HANDOFF.md
 
+# ── Superpowers brainstorm session artifacts ─────────────────────────────────
+.superpowers/
+
 # ── Misc ──────────────────────────────────────────────────────────────────────
 config/environments/*.working.yaml
