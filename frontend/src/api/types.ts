@@ -1461,13 +1461,36 @@ export interface components {
             banners?: components["schemas"]["docs.PortBannerResponse"][];
             /** @description Certificates are populated when TLS banner grabbing has run for this host. */
             certificates?: components["schemas"]["docs.CertificateResponse"][];
+            /**
+             * @description CustomName is the user-defined display-name override (null when unset).
+             * @example office-router
+             */
+            custom_name?: string;
             /** @example Primary web server */
             description?: string;
+            /**
+             * @description DisplayName is the winning display name chosen by the identity resolver.
+             *     Always set; falls back to IPAddress when no source produced a usable name.
+             * @example sams-macbook.local
+             */
+            display_name?: string;
+            /**
+             * @description DisplayNameSource tags where DisplayName came from: custom|mdns|snmp|ptr|cert|ip.
+             * @example mdns
+             * @enum {string}
+             */
+            display_name_source?: "custom" | "mdns" | "snmp" | "ptr" | "cert" | "ip";
             /** @description DNSRecords are populated when DNS enrichment has run for this host. */
             dns_records?: components["schemas"]["docs.DNSRecordResponse"][];
             first_seen?: string;
             /** @example server01.local */
             hostname?: string;
+            /**
+             * @description HostnameSource is the provenance tag for Hostname: manual|ptr|mdns|snmp|cert.
+             * @example ptr
+             * @enum {string}
+             */
+            hostname_source?: "manual" | "ptr" | "mdns" | "snmp" | "cert";
             /** @example 550e8400-e29b-41d4-a716-446655440002 */
             id?: string;
             /** @example 192.168.1.100 */
@@ -1480,6 +1503,12 @@ export interface components {
             last_seen?: string;
             /** @example 00:1B:44:11:3A:B7 */
             mac_address?: string;
+            /**
+             * @description NameCandidates enumerates every automatic name candidate observed for this
+             *     host (usable or not). Only populated on GET /hosts/{id}; list responses
+             *     leave it as an empty array.
+             */
+            name_candidates?: components["schemas"]["docs.NameCandidateResponse"][];
             /** @description NetworkID is the network this host belongs to, if any. */
             network_id?: string;
             /**
@@ -1531,6 +1560,20 @@ export interface components {
             timestamp?: string;
             /** @example 2h30m45s */
             uptime?: string;
+        };
+        "docs.NameCandidateResponse": {
+            /** @example sams-macbook.local */
+            name?: string;
+            /** @example filtered: unusable PTR pattern */
+            not_usable_reason?: string;
+            observed_at?: string;
+            /**
+             * @example mdns
+             * @enum {string}
+             */
+            source?: "custom" | "mdns" | "snmp" | "ptr" | "cert";
+            /** @example true */
+            usable?: boolean;
         };
         "docs.NetworkExclusionResponse": {
             created_at?: string;

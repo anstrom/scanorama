@@ -25,6 +25,14 @@ const (
 	SourceIP     Source = "ip"
 )
 
+// DefaultIdentityRankOrder matches the seeded identity.rank_order setting
+// (migration 027). Callers that can't reach the settings row should use this
+// slice so behavior stays consistent with a fresh install.
+//
+// Don't take &DefaultIdentityRankOrder — it's meant to be copied or ranged
+// over, not mutated.
+var DefaultIdentityRankOrder = []string{"mdns", "snmp", "ptr", "cert"}
+
 const (
 	maxSNMPSysNameLen = 253
 	minPrintableASCII = 0x20

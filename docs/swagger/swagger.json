@@ -5123,9 +5123,32 @@
                         "$ref": "#/definitions/docs.CertificateResponse"
                     }
                 },
+                "custom_name": {
+                    "description": "CustomName is the user-defined display-name override (null when unset).",
+                    "type": "string",
+                    "example": "office-router"
+                },
                 "description": {
                     "type": "string",
                     "example": "Primary web server"
+                },
+                "display_name": {
+                    "description": "DisplayName is the winning display name chosen by the identity resolver.\nAlways set; falls back to IPAddress when no source produced a usable name.",
+                    "type": "string",
+                    "example": "sams-macbook.local"
+                },
+                "display_name_source": {
+                    "description": "DisplayNameSource tags where DisplayName came from: custom|mdns|snmp|ptr|cert|ip.",
+                    "type": "string",
+                    "enum": [
+                        "custom",
+                        "mdns",
+                        "snmp",
+                        "ptr",
+                        "cert",
+                        "ip"
+                    ],
+                    "example": "mdns"
                 },
                 "dns_records": {
                     "description": "DNSRecords are populated when DNS enrichment has run for this host.",
@@ -5140,6 +5163,18 @@
                 "hostname": {
                     "type": "string",
                     "example": "server01.local"
+                },
+                "hostname_source": {
+                    "description": "HostnameSource is the provenance tag for Hostname: manual|ptr|mdns|snmp|cert.",
+                    "type": "string",
+                    "enum": [
+                        "manual",
+                        "ptr",
+                        "mdns",
+                        "snmp",
+                        "cert"
+                    ],
+                    "example": "ptr"
                 },
                 "id": {
                     "type": "string",
@@ -5160,6 +5195,13 @@
                 "mac_address": {
                     "type": "string",
                     "example": "00:1B:44:11:3A:B7"
+                },
+                "name_candidates": {
+                    "description": "NameCandidates enumerates every automatic name candidate observed for this\nhost (usable or not). Only populated on GET /hosts/{id}; list responses\nleave it as an empty array.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.NameCandidateResponse"
+                    }
                 },
                 "network_id": {
                     "description": "NetworkID is the network this host belongs to, if any.",
@@ -5248,6 +5290,37 @@
                 "uptime": {
                     "type": "string",
                     "example": "2h30m45s"
+                }
+            }
+        },
+        "docs.NameCandidateResponse": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "sams-macbook.local"
+                },
+                "not_usable_reason": {
+                    "type": "string",
+                    "example": "filtered: unusable PTR pattern"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string",
+                    "enum": [
+                        "custom",
+                        "mdns",
+                        "snmp",
+                        "ptr",
+                        "cert"
+                    ],
+                    "example": "mdns"
+                },
+                "usable": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },

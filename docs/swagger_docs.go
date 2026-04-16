@@ -224,6 +224,30 @@ type HostResponse struct {
 	SNMPData *SNMPDataResponse `json:"snmp_data,omitempty"`
 	// KnowledgeScore is a 0-100 integer indicating how much is known about this host.
 	KnowledgeScore int `json:"knowledge_score" example:"60"`
+	// DisplayName is the winning display name chosen by the identity resolver.
+	// Always set; falls back to IPAddress when no source produced a usable name.
+	DisplayName string `json:"display_name" example:"sams-macbook.local"`
+	// DisplayNameSource tags where DisplayName came from: custom|mdns|snmp|ptr|cert|ip.
+	DisplayNameSource string `json:"display_name_source" example:"mdns" enums:"custom,mdns,snmp,ptr,cert,ip"`
+	// CustomName is the user-defined display-name override (null when unset).
+	CustomName *string `json:"custom_name,omitempty" example:"office-router"`
+	// HostnameSource is the provenance tag for Hostname: manual|ptr|mdns|snmp|cert.
+	HostnameSource *string `json:"hostname_source,omitempty" example:"ptr" enums:"manual,ptr,mdns,snmp,cert"`
+	// NameCandidates enumerates every automatic name candidate observed for this
+	// host (usable or not). Only populated on GET /hosts/{id}; list responses
+	// leave it as an empty array.
+	NameCandidates []NameCandidateResponse `json:"name_candidates"`
+}
+
+// NameCandidateResponse is one row of the Identity tab's candidate table —
+// a name observed for a host from one source, with whether the resolver
+// considered it usable and, if not, a short reason.
+type NameCandidateResponse struct {
+	Name            string     `json:"name" example:"sams-macbook.local"`
+	Source          string     `json:"source" example:"mdns" enums:"custom,mdns,snmp,ptr,cert"`
+	Usable          bool       `json:"usable" example:"true"`
+	NotUsableReason string     `json:"not_usable_reason,omitempty" example:"filtered: unusable PTR pattern"`
+	ObservedAt      *time.Time `json:"observed_at,omitempty"`
 }
 
 // ProfileResponse represents a scan profile
