@@ -129,13 +129,17 @@ func mustParseIP(s string) db.IPAddr {
 	return db.IPAddr{IP: ip}
 }
 
-// hostUp returns a minimal up host seen recently (not stale).
+// hostUp returns a minimal up host seen recently (not stale). Hostname is
+// set to a name that passes enrichment.DNSNameIsUsable so the identity
+// enrichment stage does not fire in tests that care about other stages.
+// Tests that want the no-name path should clear Hostname explicitly.
 func hostUp(ip string) *db.Host {
 	return &db.Host{
 		ID:        uuid.New(),
 		IPAddress: mustParseIP(ip),
 		Status:    "up",
 		LastSeen:  time.Now(),
+		Hostname:  strPtr("srv.example.com"),
 	}
 }
 
@@ -276,6 +280,160 @@ func TestEvaluateHost_FallsBackOnOpenPortsError(t *testing.T) {
 	stage, err := svc.EvaluateHost(context.Background(), host)
 	require.NoError(t, err)
 	assert.Equal(t, "port_expansion", stage.Stage)
+}
+
+// ── EvaluateHost: identity enrichment ────────────────────────────────────────
+
+func TestEvaluateHost_IdentityEnrichmentWhenNoName(t *testing.T) {
+	// OS known, open ports found, services resolved — the host is otherwise
+	// "complete" except it has no usable name. Identity enrichment must win.
+	svc := newTestService(true /*hasOpenPorts*/, true /*hasServices*/)
+	host := hostUp("10.0.0.20")
+	host.OSFamily = strPtr("linux")
+	host.Hostname = nil // no name at all
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, stageIdentityEnrichment, stage.Stage)
+	assert.Equal(t, identityEnrichmentPorts, stage.Ports)
+	assert.Equal(t, "connect", stage.ScanType)
+}
+
+func TestEvaluateHost_IdentityEnrichmentPreferredOverPortExpansion(t *testing.T) {
+	// hasOS, !hasOpenPorts, no name — both identity and port_expansion would
+	// match, but identity fires first.
+	svc := newTestService(false /*hasOpenPorts*/, false)
+	host := hostUp("10.0.0.21")
+	host.OSFamily = strPtr("linux")
+	host.Hostname = nil
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, stageIdentityEnrichment, stage.Stage)
+}
+
+func TestEvaluateHost_OSDetectionWinsOverIdentity(t *testing.T) {
+	// !hasOS AND no name — os_detection runs first. Identity comes on the
+	// next pass once OS is resolved.
+	svc := newTestService(false, false)
+	host := hostUp("10.0.0.22")
+	host.Hostname = nil
+	// OSFamily left nil
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, "os_detection", stage.Stage)
+}
+
+func TestEvaluateHost_IdentitySkippedWhenMDNSLocalPresent(t *testing.T) {
+	svc := newTestService(false, false)
+	host := hostUp("10.0.0.23")
+	host.OSFamily = strPtr("linux")
+	host.Hostname = nil
+	host.MDNSName = strPtr("printer.local")
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, "port_expansion", stage.Stage, "mDNS .local name makes identity enrichment unnecessary")
+}
+
+func TestEvaluateHost_IdentitySkippedWhenCustomNameSet(t *testing.T) {
+	svc := newTestService(false, false)
+	host := hostUp("10.0.0.24")
+	host.OSFamily = strPtr("linux")
+	host.Hostname = nil
+	host.CustomName = strPtr("sams-laptop")
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, "port_expansion", stage.Stage, "custom_name is the user's override and counts as a usable name")
+}
+
+func TestEvaluateHost_IdentityFiresWhenHostnameIsJunkPTR(t *testing.T) {
+	// Host has a hostname but it's a DHCP-generated ISP PTR pattern that
+	// DNSNameIsUsable rejects. Identity must fire so we can probe for
+	// something better.
+	svc := newTestService(false, false)
+	host := hostUp("10.0.0.25")
+	host.OSFamily = strPtr("linux")
+	host.Hostname = strPtr("dhcp-10-0-0-25.dynamic.comcast.net")
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, stageIdentityEnrichment, stage.Stage)
+}
+
+func TestEvaluateHost_IdentitySkippedWhenHostIsDown(t *testing.T) {
+	// A down host with no name should not trigger identity enrichment —
+	// we can't probe it.
+	svc := newTestService(false, false)
+	host := hostUp("10.0.0.26")
+	host.Status = "down"
+	host.OSFamily = strPtr("linux")
+	host.Hostname = nil
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, "port_expansion", stage.Stage,
+		"identity_enrichment requires status=up; port_expansion still considers OS+no-ports")
+}
+
+func TestHasUsableHostName(t *testing.T) {
+	tests := []struct {
+		name string
+		host *db.Host
+		want bool
+	}{
+		{
+			"custom_name set",
+			&db.Host{CustomName: strPtr("alias")},
+			true,
+		},
+		{
+			"custom_name whitespace only does not count",
+			&db.Host{CustomName: strPtr("   ")},
+			false,
+		},
+		{
+			"mdns .local counts",
+			&db.Host{MDNSName: strPtr("printer.local")},
+			true,
+		},
+		{
+			"mdns without .local does not count",
+			&db.Host{MDNSName: strPtr("printer")},
+			false,
+		},
+		{
+			"usable hostname counts",
+			&db.Host{Hostname: strPtr("srv.example.com")},
+			true,
+		},
+		{
+			"DHCP-pattern hostname does not count",
+			&db.Host{Hostname: strPtr("dhcp-10-0-0-1.dynamic.comcast.net")},
+			false,
+		},
+		{
+			"all nil",
+			&db.Host{},
+			false,
+		},
+		{
+			"custom wins even when everything else is junk",
+			&db.Host{
+				CustomName: strPtr("alias"),
+				Hostname:   strPtr("dhcp-10-0-0-1.dynamic.comcast.net"),
+				MDNSName:   strPtr("not-a-local-name"),
+			},
+			true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, hasUsableHostName(tc.host))
+		})
+	}
 }
 
 // ── QueueBatch ────────────────────────────────────────────────────────────────

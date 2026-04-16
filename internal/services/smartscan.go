@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/enrichment"
 	"github.com/anstrom/scanorama/internal/profiles"
 	"github.com/anstrom/scanorama/internal/scanning"
 )
@@ -105,6 +106,21 @@ type smartHostRepository interface {
 
 // stageSkip is the Stage value returned when no scan action is recommended.
 const stageSkip = "skip"
+
+// stageIdentityEnrichment is returned when a host is up but has no usable
+// name from any cheap-to-check source — SmartScan queues a light probe of
+// common identity surfaces (SSH/HTTP/SNMP/TLS) so post-scan enrichment can
+// harvest mDNS/SNMP sysName/PTR/cert signals on the next pass.
+const stageIdentityEnrichment = "identity_enrichment"
+
+// identityEnrichmentPorts are the ports SmartScan probes when running an
+// identity_enrichment stage. Each is an identity surface:
+//
+//	22  — SSH banner / host keys
+//	80  — HTTP Server / title / redirect
+//	161 — SNMP sysName (if reachable with configured community)
+//	443 — TLS cert CN / SANs
+const identityEnrichmentPorts = "22,80,161,443"
 
 // Auto-progression defaults. Exported so the API server can pass them
 // explicitly to WithAutoProgression rather than using magic numbers.
@@ -343,6 +359,8 @@ func (s *SmartScanService) EvaluateHost(ctx context.Context, host *db.Host) (*Sc
 	switch {
 	case !hasOS && host.Status == "up":
 		return s.stageOSDetection(), nil
+	case host.Status == "up" && !hasUsableHostName(host):
+		return s.stageIdentityEnrichment(), nil
 	case hasOS && !hasOpenPorts:
 		return s.stageWithProfile(ctx, host, "port_expansion"), nil
 	case hasOpenPorts && !hasServices:
@@ -357,6 +375,54 @@ func (s *SmartScanService) EvaluateHost(ctx context.Context, host *db.Host) (*Sc
 	default:
 		return &ScanStage{Stage: stageSkip, Reason: "host knowledge is sufficient"}, nil
 	}
+}
+
+// stageIdentityEnrichment returns a ScanStage that probes the ports most
+// likely to yield a host name. Post-scan enrichment (DNS, banner/TLS, SNMP)
+// picks up the signals and fills hosts.hostname / hosts.mdns_name /
+// host_snmp_data / certificates on the next pass.
+func (s *SmartScanService) stageIdentityEnrichment() *ScanStage {
+	return &ScanStage{
+		Stage:    stageIdentityEnrichment,
+		ScanType: "connect",
+		Ports:    identityEnrichmentPorts,
+		Reason:   "host has no usable name — probing identity surfaces (mDNS, SNMP, DNS, TLS)",
+	}
+}
+
+// hasUsableHostName reports whether the host already has a name worth keeping
+// as its display name, using only fields on the Host struct (no DB I/O).
+// Truthy sources:
+//   - custom_name non-empty (user override)
+//   - mdns_name ending in .local
+//   - hostname non-empty AND passing enrichment.DNSNameIsUsable
+//
+// Cert subjects and PTR records are intentionally NOT consulted: certs need
+// forward-resolution to validate, and PTR records live in host_dns_records
+// with no guarantee that the latest value was promoted to hosts.hostname.
+// SmartScan may therefore over-trigger identity_enrichment in the rare case
+// where a usable cert exists but nothing else does — an acceptable cost.
+func hasUsableHostName(host *db.Host) bool {
+	if hasNonBlank(host.CustomName) {
+		return true
+	}
+	if host.MDNSName != nil {
+		name := strings.TrimSpace(*host.MDNSName)
+		if strings.HasSuffix(strings.ToLower(name), ".local") {
+			return true
+		}
+	}
+	if host.Hostname != nil {
+		name := strings.TrimSpace(*host.Hostname)
+		if name != "" && enrichment.DNSNameIsUsable(name) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasNonBlank(p *string) bool {
+	return p != nil && strings.TrimSpace(*p) != ""
 }
 
 // stageOSDetection returns a ScanStage configured for OS fingerprinting.
