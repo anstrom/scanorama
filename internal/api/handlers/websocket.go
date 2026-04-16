@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -26,7 +28,37 @@ const (
 	maxMessageSize   = 512                                                // Maximum message size allowed from peer
 	bufferSize       = 256                                                // Size of the broadcast channel buffer
 	logsHistoryBurst = 100                                                // Recent log entries sent on connect
+
+	loopbackHostname = "localhost" // hostname alias for loopback; IPs checked via net.IP.IsLoopback
 )
+
+// checkOrigin returns true if the WebSocket upgrade request should be accepted.
+// It allows same-host origins and treats all loopback addresses as equivalent
+// so that a Vite dev proxy (which rewrites Host but not Origin) works correctly.
+func checkOrigin(origin, host string) bool {
+	if origin == "" {
+		return true // non-browser clients send no Origin
+	}
+	if origin == "http://"+host || origin == "https://"+host {
+		return true
+	}
+	originURL, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	originHost := originURL.Hostname()
+	hostName, _, _ := net.SplitHostPort(host)
+	if hostName == "" {
+		hostName = host
+	}
+	isLoopback := func(h string) bool {
+		if ip := net.ParseIP(h); ip != nil {
+			return ip.IsLoopback()
+		}
+		return h == loopbackHostname
+	}
+	return isLoopback(originHost) && isLoopback(hostName)
+}
 
 // WebSocketHandler handles WebSocket connections for real-time updates.
 type WebSocketHandler struct {
@@ -96,14 +128,7 @@ func NewWebSocketHandler(logger *slog.Logger, metricsManager *metrics.Registry) 
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
-				origin := r.Header.Get("Origin")
-				if origin == "" {
-					// Non-browser clients (CLI, API consumers) send no Origin header.
-					return true
-				}
-				// Accept connections from the same host (HTTP or HTTPS).
-				host := r.Host
-				return origin == "http://"+host || origin == "https://"+host
+				return checkOrigin(r.Header.Get("Origin"), r.Host)
 			},
 		},
 		scanClients:        make(map[*websocket.Conn]bool),
