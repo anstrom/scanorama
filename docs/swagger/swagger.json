@@ -1610,6 +1610,78 @@
                 }
             }
         },
+        "/hosts/{id}/custom-name": {
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "PATCH the user-defined display-name override. Pass {\"custom_name\": null} or empty string to clear.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Hosts"
+                ],
+                "summary": "Set or clear a host's custom display name",
+                "operationId": "updateHostCustomName",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Host UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Custom name payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/docs.CustomNameRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.HostResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/liveness": {
             "get": {
                 "description": "Returns simple liveness status without dependency checks",
@@ -4058,6 +4130,72 @@
                 }
             }
         },
+        "/smart-scan/hosts/{id}/refresh-identity": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Queues an identity_enrichment scan for a host, probing mDNS/SNMP/DNS/TLS surfaces so post-scan enrichment can fill in name signals. Runs even when the host already has a usable name.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Smart Scan"
+                ],
+                "summary": "Refresh host identity",
+                "operationId": "refreshHostIdentity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Host UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/docs.RefreshIdentityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/smart-scan/hosts/{id}/stage": {
             "get": {
                 "security": [
@@ -4754,6 +4892,15 @@
                         "discovery"
                     ],
                     "example": "scan"
+                }
+            }
+        },
+        "docs.CustomNameRequest": {
+            "type": "object",
+            "properties": {
+                "custom_name": {
+                    "type": "string",
+                    "example": "office-router"
                 }
             }
         },
@@ -5780,6 +5927,23 @@
                 "unique_hosts": {
                     "type": "integer",
                     "example": 7
+                }
+            }
+        },
+        "docs.RefreshIdentityResponse": {
+            "type": "object",
+            "properties": {
+                "host_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440002"
+                },
+                "queued": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "scan_id": {
+                    "type": "string",
+                    "example": "7c9e6679-7425-40de-944b-e07fc1f90ae7"
                 }
             }
         },

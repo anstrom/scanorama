@@ -107,6 +107,11 @@ type smartHostRepository interface {
 // stageSkip is the Stage value returned when no scan action is recommended.
 const stageSkip = "skip"
 
+// hostStatusGone is the hosts.status value for hosts the scanner has
+// stopped trying. Duplicated as a literal would trip goconst; reused here
+// and in QueueIdentityEnrichment to guard against probing gone hosts.
+const hostStatusGone = "gone"
+
 // stageIdentityEnrichment is returned when a host is up but has no usable
 // name from any cheap-to-check source — SmartScan queues a light probe of
 // common identity surfaces (SSH/HTTP/SNMP/TLS) so post-scan enrichment can
@@ -336,7 +341,7 @@ func (s *SmartScanService) EvaluateHostByID(ctx context.Context, hostID uuid.UUI
 // Returns a ScanStage with Stage == "skip" when no action is recommended.
 func (s *SmartScanService) EvaluateHost(ctx context.Context, host *db.Host) (*ScanStage, error) {
 	// Hosts that are gone or explicitly excluded from scanning are always skipped.
-	if host.Status == "gone" || host.IgnoreScanning {
+	if host.Status == hostStatusGone || host.IgnoreScanning {
 		return &ScanStage{Stage: stageSkip, Reason: "host is gone or excluded from scanning"}, nil
 	}
 
@@ -494,6 +499,23 @@ func (s *SmartScanService) QueueSmartScan(ctx context.Context, hostID uuid.UUID)
 		return uuid.Nil, nil
 	}
 
+	return s.createAndQueueScan(ctx, host, stage, db.ScanSourceAPI)
+}
+
+// QueueIdentityEnrichment queues an identity_enrichment scan for a host
+// unconditionally — bypassing EvaluateHost's usability check. Used by the
+// "Refresh identity now" button in the Identity tab; the user has asked
+// explicitly, so the fact that the host may already have a usable name is
+// irrelevant. Returns the created scan UUID.
+func (s *SmartScanService) QueueIdentityEnrichment(ctx context.Context, hostID uuid.UUID) (uuid.UUID, error) {
+	host, err := s.hostRepo.GetHost(ctx, hostID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("failed to load host: %w", err)
+	}
+	if host.Status == hostStatusGone || host.IgnoreScanning {
+		return uuid.Nil, fmt.Errorf("host is gone or excluded from scanning")
+	}
+	stage := s.stageIdentityEnrichment()
 	return s.createAndQueueScan(ctx, host, stage, db.ScanSourceAPI)
 }
 

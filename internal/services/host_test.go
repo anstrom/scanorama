@@ -20,20 +20,21 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockHostRepo struct {
-	listHostsFn       func(ctx context.Context, filters *db.HostFilters, offset, limit int) ([]*db.Host, int64, error)
-	createHostFn      func(ctx context.Context, input db.CreateHostInput) (*db.Host, error)
-	getHostFn         func(ctx context.Context, id uuid.UUID) (*db.Host, error)
-	updateHostFn      func(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error)
-	deleteHostFn      func(ctx context.Context, id uuid.UUID) error
-	bulkDeleteHostsFn func(ctx context.Context, ids []uuid.UUID) (int64, error)
-	getHostScansFn    func(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*db.Scan, int64, error)
-	getAllTagsFn      func(ctx context.Context) ([]string, error)
-	updateHostTagsFn  func(ctx context.Context, id uuid.UUID, tags []string) error
-	addHostTagsFn     func(ctx context.Context, id uuid.UUID, tags []string) error
-	removeHostTagsFn  func(ctx context.Context, id uuid.UUID, tags []string) error
-	bulkUpdateTagsFn  func(ctx context.Context, ids []uuid.UUID, tags []string, action string) error
-	getHostGroupsFn   func(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error)
-	getHostNetworksFn func(ctx context.Context, hostID uuid.UUID) ([]*db.Network, error)
+	listHostsFn        func(ctx context.Context, filters *db.HostFilters, offset, limit int) ([]*db.Host, int64, error)
+	createHostFn       func(ctx context.Context, input db.CreateHostInput) (*db.Host, error)
+	getHostFn          func(ctx context.Context, id uuid.UUID) (*db.Host, error)
+	updateHostFn       func(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error)
+	updateCustomNameFn func(ctx context.Context, id uuid.UUID, name *string) (*db.Host, error)
+	deleteHostFn       func(ctx context.Context, id uuid.UUID) error
+	bulkDeleteHostsFn  func(ctx context.Context, ids []uuid.UUID) (int64, error)
+	getHostScansFn     func(ctx context.Context, hostID uuid.UUID, offset, limit int) ([]*db.Scan, int64, error)
+	getAllTagsFn       func(ctx context.Context) ([]string, error)
+	updateHostTagsFn   func(ctx context.Context, id uuid.UUID, tags []string) error
+	addHostTagsFn      func(ctx context.Context, id uuid.UUID, tags []string) error
+	removeHostTagsFn   func(ctx context.Context, id uuid.UUID, tags []string) error
+	bulkUpdateTagsFn   func(ctx context.Context, ids []uuid.UUID, tags []string, action string) error
+	getHostGroupsFn    func(ctx context.Context, hostID uuid.UUID) ([]db.HostGroupSummary, error)
+	getHostNetworksFn  func(ctx context.Context, hostID uuid.UUID) ([]*db.Network, error)
 }
 
 func (m *mockHostRepo) GetHostNetworks(ctx context.Context, hostID uuid.UUID) ([]*db.Network, error) {
@@ -59,6 +60,13 @@ func (m *mockHostRepo) GetHost(ctx context.Context, id uuid.UUID) (*db.Host, err
 
 func (m *mockHostRepo) UpdateHost(ctx context.Context, id uuid.UUID, input db.UpdateHostInput) (*db.Host, error) {
 	return m.updateHostFn(ctx, id, input)
+}
+
+func (m *mockHostRepo) UpdateCustomName(ctx context.Context, id uuid.UUID, name *string) (*db.Host, error) {
+	if m.updateCustomNameFn == nil {
+		return nil, nil
+	}
+	return m.updateCustomNameFn(ctx, id, name)
 }
 
 func (m *mockHostRepo) DeleteHost(ctx context.Context, id uuid.UUID) error {
