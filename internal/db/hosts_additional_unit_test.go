@@ -487,6 +487,7 @@ var getHostColumns = []string{
 	"tags",
 	"knowledge_score",
 	"device_id", "mdns_name", "device_name",
+	"custom_name", "hostname_source",
 }
 
 func TestGetHost_Success(t *testing.T) {
@@ -526,6 +527,8 @@ func TestGetHost_Success(t *testing.T) {
 			nil, // device_id
 			nil, // mdns_name
 			nil, // device_name
+			nil, // custom_name
+			nil, // hostname_source
 		))
 
 	// fetchHostPorts — return empty result set (no ports for this host).

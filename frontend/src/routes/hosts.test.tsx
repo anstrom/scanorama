@@ -10,6 +10,14 @@ vi.mock("../api/hooks/use-hosts", () => ({
   useUpdateHost: vi.fn(),
   useDeleteHost: vi.fn(),
   useBulkDeleteHosts: vi.fn(),
+  useUpdateCustomName: vi.fn(() => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  })),
+  useRefreshIdentity: vi.fn(() => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  })),
 }));
 
 vi.mock("../api/hooks/use-host-networks", () => ({

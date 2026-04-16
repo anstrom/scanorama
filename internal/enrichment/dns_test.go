@@ -590,6 +590,7 @@ var getHostCols = []string{
 	"tags",
 	"knowledge_score",
 	"device_id", "mdns_name", "device_name",
+	"custom_name", "hostname_source",
 }
 
 // TestMaybeSetHostname_UpdateHostSucceeds verifies that maybeSetHostname logs
@@ -624,6 +625,7 @@ func TestMaybeSetHostname_UpdateHostSucceeds(t *testing.T) {
 			pq.StringArray{},
 			0,
 			nil, nil, nil, // device_id, mdns_name, device_name
+			nil, nil, // custom_name, hostname_source
 		))
 	hostMock.ExpectQuery("SELECT DISTINCT").
 		WillReturnRows(sqlmock.NewRows([]string{"port", "protocol", "state", "service_name", "scanned_at"}))
