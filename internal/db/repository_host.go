@@ -322,7 +322,9 @@ func (r *HostRepository) ListHosts(
 			END AS scan_count,
 			h.device_id,
 			h.mdns_name,
-			dv.name AS device_name
+			dv.name AS device_name,
+			h.custom_name,
+			h.hostname_source
 		FROM hosts h
 		LEFT JOIN port_scans ps ON h.id = ps.host_id
 		LEFT JOIN port_scans ps2 ON h.id = ps2.host_id
@@ -347,7 +349,7 @@ func (r *HostRepository) ListHosts(
 			h.response_time_ms, h.response_time_min_ms, h.response_time_max_ms, h.response_time_avg_ms,
 			h.ignore_scanning, h.first_seen, h.last_seen, h.status,
 			h.status_changed_at, h.previous_status, h.timeout_count, h.tags, h.knowledge_score,
-			h.device_id, h.mdns_name, dv.name
+			h.device_id, h.mdns_name, dv.name, h.custom_name, h.hostname_source
 	`
 
 	// Resolve ORDER BY clause from validated sort parameters.
@@ -527,6 +529,8 @@ type hostScanVars struct {
 	ignoreScanning                        *bool
 	previousStatus                        *string
 	timeoutCount                          int
+	customName                            *string
+	hostnameSource                        *string
 }
 
 // applyHostScanVars copies the scanned nullable fields from vars into host,
@@ -551,6 +555,8 @@ func applyHostScanVars(host *Host, vars hostScanVars) {
 	host.StatusChangedAt = vars.statusChangedAt
 	assignStringPtr(&host.PreviousStatus, vars.previousStatus)
 	host.TimeoutCount = vars.timeoutCount
+	assignStringPtr(&host.CustomName, vars.customName)
+	assignStringPtr(&host.HostnameSource, vars.hostnameSource)
 }
 
 func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, error) {
@@ -584,7 +590,9 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 			h.knowledge_score,
 			h.device_id,
 			h.mdns_name,
-			dv.name AS device_name
+			dv.name AS device_name,
+			h.custom_name,
+			h.hostname_source
 		FROM hosts h
 		LEFT JOIN devices dv ON dv.id = h.device_id
 		WHERE h.id = $1
@@ -623,6 +631,8 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 		&host.DeviceID,
 		&host.MDNSName,
 		&host.DeviceName,
+		&vars.customName,
+		&vars.hostnameSource,
 	)
 	if err != nil {
 		if stderrors.Is(err, sql.ErrNoRows) {
@@ -1106,102 +1116,78 @@ func (r *HostRepository) getHostCount(ctx context.Context, whereClause string, a
 	return total, nil
 }
 
+// scanSingleHostRow reads one row from the list-hosts query into a Host.
+// Extracted from scanHostRows so the loop stays under the funlen limit.
+func scanSingleHostRow(rows *sql.Rows) (*Host, error) {
+	host := &Host{}
+	var ipAddress string
+	var vars hostScanVars
+	var openPorts sql.NullInt64
+	var totalPortsScanned int64
+	var scanCount sql.NullInt64
+
+	err := rows.Scan(
+		&host.ID,
+		&ipAddress,
+		&vars.hostname,
+		&vars.macAddressStr,
+		&vars.vendor,
+		&vars.osFamily,
+		&vars.osName,
+		&vars.osVersion,
+		&vars.osConfidence,
+		&vars.osDetectedAt,
+		&vars.osMethod,
+		&vars.osDetails,
+		&vars.discoveryMethod,
+		&vars.responseTimeMS,
+		&vars.responseTimeMinMS,
+		&vars.responseTimeMaxMS,
+		&vars.responseTimeAvgMS,
+		&vars.ignoreScanning,
+		&host.FirstSeen,
+		&host.LastSeen,
+		&host.Status,
+		&vars.statusChangedAt,
+		&vars.previousStatus,
+		&vars.timeoutCount,
+		&host.Tags,
+		&host.KnowledgeScore,
+		&openPorts,
+		&totalPortsScanned,
+		&scanCount,
+		&host.DeviceID,
+		&host.MDNSName,
+		&host.DeviceName,
+		&vars.customName,
+		&vars.hostnameSource,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan host row: %w", err)
+	}
+
+	host.IPAddress = IPAddr{IP: net.ParseIP(ipAddress)}
+	applyHostScanVars(host, vars)
+
+	// Aggregated port counts are list-specific; when NULL (host has never
+	// been scanned) leave the zero value so the frontend renders "—".
+	if openPorts.Valid {
+		host.TotalPorts = int(openPorts.Int64)
+	}
+	if scanCount.Valid {
+		host.ScanCount = int(scanCount.Int64)
+	}
+	return host, nil
+}
+
 // scanHostRows processes query result rows into Host structs.
 func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 	var hosts []*Host
 	for rows.Next() {
-		host := &Host{}
-		var ipAddress string
-		var hostname, macAddressStr, vendor, osFamily, osName, osVersion *string
-		var osConfidence, responseTimeMS *int
-		var responseTimeMinMS, responseTimeMaxMS, responseTimeAvgMS *int
-		var osDetectedAt *time.Time
-		var osMethod *string
-		var osDetails JSONB
-		var discoveryMethod *string
-		var ignoreScanning *bool
-		var statusChangedAt *time.Time
-		var previousStatus *string
-		var timeoutCount int
-
-		var openPorts sql.NullInt64
-		var totalPortsScanned int64
-		var scanCount sql.NullInt64
-
-		err := rows.Scan(
-			&host.ID,
-			&ipAddress,
-			&hostname,
-			&macAddressStr,
-			&vendor,
-			&osFamily,
-			&osName,
-			&osVersion,
-			&osConfidence,
-			&osDetectedAt,
-			&osMethod,
-			&osDetails,
-			&discoveryMethod,
-			&responseTimeMS,
-			&responseTimeMinMS,
-			&responseTimeMaxMS,
-			&responseTimeAvgMS,
-			&ignoreScanning,
-			&host.FirstSeen,
-			&host.LastSeen,
-			&host.Status,
-			&statusChangedAt,
-			&previousStatus,
-			&timeoutCount,
-			&host.Tags,
-			&host.KnowledgeScore,
-			&openPorts,
-			&totalPortsScanned,
-			&scanCount,
-			&host.DeviceID,
-			&host.MDNSName,
-			&host.DeviceName,
-		)
+		host, err := scanSingleHostRow(rows)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan host row: %w", err)
+			return nil, err
 		}
-
-		// Convert IP address.
-		host.IPAddress = IPAddr{IP: net.ParseIP(ipAddress)}
-
-		// Handle nullable fields using helper functions.
-		assignStringPtr(&host.Hostname, hostname)
-		assignMACAddress(&host.MACAddress, macAddressStr)
-		assignStringPtr(&host.Vendor, vendor)
-		assignStringPtr(&host.OSFamily, osFamily)
-		assignStringPtr(&host.OSName, osName)
-		assignStringPtr(&host.OSVersion, osVersion)
-		assignIntPtr(&host.OSConfidence, osConfidence)
-		host.OSDetectedAt = osDetectedAt
-		assignStringPtr(&host.OSMethod, osMethod)
-		host.OSDetails = osDetails
-		assignStringPtr(&host.DiscoveryMethod, discoveryMethod)
-		assignIntPtr(&host.ResponseTimeMS, responseTimeMS)
-		assignIntPtr(&host.ResponseTimeMinMS, responseTimeMinMS)
-		assignIntPtr(&host.ResponseTimeMaxMS, responseTimeMaxMS)
-		assignIntPtr(&host.ResponseTimeAvgMS, responseTimeAvgMS)
-		assignBoolFromPtr(&host.IgnoreScanning, ignoreScanning)
-		host.StatusChangedAt = statusChangedAt
-		assignStringPtr(&host.PreviousStatus, previousStatus)
-		host.TimeoutCount = timeoutCount
-
-		// Wire the aggregated port counts from the list query.
-		// These are counts across all scan jobs — not latest-state — so they
-		// are only used for the list view summary numbers, not the detail panel.
-		// NULL means the host has never been scanned (no port_scan rows exist);
-		// the zero value (0) is left in place, which the frontend renders as "—".
-		if openPorts.Valid {
-			host.TotalPorts = int(openPorts.Int64)
-		}
-		if scanCount.Valid {
-			host.ScanCount = int(scanCount.Int64)
-		}
-
 		hosts = append(hosts, host)
 	}
 

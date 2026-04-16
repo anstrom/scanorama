@@ -371,6 +371,7 @@ func TestHostRepository_GetHost_PopulatesTags(t *testing.T) {
 				pq.StringArray{"prod", "web"}, // tags
 				0,                             // knowledge_score
 				nil, nil, nil,                 // device_id, mdns_name, device_name
+				nil, nil, // custom_name, hostname_source
 			))
 
 	// fetchHostPorts — no ports.
@@ -415,6 +416,7 @@ func TestHostRepository_GetHost_EmptyTags(t *testing.T) {
 				pq.StringArray{},
 				0,             // knowledge_score
 				nil, nil, nil, // device_id, mdns_name, device_name
+				nil, nil, // custom_name, hostname_source
 			))
 
 	mock.ExpectQuery("SELECT DISTINCT").
@@ -474,6 +476,7 @@ func TestHostRepository_ScanHostRows_PopulatesTags(t *testing.T) {
 				int64(3),                             // total_ports_scanned
 				sql.NullInt64{Int64: 1, Valid: true}, // scan_count
 				nil, nil, nil,                        // device_id, mdns_name, device_name
+				nil, nil, // custom_name, hostname_source
 			))
 
 	filters := &HostFilters{}
