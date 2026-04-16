@@ -473,7 +473,7 @@ func TestListHosts_WithVendorFilter(t *testing.T) {
 
 // ── GetHost success path (exercises applyHostScanVars) ────────────────────────
 
-// getHostColumns lists the 26 columns returned by the GetHost SELECT in the
+// getHostColumns lists the columns returned by the GetHost SELECT in the
 // same order they are scanned into hostScanVars / Host fields.
 var getHostColumns = []string{
 	"id", "ip_address", "hostname", "mac_address", "vendor",
@@ -486,6 +486,7 @@ var getHostColumns = []string{
 	"status_changed_at", "previous_status", "timeout_count",
 	"tags",
 	"knowledge_score",
+	"device_id", "mdns_name", "device_name",
 }
 
 func TestGetHost_Success(t *testing.T) {
@@ -509,7 +510,7 @@ func TestGetHost_Success(t *testing.T) {
 
 	db, mock := newMockDB(t)
 
-	// Main SELECT — one fully-populated row (includes tags column).
+	// Main SELECT — one fully-populated row (includes tags and device columns).
 	mock.ExpectQuery(`SELECT`).
 		WillReturnRows(sqlmock.NewRows(getHostColumns).AddRow(
 			id, "10.0.0.1", &hostname, nil, &vendor,
@@ -521,7 +522,10 @@ func TestGetHost_Success(t *testing.T) {
 			now, now, "up",
 			&now, &prevStatus, 3,
 			pq.StringArray{},
-			60, // knowledge_score
+			60,  // knowledge_score
+			nil, // device_id
+			nil, // mdns_name
+			nil, // device_name
 		))
 
 	// fetchHostPorts — return empty result set (no ports for this host).

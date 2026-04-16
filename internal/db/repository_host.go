@@ -319,11 +319,15 @@ func (r *HostRepository) ListHosts(
 			COUNT(DISTINCT ps.id) AS total_ports_scanned,
 			CASE WHEN COUNT(DISTINCT ps.id) = 0 THEN NULL
 			     ELSE COUNT(DISTINCT sj2.id) FILTER (WHERE sj2.status = 'completed')
-			END AS scan_count
+			END AS scan_count,
+			h.device_id,
+			h.mdns_name,
+			dv.name AS device_name
 		FROM hosts h
 		LEFT JOIN port_scans ps ON h.id = ps.host_id
 		LEFT JOIN port_scans ps2 ON h.id = ps2.host_id
 		LEFT JOIN scan_jobs sj2 ON sj2.id = ps2.job_id
+		LEFT JOIN devices dv ON dv.id = h.device_id
 	`
 
 	// Build WHERE clause and arguments.
@@ -342,7 +346,8 @@ func (r *HostRepository) ListHosts(
 			h.os_details, h.discovery_method,
 			h.response_time_ms, h.response_time_min_ms, h.response_time_max_ms, h.response_time_avg_ms,
 			h.ignore_scanning, h.first_seen, h.last_seen, h.status,
-			h.status_changed_at, h.previous_status, h.timeout_count, h.tags, h.knowledge_score
+			h.status_changed_at, h.previous_status, h.timeout_count, h.tags, h.knowledge_score,
+			h.device_id, h.mdns_name, dv.name
 	`
 
 	// Resolve ORDER BY clause from validated sort parameters.
@@ -576,8 +581,12 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 			h.previous_status,
 			h.timeout_count,
 			h.tags,
-			h.knowledge_score
+			h.knowledge_score,
+			h.device_id,
+			h.mdns_name,
+			dv.name AS device_name
 		FROM hosts h
+		LEFT JOIN devices dv ON dv.id = h.device_id
 		WHERE h.id = $1
 	`
 
@@ -611,6 +620,9 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 		&vars.timeoutCount,
 		&host.Tags,
 		&host.KnowledgeScore,
+		&host.DeviceID,
+		&host.MDNSName,
+		&host.DeviceName,
 	)
 	if err != nil {
 		if stderrors.Is(err, sql.ErrNoRows) {
@@ -1117,6 +1129,9 @@ func (r *HostRepository) scanHostRows(rows *sql.Rows) ([]*Host, error) {
 			&openPorts,
 			&totalPortsScanned,
 			&scanCount,
+			&host.DeviceID,
+			&host.MDNSName,
+			&host.DeviceName,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan host row: %w", err)
