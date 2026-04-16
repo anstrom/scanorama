@@ -8,6 +8,8 @@ import {
   useHostScans,
   useUpdateHost,
   useDeleteHost,
+  useUpdateCustomName,
+  useRefreshIdentity,
 } from "./use-hosts";
 
 vi.mock("../client", () => ({
@@ -15,6 +17,7 @@ vi.mock("../client", () => ({
     GET: vi.fn(),
     POST: vi.fn(),
     PUT: vi.fn(),
+    PATCH: vi.fn(),
     DELETE: vi.fn(),
   },
 }));
@@ -23,6 +26,11 @@ import { api } from "../client";
 const mockGet = vi.mocked(api.GET);
 const mockPut = vi.mocked(api.PUT);
 const mockDelete = vi.mocked(api.DELETE);
+// PATCH is not declared on the openapi-fetch client type until the generated
+// types are regenerated — cast here to keep the tests typed.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockPatch = vi.mocked((api as any).PATCH);
+const mockPost = vi.mocked(api.POST);
 
 const ok = (data: unknown): ReturnType<typeof mockGet> =>
   Promise.resolve({
@@ -518,6 +526,176 @@ describe("useDeleteHost", () => {
     await expect(
       actHook(async () => {
         await result.current.mutateAsync("host-1");
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+// ── useUpdateCustomName ───────────────────────────────────────────────────────
+
+describe("useUpdateCustomName", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHookWithQuery(() => useUpdateCustomName());
+    expect(result.current.isPending).toBe(false);
+  });
+
+  it("calls PATCH /hosts/{hostId}/custom-name with the provided name", async () => {
+    mockPatch.mockResolvedValue({
+      data: { ...mockHost, custom_name: "office-router" },
+      error: undefined,
+      response: new Response(),
+    });
+
+    const { result, actHook } = renderHookWithQuery(() => useUpdateCustomName());
+
+    await actHook(async () => {
+      await result.current.mutateAsync({
+        hostId: "host-1",
+        customName: "office-router",
+      });
+    });
+
+    expect(mockPatch).toHaveBeenCalledWith(
+      "/hosts/{hostId}/custom-name",
+      expect.objectContaining({
+        params: { path: { hostId: "host-1" } },
+        body: { custom_name: "office-router" },
+      }),
+    );
+  });
+
+  it("sends null in body when clearing the override", async () => {
+    mockPatch.mockResolvedValue({
+      data: mockHost,
+      error: undefined,
+      response: new Response(),
+    });
+
+    const { result, actHook } = renderHookWithQuery(() => useUpdateCustomName());
+
+    await actHook(async () => {
+      await result.current.mutateAsync({ hostId: "host-1", customName: null });
+    });
+
+    expect(mockPatch).toHaveBeenCalledWith(
+      "/hosts/{hostId}/custom-name",
+      expect.objectContaining({
+        body: { custom_name: null },
+      }),
+    );
+  });
+
+  it("invalidates ['hosts'] queries on success", async () => {
+    mockPatch.mockResolvedValue({
+      data: mockHost,
+      error: undefined,
+      response: new Response(),
+    });
+
+    const { result, actHook, queryClient } = renderHookWithQuery(() =>
+      useUpdateCustomName(),
+    );
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await actHook(async () => {
+      await result.current.mutateAsync({ hostId: "host-1", customName: "x" });
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["hosts"] }),
+    );
+  });
+
+  it("throws ApiError when the PATCH request fails", async () => {
+    mockPatch.mockResolvedValue({
+      data: undefined,
+      error: { message: "too long" },
+      response: new Response(null, { status: 400 }),
+    });
+
+    const { result, actHook } = renderHookWithQuery(() => useUpdateCustomName());
+
+    await expect(
+      actHook(async () => {
+        await result.current.mutateAsync({
+          hostId: "host-1",
+          customName: "nope",
+        });
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+// ── useRefreshIdentity ────────────────────────────────────────────────────────
+
+describe("useRefreshIdentity", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHookWithQuery(() => useRefreshIdentity());
+    expect(result.current.isPending).toBe(false);
+  });
+
+  it("calls POST /smart-scan/hosts/{hostId}/refresh-identity", async () => {
+    mockPost.mockResolvedValue({
+      data: { host_id: "host-1", queued: true, scan_id: "scan-42" },
+      error: undefined,
+      response: new Response(),
+    } as unknown as ReturnType<typeof mockPost>);
+
+    const { result, actHook } = renderHookWithQuery(() => useRefreshIdentity());
+
+    await actHook(async () => {
+      await result.current.mutateAsync("host-1");
+    });
+
+    expect(mockPost).toHaveBeenCalledWith(
+      "/smart-scan/hosts/{hostId}/refresh-identity",
+      expect.objectContaining({
+        params: { path: { hostId: "host-1" } },
+      }),
+    );
+  });
+
+  it("invalidates ['hosts', hostId] on success so the Identity tab refetches", async () => {
+    mockPost.mockResolvedValue({
+      data: { host_id: "host-1", queued: true, scan_id: "scan-42" },
+      error: undefined,
+      response: new Response(),
+    } as unknown as ReturnType<typeof mockPost>);
+
+    const { result, actHook, queryClient } = renderHookWithQuery(() =>
+      useRefreshIdentity(),
+    );
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await actHook(async () => {
+      await result.current.mutateAsync("host-1");
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["hosts", "host-1"] }),
+    );
+  });
+
+  it("throws ApiError when the POST request fails", async () => {
+    mockPost.mockResolvedValue({
+      data: undefined,
+      error: { message: "host not found" },
+      response: new Response(null, { status: 404 }),
+    } as unknown as ReturnType<typeof mockPost>);
+
+    const { result, actHook } = renderHookWithQuery(() => useRefreshIdentity());
+
+    await expect(
+      actHook(async () => {
+        await result.current.mutateAsync("host-missing");
       }),
     ).rejects.toThrow();
   });
