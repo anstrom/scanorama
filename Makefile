@@ -81,8 +81,8 @@ clean: ## Remove build artifacts and coverage files
 stop: ## Stop background backend and frontend (started by 'make dev')
 	@if [ -f $(PID_FILE) ]; then \
 		PID=$$(cat $(PID_FILE)); \
-		if kill -0 "$$PID" 2>/dev/null; then \
-			kill "$$PID" && echo "✓ Backend stopped  (pid $$PID)"; \
+		if sudo kill -0 "$$PID" 2>/dev/null; then \
+			sudo kill "$$PID" && echo "✓ Backend stopped  (pid $$PID)"; \
 		else \
 			echo "  Backend pid $$PID is not running"; \
 		fi; \
@@ -126,15 +126,14 @@ dev: build dev-db-up dev-config frontend-deps ## Ensure DB is up; rebuild + rest
 	@# ── backend ────────────────────────────────────────────────────────────
 	@if [ -f $(PID_FILE) ]; then \
 		PID=$$(cat $(PID_FILE)); \
-		if kill -0 "$$PID" 2>/dev/null; then \
-			kill "$$PID" && echo "↺ Stopped existing backend (pid $$PID)"; \
+		if sudo kill -0 "$$PID" 2>/dev/null; then \
+			sudo kill "$$PID" && echo "↺ Stopped existing backend (pid $$PID)"; \
 			sleep 0.3; \
 		fi; \
 		rm -f $(PID_FILE); \
 	fi
-	@# Authenticate sudo upfront (foreground, so the password prompt works),
-	@# then start the daemon as root in the background using the cached token.
-	@sudo -v
+	@# If sudo requires a password, prompt now (foreground) before backgrounding.
+	@sudo -n true 2>/dev/null || sudo -v
 	@# Run as root so nmap can perform SYN scans and OS detection without SUID.
 	@# Privileges are dropped to daemon.user after initialisation if configured.
 	@sudo -E $(BUILD_DIR)/$(BINARY_NAME) api \
