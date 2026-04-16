@@ -1623,3 +1623,215 @@ func ListPortCategories(_ http.ResponseWriter, _ *http.Request) {}
 // @Router       /ports/host-counts [get]
 // @ID           listPortHostCounts
 func ListPortHostCounts(_ http.ResponseWriter, _ *http.Request) {}
+
+// DeviceResponse represents a device record.
+type DeviceResponse struct {
+	ID        string  `json:"id" example:"550e8400-e29b-41d4-a716-446655440099"`
+	Name      string  `json:"name" example:"Living Room Router"`
+	Notes     *string `json:"notes,omitempty" example:"Primary home router"`
+	CreatedAt string  `json:"created_at"`
+	UpdatedAt string  `json:"updated_at"`
+}
+
+// DeviceListResponse is the envelope for GET /devices.
+type DeviceListResponse struct {
+	Devices []DeviceSummaryResponse `json:"devices"`
+}
+
+// DeviceSummaryResponse is the lightweight device entry in DeviceListResponse.
+type DeviceSummaryResponse struct {
+	ID        string `json:"id" example:"550e8400-e29b-41d4-a716-446655440099"`
+	Name      string `json:"name" example:"Living Room Router"`
+	MACCount  int    `json:"mac_count" example:"2"`
+	HostCount int    `json:"host_count" example:"1"`
+}
+
+// DeviceDetailResponse is the full device view returned by GET /devices/{id}.
+type DeviceDetailResponse struct {
+	DeviceResponse
+	KnownMACs  []DeviceKnownMACResponse  `json:"known_macs"`
+	KnownNames []DeviceKnownNameResponse `json:"known_names"`
+	Hosts      []AttachedHostResponse    `json:"hosts"`
+}
+
+// DeviceKnownMACResponse is a known MAC address entry within DeviceDetailResponse.
+type DeviceKnownMACResponse struct {
+	ID         string `json:"id"`
+	MACAddress string `json:"mac_address" example:"00:1B:44:11:3A:B7"`
+	FirstSeen  string `json:"first_seen"`
+	LastSeen   string `json:"last_seen"`
+}
+
+// DeviceKnownNameResponse is a known name entry within DeviceDetailResponse.
+type DeviceKnownNameResponse struct {
+	ID        string `json:"id"`
+	Name      string `json:"name" example:"myrouter.local"`
+	Source    string `json:"source" example:"mdns" enums:"mdns,dns,snmp,netbios,user"`
+	FirstSeen string `json:"first_seen"`
+	LastSeen  string `json:"last_seen"`
+}
+
+// AttachedHostResponse is a host summary entry within DeviceDetailResponse.
+type AttachedHostResponse struct {
+	ID         string  `json:"id"`
+	IPAddress  string  `json:"ip_address" example:"192.168.1.1"`
+	MACAddress *string `json:"mac_address,omitempty" example:"00:1B:44:11:3A:B7"`
+	Hostname   *string `json:"hostname,omitempty" example:"router.local"`
+	Status     string  `json:"status" example:"up"`
+	OSFamily   *string `json:"os_family,omitempty" example:"Linux"`
+	Vendor     *string `json:"vendor,omitempty" example:"Netgear"`
+	FirstSeen  string  `json:"first_seen"`
+	LastSeen   string  `json:"last_seen"`
+}
+
+// CreateDeviceRequest holds the fields for POST /devices.
+type CreateDeviceRequest struct {
+	Name  string  `json:"name" example:"Living Room Router"`
+	Notes *string `json:"notes,omitempty" example:"Primary home router"`
+}
+
+// UpdateDeviceRequest holds the fields for PUT /devices/{id}.
+type UpdateDeviceRequest struct {
+	Name  *string `json:"name,omitempty" example:"Updated Router Name"`
+	Notes *string `json:"notes,omitempty" example:"Updated notes"`
+}
+
+// ListDevices godoc
+// @Summary      List devices
+// @Description  Returns all known devices with MAC and host counts.
+// @Tags         Devices
+// @Produce      json
+// @Success      200  {object}  DeviceListResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /devices [get]
+// @ID           listDevices
+func ListDevices(_ http.ResponseWriter, _ *http.Request) {}
+
+// CreateDevice godoc
+// @Summary      Create device
+// @Description  Creates a new stable device identity record.
+// @Tags         Devices
+// @Accept       json
+// @Produce      json
+// @Param        device  body      CreateDeviceRequest  true  "Device name and optional notes"
+// @Success      201     {object}  DeviceResponse
+// @Failure      400     {object}  ErrorResponse
+// @Failure      401     {object}  ErrorResponse
+// @Failure      500     {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /devices [post]
+// @ID           createDevice
+func CreateDevice(_ http.ResponseWriter, _ *http.Request) {}
+
+// GetDevice godoc
+// @Summary      Get device
+// @Description  Returns the full device view including known MACs, known names, and attached hosts.
+// @Tags         Devices
+// @Produce      json
+// @Param        id  path      string  true  "Device ID" format(uuid)
+// @Success      200 {object}  DeviceDetailResponse
+// @Failure      400 {object}  ErrorResponse
+// @Failure      401 {object}  ErrorResponse
+// @Failure      404 {object}  ErrorResponse
+// @Failure      500 {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /devices/{id} [get]
+// @ID           getDevice
+func GetDevice(_ http.ResponseWriter, _ *http.Request) {}
+
+// UpdateDevice godoc
+// @Summary      Update device
+// @Description  Updates a device name and/or notes. Omitted fields are left unchanged.
+// @Tags         Devices
+// @Accept       json
+// @Produce      json
+// @Param        id      path      string               true  "Device ID" format(uuid)
+// @Param        device  body      UpdateDeviceRequest  true  "Fields to update"
+// @Success      200     {object}  DeviceResponse
+// @Failure      400     {object}  ErrorResponse
+// @Failure      401     {object}  ErrorResponse
+// @Failure      404     {object}  ErrorResponse
+// @Failure      500     {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /devices/{id} [put]
+// @ID           updateDevice
+func UpdateDevice(_ http.ResponseWriter, _ *http.Request) {}
+
+// DeleteDevice godoc
+// @Summary      Delete device
+// @Description  Removes a device. Attached hosts have their device_id set to NULL.
+// @Tags         Devices
+// @Param        id  path      string  true  "Device ID" format(uuid)
+// @Success      204 "Successfully deleted"
+// @Failure      400 {object}  ErrorResponse
+// @Failure      401 {object}  ErrorResponse
+// @Failure      404 {object}  ErrorResponse
+// @Failure      500 {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /devices/{id} [delete]
+// @ID           deleteDevice
+func DeleteDevice(_ http.ResponseWriter, _ *http.Request) {}
+
+// AttachHostToDevice godoc
+// @Summary      Attach host to device
+// @Description  Associates a host with a device by setting hosts.device_id.
+// @Tags         Devices
+// @Param        id       path  string  true  "Device ID" format(uuid)
+// @Param        host_id  path  string  true  "Host ID"   format(uuid)
+// @Success      204 "Successfully attached"
+// @Failure      400 {object}  ErrorResponse
+// @Failure      401 {object}  ErrorResponse
+// @Failure      404 {object}  ErrorResponse
+// @Failure      500 {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /devices/{id}/hosts/{host_id} [post]
+// @ID           attachHost
+func AttachHostToDevice(_ http.ResponseWriter, _ *http.Request) {}
+
+// DetachHostFromDevice godoc
+// @Summary      Detach host from device
+// @Description  Removes the association between a host and its device.
+// @Tags         Devices
+// @Param        id       path  string  true  "Device ID" format(uuid)
+// @Param        host_id  path  string  true  "Host ID"   format(uuid)
+// @Success      204 "Successfully detached"
+// @Failure      400 {object}  ErrorResponse
+// @Failure      401 {object}  ErrorResponse
+// @Failure      404 {object}  ErrorResponse
+// @Failure      500 {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /devices/{id}/hosts/{host_id} [delete]
+// @ID           detachHost
+func DetachHostFromDevice(_ http.ResponseWriter, _ *http.Request) {}
+
+// AcceptDeviceSuggestion godoc
+// @Summary      Accept device suggestion
+// @Description  Accepts a device suggestion, attaching the host to the device and removing the suggestion.
+// @Tags         Devices
+// @Param        id  path  string  true  "Suggestion ID" format(uuid)
+// @Success      204 "Successfully accepted"
+// @Failure      400 {object}  ErrorResponse
+// @Failure      401 {object}  ErrorResponse
+// @Failure      404 {object}  ErrorResponse
+// @Failure      500 {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /devices/suggestions/{id}/accept [post]
+// @ID           acceptDeviceSuggestion
+func AcceptDeviceSuggestion(_ http.ResponseWriter, _ *http.Request) {}
+
+// DismissDeviceSuggestion godoc
+// @Summary      Dismiss device suggestion
+// @Description  Marks a device suggestion as dismissed so it is not surfaced again.
+// @Tags         Devices
+// @Param        id  path  string  true  "Suggestion ID" format(uuid)
+// @Success      204 "Successfully dismissed"
+// @Failure      400 {object}  ErrorResponse
+// @Failure      401 {object}  ErrorResponse
+// @Failure      404 {object}  ErrorResponse
+// @Failure      500 {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /devices/suggestions/{id}/dismiss [post]
+// @ID           dismissDeviceSuggestion
+func DismissDeviceSuggestion(_ http.ResponseWriter, _ *http.Request) {}
