@@ -22,6 +22,52 @@ import (
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
+func TestCheckOrigin(t *testing.T) {
+	tests := []struct {
+		name   string
+		origin string
+		host   string
+		want   bool
+	}{
+		// No origin — non-browser clients always allowed
+		{name: "empty origin", origin: "", host: "127.0.0.1:8080", want: true},
+
+		// Same-host fast path
+		{name: "http same host", origin: "http://127.0.0.1:8080", host: "127.0.0.1:8080", want: true},
+		{name: "https same host", origin: "https://example.com:443", host: "example.com:443", want: true},
+
+		// Vite dev proxy: Host rewritten to 127.0.0.1 but Origin stays localhost
+		{
+			name:   "loopback alias localhost to 127.0.0.1",
+			origin: "http://localhost:5173", host: "127.0.0.1:8080", want: true,
+		},
+		{
+			name:   "loopback alias 127.0.0.1 to localhost",
+			origin: "http://127.0.0.1:5173", host: "localhost:8080", want: true,
+		},
+		{name: "ipv6 loopback origin", origin: "http://[::1]:5173", host: "127.0.0.1:8080", want: true},
+		{name: "ipv6 loopback host", origin: "http://localhost:5173", host: "::1", want: true},
+
+		// Non-loopback origins must be rejected
+		{name: "external origin", origin: "http://evil.com", host: "127.0.0.1:8080", want: false},
+		{name: "different non-loopback host", origin: "http://app.example.com", host: "api.example.com", want: false},
+
+		// Subdomain spoofing must be rejected
+		{name: "localhost subdomain attack", origin: "http://localhost.evil.com", host: "127.0.0.1:8080", want: false},
+		{name: "ip prefix attack", origin: "http://127.0.0.1.attacker.com", host: "127.0.0.1:8080", want: false},
+
+		// Malformed origin
+		{name: "malformed origin", origin: "://not a url", host: "127.0.0.1:8080", want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := checkOrigin(tc.origin, tc.host)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestNewWebSocketHandler(t *testing.T) {
 	tests := []struct {
 		name        string
