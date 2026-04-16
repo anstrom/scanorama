@@ -529,6 +529,9 @@ type DiscoveryDiff struct {
 	GoneHosts      []DiffHost `json:"gone_hosts"`
 	ChangedHosts   []DiffHost `json:"changed_hosts"`
 	UnchangedCount int        `json:"unchanged_count"`
+	// Suggestions are non-dismissed device match candidates for new and
+	// changed hosts in this diff, ordered by confidence_score DESC.
+	Suggestions []DeviceSuggestion `json:"suggestions"`
 }
 
 // DiscoveryCompareDiff summarizes what changed between two discovery runs.
