@@ -10,12 +10,17 @@ import (
 	"crypto/x509"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	zcrypto_x509 "github.com/zmap/zcrypto/x509"
 	"github.com/zmap/zgrab2"
 	zgrabhttp_lib "github.com/zmap/zgrab2/lib/http"
 	zgrabhttp "github.com/zmap/zgrab2/modules/http"
+
+	"github.com/anstrom/scanorama/internal/db"
 )
 
 // ── parseBannerText ─────────────────────────────────────────────────────────
@@ -158,4 +163,83 @@ func TestTLSVersionString(t *testing.T) {
 			assert.Equal(t, tc.want, tlsVersionString(tc.version))
 		})
 	}
+}
+
+// ── buildTLSSummary ──────────────────────────────────────────────────────────
+
+func TestBuildTLSSummary(t *testing.T) {
+	ver := "TLS 1.2"
+	cn := "example.com"
+
+	cases := []struct {
+		name string
+		cert *db.Certificate
+		want string
+	}{
+		{"both fields set", &db.Certificate{TLSVersion: &ver, SubjectCN: &cn}, "TLS TLS 1.2 CN=example.com"},
+		{"nil TLSVersion", &db.Certificate{SubjectCN: &cn}, "TLS  CN=example.com"},
+		{"nil SubjectCN", &db.Certificate{TLSVersion: &ver}, "TLS TLS 1.2 CN="},
+		{"both nil", &db.Certificate{}, "TLS  CN="},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, buildTLSSummary(tc.cert))
+		})
+	}
+}
+
+// ── populateCertFromParsed ───────────────────────────────────────────────────
+
+func TestPopulateCertFromParsed_Nil(t *testing.T) {
+	cert := &db.Certificate{HostID: uuid.New()}
+	populateCertFromParsed(cert, nil)
+	assert.Nil(t, cert.SubjectCN)
+	assert.Nil(t, cert.SANs)
+	assert.Nil(t, cert.Issuer)
+	assert.Nil(t, cert.NotBefore)
+	assert.Nil(t, cert.NotAfter)
+	assert.Nil(t, cert.KeyType)
+}
+
+func TestPopulateCertFromParsed_AllFields(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	notBefore := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	notAfter := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
+
+	// Construct zcrypto_x509.Certificate directly — no need for a real DER cert
+	// since populateCertFromParsed only reads exported fields.
+	parsed := &zcrypto_x509.Certificate{}
+	parsed.Subject.CommonName = "leaf.example.com"
+	parsed.Issuer.CommonName = "root.example.com"
+	parsed.DNSNames = []string{"leaf.example.com", "alt.example.com"}
+	parsed.NotBefore = notBefore
+	parsed.NotAfter = notAfter
+	parsed.PublicKey = &key.PublicKey
+
+	cert := &db.Certificate{HostID: uuid.New()}
+	populateCertFromParsed(cert, parsed)
+
+	require.NotNil(t, cert.SubjectCN)
+	assert.Equal(t, "leaf.example.com", *cert.SubjectCN)
+	assert.Equal(t, []string{"leaf.example.com", "alt.example.com"}, cert.SANs)
+	require.NotNil(t, cert.Issuer)
+	assert.Equal(t, "root.example.com", *cert.Issuer)
+	require.NotNil(t, cert.NotBefore)
+	assert.WithinDuration(t, notBefore, *cert.NotBefore, time.Second)
+	require.NotNil(t, cert.NotAfter)
+	assert.WithinDuration(t, notAfter, *cert.NotAfter, time.Second)
+	require.NotNil(t, cert.KeyType)
+	assert.Equal(t, "RSA", *cert.KeyType)
+}
+
+func TestPopulateCertFromParsed_EmptyCN_NoSubjectSet(t *testing.T) {
+	parsed := &zcrypto_x509.Certificate{}
+	// Subject.CommonName is zero-value ("") — SubjectCN must not be set.
+	cert := &db.Certificate{HostID: uuid.New()}
+	populateCertFromParsed(cert, parsed)
+	assert.Nil(t, cert.SubjectCN)
+	assert.Nil(t, cert.Issuer)
 }

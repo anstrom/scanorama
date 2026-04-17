@@ -37,7 +37,8 @@ const (
 	zgrabMaxSizeKB    = 256
 	zgrabMaxRedirects = 3
 
-	serviceSSH = "ssh"
+	serviceSSH   = "ssh"
+	serviceHTTPS = "https"
 )
 
 // tlsPorts is the set of port numbers that should receive a TLS/HTTPS probe.
@@ -344,7 +345,7 @@ func (g *BannerGrabber) grabTLS(ctx context.Context, t BannerTarget, port int, a
 	}
 
 	// Also store a banner entry for this port.
-	svc := "https"
+	svc := serviceHTTPS
 	banner := &db.PortBanner{
 		HostID:    t.HostID,
 		Port:      port,
@@ -642,7 +643,7 @@ func (g *BannerGrabber) storeZGrabHTTPBanner(
 	// Service identification and raw banner summary.
 	svc := "http"
 	if resp.TLS != nil {
-		svc = "https"
+		svc = serviceHTTPS
 	}
 	banner.Service = &svc
 

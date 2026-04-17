@@ -17,6 +17,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"log/slog"
 	"math/big"
 	"net"
@@ -376,6 +377,52 @@ func TestKeyTypeFromPublicKey(t *testing.T) {
 	assert.Equal(t, "ECDSA", keyTypeFromPublicKey(ecKey.Public()))
 	assert.Equal(t, "", keyTypeFromPublicKey(nil))
 	assert.Equal(t, "", keyTypeFromPublicKey("unknown"))
+}
+
+// ── markProbeDone ─────────────────────────────────────────────────────────────
+
+// TestMarkProbeDone_DBError verifies that markProbeDone does not panic and
+// only logs a warning when MarkExtendedProbeDone returns an error.
+func TestMarkProbeDone_DBError(t *testing.T) {
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+
+	// MarkExtendedProbeDone tries to upsert — return a DB error.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnError(fmt.Errorf("db unavailable"))
+
+	// Must not panic.
+	g.markProbeDone(context.Background(), uuid.New(), 8080)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ── grabTLS — fallback ────────────────────────────────────────────────────────
+
+// TestGrabTLS_FallsBackToPlain verifies that when the TLS handshake fails
+// (the target speaks plain TCP, not TLS), grabTLS falls back to grabPlain and
+// stores the raw banner.
+func TestGrabTLS_FallsBackToPlain(t *testing.T) {
+	addr := startTCPServer(t, "NOT-TLS-BANNER\r\n")
+	host, portStr, err := net.SplitHostPort(addr)
+	require.NoError(t, err)
+
+	var port int
+	parsePort(portStr, &port)
+
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+
+	// grabPlain (called by grabTLS on handshake failure) stores the banner.
+	mock.ExpectExec("INSERT INTO port_banners").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	target := BannerTarget{HostID: uuid.New(), IP: host}
+	g.grabTLS(context.Background(), target, port, addr)
+
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 // parsePort parses a decimal port string into *out.
