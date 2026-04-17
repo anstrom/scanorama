@@ -27,6 +27,8 @@ import (
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	zcrypto_tls "github.com/zmap/zcrypto/tls"
+	zgrabhttp_lib "github.com/zmap/zgrab2/lib/http"
 	zgrabhttp "github.com/zmap/zgrab2/modules/http"
 	gossh "golang.org/x/crypto/ssh"
 
@@ -709,6 +711,122 @@ func TestGrabOne_UnknownService_CapExceeded(t *testing.T) {
 
 	pi := PortInfo{Number: port, Service: "", AllowExtendedProbe: false}
 	g.grabOne(context.Background(), BannerTarget{HostID: uuid.New(), IP: host}, pi)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ── storeZGrabHTTPBanner — response variants ──────────────────────────────────
+
+// UpsertHTTPPortData args: id, host_id, port, protocol, raw_banner, service,
+// version, http_status_code, http_redirect, http_response_headers, scanned_at.
+// ($1 through $11 — see repository_banners.go:UpsertHTTPPortData)
+
+// TestStoreZGrabHTTPBanner_HTTP200 verifies that a plain-HTTP 200 response
+// stores service="http" and http_status_code=200.
+func TestStoreZGrabHTTPBanner_HTTP200(t *testing.T) {
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+
+	svc := "http"
+	sc := int16(200)
+	mock.ExpectExec("INSERT INTO port_banners").
+		WithArgs(
+			sqlmock.AnyArg(), // id
+			sqlmock.AnyArg(), // host_id
+			80,               // port
+			"tcp",            // protocol
+			sqlmock.AnyArg(), // raw_banner
+			&svc,             // service: "http"
+			(*string)(nil),   // version: nil (no Server header)
+			&sc,              // http_status_code: 200
+			(*string)(nil),   // http_redirect
+			sqlmock.AnyArg(), // http_response_headers
+			sqlmock.AnyArg(), // scanned_at
+		).WillReturnResult(sqlmock.NewResult(1, 1))
+
+	resp := &zgrabhttp_lib.Response{
+		StatusCode: 200,
+		Header:     zgrabhttp_lib.Header{},
+	}
+	results := &zgrabhttp.Results{Response: resp}
+	g.storeZGrabHTTPBanner(context.Background(), BannerTarget{HostID: uuid.New(), IP: "127.0.0.1"}, 80, results)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestStoreZGrabHTTPBanner_HTTPS verifies that service="https" is stored when
+// resp.TLS is non-nil (HTTPS connection detected).
+func TestStoreZGrabHTTPBanner_HTTPS(t *testing.T) {
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+
+	svc := "https"
+	sc := int16(200)
+	mock.ExpectExec("INSERT INTO port_banners").
+		WithArgs(
+			sqlmock.AnyArg(), // id
+			sqlmock.AnyArg(), // host_id
+			443,              // port
+			"tcp",            // protocol
+			sqlmock.AnyArg(), // raw_banner
+			&svc,             // service: "https" (TLS detected)
+			(*string)(nil),   // version
+			&sc,              // http_status_code: 200
+			(*string)(nil),   // http_redirect
+			sqlmock.AnyArg(), // http_response_headers
+			sqlmock.AnyArg(), // scanned_at
+		).WillReturnResult(sqlmock.NewResult(1, 1))
+
+	resp := &zgrabhttp_lib.Response{
+		StatusCode: 200,
+		Header:     zgrabhttp_lib.Header{},
+		TLS:        &zcrypto_tls.ConnectionState{},
+	}
+	results := &zgrabhttp.Results{Response: resp}
+
+	target := BannerTarget{HostID: uuid.New(), IP: "127.0.0.1"}
+	g.storeZGrabHTTPBanner(context.Background(), target, 443, results)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestStoreZGrabHTTPBanner_ServerHeader verifies that the Server response
+// header is stored as the banner Version field.
+func TestStoreZGrabHTTPBanner_ServerHeader(t *testing.T) {
+	database, mock := newBannerMockDB(t)
+	repo := db.NewBannerRepository(database)
+	g := NewBannerGrabber(repo, newTestLogger(), "")
+
+	svc := "http"
+	sc := int16(200)
+	ver := "nginx/1.24.0"
+	mock.ExpectExec("INSERT INTO port_banners").
+		WithArgs(
+			sqlmock.AnyArg(), // id
+			sqlmock.AnyArg(), // host_id
+			80,               // port
+			"tcp",            // protocol
+			sqlmock.AnyArg(), // raw_banner
+			&svc,             // service: "http"
+			&ver,             // version: "nginx/1.24.0" (from Server header)
+			&sc,              // http_status_code: 200
+			(*string)(nil),   // http_redirect
+			sqlmock.AnyArg(), // http_response_headers (includes Server)
+			sqlmock.AnyArg(), // scanned_at
+		).WillReturnResult(sqlmock.NewResult(1, 1))
+
+	hdr := zgrabhttp_lib.Header{}
+	hdr.Set("Server", "nginx/1.24.0")
+	resp := &zgrabhttp_lib.Response{
+		StatusCode: 200,
+		Header:     hdr,
+	}
+	results := &zgrabhttp.Results{Response: resp}
+
+	target := BannerTarget{HostID: uuid.New(), IP: "127.0.0.1"}
+	g.storeZGrabHTTPBanner(context.Background(), target, 80, results)
 
 	require.NoError(t, mock.ExpectationsWereMet())
 }
