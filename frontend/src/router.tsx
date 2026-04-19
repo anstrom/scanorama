@@ -17,6 +17,7 @@ import { SchedulesPage } from "./routes/schedules";
 import { AdminPage } from "./routes/admin";
 import { GroupsPage } from "./routes/groups";
 import { PortsPage } from "./routes/ports";
+import { DeviceDetailPage } from "./routes/devices";
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -98,6 +99,15 @@ const portsRoute = createRoute({
   component: PortsPage,
 });
 
+const deviceDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/devices/$id",
+  component: function DeviceDetailRoute() {
+    const { id } = deviceDetailRoute.useParams();
+    return <DeviceDetailPage id={id} />;
+  },
+});
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   scansRoute,
@@ -109,6 +119,7 @@ const routeTree = rootRoute.addChildren([
   schedulesRoute,
   groupsRoute,
   portsRoute,
+  deviceDetailRoute,
   adminRoute,
 ]);
 
