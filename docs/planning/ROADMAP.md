@@ -1,7 +1,7 @@
 # Scanorama Product Roadmap
 
 > Milestone-based roadmap focused on feature completeness.
-> Last updated: 2026-04-13 · Current version: v0.24.0
+> Last updated: 2026-04-19 · Current version: v0.27.0-dev
 
 ---
 
@@ -399,15 +399,15 @@ Scanorama is ready for other people to depend on. Auth works, the test suite is 
 
 ## Milestone Summary
 
-| Milestone | Theme | Key Deliverables | Target |
+| Milestone | Theme | Key Deliverables | Status |
 |-----------|-------|------------------|--------|
-| **v0.23** | Tables & Discovery Changelog | Sorting, bulk actions, discovery diff (new/updated/gone), MAC vendor lookup (OUI), response timing, slow host detection | Next |
-| **v0.24** | Tags, Groups, Dashboard & Admin | Tag UI, host groups, profile cloning, enhanced dashboard stats, live activity feed, quick actions, settings page, system status | Next |
-| **v0.25** | Smart Profiles & Smart Scan | Smart profiles, progressive scanning, ZGrab2 banners, GoSNMP enrichment, DNSX, curated port DB, knowledge scores | Next |
-| **v0.26** | Analytics, Reporting & Queries | Port/OS/service charts, web tech fingerprinting (httpx), vuln scanning (nuclei), saved queries, scheduled reports, PDF export, business & system health metrics (#222) | Later |
-| **v0.27** | UX Polish | Scan diff, export, global search, dark mode, webhooks, per-host alert rules (#695), onboarding | Later |
+| **v0.23** | Tables & Discovery Changelog | Sorting, bulk actions, discovery diff (new/updated/gone), MAC vendor lookup (OUI), response timing, slow host detection | Done ✓ |
+| **v0.24** | Tags, Groups, Dashboard & Admin | Tag UI, host groups, profile cloning, enhanced dashboard stats, live activity feed, quick actions, settings page, system status | Done ✓ |
+| **v0.25** | Smart Profiles & Smart Scan | Smart profiles, progressive scanning, ZGrab2 banners, GoSNMP enrichment, DNSX, curated port DB, knowledge scores | Done ✓ |
+| **v0.26** | Analytics, Reporting & Queries | Port/OS/service charts, web tech fingerprinting (httpx), vuln scanning (nuclei), saved queries, scheduled reports, PDF export, business & system health metrics | Done ✓ |
+| **v0.27** | UX Polish | Scan diff, export, global search, dark mode, webhooks, per-host alert rules (#695), device identity (#713), onboarding | Current |
 | **v0.28** | Network Topology | Visual graph of network topology using LLDP/CDP neighbor data from v0.25; nodes = hosts/switches, edges = confirmed connections, filterable by network/group/tag (#698) | Later |
-| **v1.0** | Production Release | Multi-user auth, RBAC, audit log, Linux privilege management (#554), `scanorama doctor`, capability detection, alerting infrastructure, OpenTelemetry tracing, Grafana dashboards (#222), test coverage, security audit | Later |
+| **v1.0** | Production Release | Multi-user auth, RBAC, audit log, Linux privilege management (#554), `scanorama doctor`, capability detection, alerting infrastructure, test coverage, security audit | Later |
 
 ---
 
