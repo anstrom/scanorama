@@ -161,8 +161,8 @@ export function useRefreshIdentity() {
   return useMutation({
     mutationFn: async (hostId: string) => {
       const { data, error, response } = await api.POST(
-        "/smart-scan/hosts/{hostId}/refresh-identity",
-        { params: { path: { hostId } } },
+        "/smart-scan/hosts/{id}/refresh-identity",
+        { params: { path: { id: hostId } } },
       );
       if (error) throw new ApiError(response.status, error);
       return data;

@@ -377,7 +377,8 @@ function GroupDetailPanel({ group, onClose, onEdit }: GroupDetailPanelProps) {
               <PaginationBar
                 page={memberPage}
                 totalPages={totalMemberPages}
-                onPageChange={setMemberPage}
+                onPrev={() => setMemberPage((p) => Math.max(1, p - 1))}
+                onNext={() => setMemberPage((p) => Math.min(totalMemberPages, p + 1))}
                 className="mt-3"
               />
             )}
