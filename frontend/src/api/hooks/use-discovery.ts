@@ -11,7 +11,7 @@ type CreateDiscoveryJobRequest =
 interface DiscoveryListParams {
   page?: number;
   page_size?: number;
-  status?: string;
+  status?: "pending" | "running" | "completed" | "failed";
 }
 
 // ── Diff types ────────────────────────────────────────────────────────────────

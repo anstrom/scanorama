@@ -373,6 +373,14 @@ function makeDeleteMutationResult(overrides = {}) {
   } as unknown as ReturnType<typeof useDeleteHost>;
 }
 
+function makeBulkDeleteMutationResult(overrides = {}) {
+  return {
+    mutateAsync: vi.fn().mockResolvedValue({ deleted: 0 }),
+    isPending: false,
+    ...overrides,
+  } as unknown as ReturnType<typeof useBulkDeleteHosts>;
+}
+
 beforeEach(async () => {
   vi.clearAllMocks();
   mockUseHosts.mockReturnValue(makeUseHostsResult());
@@ -380,7 +388,7 @@ beforeEach(async () => {
   mockUseHostScans.mockReturnValue(makeUseHostScansResult());
   mockUseUpdateHost.mockReturnValue(makeMutationResult());
   mockUseDeleteHost.mockReturnValue(makeDeleteMutationResult());
-  mockUseBulkDeleteHosts.mockReturnValue(makeDeleteMutationResult());
+  mockUseBulkDeleteHosts.mockReturnValue(makeBulkDeleteMutationResult());
 
   const { useHostNetworks } = await import("../api/hooks/use-host-networks");
   vi.mocked(useHostNetworks).mockReturnValue({

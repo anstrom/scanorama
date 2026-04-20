@@ -104,7 +104,7 @@ describe("DeviceDetailPage", () => {
       data: { ...mockDevice, known_macs: [], known_names: [], hosts: [] },
       isLoading: false,
       isError: false,
-    } as ReturnType<typeof useDevice>);
+    } as unknown as ReturnType<typeof useDevice>);
 
     render(<DeviceDetailPage id="d1" />);
     expect(screen.getByText("No MACs recorded.")).toBeInTheDocument();

@@ -414,6 +414,18 @@ function ComparePanel({
 }: ComparePanelProps) {
   const completedJobs = jobs.filter((j) => j.status === "completed");
 
+  const renderOption = (j: DiscoveryJobResponse) => {
+    const label: string = j.name ?? j.networks?.join(", ") ?? j.id ?? "";
+    const date = j.started_at
+      ? new Date(j.started_at).toLocaleDateString()
+      : "—";
+    return (
+      <option key={j.id} value={j.id ?? ""}>
+        {label} · {date}
+      </option>
+    );
+  };
+
   return (
     <div className="bg-surface border border-border rounded-lg p-4 space-y-4">
       {/* Header */}
@@ -442,14 +454,7 @@ function ComparePanel({
             className="bg-surface-raised border border-border rounded px-2 py-1.5 text-xs text-text-secondary focus:outline-none focus:border-accent"
           >
             <option value="">Select a run…</option>
-            {completedJobs.map((j) => (
-              <option key={j.id} value={j.id ?? ""}>
-                {j.name ?? j.networks?.join(", ") ?? j.id} ·{" "}
-                {j.started_at
-                  ? new Date(j.started_at).toLocaleDateString()
-                  : "—"}
-              </option>
-            ))}
+            {completedJobs.map(renderOption)}
           </select>
         </div>
 
@@ -464,14 +469,7 @@ function ComparePanel({
             className="bg-surface-raised border border-border rounded px-2 py-1.5 text-xs text-text-secondary focus:outline-none focus:border-accent"
           >
             <option value="">Select a run…</option>
-            {completedJobs.map((j) => (
-              <option key={j.id} value={j.id ?? ""}>
-                {j.name ?? j.networks?.join(", ") ?? j.id} ·{" "}
-                {j.started_at
-                  ? new Date(j.started_at).toLocaleDateString()
-                  : "—"}
-              </option>
-            ))}
+            {completedJobs.map(renderOption)}
           </select>
         </div>
       </div>
@@ -480,7 +478,7 @@ function ComparePanel({
       {isLoading && (
         <p className="text-xs text-text-muted">Loading comparison…</p>
       )}
-      {error && !isLoading && (
+      {!!error && !isLoading && (
         <p className="text-xs text-danger">
           {error instanceof Error ? error.message : "Failed to compare runs."}
         </p>
