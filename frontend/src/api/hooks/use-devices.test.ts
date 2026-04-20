@@ -29,24 +29,24 @@ const mockPut = vi.mocked(api.PUT);
 const mockDelete = vi.mocked(api.DELETE);
 
 const ok = (data: unknown) =>
-  Promise.resolve({ data, error: undefined, response: new Response() }) as ReturnType<typeof mockGet>;
+  ({ data, error: undefined, response: new Response() }) as Awaited<ReturnType<typeof mockGet>>;
 
 const fail = (msg = "boom") =>
-  Promise.resolve({
+  ({
     data: undefined,
     error: { message: msg },
     response: new Response(null, { status: 500 }),
-  }) as ReturnType<typeof mockGet>;
+  }) as Awaited<ReturnType<typeof mockGet>>;
 
 const okMut = (data: unknown) =>
-  Promise.resolve({ data, error: undefined, response: new Response() }) as ReturnType<typeof mockPost>;
+  ({ data, error: undefined, response: new Response() }) as Awaited<ReturnType<typeof mockPost>>;
 
 const failMut = (msg = "boom") =>
-  Promise.resolve({
+  ({
     data: undefined,
     error: { message: msg },
     response: new Response(null, { status: 500 }),
-  }) as ReturnType<typeof mockPost>;
+  }) as Awaited<ReturnType<typeof mockPost>>;
 
 // ── useDevices ────────────────────────────────────────────────────────────────
 
@@ -119,7 +119,7 @@ describe("useCreateDevice", () => {
   });
 
   it("throws on error", async () => {
-    mockPost.mockResolvedValue(failMut("name required") as ReturnType<typeof mockPost>);
+    mockPost.mockResolvedValue(failMut("name required") as Awaited<ReturnType<typeof mockPost>>);
 
     const { result, actHook } = renderHookWithQuery(() => useCreateDevice());
     await expect(
@@ -134,7 +134,7 @@ describe("useUpdateDevice", () => {
   beforeEach(() => vi.resetAllMocks());
 
   it("calls PUT /devices/{id} with the provided body", async () => {
-    mockPut.mockResolvedValue(okMut({ id: "d1", name: "Updated" }) as ReturnType<typeof mockPut>);
+    mockPut.mockResolvedValue(okMut({ id: "d1", name: "Updated" }) as Awaited<ReturnType<typeof mockPut>>);
 
     const { result, actHook } = renderHookWithQuery(() => useUpdateDevice());
     await actHook(async () => {
@@ -148,7 +148,7 @@ describe("useUpdateDevice", () => {
   });
 
   it("throws on error", async () => {
-    mockPut.mockResolvedValue(failMut("not found") as ReturnType<typeof mockPut>);
+    mockPut.mockResolvedValue(failMut("not found") as Awaited<ReturnType<typeof mockPut>>);
 
     const { result, actHook } = renderHookWithQuery(() => useUpdateDevice());
     await expect(
@@ -163,7 +163,7 @@ describe("useDeleteDevice", () => {
   beforeEach(() => vi.resetAllMocks());
 
   it("calls DELETE /devices/{id}", async () => {
-    mockDelete.mockResolvedValue(okMut(undefined) as ReturnType<typeof mockDelete>);
+    mockDelete.mockResolvedValue(okMut(undefined) as Awaited<ReturnType<typeof mockDelete>>);
 
     const { result, actHook } = renderHookWithQuery(() => useDeleteDevice());
     await actHook(async () => { await result.current.mutateAsync("d1"); });
@@ -174,7 +174,7 @@ describe("useDeleteDevice", () => {
   });
 
   it("throws on error", async () => {
-    mockDelete.mockResolvedValue(failMut("not found") as ReturnType<typeof mockDelete>);
+    mockDelete.mockResolvedValue(failMut("not found") as Awaited<ReturnType<typeof mockDelete>>);
 
     const { result, actHook } = renderHookWithQuery(() => useDeleteDevice());
     await expect(
@@ -218,7 +218,7 @@ describe("useDetachHost", () => {
   beforeEach(() => vi.resetAllMocks());
 
   it("calls DELETE /devices/{id}/hosts/{host_id}", async () => {
-    mockDelete.mockResolvedValue(okMut(undefined) as ReturnType<typeof mockDelete>);
+    mockDelete.mockResolvedValue(okMut(undefined) as Awaited<ReturnType<typeof mockDelete>>);
 
     const { result, actHook } = renderHookWithQuery(() => useDetachHost());
     await actHook(async () => {
@@ -232,7 +232,7 @@ describe("useDetachHost", () => {
   });
 
   it("throws on error", async () => {
-    mockDelete.mockResolvedValue(failMut("not found") as ReturnType<typeof mockDelete>);
+    mockDelete.mockResolvedValue(failMut("not found") as Awaited<ReturnType<typeof mockDelete>>);
 
     const { result, actHook } = renderHookWithQuery(() => useDetachHost());
     await expect(

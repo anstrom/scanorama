@@ -32,47 +32,47 @@ const mockDelete = vi.mocked(api.DELETE);
 const mockPatch = vi.mocked((api as any).PATCH);
 const mockPost = vi.mocked(api.POST);
 
-const ok = (data: unknown): ReturnType<typeof mockGet> =>
-  Promise.resolve({
+const ok = (data: unknown): Awaited<ReturnType<typeof mockGet>> =>
+  ({
     data,
     error: undefined,
     response: new Response(),
-  }) as ReturnType<typeof mockGet>;
+  }) as Awaited<ReturnType<typeof mockGet>>;
 
-const fail = (message = "something went wrong"): ReturnType<typeof mockGet> =>
-  Promise.resolve({
+const fail = (message = "something went wrong"): Awaited<ReturnType<typeof mockGet>> =>
+  ({
     data: undefined,
     error: { message },
     response: new Response(),
-  }) as ReturnType<typeof mockGet>;
+  }) as Awaited<ReturnType<typeof mockGet>>;
 
-const okPut = (data: unknown): ReturnType<typeof mockPut> =>
-  Promise.resolve({
+const okPut = (data: unknown): Awaited<ReturnType<typeof mockPut>> =>
+  ({
     data,
     error: undefined,
     response: new Response(),
-  }) as ReturnType<typeof mockPut>;
+  }) as Awaited<ReturnType<typeof mockPut>>;
 
-const failPut = (message = "update failed"): ReturnType<typeof mockPut> =>
-  Promise.resolve({
+const failPut = (message = "update failed"): Awaited<ReturnType<typeof mockPut>> =>
+  ({
     data: undefined,
     error: { message },
     response: new Response(null, { status: 400 }),
-  }) as ReturnType<typeof mockPut>;
+  }) as Awaited<ReturnType<typeof mockPut>>;
 
-const failDelete = (message = "delete failed"): ReturnType<typeof mockDelete> =>
-  Promise.resolve({
+const failDelete = (message = "delete failed"): Awaited<ReturnType<typeof mockDelete>> =>
+  ({
     data: undefined,
     error: { message },
     response: new Response(null, { status: 400 }),
-  }) as ReturnType<typeof mockDelete>;
+  }) as Awaited<ReturnType<typeof mockDelete>>;
 
-const okDelete = (): ReturnType<typeof mockDelete> =>
-  Promise.resolve({
+const okDelete = (): Awaited<ReturnType<typeof mockDelete>> =>
+  ({
     data: undefined,
     error: undefined,
     response: new Response(),
-  }) as ReturnType<typeof mockDelete>;
+  }) as Awaited<ReturnType<typeof mockDelete>>;
 
 const mockHost = {
   id: "host-1",
@@ -647,7 +647,7 @@ describe("useRefreshIdentity", () => {
       data: { host_id: "host-1", queued: true, scan_id: "scan-42" },
       error: undefined,
       response: new Response(),
-    } as unknown as ReturnType<typeof mockPost>);
+    } as unknown as Awaited<ReturnType<typeof mockPost>>);
 
     const { result, actHook } = renderHookWithQuery(() => useRefreshIdentity());
 
@@ -656,9 +656,9 @@ describe("useRefreshIdentity", () => {
     });
 
     expect(mockPost).toHaveBeenCalledWith(
-      "/smart-scan/hosts/{hostId}/refresh-identity",
+      "/smart-scan/hosts/{id}/refresh-identity",
       expect.objectContaining({
-        params: { path: { hostId: "host-1" } },
+        params: { path: { id: "host-1" } },
       }),
     );
   });
@@ -668,7 +668,7 @@ describe("useRefreshIdentity", () => {
       data: { host_id: "host-1", queued: true, scan_id: "scan-42" },
       error: undefined,
       response: new Response(),
-    } as unknown as ReturnType<typeof mockPost>);
+    } as unknown as Awaited<ReturnType<typeof mockPost>>);
 
     const { result, actHook, queryClient } = renderHookWithQuery(() =>
       useRefreshIdentity(),
@@ -689,7 +689,7 @@ describe("useRefreshIdentity", () => {
       data: undefined,
       error: { message: "host not found" },
       response: new Response(null, { status: 404 }),
-    } as unknown as ReturnType<typeof mockPost>);
+    } as unknown as Awaited<ReturnType<typeof mockPost>>);
 
     const { result, actHook } = renderHookWithQuery(() => useRefreshIdentity());
 

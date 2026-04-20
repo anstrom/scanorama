@@ -26,67 +26,67 @@ const mockPost = vi.mocked(api.POST);
 const mockPut = vi.mocked(api.PUT);
 const mockDelete = vi.mocked(api.DELETE);
 
-const ok = (data: unknown): ReturnType<typeof mockGet> =>
-  Promise.resolve({
+const ok = (data: unknown): Awaited<ReturnType<typeof mockGet>> =>
+  ({
     data,
     error: undefined,
     response: new Response(),
-  }) as ReturnType<typeof mockGet>;
+  }) as Awaited<ReturnType<typeof mockGet>>;
 
-const fail = (message = "something went wrong"): ReturnType<typeof mockGet> =>
-  Promise.resolve({
+const fail = (message = "something went wrong"): Awaited<ReturnType<typeof mockGet>> =>
+  ({
     data: undefined,
     error: { message },
     response: new Response(),
-  }) as ReturnType<typeof mockGet>;
+  }) as Awaited<ReturnType<typeof mockGet>>;
 
-const okPost = (data: unknown): ReturnType<typeof mockPost> =>
-  Promise.resolve({
+const okPost = (data: unknown): Awaited<ReturnType<typeof mockPost>> =>
+  ({
     data,
     error: undefined,
     response: new Response(),
-  }) as ReturnType<typeof mockPost>;
+  }) as Awaited<ReturnType<typeof mockPost>>;
 
 const failPost = (
   message = "something went wrong",
-): ReturnType<typeof mockPost> =>
-  Promise.resolve({
+): Awaited<ReturnType<typeof mockPost>> =>
+  ({
     data: undefined,
     error: { message },
     response: new Response(),
-  }) as ReturnType<typeof mockPost>;
+  }) as Awaited<ReturnType<typeof mockPost>>;
 
-const okPut = (data: unknown): ReturnType<typeof mockPut> =>
-  Promise.resolve({
+const okPut = (data: unknown): Awaited<ReturnType<typeof mockPut>> =>
+  ({
     data,
     error: undefined,
     response: new Response(),
-  }) as ReturnType<typeof mockPut>;
+  }) as Awaited<ReturnType<typeof mockPut>>;
 
 const failPut = (
   message = "something went wrong",
-): ReturnType<typeof mockPut> =>
-  Promise.resolve({
+): Awaited<ReturnType<typeof mockPut>> =>
+  ({
     data: undefined,
     error: { message },
     response: new Response(),
-  }) as ReturnType<typeof mockPut>;
+  }) as Awaited<ReturnType<typeof mockPut>>;
 
-const okDelete = (): ReturnType<typeof mockDelete> =>
-  Promise.resolve({
+const okDelete = (): Awaited<ReturnType<typeof mockDelete>> =>
+  ({
     data: undefined,
     error: undefined,
     response: new Response(),
-  }) as ReturnType<typeof mockDelete>;
+  }) as Awaited<ReturnType<typeof mockDelete>>;
 
 const failDelete = (
   message = "something went wrong",
-): ReturnType<typeof mockDelete> =>
-  Promise.resolve({
+): Awaited<ReturnType<typeof mockDelete>> =>
+  ({
     data: undefined,
     error: { message },
     response: new Response(),
-  }) as ReturnType<typeof mockDelete>;
+  }) as Awaited<ReturnType<typeof mockDelete>>;
 
 const mockSchedules = [
   {
