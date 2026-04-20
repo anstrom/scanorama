@@ -356,7 +356,6 @@ describe("ScanNetworkModal", () => {
   });
 
   it("shows an error and does not call startScan when active host count is 0 at submit time", async () => {
-    const user = userEvent.setup();
     // Start with 3 hosts so button is enabled, then switch to 0
     const startScan = vi.fn();
     mockUseStartScan.mockReturnValue({
