@@ -25,26 +25,26 @@ const mockGet = vi.mocked(api.GET);
 const mockPost = vi.mocked(api.POST);
 const mockDelete = vi.mocked(api.DELETE);
 
-const ok = (data: unknown): ReturnType<typeof mockGet> =>
-  Promise.resolve({
+const ok = (data: unknown): Awaited<ReturnType<typeof mockGet>> =>
+  ({
     data,
     error: undefined,
     response: new Response(),
-  }) as ReturnType<typeof mockGet>;
+  }) as Awaited<ReturnType<typeof mockGet>>;
 
-const fail = (message = "something went wrong"): ReturnType<typeof mockGet> =>
-  Promise.resolve({
+const fail = (message = "something went wrong"): Awaited<ReturnType<typeof mockGet>> =>
+  ({
     data: undefined,
     error: { message },
     response: new Response(),
-  }) as ReturnType<typeof mockGet>;
+  }) as Awaited<ReturnType<typeof mockGet>>;
 
-const okDelete = (): ReturnType<typeof mockDelete> =>
-  Promise.resolve({
+const okDelete = (): Awaited<ReturnType<typeof mockDelete>> =>
+  ({
     data: undefined,
     error: undefined,
     response: new Response(),
-  }) as ReturnType<typeof mockDelete>;
+  }) as Awaited<ReturnType<typeof mockDelete>>;
 
 const mockPagination = {
   page: 1,
