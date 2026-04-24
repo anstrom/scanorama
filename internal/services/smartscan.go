@@ -144,6 +144,10 @@ type SmartScanService struct {
 	scanQueue      *scanning.ScanQueue
 	logger         *slog.Logger
 
+	// portListResolver augments stage port lists from settings, OS hints, and
+	// fleet history. Nil means hardcoded defaults are used (fail-open).
+	portListResolver portListResolverIface
+
 	// hasOpenPortsFn and hasServicesFn are called by EvaluateHost to check
 	// live host state. Replaced in tests to avoid a real database dependency.
 	hasOpenPortsFn func(ctx context.Context, hostID uuid.UUID) (bool, error)
@@ -176,6 +180,13 @@ func (s *SmartScanService) WithAutoProgression(threshold, maxPerWindow, windowHo
 		wh = AutoProgressDefaultWindowHours
 	}
 	s.autoProgressWindow = time.Duration(wh) * time.Hour
+	return s
+}
+
+// WithPortListResolver wires a dynamic port resolver into the service.
+// When set, stage methods call Resolve instead of returning hardcoded strings.
+func (s *SmartScanService) WithPortListResolver(r *PortListResolver) *SmartScanService {
+	s.portListResolver = r
 	return s
 }
 
@@ -363,18 +374,19 @@ func (s *SmartScanService) EvaluateHost(ctx context.Context, host *db.Host) (*Sc
 
 	switch {
 	case !hasOS && host.Status == "up":
-		return s.stageOSDetection(), nil
+		return s.stageOSDetection(ctx, host), nil
 	case host.Status == "up" && !hasUsableHostName(host):
-		return s.stageIdentityEnrichment(), nil
+		return s.stageIdentityEnrichment(ctx, host), nil
 	case hasOS && !hasOpenPorts:
 		return s.stageWithProfile(ctx, host, "port_expansion"), nil
 	case hasOpenPorts && !hasServices:
 		return s.stageWithProfile(ctx, host, "service_scan"), nil
 	case isStale:
+		ports := portListStr(ctx, s.portListResolver, "refresh", host, "1-1024")
 		return &ScanStage{
 			Stage:    "refresh",
 			ScanType: "connect",
-			Ports:    "1-1024",
+			Ports:    ports,
 			Reason:   fmt.Sprintf("last seen %s ago — refreshing scan", time.Since(host.LastSeen).Round(time.Hour)),
 		}, nil
 	default:
@@ -386,11 +398,12 @@ func (s *SmartScanService) EvaluateHost(ctx context.Context, host *db.Host) (*Sc
 // likely to yield a host name. Post-scan enrichment (DNS, banner/TLS, SNMP)
 // picks up the signals and fills hosts.hostname / hosts.mdns_name /
 // host_snmp_data / certificates on the next pass.
-func (s *SmartScanService) stageIdentityEnrichment() *ScanStage {
+func (s *SmartScanService) stageIdentityEnrichment(ctx context.Context, host *db.Host) *ScanStage {
+	ports := portListStr(ctx, s.portListResolver, stageIdentityEnrichment, host, identityEnrichmentPorts)
 	return &ScanStage{
 		Stage:    stageIdentityEnrichment,
 		ScanType: "connect",
-		Ports:    identityEnrichmentPorts,
+		Ports:    ports,
 		Reason:   "host has no usable name — probing identity surfaces (mDNS, SNMP, DNS, TLS)",
 	}
 }
@@ -432,14 +445,27 @@ func hasNonBlank(p *string) bool {
 
 // stageOSDetection returns a ScanStage configured for OS fingerprinting.
 // SYN scan is required because OS detection needs raw socket access (-O flag).
-func (s *SmartScanService) stageOSDetection() *ScanStage {
+func (s *SmartScanService) stageOSDetection(ctx context.Context, host *db.Host) *ScanStage {
+	ports := portListStr(ctx, s.portListResolver, "os_detection", host, "22,80,135,443,445,3389")
 	return &ScanStage{
 		Stage:       "os_detection",
 		ScanType:    "syn",
-		Ports:       "22,80,135,443,445,3389",
+		Ports:       ports,
 		OSDetection: true,
 		Reason:      "no OS information — running OS fingerprint scan",
 	}
+}
+
+// portListStr calls the resolver and returns the result, or fallback on nil
+// resolver or empty result.
+func portListStr(ctx context.Context, r portListResolverIface, stage string, host *db.Host, fallback string) string {
+	if r == nil {
+		return fallback
+	}
+	if s := r.Resolve(ctx, stage, host); s != "" {
+		return s
+	}
+	return fallback
 }
 
 // stageWithProfile returns a ScanStage using the best matching profile,
@@ -515,7 +541,7 @@ func (s *SmartScanService) QueueIdentityEnrichment(ctx context.Context, hostID u
 	if host.Status == hostStatusGone || host.IgnoreScanning {
 		return uuid.Nil, fmt.Errorf("host is gone or excluded from scanning")
 	}
-	stage := s.stageIdentityEnrichment()
+	stage := s.stageIdentityEnrichment(ctx, host)
 	return s.createAndQueueScan(ctx, host, stage, db.ScanSourceAPI)
 }
 

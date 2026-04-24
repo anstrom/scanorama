@@ -919,3 +919,95 @@ func TestGetProfileRecommendations_NoHosts_ReturnsEmpty(t *testing.T) {
 	assert.Empty(t, recs)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ── PortListResolver integration ─────────────────────────────────────────────
+
+// stubResolver implements portListResolverIface for testing.
+// Return empty string to simulate resolver failure (triggers fallback).
+type stubResolver struct {
+	ports string
+}
+
+func (sr *stubResolver) Resolve(_ context.Context, _ string, _ *db.Host) string {
+	return sr.ports
+}
+
+func TestEvaluateHost_OSDetection_UsesResolver(t *testing.T) {
+	svc := newTestService(false /*hasOpenPorts*/, false /*hasServices*/)
+	svc.portListResolver = &stubResolver{ports: "22,443,8080"}
+
+	host := hostUp("10.0.0.1")
+	host.Hostname = nil // force os_detection path
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, "os_detection", stage.Stage)
+	assert.Equal(t, "22,443,8080", stage.Ports)
+}
+
+func TestEvaluateHost_OSDetection_FallsBackOnEmptyResolver(t *testing.T) {
+	svc := newTestService(false, false)
+	svc.portListResolver = &stubResolver{ports: ""} // empty → fallback
+
+	host := hostUp("10.0.0.1")
+	host.Hostname = nil
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, "os_detection", stage.Stage)
+	assert.Equal(t, "22,80,135,443,445,3389", stage.Ports)
+}
+
+func TestEvaluateHost_IdentityEnrichment_UsesResolver(t *testing.T) {
+	svc := newTestService(false, false)
+	svc.portListResolver = &stubResolver{ports: "22,80,161,443,8443"}
+
+	host := hostUp("10.0.0.2")
+	host.Hostname = nil
+	host.OSFamily = strPtr("linux") // has OS, so skips os_detection
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, stageIdentityEnrichment, stage.Stage)
+	assert.Equal(t, "22,80,161,443,8443", stage.Ports)
+}
+
+func TestEvaluateHost_IdentityEnrichment_FallsBackOnEmptyResolver(t *testing.T) {
+	svc := newTestService(false, false)
+	svc.portListResolver = &stubResolver{ports: ""} // empty → fallback
+
+	host := hostUp("10.0.0.2")
+	host.Hostname = nil
+	host.OSFamily = strPtr("linux")
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, stageIdentityEnrichment, stage.Stage)
+	assert.Equal(t, identityEnrichmentPorts, stage.Ports)
+}
+
+func TestEvaluateHost_Refresh_UsesResolver(t *testing.T) {
+	svc := newTestService(true /*hasOpenPorts*/, true /*hasServices*/)
+	svc.portListResolver = &stubResolver{ports: "1-65535"}
+
+	host := hostStale("10.0.0.3")
+	host.OSFamily = strPtr("linux")
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, "refresh", stage.Stage)
+	assert.Equal(t, "1-65535", stage.Ports)
+}
+
+func TestEvaluateHost_Refresh_FallsBackOnEmptyResolver(t *testing.T) {
+	svc := newTestService(true, true)
+	svc.portListResolver = &stubResolver{ports: ""} // empty → fallback
+
+	host := hostStale("10.0.0.3")
+	host.OSFamily = strPtr("linux")
+
+	stage, err := svc.EvaluateHost(context.Background(), host)
+	require.NoError(t, err)
+	assert.Equal(t, "refresh", stage.Stage)
+	assert.Equal(t, "1-1024", stage.Ports)
+}
