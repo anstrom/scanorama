@@ -54,7 +54,8 @@ func (s *Server) setupRoutes() {
 			services.AutoProgressDefaultThreshold,
 			services.AutoProgressDefaultMaxPerWindow,
 			services.AutoProgressDefaultWindowHours,
-		)
+		).
+		WithPortListResolver(services.NewPortListResolver(s.database, s.logger))
 	scanning.SetPostScanHook(smartScanSvc.ReEvaluateHosts)
 	smartScanHandler := apihandlers.NewSmartScanHandler(smartScanSvc, s.logger)
 
