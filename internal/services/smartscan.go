@@ -118,14 +118,24 @@ const hostStatusGone = "gone"
 // harvest mDNS/SNMP sysName/PTR/cert signals on the next pass.
 const stageIdentityEnrichment = "identity_enrichment"
 
-// identityEnrichmentPorts are the ports SmartScan probes when running an
-// identity_enrichment stage. Each is an identity surface:
-//
-//	22  — SSH banner / host keys
-//	80  — HTTP Server / title / redirect
-//	161 — SNMP sysName (if reachable with configured community)
-//	443 — TLS cert CN / SANs
-const identityEnrichmentPorts = "22,80,161,443"
+// Stage-specific fallback port strings. Referenced by both SmartScanService
+// and stageDefaultPorts in portresolver.go — single source of truth.
+const (
+	// osDetectionPorts are probed to gather enough open-port signal for OS fingerprinting.
+	osDetectionPorts = "22,80,135,443,445,3389"
+
+	// identityEnrichmentPorts are the ports SmartScan probes when running an
+	// identity_enrichment stage. Each is an identity surface:
+	//
+	//	22  — SSH banner / host keys
+	//	80  — HTTP Server / title / redirect
+	//	161 — SNMP sysName (if reachable with configured community)
+	//	443 — TLS cert CN / SANs
+	identityEnrichmentPorts = "22,80,161,443"
+
+	// refreshPorts is the default port range for a stale-host refresh scan.
+	refreshPorts = "1-1024"
+)
 
 // Auto-progression defaults. Exported so the API server can pass them
 // explicitly to WithAutoProgression rather than using magic numbers.
@@ -382,7 +392,7 @@ func (s *SmartScanService) EvaluateHost(ctx context.Context, host *db.Host) (*Sc
 	case hasOpenPorts && !hasServices:
 		return s.stageWithProfile(ctx, host, "service_scan"), nil
 	case isStale:
-		ports := portListStr(ctx, s.portListResolver, "refresh", host, "1-1024")
+		ports := portListStr(ctx, s.portListResolver, "refresh", host, refreshPorts)
 		return &ScanStage{
 			Stage:    "refresh",
 			ScanType: "connect",
@@ -446,7 +456,7 @@ func hasNonBlank(p *string) bool {
 // stageOSDetection returns a ScanStage configured for OS fingerprinting.
 // SYN scan is required because OS detection needs raw socket access (-O flag).
 func (s *SmartScanService) stageOSDetection(ctx context.Context, host *db.Host) *ScanStage {
-	ports := portListStr(ctx, s.portListResolver, "os_detection", host, "22,80,135,443,445,3389")
+	ports := portListStr(ctx, s.portListResolver, "os_detection", host, osDetectionPorts)
 	return &ScanStage{
 		Stage:       "os_detection",
 		ScanType:    "syn",

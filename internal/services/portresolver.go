@@ -25,11 +25,11 @@ const defaultTopPortsLimit = 256
 const maxPortNumber = 65535
 
 // stageDefaultPorts maps each stage name to its hardcoded fallback port string.
-// These mirror the constants in smartscan.go and must be kept in sync.
+// Values are the single-source constants defined in smartscan.go.
 var stageDefaultPorts = map[string]string{
-	"os_detection":        "22,80,135,443,445,3389",
-	"identity_enrichment": "22,80,161,443",
-	"refresh":             "1-1024",
+	"os_detection":        osDetectionPorts,
+	"identity_enrichment": identityEnrichmentPorts,
+	"refresh":             refreshPorts,
 }
 
 // portRangeRE detects nmap range notation (e.g. "1-1024") inside a port string.
@@ -53,7 +53,11 @@ type PortListResolver struct {
 }
 
 // NewPortListResolver creates a PortListResolver backed by the given database.
+// If logger is nil, slog.Default() is used.
 func NewPortListResolver(database *db.DB, logger *slog.Logger) *PortListResolver {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &PortListResolver{db: database, logger: logger}
 }
 
