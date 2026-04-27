@@ -2,9 +2,6 @@ package services
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
-	"errors"
 	"log/slog"
 	"regexp"
 	"sort"
@@ -13,6 +10,7 @@ import (
 	"time"
 
 	"github.com/anstrom/scanorama/internal/db"
+	"github.com/anstrom/scanorama/internal/errors"
 )
 
 // portResolverTimeout caps all DB queries inside Resolve.
@@ -48,8 +46,9 @@ type portListResolverIface interface {
 //  2. OS-matched curated ports from port_definitions (Proposal B).
 //  3. Fleet top-N open ports from port_scans (Proposal A).
 type PortListResolver struct {
-	db     *db.DB
-	logger *slog.Logger
+	db           *db.DB
+	settingsRepo *db.SettingsRepository
+	logger       *slog.Logger
 }
 
 // NewPortListResolver creates a PortListResolver backed by the given database.
@@ -58,7 +57,11 @@ func NewPortListResolver(database *db.DB, logger *slog.Logger) *PortListResolver
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &PortListResolver{db: database, logger: logger}
+	return &PortListResolver{
+		db:           database,
+		settingsRepo: db.NewSettingsRepository(database),
+		logger:       logger,
+	}
 }
 
 // Resolve returns the merged port string for the given stage and host.
@@ -89,7 +92,6 @@ func (r *PortListResolver) Resolve(ctx context.Context, stage string, host *db.H
 
 // readBasePorts returns the base port string for the stage from settings,
 // falling back to the hardcoded default if the key is absent or empty.
-// Settings values are JSONB; string values arrive JSON-quoted ("\"22,80\"").
 func (r *PortListResolver) readBasePorts(ctx context.Context, stage string) string {
 	fallback, ok := stageDefaultPorts[stage]
 	if !ok {
@@ -98,41 +100,27 @@ func (r *PortListResolver) readBasePorts(ctx context.Context, stage string) stri
 	}
 
 	key := "smartscan." + stage + ".ports"
-	var raw string
-	if err := r.db.QueryRowContext(ctx,
-		`SELECT value::text FROM settings WHERE key = $1`, key,
-	).Scan(&raw); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
+	val, err := r.settingsRepo.GetStringSetting(ctx, key)
+	if err != nil {
+		if !errors.IsNotFound(err) {
 			r.logger.Warn("failed to read base port setting, using default", "key", key, "error", err)
 		}
 		return fallback
 	}
-
-	var s string
-	if err := json.Unmarshal([]byte(raw), &s); err == nil && s != "" {
-		return s
+	if val == "" {
+		return fallback
 	}
-	if raw != "" {
-		return raw
-	}
-	return fallback
+	return val
 }
 
 // readLimit returns the top_ports_limit setting, defaulting to 256.
 func (r *PortListResolver) readLimit(ctx context.Context) int {
 	const key = "smartscan.top_ports_limit"
-	var raw string
-	if err := r.db.QueryRowContext(ctx,
-		`SELECT value::text FROM settings WHERE key = $1`, key,
-	).Scan(&raw); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
+	n, err := r.settingsRepo.GetIntSetting(ctx, key)
+	if err != nil {
+		if !errors.IsNotFound(err) {
 			r.logger.Warn("failed to read top_ports_limit setting, using default", "error", err)
 		}
-		return defaultTopPortsLimit
-	}
-	n, err := strconv.Atoi(strings.Trim(raw, `"`))
-	if err != nil {
-		r.logger.Warn("smartscan.top_ports_limit is not a valid integer, using default", "raw", raw)
 		return defaultTopPortsLimit
 	}
 	if n <= 0 {
