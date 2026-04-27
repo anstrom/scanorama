@@ -38,6 +38,7 @@ const (
 	zgrabMaxRedirects = 3
 
 	serviceSSH   = "ssh"
+	serviceHTTP  = "http"
 	serviceHTTPS = "https"
 )
 
@@ -641,7 +642,7 @@ func (g *BannerGrabber) storeZGrabHTTPBanner(
 	banner.HTTPResponseHeaders = extractHeaders(resp.Header)
 
 	// Service identification and raw banner summary.
-	svc := "http"
+	svc := serviceHTTP
 	if resp.TLS != nil {
 		svc = serviceHTTPS
 	}
@@ -750,7 +751,7 @@ func parseBannerText(lower, raw string, port int) (service, version string) {
 	case strings.HasPrefix(lower, "* ok"):
 		service = "imap"
 	case strings.HasPrefix(lower, "http/") || strings.HasPrefix(lower, "http "):
-		service = "http"
+		service = serviceHTTP
 	default:
 		service = portServiceHints[port]
 	}
