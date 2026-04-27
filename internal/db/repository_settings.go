@@ -4,6 +4,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"time"
@@ -75,6 +76,62 @@ func (r *SettingsRepository) GetSetting(ctx context.Context, key string) (*Setti
 		return nil, sanitizeDBError("get setting", err)
 	}
 	return &s, nil
+}
+
+// GetStringSetting returns the unquoted string value for a string-typed setting.
+// Returns ErrNotFound if the key does not exist.
+func (r *SettingsRepository) GetStringSetting(ctx context.Context, key string) (string, error) {
+	s, err := r.GetSetting(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	var val string
+	if err := json.Unmarshal([]byte(s.Value), &val); err != nil {
+		return "", fmt.Errorf("setting %q value is not a JSON string: %w", key, err)
+	}
+	return val, nil
+}
+
+// GetIntSetting returns the integer value for an int-typed setting.
+// Returns ErrNotFound if the key does not exist.
+func (r *SettingsRepository) GetIntSetting(ctx context.Context, key string) (int, error) {
+	s, err := r.GetSetting(ctx, key)
+	if err != nil {
+		return 0, err
+	}
+	var val int
+	if err := json.Unmarshal([]byte(s.Value), &val); err != nil {
+		return 0, fmt.Errorf("setting %q value is not a JSON integer: %w", key, err)
+	}
+	return val, nil
+}
+
+// GetBoolSetting returns the boolean value for a bool-typed setting.
+// Returns ErrNotFound if the key does not exist.
+func (r *SettingsRepository) GetBoolSetting(ctx context.Context, key string) (bool, error) {
+	s, err := r.GetSetting(ctx, key)
+	if err != nil {
+		return false, err
+	}
+	var val bool
+	if err := json.Unmarshal([]byte(s.Value), &val); err != nil {
+		return false, fmt.Errorf("setting %q value is not a JSON boolean: %w", key, err)
+	}
+	return val, nil
+}
+
+// GetStringSliceSetting returns the []string value for a string[]-typed setting.
+// Returns ErrNotFound if the key does not exist.
+func (r *SettingsRepository) GetStringSliceSetting(ctx context.Context, key string) ([]string, error) {
+	s, err := r.GetSetting(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	var val []string
+	if err := json.Unmarshal([]byte(s.Value), &val); err != nil {
+		return nil, fmt.Errorf("setting %q value is not a JSON string array: %w", key, err)
+	}
+	return val, nil
 }
 
 // SetSetting updates the value of an existing setting identified by key.
