@@ -35,18 +35,27 @@ func resolverHost(osFamily *string) *db.Host {
 
 func osPtr(s string) *string { return &s }
 
+// settingRow builds a five-column sqlmock rows value matching the GetSetting query shape.
+func settingRow(key, value string) *sqlmock.Rows {
+	cols := []string{"key", "value", "description", "type", "updated_at"}
+	return sqlmock.NewRows(cols).AddRow(key, value, "", "string", time.Now())
+}
+
+// settingEmpty returns an empty five-column rows set (simulates key not found).
+func settingEmpty() *sqlmock.Rows {
+	return sqlmock.NewRows([]string{"key", "value", "description", "type", "updated_at"})
+}
+
 func TestPortListResolver_UsesSettingsBaseWhenPresent(t *testing.T) {
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).
-			AddRow(`"22,443,8080"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22,443,8080"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).
-			AddRow("256"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "256"))
 	// No OS family — no port_definitions query
 	// Fleet — empty
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
@@ -61,12 +70,12 @@ func TestPortListResolver_FallsBackToHardcodedDefaultWhenSettingMissing(t *testi
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingEmpty())
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}))
+		WillReturnRows(settingEmpty())
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
 		WillReturnRows(sqlmock.NewRows([]string{"port"}))
 
@@ -79,10 +88,9 @@ func TestPortListResolver_ReturnsRangeBaseUnchanged(t *testing.T) {
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.refresh.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).
-			AddRow(`"1-1024"`))
+		WillReturnRows(settingRow("smartscan.refresh.ports", `"1-1024"`))
 	// Range base → readLimit and OS/fleet queries are all skipped
 
 	result := r.Resolve(context.Background(), "refresh", resolverHost(nil))
@@ -95,12 +103,12 @@ func TestPortListResolver_MergesOSPortsWhenOSFamilyKnown(t *testing.T) {
 	r := NewPortListResolver(database, discardLogger())
 	host := resolverHost(osPtr("linux"))
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("256"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "256"))
 	mock.ExpectQuery(`SELECT port FROM port_definitions`).
 		WillReturnRows(sqlmock.NewRows([]string{"port"}).AddRow(111).AddRow(2049))
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
@@ -115,12 +123,12 @@ func TestPortListResolver_MergesFleetTopPorts(t *testing.T) {
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.identity_enrichment.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.identity_enrichment.ports", `"22"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("256"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "256"))
 	// No OS family
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
 		WillReturnRows(sqlmock.NewRows([]string{"port"}).AddRow(80).AddRow(443))
@@ -135,12 +143,12 @@ func TestPortListResolver_DeduplicatesOverlappingPorts(t *testing.T) {
 	r := NewPortListResolver(database, discardLogger())
 	host := resolverHost(osPtr("linux"))
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22,80"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22,80"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("256"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "256"))
 	mock.ExpectQuery(`SELECT port FROM port_definitions`).
 		WillReturnRows(sqlmock.NewRows([]string{"port"}).AddRow(80).AddRow(443))
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
@@ -157,12 +165,12 @@ func TestPortListResolver_AugmentationCappedAtLimit(t *testing.T) {
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22,443"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22,443"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("3"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "3"))
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
 		WillReturnRows(sqlmock.NewRows([]string{"port"}).AddRow(80).AddRow(8080).AddRow(8443))
 
@@ -178,12 +186,12 @@ func TestPortListResolver_BasePortsPreservedBeyondLimit(t *testing.T) {
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22,80,443,3389,8080,8443"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22,80,443,3389,8080,8443"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("3"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "3"))
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
 		WillReturnRows(sqlmock.NewRows([]string{"port"}).AddRow(9000))
 
@@ -197,12 +205,12 @@ func TestPortListResolver_ZeroLimitSettingPromotedToDefault(t *testing.T) {
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("0"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "0"))
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
 		WillReturnRows(sqlmock.NewRows([]string{"port"}).AddRow(80))
 
@@ -217,12 +225,12 @@ func TestPortListResolver_FallsBackOnBasePortsDBError(t *testing.T) {
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
 		WillReturnError(fmt.Errorf("conn error"))
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("256"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "256"))
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
 		WillReturnRows(sqlmock.NewRows([]string{"port"}))
 
@@ -238,9 +246,9 @@ func TestPortListResolver_FallsBackOnUnknownStage(t *testing.T) {
 	// Unknown stage → stageDefaultPorts fallback = "1-1024" (a range).
 	// readBasePorts returns "1-1024" after ErrNoRows from DB.
 	// Resolve detects the range and returns immediately — no further queries.
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.unknown_stage.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}))
+		WillReturnRows(settingEmpty())
 
 	result := r.Resolve(context.Background(), "unknown_stage", resolverHost(nil))
 	assert.Equal(t, "1-1024", result)
@@ -251,10 +259,10 @@ func TestPortListResolver_FallsBackOnLimitDBError(t *testing.T) {
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
 		WillReturnError(fmt.Errorf("db error"))
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
@@ -270,12 +278,12 @@ func TestPortListResolver_FallsBackOnNonIntegerLimit(t *testing.T) {
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"not-a-number"`))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", `"not-a-number"`))
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
 		WillReturnRows(sqlmock.NewRows([]string{"port"}).AddRow(80))
 
@@ -288,12 +296,12 @@ func TestPortListResolver_FallsBackOnNegativeLimit(t *testing.T) {
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("-5"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "-5"))
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
 		WillReturnRows(sqlmock.NewRows([]string{"port"}).AddRow(80))
 
@@ -307,12 +315,12 @@ func TestPortListResolver_SkipsOSPortsOnQueryError(t *testing.T) {
 	r := NewPortListResolver(database, discardLogger())
 	host := resolverHost(osPtr("linux"))
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("256"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "256"))
 	mock.ExpectQuery(`SELECT port FROM port_definitions`).
 		WillReturnError(fmt.Errorf("db error"))
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
@@ -331,12 +339,12 @@ func TestPortListResolver_SkipsOSPortsOnIterationError(t *testing.T) {
 	r := NewPortListResolver(database, discardLogger())
 	host := resolverHost(osPtr("linux"))
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("256"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "256"))
 	mock.ExpectQuery(`SELECT port FROM port_definitions`).
 		WillReturnRows(sqlmock.NewRows([]string{"port"}).
 			AddRow(111).AddRow(999).RowError(1, fmt.Errorf("cursor error")))
@@ -353,12 +361,12 @@ func TestPortListResolver_SkipsFleetPortsOnQueryError(t *testing.T) {
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("256"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "256"))
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
 		WillReturnError(fmt.Errorf("db error"))
 
@@ -374,14 +382,15 @@ func TestPortListResolver_SkipsFleetPortsOnIterationError(t *testing.T) {
 	database, mock := newResolverMockDB(t)
 	r := NewPortListResolver(database, discardLogger())
 
-	mock.ExpectQuery(`SELECT value`).
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.os_detection.ports").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(`"22"`))
-	mock.ExpectQuery(`SELECT value`).
+		WillReturnRows(settingRow("smartscan.os_detection.ports", `"22"`))
+	mock.ExpectQuery(`SELECT key`).
 		WithArgs("smartscan.top_ports_limit").
-		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("256"))
+		WillReturnRows(settingRow("smartscan.top_ports_limit", "256"))
 	mock.ExpectQuery(`SELECT port FROM port_scans`).
-		WillReturnRows(sqlmock.NewRows([]string{"port"}).AddRow(443).AddRow(80).RowError(1, fmt.Errorf("cursor error")))
+		WillReturnRows(sqlmock.NewRows([]string{"port"}).
+			AddRow(443).AddRow(80).RowError(1, fmt.Errorf("cursor error")))
 
 	result := r.Resolve(context.Background(), "os_detection", resolverHost(nil))
 	// port 443 was accumulated but rows.Err() discards the whole fleet source
