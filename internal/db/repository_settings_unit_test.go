@@ -132,6 +132,234 @@ func TestSettingsRepository_GetSetting_DBError(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+// ── GetStringSetting ───────────────────────────────────────────────────────────
+
+func TestSettingsRepository_GetStringSetting_ReturnsUnquotedValue(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("scan.label").
+		WillReturnRows(makeSettingRow("scan.label", `"fast"`, "", "string"))
+
+	repo := NewSettingsRepository(db)
+	val, err := repo.GetStringSetting(context.Background(), "scan.label")
+
+	require.NoError(t, err)
+	assert.Equal(t, "fast", val)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettingsRepository_GetStringSetting_ReturnsErrNotFound(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("missing.key").
+		WillReturnRows(sqlmock.NewRows(settingCols))
+
+	repo := NewSettingsRepository(db)
+	_, err := repo.GetStringSetting(context.Background(), "missing.key")
+
+	require.Error(t, err)
+	assert.True(t, errors.IsNotFound(err))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettingsRepository_GetStringSetting_ReturnsErrorOnWrongType(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("scan.label").
+		WillReturnRows(makeSettingRow("scan.label", `123`, "", "int"))
+
+	repo := NewSettingsRepository(db)
+	_, err := repo.GetStringSetting(context.Background(), "scan.label")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a JSON string")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettingsRepository_GetStringSetting_PropagatesDBError(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("scan.label").
+		WillReturnError(fmt.Errorf("conn error"))
+
+	repo := NewSettingsRepository(db)
+	_, err := repo.GetStringSetting(context.Background(), "scan.label")
+
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ── GetIntSetting ──────────────────────────────────────────────────────────────
+
+func TestSettingsRepository_GetIntSetting_ReturnsInteger(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("scan.max_concurrent").
+		WillReturnRows(makeSettingRow("scan.max_concurrent", `5`, "", "int"))
+
+	repo := NewSettingsRepository(db)
+	val, err := repo.GetIntSetting(context.Background(), "scan.max_concurrent")
+
+	require.NoError(t, err)
+	assert.Equal(t, 5, val)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettingsRepository_GetIntSetting_ReturnsErrNotFound(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("missing.key").
+		WillReturnRows(sqlmock.NewRows(settingCols))
+
+	repo := NewSettingsRepository(db)
+	_, err := repo.GetIntSetting(context.Background(), "missing.key")
+
+	require.Error(t, err)
+	assert.True(t, errors.IsNotFound(err))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettingsRepository_GetIntSetting_ReturnsErrorOnWrongType(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("scan.max_concurrent").
+		WillReturnRows(makeSettingRow("scan.max_concurrent", `"not-a-number"`, "", "string"))
+
+	repo := NewSettingsRepository(db)
+	_, err := repo.GetIntSetting(context.Background(), "scan.max_concurrent")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a JSON integer")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettingsRepository_GetIntSetting_PropagatesDBError(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("scan.max_concurrent").
+		WillReturnError(fmt.Errorf("conn error"))
+
+	repo := NewSettingsRepository(db)
+	_, err := repo.GetIntSetting(context.Background(), "scan.max_concurrent")
+
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ── GetBoolSetting ─────────────────────────────────────────────────────────────
+
+func TestSettingsRepository_GetBoolSetting_ReturnsBoolean(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("notifications.scan_complete").
+		WillReturnRows(makeSettingRow("notifications.scan_complete", `true`, "", "bool"))
+
+	repo := NewSettingsRepository(db)
+	val, err := repo.GetBoolSetting(context.Background(), "notifications.scan_complete")
+
+	require.NoError(t, err)
+	assert.True(t, val)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettingsRepository_GetBoolSetting_ReturnsErrNotFound(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("missing.key").
+		WillReturnRows(sqlmock.NewRows(settingCols))
+
+	repo := NewSettingsRepository(db)
+	_, err := repo.GetBoolSetting(context.Background(), "missing.key")
+
+	require.Error(t, err)
+	assert.True(t, errors.IsNotFound(err))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettingsRepository_GetBoolSetting_ReturnsErrorOnWrongType(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("notifications.scan_complete").
+		WillReturnRows(makeSettingRow("notifications.scan_complete", `"yes"`, "", "string"))
+
+	repo := NewSettingsRepository(db)
+	_, err := repo.GetBoolSetting(context.Background(), "notifications.scan_complete")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a JSON boolean")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettingsRepository_GetBoolSetting_PropagatesDBError(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("notifications.scan_complete").
+		WillReturnError(fmt.Errorf("conn error"))
+
+	repo := NewSettingsRepository(db)
+	_, err := repo.GetBoolSetting(context.Background(), "notifications.scan_complete")
+
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ── GetStringSliceSetting ──────────────────────────────────────────────────────
+
+func TestSettingsRepository_GetStringSliceSetting_ReturnsSlice(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("discovery.methods").
+		WillReturnRows(makeSettingRow("discovery.methods", `["icmp","arp"]`, "", "string[]"))
+
+	repo := NewSettingsRepository(db)
+	val, err := repo.GetStringSliceSetting(context.Background(), "discovery.methods")
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"icmp", "arp"}, val)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettingsRepository_GetStringSliceSetting_ReturnsErrNotFound(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("missing.key").
+		WillReturnRows(sqlmock.NewRows(settingCols))
+
+	repo := NewSettingsRepository(db)
+	_, err := repo.GetStringSliceSetting(context.Background(), "missing.key")
+
+	require.Error(t, err)
+	assert.True(t, errors.IsNotFound(err))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettingsRepository_GetStringSliceSetting_ReturnsErrorOnWrongType(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("discovery.methods").
+		WillReturnRows(makeSettingRow("discovery.methods", `"single"`, "", "string"))
+
+	repo := NewSettingsRepository(db)
+	_, err := repo.GetStringSliceSetting(context.Background(), "discovery.methods")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a JSON string array")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettingsRepository_GetStringSliceSetting_PropagatesDBError(t *testing.T) {
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT key").
+		WithArgs("discovery.methods").
+		WillReturnError(fmt.Errorf("conn error"))
+
+	repo := NewSettingsRepository(db)
+	_, err := repo.GetStringSliceSetting(context.Background(), "discovery.methods")
+
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 // ── SetSetting ─────────────────────────────────────────────────────────────────
 
 func TestSettingsRepository_SetSetting_Success(t *testing.T) {
