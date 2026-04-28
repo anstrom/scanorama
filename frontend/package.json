@@ -14,8 +14,8 @@
     "generate-types": "swagger2openapi ../docs/swagger/swagger.json -o .openapi3.json && openapi-typescript .openapi3.json -o src/api/types.ts && rm -f .openapi3.json"
   },
   "dependencies": {
-    "@tanstack/react-query": "5.99.2",
-    "@tanstack/react-router": "1.168.23",
+    "@tanstack/react-query": "5.100.5",
+    "@tanstack/react-router": "1.168.25",
     "clsx": "2.1.1",
     "lucide-react": "0.577.0",
     "openapi-fetch": "0.17.0",
@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
-    "@tailwindcss/vite": "4.2.2",
+    "@tailwindcss/vite": "4.2.4",
     "@tanstack/react-router-devtools": "1.166.13",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",
@@ -36,19 +36,19 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.7.0",
-    "@vitest/coverage-v8": "4.1.4",
+    "@vitest/coverage-v8": "4.1.5",
     "eslint": "9.39.4",
     "eslint-plugin-react-hooks": "7.1.1",
     "eslint-plugin-react-refresh": "0.5.2",
     "globals": "17.5.0",
     "jsdom": "28.1.0",
-    "msw": "2.13.4",
+    "msw": "2.13.6",
     "openapi-typescript": "7.13.0",
     "swagger2openapi": "7.0.8",
-    "tailwindcss": "4.2.2",
+    "tailwindcss": "4.2.4",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.58.2",
+    "typescript-eslint": "8.59.1",
     "vite": "6.4.2",
-    "vitest": "4.1.4"
+    "vitest": "4.1.5"
   }
 }
