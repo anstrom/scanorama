@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
-import { ScanLine } from "lucide-react";
+import { ScanLine, GitCompare } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { SortHeader } from "../components/sort-header";
 import type { SortOrder } from "../components/sort-header";
 import { Button } from "../components/button";
@@ -40,7 +41,8 @@ function SkeletonRows({
     <>
       {Array.from({ length: count }).map((_, i) => (
         <tr key={i} className="border-b border-border/50">
-          <td className="py-3 px-4 pr-4">
+          <td className="py-3 px-4 w-8" />
+          <td className="py-3 pr-4">
             <Skeleton className="h-3.5 w-40" />
           </td>
           <td className="py-3 pr-4">
@@ -71,13 +73,17 @@ function SkeletonRows({
 // Main page
 // ──────────────────────────────────────────────
 
+const MAX_COMPARE = 2;
+
 export function ScansPage() {
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<ScanStatus>("all");
   const [sortBy, setSortBy] = useState("created_at");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [selectedScanId, setSelectedScanId] = useState<string | null>(null);
   const [showRunScan, setShowRunScan] = useState(false);
+  const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
   const [colVis, setColVis] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(SCAN_COLUMNS.map((c) => [c.key, true])),
   );
@@ -106,6 +112,24 @@ export function ScansPage() {
     [sortBy],
   );
 
+  const toggleCompare = useCallback((id: string) => {
+    setCompareIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else if (next.size < MAX_COMPARE) {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleCompare = useCallback(() => {
+    const [a, b] = [...compareIds];
+    if (!a || !b) return;
+    void navigate({ to: "/scans/diff", search: { a, b } });
+  }, [compareIds, navigate]);
+
   const queryParams = {
     page,
     page_size: PAGE_SIZE,
@@ -126,9 +150,9 @@ export function ScansPage() {
     onEscape: () => setSelectedScanId(null),
   });
 
-  const visibleColCount = SCAN_COLUMNS.filter(
-    (c) => colVis[c.key] !== false,
-  ).length;
+  // +1 for the always-present checkbox column
+  const visibleColCount =
+    SCAN_COLUMNS.filter((c) => colVis[c.key] !== false).length + 1;
 
   // Reset keyboard focus when page/filters change
   useEffect(() => {
@@ -176,6 +200,15 @@ export function ScansPage() {
           </select>
 
           <div className="flex items-center gap-2 sm:ml-auto">
+            {compareIds.size === MAX_COMPARE && (
+              <Button
+                onClick={handleCompare}
+                icon={<GitCompare className="h-3.5 w-3.5" />}
+                variant="secondary"
+              >
+                Compare
+              </Button>
+            )}
             <Button
               onClick={() => setShowRunScan(true)}
               icon={<ScanLine className="h-3.5 w-3.5" />}
@@ -203,7 +236,8 @@ export function ScansPage() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-border bg-surface">
-                    <th className="text-left font-medium text-text-muted px-4 py-3 pr-4">
+                    <th className="py-3 px-4 w-8" aria-label="Select for comparison" />
+                    <th className="text-left font-medium text-text-muted py-3 pr-4">
                       Targets
                     </th>
                     <SortHeader
@@ -256,7 +290,14 @@ export function ScansPage() {
                       </td>
                     </tr>
                   ) : (
-                    scans.map((scan, idx) => (
+                    scans.map((scan, idx) => {
+                      const id = scan.id ?? "";
+                      const isCompleted = scan.status === "completed";
+                      const isChecked = compareIds.has(id);
+                      const isDisabled =
+                        !isCompleted ||
+                        (!isChecked && compareIds.size >= MAX_COMPARE);
+                      return (
                       <tr
                         key={scan.id}
                         onClick={() => {
@@ -270,7 +311,20 @@ export function ScansPage() {
                             "ring-1 ring-inset ring-accent/60 bg-surface-raised/40",
                         )}
                       >
-                        <td className="py-3 px-4 pr-4 font-mono text-text-secondary max-w-50 truncate">
+                        <td
+                          className="py-3 px-4 w-8"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            disabled={isDisabled}
+                            onChange={() => toggleCompare(id)}
+                            aria-label={`Select scan ${id} for comparison`}
+                            className="cursor-pointer disabled:cursor-not-allowed"
+                          />
+                        </td>
+                        <td className="py-3 pr-4 font-mono text-text-secondary max-w-50 truncate">
                           {scan.targets?.join(", ") ?? "—"}
                         </td>
                         <td className="py-3 pr-4">
@@ -294,7 +348,8 @@ export function ScansPage() {
                           </td>
                         )}
                       </tr>
-                    ))
+                    );
+                    })
                   )}
                 </tbody>
               </table>

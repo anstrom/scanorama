@@ -18,6 +18,7 @@ import { AdminPage } from "./routes/admin";
 import { GroupsPage } from "./routes/groups";
 import { PortsPage } from "./routes/ports";
 import { DeviceDetailPage } from "./routes/devices";
+import { ScanDiffPage } from "./routes/scan-diff";
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -33,6 +34,18 @@ const scansRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/scans",
   component: ScansPage,
+});
+
+const scanDiffSearchSchema = z.object({
+  a: z.string().optional(),
+  b: z.string().optional(),
+});
+
+const scanDiffRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/scans/diff",
+  component: ScanDiffPage,
+  validateSearch: scanDiffSearchSchema,
 });
 
 const hostsSearchSchema = z.object({
@@ -111,6 +124,7 @@ const deviceDetailRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   scansRoute,
+  scanDiffRoute,
   hostsRoute,
   networksRoute,
   exclusionsRoute,

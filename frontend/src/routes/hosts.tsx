@@ -491,6 +491,8 @@ function HostDetailPanel({
   // Scan history pagination
   const [scanHistoryPage, setScanHistoryPage] = useState(1);
   const SCAN_HISTORY_PAGE_SIZE = 5;
+  // Scan comparison — holds at most 2 selected scan IDs
+  const [selectedScanIds, setSelectedScanIds] = useState<string[]>([]);
 
   const { toast } = useToast();
   const { mutateAsync: updateHost, isPending: isUpdatingHost } =
@@ -1388,9 +1390,25 @@ function HostDetailPanel({
 
           {/* Scan History */}
           <section>
-            <h3 className="text-xs font-medium text-text-primary mb-3">
-              Scan History
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-medium text-text-primary">
+                Scan History
+              </h3>
+              {selectedScanIds.length === 2 && (
+                <Link
+                  to="/scans/diff"
+                  search={{ a: selectedScanIds[0], b: selectedScanIds[1] }}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:underline"
+                >
+                  Compare →
+                </Link>
+              )}
+            </div>
+            {selectedScanIds.length === 1 && (
+              <p className="text-[11px] text-text-muted mb-2">
+                Select one more scan to compare
+              </p>
+            )}
             {hostScansLoading ? (
               <div className="space-y-2">
                 {Array.from({ length: 3 }).map((_, i) => (
@@ -1406,25 +1424,45 @@ function HostDetailPanel({
               </p>
             ) : (
               <div className="space-y-1">
-                {(hostScansData?.data ?? []).map((scan) => (
-                  <div
-                    key={scan.id}
-                    className="flex items-center justify-between gap-2 py-1 border-b border-border/40 last:border-0"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <StatusBadge status={scan.status ?? "unknown"} />
-                      <span className="text-xs font-mono text-text-muted truncate">
-                        {(scan.targets as string[] | undefined)?.join(", ") ??
-                          "—"}
+                {(hostScansData?.data ?? []).map((scan) => {
+                  const scanId = scan.id ?? "";
+                  const isSelected = selectedScanIds.includes(scanId);
+                  const isDisabled =
+                    !isSelected && selectedScanIds.length >= 2;
+                  return (
+                    <div
+                      key={scan.id}
+                      className="flex items-center justify-between gap-2 py-1 border-b border-border/40 last:border-0"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select scan ${scanId}`}
+                          checked={isSelected}
+                          disabled={isDisabled}
+                          onChange={() => {
+                            setSelectedScanIds((prev) =>
+                              prev.includes(scanId)
+                                ? prev.filter((id) => id !== scanId)
+                                : [...prev, scanId],
+                            );
+                          }}
+                          className="shrink-0 accent-accent disabled:opacity-30"
+                        />
+                        <StatusBadge status={scan.status ?? "unknown"} />
+                        <span className="text-xs font-mono text-text-muted truncate">
+                          {(scan.targets as string[] | undefined)?.join(", ") ??
+                            "—"}
+                        </span>
+                      </div>
+                      <span className="text-xs text-text-muted whitespace-nowrap shrink-0">
+                        {scan.started_at
+                          ? formatRelativeTime(scan.started_at)
+                          : "—"}
                       </span>
                     </div>
-                    <span className="text-xs text-text-muted whitespace-nowrap shrink-0">
-                      {scan.started_at
-                        ? formatRelativeTime(scan.started_at)
-                        : "—"}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
