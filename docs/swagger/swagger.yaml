@@ -1359,6 +1359,38 @@ definitions:
       updated_at:
         type: string
     type: object
+  docs.SearchResult:
+    properties:
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      label:
+        example: 192.168.1.1 (myserver)
+        type: string
+      type:
+        enum:
+        - host
+        - network
+        - scan
+        - profile
+        example: host
+        type: string
+      url:
+        example: /hosts/550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
+  docs.SearchResults:
+    properties:
+      results:
+        additionalProperties:
+          items:
+            $ref: '#/definitions/docs.SearchResult'
+          type: array
+        type: object
+      total:
+        example: 4
+        type: integer
+    type: object
   docs.StatusResponse:
     properties:
       service:
@@ -4670,6 +4702,43 @@ paths:
       summary: Enable schedule
       tags:
       - Schedules
+  /search:
+    get:
+      description: |-
+        Search across hosts (by IP/hostname), networks (by name/CIDR),
+        scans (by target), and profiles (by name) in a single request.
+        q must be 2–100 characters. Results are grouped by entity type.
+      operationId: globalSearch
+      parameters:
+      - description: Search query (2–100 characters)
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: Max results per type (default 10, max 50)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.SearchResults'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Unified cross-entity search
+      tags:
+      - Search
   /smart-scan/hosts/{id}/refresh-identity:
     post:
       description: Queues an identity_enrichment scan for a host, probing mDNS/SNMP/DNS/TLS

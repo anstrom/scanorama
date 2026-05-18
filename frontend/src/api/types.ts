@@ -1152,6 +1152,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unified cross-entity search
+         * @description Search across hosts (by IP/hostname), networks (by name/CIDR),
+         *     scans (by target), and profiles (by name) in a single request.
+         *     q must be 2–100 characters. Results are grouped by entity type.
+         */
+        get: operations["globalSearch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/smart-scan/hosts/{id}/refresh-identity": {
         parameters: {
             query?: never;
@@ -2271,6 +2293,26 @@ export interface components {
              */
             type?: "scan" | "discovery";
             updated_at?: string;
+        };
+        "docs.SearchResult": {
+            /** @example 550e8400-e29b-41d4-a716-446655440000 */
+            id?: string;
+            /** @example 192.168.1.1 (myserver) */
+            label?: string;
+            /**
+             * @example host
+             * @enum {string}
+             */
+            type?: "host" | "network" | "scan" | "profile";
+            /** @example /hosts/550e8400-e29b-41d4-a716-446655440000 */
+            url?: string;
+        };
+        "docs.SearchResults": {
+            results?: {
+                [key: string]: components["schemas"]["docs.SearchResult"][];
+            };
+            /** @example 4 */
+            total?: number;
         };
         "docs.StatusResponse": {
             /** @example scanorama-api */
@@ -6774,6 +6816,49 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    globalSearch: {
+        parameters: {
+            query: {
+                /** @description Search query (2–100 characters) */
+                q: string;
+                /** @description Max results per type (default 10, max 50) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.SearchResults"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

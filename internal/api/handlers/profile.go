@@ -51,6 +51,8 @@ func NewDuration(d time.Duration) Duration {
 	return Duration(d)
 }
 
+const entityTypeProfiles = "profiles"
+
 // Profile validation constants.
 const (
 	maxProfileNameLength  = 255
@@ -157,7 +159,7 @@ type ProfileResponse struct {
 // ListProfiles handles GET /api/v1/profiles - list all profiles with pagination.
 func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 	listOp := &ListOperation[*db.ScanProfile, db.ProfileFilters]{
-		EntityType: "profiles",
+		EntityType: entityTypeProfiles,
 		MetricName: "api_profiles_listed_total",
 		Logger:     h.logger,
 		Metrics:    h.metrics,
