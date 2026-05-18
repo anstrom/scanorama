@@ -2051,3 +2051,106 @@ func TestWebhook(_ http.ResponseWriter, _ *http.Request) {}
 // @Router       /webhooks/{id}/logs [get]
 // @ID           listWebhookDeliveryLogs
 func ListWebhookDeliveryLogs(_ http.ResponseWriter, _ *http.Request) {}
+
+// ── Alert Rules ───────────────────────────────────────────────────────────────
+
+// AlertRuleResponse is returned for alert rule read/write operations.
+type AlertRuleResponse struct {
+	ID          string  `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	HostID      *string `json:"host_id" example:"550e8400-e29b-41d4-a716-446655440001"`
+	GroupID     *string `json:"group_id"`
+	Tag         *string `json:"tag" example:"nas"`
+	Trigger     string  `json:"trigger" example:"offline" enums:"online,offline,both"`
+	ChannelType string  `json:"channel_type" example:"webhook"`
+	ChannelURL  string  `json:"channel_url" example:"https://example.com/hook"`
+	Enabled     bool    `json:"enabled" example:"true"`
+	CreatedAt   string  `json:"created_at"`
+	UpdatedAt   string  `json:"updated_at"`
+}
+
+// ListAlertRules godoc
+// @Summary      List all alert rules
+// @Description  Returns all configured alert rules.
+// @Tags         Alerts
+// @Produce      json
+// @Success      200  {array}   AlertRuleResponse
+// @Failure      500  {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /alerts [get]
+// @ID           listAlertRules
+func ListAlertRules(_ http.ResponseWriter, _ *http.Request) {}
+
+// CreateAlertRule godoc
+// @Summary      Create an alert rule
+// @Description  Creates a new alert rule for a host, group, or tag.
+// @Tags         Alerts
+// @Accept       json
+// @Produce      json
+// @Param        body  body      AlertRuleResponse  true  "Alert rule input"
+// @Success      201   {object}  AlertRuleResponse
+// @Failure      400   {object}  ErrorResponse
+// @Failure      500   {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /alerts [post]
+// @ID           createAlertRule
+func CreateAlertRule(_ http.ResponseWriter, _ *http.Request) {}
+
+// GetAlertRule godoc
+// @Summary      Get an alert rule
+// @Description  Returns a single alert rule by ID.
+// @Tags         Alerts
+// @Produce      json
+// @Param        id  path      string  true  "Alert rule UUID" format(uuid)
+// @Success      200 {object}  AlertRuleResponse
+// @Failure      400 {object}  ErrorResponse
+// @Failure      404 {object}  ErrorResponse
+// @Failure      500 {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /alerts/{id} [get]
+// @ID           getAlertRule
+func GetAlertRule(_ http.ResponseWriter, _ *http.Request) {}
+
+// UpdateAlertRule godoc
+// @Summary      Update an alert rule
+// @Description  Applies partial updates to an alert rule.
+// @Tags         Alerts
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string             true  "Alert rule UUID" format(uuid)
+// @Param        body  body      AlertRuleResponse  true  "Update fields"
+// @Success      200   {object}  AlertRuleResponse
+// @Failure      400   {object}  ErrorResponse
+// @Failure      404   {object}  ErrorResponse
+// @Failure      500   {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /alerts/{id} [patch]
+// @ID           updateAlertRule
+func UpdateAlertRule(_ http.ResponseWriter, _ *http.Request) {}
+
+// DeleteAlertRule godoc
+// @Summary      Delete an alert rule
+// @Description  Removes an alert rule.
+// @Tags         Alerts
+// @Param        id  path  string  true  "Alert rule UUID" format(uuid)
+// @Success      204 "Successfully deleted"
+// @Failure      400 {object}  ErrorResponse
+// @Failure      404 {object}  ErrorResponse
+// @Failure      500 {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /alerts/{id} [delete]
+// @ID           deleteAlertRule
+func DeleteAlertRule(_ http.ResponseWriter, _ *http.Request) {}
+
+// ListHostAlertRules godoc
+// @Summary      List alert rules for a host
+// @Description  Returns alert rules that target a specific host directly.
+// @Tags         Alerts
+// @Produce      json
+// @Param        id  path      string  true  "Host UUID" format(uuid)
+// @Success      200 {array}   AlertRuleResponse
+// @Failure      400 {object}  ErrorResponse
+// @Failure      500 {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /hosts/{id}/alerts [get]
+// @ID           listHostAlertRules
+func ListHostAlertRules(_ http.ResponseWriter, _ *http.Request) {}

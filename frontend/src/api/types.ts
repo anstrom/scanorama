@@ -24,6 +24,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all alert rules
+         * @description Returns all configured alert rules.
+         */
+        get: operations["listAlertRules"];
+        put?: never;
+        /**
+         * Create an alert rule
+         * @description Creates a new alert rule for a host, group, or tag.
+         */
+        post: operations["createAlertRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an alert rule
+         * @description Returns a single alert rule by ID.
+         */
+        get: operations["getAlertRule"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete an alert rule
+         * @description Removes an alert rule.
+         */
+        delete: operations["deleteAlertRule"];
+        options?: never;
+        head?: never;
+        /**
+         * Update an alert rule
+         * @description Applies partial updates to an alert rule.
+         */
+        patch: operations["updateAlertRule"];
+        trace?: never;
+    };
     "/certificates/expiring": {
         parameters: {
             query?: never;
@@ -393,6 +445,26 @@ export interface paths {
          * @description Get scans associated with a specific host
          */
         get: operations["getHostScans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hosts/{id}/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List alert rules for a host
+         * @description Returns alert rules that target a specific host directly.
+         */
+        get: operations["listHostAlertRules"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1279,6 +1351,28 @@ export interface components {
                 [key: string]: unknown;
             };
             timestamp?: string;
+        };
+        "docs.AlertRuleResponse": {
+            /** @example webhook */
+            channel_type?: string;
+            /** @example https://example.com/hook */
+            channel_url?: string;
+            created_at?: string;
+            /** @example true */
+            enabled?: boolean;
+            group_id?: string;
+            /** @example 550e8400-e29b-41d4-a716-446655440001 */
+            host_id?: string;
+            /** @example 550e8400-e29b-41d4-a716-446655440000 */
+            id?: string;
+            /** @example nas */
+            tag?: string;
+            /**
+             * @example offline
+             * @enum {string}
+             */
+            trigger?: "online" | "offline" | "both";
+            updated_at?: string;
         };
         "docs.AttachedHostResponse": {
             first_seen?: string;
@@ -2271,6 +2365,231 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAlertRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.AlertRuleResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Alert rule input */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["docs.AlertRuleResponse"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.AlertRuleResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Alert rule UUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.AlertRuleResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Alert rule UUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successfully deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Alert rule UUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Update fields */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["docs.AlertRuleResponse"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.AlertRuleResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3762,6 +4081,47 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listHostAlertRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Host UUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.AlertRuleResponse"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

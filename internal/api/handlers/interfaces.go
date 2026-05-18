@@ -156,6 +156,16 @@ type GroupServicer interface {
 	GetGroupMembers(ctx context.Context, groupID uuid.UUID, offset, limit int) ([]*db.Host, int64, error)
 }
 
+// AlertServicer is the service-level interface consumed by AlertHandler.
+type AlertServicer interface {
+	ListAlertRules(ctx context.Context) ([]*db.AlertRule, error)
+	ListAlertRulesForHost(ctx context.Context, hostID uuid.UUID) ([]*db.AlertRule, error)
+	CreateAlertRule(ctx context.Context, input db.CreateAlertRuleInput) (*db.AlertRule, error)
+	GetAlertRule(ctx context.Context, id uuid.UUID) (*db.AlertRule, error)
+	UpdateAlertRule(ctx context.Context, id uuid.UUID, input db.UpdateAlertRuleInput) (*db.AlertRule, error)
+	DeleteAlertRule(ctx context.Context, id uuid.UUID) error
+}
+
 // WebhookServicer is the service-level interface consumed by WebhookHandler.
 //
 //nolint:dupl // interface is structurally similar to the test mock by design

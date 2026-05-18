@@ -11,6 +11,40 @@ definitions:
       timestamp:
         type: string
     type: object
+  docs.AlertRuleResponse:
+    properties:
+      channel_type:
+        example: webhook
+        type: string
+      channel_url:
+        example: https://example.com/hook
+        type: string
+      created_at:
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      group_id:
+        type: string
+      host_id:
+        example: 550e8400-e29b-41d4-a716-446655440001
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      tag:
+        example: nas
+        type: string
+      trigger:
+        enum:
+        - online
+        - offline
+        - both
+        example: offline
+        type: string
+      updated_at:
+        type: string
+    type: object
   docs.AttachedHostResponse:
     properties:
       first_seen:
@@ -1547,6 +1581,167 @@ paths:
       summary: Admin status
       tags:
       - Admin
+  /alerts:
+    get:
+      description: Returns all configured alert rules.
+      operationId: listAlertRules
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/docs.AlertRuleResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List all alert rules
+      tags:
+      - Alerts
+    post:
+      consumes:
+      - application/json
+      description: Creates a new alert rule for a host, group, or tag.
+      operationId: createAlertRule
+      parameters:
+      - description: Alert rule input
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/docs.AlertRuleResponse'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/docs.AlertRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create an alert rule
+      tags:
+      - Alerts
+  /alerts/{id}:
+    delete:
+      description: Removes an alert rule.
+      operationId: deleteAlertRule
+      parameters:
+      - description: Alert rule UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Successfully deleted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete an alert rule
+      tags:
+      - Alerts
+    get:
+      description: Returns a single alert rule by ID.
+      operationId: getAlertRule
+      parameters:
+      - description: Alert rule UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.AlertRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get an alert rule
+      tags:
+      - Alerts
+    patch:
+      consumes:
+      - application/json
+      description: Applies partial updates to an alert rule.
+      operationId: updateAlertRule
+      parameters:
+      - description: Alert rule UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/docs.AlertRuleResponse'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.AlertRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update an alert rule
+      tags:
+      - Alerts
   /certificates/expiring:
     get:
       description: |-
@@ -2563,6 +2758,39 @@ paths:
       summary: Get host scans
       tags:
       - Hosts
+  /hosts/{id}/alerts:
+    get:
+      description: Returns alert rules that target a specific host directly.
+      operationId: listHostAlertRules
+      parameters:
+      - description: Host UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/docs.AlertRuleResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List alert rules for a host
+      tags:
+      - Alerts
   /hosts/{id}/custom-name:
     patch:
       consumes:
