@@ -385,6 +385,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/hosts/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export hosts as CSV or JSON
+         * @description Streams all hosts matching the active filters as a file download.
+         *     Uses chunked DB reads so large exports do not buffer in memory.
+         */
+        get: operations["exportHosts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/hosts/{hostId}": {
         parameters: {
             query?: never;
@@ -922,6 +943,27 @@ export interface paths {
          *     ports with changed service or state are "changed", the rest are "unchanged".
          */
         get: operations["getScanDiff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scans/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export scans as CSV or JSON
+         * @description Streams all scans matching the active filters as a file download.
+         *     Uses chunked DB reads so large exports do not buffer in memory.
+         */
+        get: operations["exportScans"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3855,6 +3897,51 @@ export interface operations {
             };
         };
     };
+    exportHosts: {
+        parameters: {
+            query?: {
+                /** @description Output format: csv (default) or json */
+                format?: "csv" | "json";
+                /** @description Filter by host status */
+                status?: string;
+                /** @description Filter by OS family */
+                os?: string;
+                /** @description Filter by network CIDR */
+                network?: string;
+                /** @description Filter by vendor */
+                vendor?: string;
+                /** @description Full-text search */
+                search?: string;
+                /** @description Sort column */
+                sort_by?: string;
+                /** @description Sort direction: asc or desc */
+                sort_order?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV or JSON file download */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": components["schemas"]["docs.ErrorResponse"];
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
     getHost: {
         parameters: {
             query?: never;
@@ -5842,6 +5929,47 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    exportScans: {
+        parameters: {
+            query?: {
+                /** @description Output format: csv (default) or json */
+                format?: "csv" | "json";
+                /** @description Filter by scan status */
+                status?: string;
+                /** @description Filter by scan type */
+                scan_type?: string;
+                /** @description Filter by profile ID */
+                profile_id?: string;
+                /** @description Sort column */
+                sort_by?: string;
+                /** @description Sort direction: asc or desc */
+                sort_order?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV or JSON file download */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": components["schemas"]["docs.ErrorResponse"];
                     "application/json": components["schemas"]["docs.ErrorResponse"];
                 };
             };
