@@ -90,6 +90,9 @@ act-*
 .claude/HANDOFF.md
 HANDOFF.md
 
+# ── Git worktrees ─────────────────────────────────────────────────────────────
+.worktrees/
+
 # ── Superpowers brainstorm session artifacts ─────────────────────────────────
 .superpowers/
 
