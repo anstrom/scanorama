@@ -3,6 +3,8 @@ import { Outlet, useRouterState, useNavigate } from "@tanstack/react-router";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { ToastProvider, useToast } from "../toast-provider";
+import { KeyboardShortcutHelp } from "../keyboard-shortcut-help";
+import { useKeyboardShortcuts } from "../../hooks/use-keyboard-shortcuts";
 import { useWs } from "../../lib/use-ws";
 import type { WsMessage } from "../../lib/ws";
 
@@ -61,6 +63,17 @@ function DiscoveryNotifications() {
   return null;
 }
 
+// ── Global keyboard shortcuts ──────────────────────────────────────────────────
+// Must live inside <ToastProvider> (same as DiscoveryNotifications).
+
+function GlobalShortcuts() {
+  const { showHelp, setShowHelp } = useKeyboardShortcuts();
+
+  return showHelp ? (
+    <KeyboardShortcutHelp onClose={() => setShowHelp(false)} />
+  ) : null;
+}
+
 // ── Root layout ────────────────────────────────────────────────────────────────
 
 export function RootLayout() {
@@ -70,6 +83,7 @@ export function RootLayout() {
   return (
     <ToastProvider>
       <DiscoveryNotifications />
+      <GlobalShortcuts />
       <div className="flex h-screen overflow-hidden">
         <Sidebar />
         <div className="flex flex-col flex-1 min-w-0">
