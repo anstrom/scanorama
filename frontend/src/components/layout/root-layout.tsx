@@ -5,6 +5,7 @@ import { Topbar } from "./topbar";
 import { ToastProvider, useToast } from "../toast-provider";
 import { KeyboardShortcutHelp } from "../keyboard-shortcut-help";
 import { CommandPalette } from "../command-palette";
+import { OnboardingWizard } from "../onboarding-wizard";
 import { useKeyboardShortcuts } from "../../hooks/use-keyboard-shortcuts";
 import { useWs } from "../../lib/use-ws";
 import type { WsMessage } from "../../lib/ws";
@@ -97,6 +98,7 @@ export function RootLayout() {
     <ToastProvider>
       <DiscoveryNotifications />
       <GlobalShortcuts />
+      <OnboardingWizard />
       <div className="flex h-screen overflow-hidden">
         <Sidebar />
         <div className="flex flex-col flex-1 min-w-0">
