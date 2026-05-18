@@ -1139,6 +1139,78 @@ definitions:
         example: 524288
         type: integer
     type: object
+  docs.ScanDiffEntryResponse:
+    properties:
+      port:
+        example: 443
+        type: integer
+      prev_service_name:
+        example: http
+        type: string
+      prev_service_version:
+        type: string
+      prev_state:
+        example: filtered
+        type: string
+      protocol:
+        example: tcp
+        type: string
+      service_name:
+        example: https
+        type: string
+      service_version:
+        example: nginx/1.24.0
+        type: string
+      state:
+        example: open
+        type: string
+      status:
+        description: Status is "new" | "closed" | "changed" | "unchanged"
+        enum:
+        - new
+        - closed
+        - changed
+        - unchanged
+        example: new
+        type: string
+    type: object
+  docs.ScanDiffResponse:
+    properties:
+      changed_count:
+        example: 2
+        type: integer
+      closed_count:
+        example: 1
+        type: integer
+      curr_os_name:
+        example: Ubuntu 22.04
+        type: string
+      host_id:
+        example: 550e8400-e29b-41d4-a716-446655440002
+        type: string
+      new_count:
+        example: 3
+        type: integer
+      os_changed:
+        example: false
+        type: boolean
+      ports:
+        items:
+          $ref: '#/definitions/docs.ScanDiffEntryResponse'
+        type: array
+      prev_os_name:
+        example: Ubuntu 20.04
+        type: string
+      scan_a_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      scan_b_id:
+        example: 550e8400-e29b-41d4-a716-446655440001
+        type: string
+      unchanged_count:
+        example: 47
+        type: integer
+    type: object
   docs.ScanResponse:
     properties:
       completed_at:
@@ -4158,6 +4230,54 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Stop scan
+      tags:
+      - Scans
+  /scans/diff:
+    get:
+      description: |-
+        Compare two scans of the same host and return a structured port diff.
+        New ports are marked "new", ports that disappeared are "closed",
+        ports with changed service or state are "changed", the rest are "unchanged".
+      operationId: getScanDiff
+      parameters:
+      - description: Scan A ID (older/baseline)
+        format: uuid
+        in: query
+        name: a
+        required: true
+        type: string
+      - description: Scan B ID (newer/current)
+        format: uuid
+        in: query
+        name: b
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.ScanDiffResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Compare two scans
       tags:
       - Scans
   /schedules:

@@ -908,6 +908,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/scans/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compare two scans
+         * @description Compare two scans of the same host and return a structured port diff.
+         *     New ports are marked "new", ports that disappeared are "closed",
+         *     ports with changed service or state are "changed", the rest are "unchanged".
+         */
+        get: operations["getScanDiff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/scans/{scanId}": {
         parameters: {
             query?: never;
@@ -2068,6 +2090,52 @@ export interface components {
             status?: "up" | "down" | "testing" | "unknown" | "dormant" | "notPresent" | "lowerLayerDown";
             /** @example 524288 */
             tx_bytes?: number;
+        };
+        "docs.ScanDiffEntryResponse": {
+            /** @example 443 */
+            port?: number;
+            /** @example http */
+            prev_service_name?: string;
+            prev_service_version?: string;
+            /** @example filtered */
+            prev_state?: string;
+            /** @example tcp */
+            protocol?: string;
+            /** @example https */
+            service_name?: string;
+            /** @example nginx/1.24.0 */
+            service_version?: string;
+            /** @example open */
+            state?: string;
+            /**
+             * @description Status is "new" | "closed" | "changed" | "unchanged"
+             * @example new
+             * @enum {string}
+             */
+            status?: "new" | "closed" | "changed" | "unchanged";
+        };
+        "docs.ScanDiffResponse": {
+            /** @example 2 */
+            changed_count?: number;
+            /** @example 1 */
+            closed_count?: number;
+            /** @example Ubuntu 22.04 */
+            curr_os_name?: string;
+            /** @example 550e8400-e29b-41d4-a716-446655440002 */
+            host_id?: string;
+            /** @example 3 */
+            new_count?: number;
+            /** @example false */
+            os_changed?: boolean;
+            ports?: components["schemas"]["docs.ScanDiffEntryResponse"][];
+            /** @example Ubuntu 20.04 */
+            prev_os_name?: string;
+            /** @example 550e8400-e29b-41d4-a716-446655440000 */
+            scan_a_id?: string;
+            /** @example 550e8400-e29b-41d4-a716-446655440001 */
+            scan_b_id?: string;
+            /** @example 47 */
+            unchanged_count?: number;
         };
         "docs.ScanResponse": {
             completed_at?: string;
@@ -5700,6 +5768,67 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getScanDiff: {
+        parameters: {
+            query: {
+                /** @description Scan A ID (older/baseline) */
+                a: string;
+                /** @description Scan B ID (newer/current) */
+                b: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ScanDiffResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["docs.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
