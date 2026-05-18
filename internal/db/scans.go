@@ -273,3 +273,43 @@ type ScanSummary struct {
 	ClosedPorts int       `json:"closed_ports"`
 	Duration    int64     `json:"duration_ms"`
 }
+
+// Diff status constants for ScanDiffEntry.
+const (
+	DiffStatusNew       = "new"
+	DiffStatusClosed    = "closed"
+	DiffStatusChanged   = "changed"
+	DiffStatusUnchanged = "unchanged"
+)
+
+// ScanDiffEntry represents a single port's state in the scan diff.
+type ScanDiffEntry struct {
+	Port           int     `json:"port"`
+	Protocol       string  `json:"protocol"`
+	State          string  `json:"state"`
+	ServiceName    *string `json:"service_name,omitempty"`
+	ServiceVersion *string `json:"service_version,omitempty"`
+	// Status is "new" | "closed" | "changed" | "unchanged"
+	Status string `json:"status"`
+	// Previous values — only set when Status == "changed" or Status == "closed"
+	PrevState          *string `json:"prev_state,omitempty"`
+	PrevServiceName    *string `json:"prev_service_name,omitempty"`
+	PrevServiceVersion *string `json:"prev_service_version,omitempty"`
+}
+
+// ScanDiff is the result of comparing two scans of the same host.
+type ScanDiff struct {
+	ScanAID uuid.UUID       `json:"scan_a_id"`
+	ScanBID uuid.UUID       `json:"scan_b_id"`
+	HostID  uuid.UUID       `json:"host_id"`
+	Ports   []ScanDiffEntry `json:"ports"`
+	// OS change between scans
+	OSChanged  bool    `json:"os_changed"`
+	PrevOSName *string `json:"prev_os_name,omitempty"`
+	CurrOSName *string `json:"curr_os_name,omitempty"`
+	// Summary counts
+	NewCount       int `json:"new_count"`
+	ClosedCount    int `json:"closed_count"`
+	ChangedCount   int `json:"changed_count"`
+	UnchangedCount int `json:"unchanged_count"`
+}

@@ -883,6 +883,95 @@ func (r *ScanRepository) GetScanResults(ctx context.Context, scanID uuid.UUID, o
 	return results, total, nil
 }
 
+// GetAllScanResults returns all port scan results for a scan without pagination.
+// Used for diff computation where we need the full result set.
+func (r *ScanRepository) GetAllScanResults(ctx context.Context, scanID uuid.UUID) ([]*ScanResult, error) {
+	query := `
+		SELECT
+			ps.id,
+			ps.job_id,
+			ps.host_id,
+			host(h.ip_address) AS host_ip,
+			ps.port,
+			ps.protocol,
+			ps.state,
+			ps.service_name,
+			ps.scanned_at,
+			COALESCE(h.os_name, '')    AS os_name,
+			COALESCE(h.os_family, '')  AS os_family,
+			COALESCE(h.os_version, '') AS os_version,
+			h.os_confidence,
+			ps.scan_duration_ms
+		FROM port_scans ps
+		LEFT JOIN hosts h ON h.id = ps.host_id
+		WHERE ps.job_id = $1
+		ORDER BY ps.port ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, scanID)
+	if err != nil {
+		return nil, sanitizeDBError("query all scan results", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Warn("error closing rows", "error", err)
+		}
+	}()
+
+	results := make([]*ScanResult, 0)
+	for rows.Next() {
+		result := &ScanResult{}
+		var serviceName *string
+
+		if err := rows.Scan(
+			&result.ID,
+			&result.ScanID,
+			&result.HostID,
+			&result.HostIP,
+			&result.Port,
+			&result.Protocol,
+			&result.State,
+			&serviceName,
+			&result.ScannedAt,
+			&result.OSName,
+			&result.OSFamily,
+			&result.OSVersion,
+			&result.OSConfidence,
+			&result.ScanDurationMs,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan result row: %w", err)
+		}
+
+		if serviceName != nil {
+			result.Service = *serviceName
+		}
+
+		results = append(results, result)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate scan result rows: %w", err)
+	}
+
+	return results, nil
+}
+
+// GetHostForScan returns the host ID associated with a scan's port results.
+// Returns sql.ErrNoRows if the scan has no port results.
+func (r *ScanRepository) GetHostForScan(ctx context.Context, scanID uuid.UUID) (uuid.UUID, error) {
+	var hostID uuid.UUID
+	err := r.db.QueryRowContext(ctx,
+		`SELECT DISTINCT host_id FROM port_scans WHERE job_id = $1 LIMIT 1`, scanID,
+	).Scan(&hostID)
+	if err != nil {
+		if stderrors.Is(err, sql.ErrNoRows) {
+			return uuid.Nil, sql.ErrNoRows
+		}
+		return uuid.Nil, sanitizeDBError("get host for scan", err)
+	}
+	return hostID, nil
+}
+
 // GetScanSummary retrieves aggregated scan statistics.
 func (r *ScanRepository) GetScanSummary(ctx context.Context, scanID uuid.UUID) (*ScanSummary, error) {
 	query := `
