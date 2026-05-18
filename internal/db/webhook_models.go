@@ -30,6 +30,54 @@ type WebhookDeliveryLog struct {
 	CreatedAt    time.Time  `db:"created_at"    json:"created_at"`
 }
 
+// WebhookResponse is the read DTO for webhook endpoints.
+// The secret is intentionally omitted to avoid leaking it after creation.
+type WebhookResponse struct {
+	ID        uuid.UUID `json:"id"`
+	URL       string    `json:"url"`
+	Events    []string  `json:"events"`
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// WebhookCreateResponse is the DTO returned only on POST /webhooks.
+// It includes the secret once so callers can store it.
+type WebhookCreateResponse struct {
+	ID        uuid.UUID `json:"id"`
+	URL       string    `json:"url"`
+	Secret    string    `json:"secret"`
+	Events    []string  `json:"events"`
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ToResponse converts a WebhookEndpoint to the read DTO (secret omitted).
+func (e *WebhookEndpoint) ToResponse() *WebhookResponse {
+	return &WebhookResponse{
+		ID:        e.ID,
+		URL:       e.URL,
+		Events:    e.Events,
+		Enabled:   e.Enabled,
+		CreatedAt: e.CreatedAt,
+		UpdatedAt: e.UpdatedAt,
+	}
+}
+
+// ToCreateResponse converts a WebhookEndpoint to the create DTO (secret included).
+func (e *WebhookEndpoint) ToCreateResponse() *WebhookCreateResponse {
+	return &WebhookCreateResponse{
+		ID:        e.ID,
+		URL:       e.URL,
+		Secret:    e.Secret,
+		Events:    e.Events,
+		Enabled:   e.Enabled,
+		CreatedAt: e.CreatedAt,
+		UpdatedAt: e.UpdatedAt,
+	}
+}
+
 // CreateWebhookInput is the input for creating a new webhook endpoint.
 type CreateWebhookInput struct {
 	URL    string
