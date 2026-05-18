@@ -58,6 +58,13 @@ import {
 } from "../api/hooks/use-smart-scan";
 import { HostSmartScanPreviewModal } from "../components/smart-scan-preview-modal";
 import { InlineEditText } from "../components/inline-edit-text";
+import {
+  useHostAlertRules,
+  useCreateAlertRule,
+  useDeleteAlertRule,
+  type AlertRule,
+  type CreateAlertRuleBody,
+} from "../api/hooks/use-alerts";
 
 type HostResponse = components["schemas"]["docs.HostResponse"];
 
@@ -199,6 +206,161 @@ function DeviceSection({ h }: { h: HostWithDetails }) {
 }
 
 // ──────────────────────────────────────────────
+// Alerts section
+// ──────────────────────────────────────────────
+
+const TRIGGER_LABELS: Record<string, string> = {
+  online: "Online",
+  offline: "Offline",
+  both: "Both",
+};
+
+function AlertsSection({ hostID }: { hostID: string }) {
+  const { toast } = useToast();
+  const { data: rules = [], isLoading, isError } = useHostAlertRules(hostID);
+  const { mutateAsync: createRule, isPending: isCreating } = useCreateAlertRule();
+  const { mutateAsync: deleteRule, isPending: isDeleting } = useDeleteAlertRule();
+
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<{ trigger: "online" | "offline" | "both"; channel_url: string }>({
+    trigger: "online",
+    channel_url: "",
+  });
+
+  async function handleCreate() {
+    if (!form.channel_url.startsWith("http://") && !form.channel_url.startsWith("https://")) {
+      toast.error("Channel URL must start with http:// or https://");
+      return;
+    }
+    try {
+      const body: CreateAlertRuleBody = {
+        host_id: hostID,
+        trigger: form.trigger,
+        channel_url: form.channel_url,
+      };
+      await createRule(body);
+      toast.success("Alert rule created.");
+      setShowForm(false);
+      setForm({ trigger: "online", channel_url: "" });
+    } catch {
+      toast.error("Failed to create alert rule.");
+    }
+  }
+
+  async function handleDelete(rule: AlertRule) {
+    try {
+      await deleteRule({ id: rule.id, hostID });
+      toast.success("Alert rule deleted.");
+    } catch {
+      toast.error("Failed to delete alert rule.");
+    }
+  }
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-medium text-text-primary">Alert Rules</h3>
+        <button
+          type="button"
+          onClick={() => setShowForm((v) => !v)}
+          className="text-xs text-accent hover:underline"
+        >
+          {showForm ? "Cancel" : "+ Add Rule"}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="mb-4 p-3 rounded border border-border bg-surface space-y-2">
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="text-[10px] text-text-muted block mb-1">Trigger</label>
+              <select
+                value={form.trigger}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    trigger: e.target.value as "online" | "offline" | "both",
+                  }))
+                }
+                className="w-full text-xs rounded border border-border bg-surface px-2 py-1 text-text-primary"
+              >
+                <option value="online">Online</option>
+                <option value="offline">Offline</option>
+                <option value="both">Both</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] text-text-muted block mb-1">Webhook URL</label>
+            <input
+              type="url"
+              placeholder="https://hooks.example.com/..."
+              value={form.channel_url}
+              onChange={(e) => setForm((f) => ({ ...f, channel_url: e.target.value }))}
+              className="w-full text-xs rounded border border-border bg-surface px-2 py-1 text-text-primary font-mono"
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => void handleCreate()} loading={isCreating}>
+              Save Rule
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Skeleton key={i} className="h-8 w-full" />
+          ))}
+        </div>
+      ) : isError ? (
+        <p className="text-xs text-danger">Failed to load alert rules.</p>
+      ) : rules.length === 0 ? (
+        <p className="text-xs text-text-muted">No alert rules for this host.</p>
+      ) : (
+        <div className="space-y-1">
+          {rules.map((rule) => (
+            <div
+              key={rule.id}
+              className="flex items-center gap-2 py-2 border-b border-border/40 last:border-0"
+            >
+              <span
+                className={cn(
+                  "shrink-0 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium",
+                  rule.trigger === "online"
+                    ? "bg-green-500/10 text-green-400"
+                    : rule.trigger === "offline"
+                      ? "bg-red-500/10 text-red-400"
+                      : "bg-warning/10 text-warning",
+                )}
+              >
+                {TRIGGER_LABELS[rule.trigger] ?? rule.trigger}
+              </span>
+              <span className="flex-1 text-xs font-mono text-text-muted truncate">
+                {rule.channel_url}
+              </span>
+              {!rule.enabled && (
+                <span className="text-[10px] text-text-muted shrink-0">(disabled)</span>
+              )}
+              <button
+                type="button"
+                aria-label="Delete alert rule"
+                onClick={() => void handleDelete(rule)}
+                disabled={isDeleting}
+                className="shrink-0 p-0.5 text-text-muted hover:text-danger transition-colors"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ──────────────────────────────────────────────
 // Host detail panel
 // ──────────────────────────────────────────────
 
@@ -253,7 +415,7 @@ function HostDetailPanel({
   // Active detail tab. "interfaces" is only shown when SNMP interface data is
   // present; "identity" is always available.
   const [detailTab, setDetailTab] = useState<
-    "overview" | "identity" | "interfaces"
+    "overview" | "identity" | "interfaces" | "alerts"
   >("overview");
   // Controls the inline chevron panel on the Overview tab's Identity row.
   const [identityExpanded, setIdentityExpanded] = useState(false);
@@ -434,6 +596,7 @@ function HostDetailPanel({
               ...(h.snmp_data?.interfaces && h.snmp_data.interfaces.length > 0
                 ? (["interfaces"] as const)
                 : []),
+              "alerts",
             ] as const
           ).map((tab) => (
             <button
@@ -1394,6 +1557,11 @@ function HostDetailPanel({
                 </table>
               </div>
             </section>
+          )}
+
+          {/* Alerts tab */}
+          {detailTab === "alerts" && (
+            <AlertsSection hostID={h.id ?? ""} />
           )}
         </div>
 

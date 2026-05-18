@@ -118,6 +118,12 @@ vi.mock("../hooks/use-table-key-nav", () => ({
   }),
 }));
 
+vi.mock("../api/hooks/use-alerts", () => ({
+  useHostAlertRules: vi.fn(() => ({ data: [], isLoading: false, isError: false })),
+  useCreateAlertRule: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useDeleteAlertRule: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+}));
+
 vi.mock("../components", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../components")>();
   return {
