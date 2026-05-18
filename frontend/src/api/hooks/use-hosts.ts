@@ -86,7 +86,7 @@ export function useUpdateHost() {
       body,
     }: {
       hostId: string;
-      body: { hostname?: string; tags?: string[]; notes?: string };
+      body: { hostname?: string; tags?: string[]; notes?: string; description?: string };
     }) => {
       const { data, error, response } = await api.PUT("/hosts/{hostId}", {
         params: { path: { hostId } },
