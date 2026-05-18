@@ -259,6 +259,15 @@ func (m *Migrator) Reset(ctx context.Context) error {
 			LOOP
 				EXECUTE 'DROP VIEW IF EXISTS ' || r || ' CASCADE';
 			END LOOP;
+			FOR r IN
+				SELECT quote_ident(t.typname)
+				FROM pg_type t
+				JOIN pg_namespace n ON t.typnamespace = n.oid
+				WHERE n.nspname = 'public'
+				AND t.typtype = 'e'
+			LOOP
+				EXECUTE 'DROP TYPE IF EXISTS ' || r || ' CASCADE';
+			END LOOP;
 		END $$;
 	`)
 	if err != nil {
