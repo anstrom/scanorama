@@ -3,6 +3,7 @@ import { Activity } from "lucide-react";
 import { useHealth } from "../../api/hooks/use-system";
 import { useWsStatus } from "../../lib/use-ws";
 import type { WsStatus } from "../../lib/ws";
+import { ThemeToggle } from "../theme-toggle";
 
 interface TopbarProps {
   title: string;
@@ -81,6 +82,12 @@ export function Topbar({ title }: TopbarProps) {
             {isHealthy ? "Healthy" : "Unhealthy"}
           </span>
         </div>
+
+        {/* Separator */}
+        <span className="w-px h-3 bg-border" />
+
+        {/* Theme toggle */}
+        <ThemeToggle />
       </div>
     </header>
   );
