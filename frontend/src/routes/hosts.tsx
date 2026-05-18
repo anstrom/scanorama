@@ -44,6 +44,7 @@ import { cn } from "../lib/utils";
 import type { components } from "../api/types";
 import { ColumnToggle } from "../components/column-toggle";
 import type { ColumnDef } from "../components/column-toggle";
+import { ExportButton } from "../components/export-button";
 import { useTableKeyNav } from "../hooks/use-table-key-nav";
 import { FilterBuilder } from "../components/filter-builder";
 import { TagInput } from "../components/tag-input";
@@ -2087,6 +2088,20 @@ export function HostsPage() {
             >
               New scan
             </Button>
+            <ExportButton
+              basePath="/api/v1/hosts/export"
+              params={{
+                sort_by: sortBy,
+                sort_order: sortOrder,
+                ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+                ...(debouncedSearch ? { search: debouncedSearch } : {}),
+                ...(osFilter ? { os: osFilter } : {}),
+                ...(vendorFilter ? { vendor: vendorFilter } : {}),
+                ...(activeFilter
+                  ? { filter: JSON.stringify(activeFilter) }
+                  : {}),
+              }}
+            />
             <ColumnToggle
               columns={HOST_COLUMNS}
               visibility={colVis}

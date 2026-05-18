@@ -16,6 +16,7 @@ import { formatRelativeTime } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { ColumnToggle } from "../components/column-toggle";
 import type { ColumnDef } from "../components/column-toggle";
+import { ExportButton } from "../components/export-button";
 import { useTableKeyNav } from "../hooks/use-table-key-nav";
 
 const PAGE_SIZE = 25;
@@ -215,6 +216,14 @@ export function ScansPage() {
             >
               New scan
             </Button>
+            <ExportButton
+              basePath="/api/v1/scans/export"
+              params={{
+                sort_by: sortBy,
+                sort_order: sortOrder,
+                ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+              }}
+            />
             <ColumnToggle
               columns={SCAN_COLUMNS}
               visibility={colVis}
