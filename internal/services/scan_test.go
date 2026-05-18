@@ -27,17 +27,19 @@ import (
 // zero values so callers that don't care about a particular method need not
 // configure it.
 type mockScanRepo struct {
-	listScans      func(context.Context, db.ScanFilters, int, int) ([]*db.Scan, int64, error)
-	createScan     func(context.Context, db.CreateScanInput) (*db.Scan, error)
-	getScan        func(context.Context, uuid.UUID) (*db.Scan, error)
-	updateScan     func(context.Context, uuid.UUID, db.UpdateScanInput) (*db.Scan, error)
-	deleteScan     func(context.Context, uuid.UUID) error
-	startScan      func(context.Context, uuid.UUID) error
-	stopScan       func(context.Context, uuid.UUID, ...string) error
-	completeScan   func(context.Context, uuid.UUID) error
-	getScanResults func(context.Context, uuid.UUID, int, int) ([]*db.ScanResult, int64, error)
-	getScanSummary func(context.Context, uuid.UUID) (*db.ScanSummary, error)
-	getProfile     func(context.Context, string) (*db.ScanProfile, error)
+	listScans         func(context.Context, db.ScanFilters, int, int) ([]*db.Scan, int64, error)
+	createScan        func(context.Context, db.CreateScanInput) (*db.Scan, error)
+	getScan           func(context.Context, uuid.UUID) (*db.Scan, error)
+	updateScan        func(context.Context, uuid.UUID, db.UpdateScanInput) (*db.Scan, error)
+	deleteScan        func(context.Context, uuid.UUID) error
+	startScan         func(context.Context, uuid.UUID) error
+	stopScan          func(context.Context, uuid.UUID, ...string) error
+	completeScan      func(context.Context, uuid.UUID) error
+	getScanResults    func(context.Context, uuid.UUID, int, int) ([]*db.ScanResult, int64, error)
+	getAllScanResults func(context.Context, uuid.UUID) ([]*db.ScanResult, error)
+	getHostForScan    func(context.Context, uuid.UUID) (uuid.UUID, error)
+	getScanSummary    func(context.Context, uuid.UUID) (*db.ScanSummary, error)
+	getProfile        func(context.Context, string) (*db.ScanProfile, error)
 }
 
 func (m *mockScanRepo) ListScans(
@@ -112,6 +114,20 @@ func (m *mockScanRepo) GetScanSummary(ctx context.Context, scanID uuid.UUID) (*d
 		return m.getScanSummary(ctx, scanID)
 	}
 	return nil, nil
+}
+
+func (m *mockScanRepo) GetAllScanResults(ctx context.Context, scanID uuid.UUID) ([]*db.ScanResult, error) {
+	if m.getAllScanResults != nil {
+		return m.getAllScanResults(ctx, scanID)
+	}
+	return make([]*db.ScanResult, 0), nil
+}
+
+func (m *mockScanRepo) GetHostForScan(ctx context.Context, scanID uuid.UUID) (uuid.UUID, error) {
+	if m.getHostForScan != nil {
+		return m.getHostForScan(ctx, scanID)
+	}
+	return uuid.Nil, nil
 }
 
 func (m *mockScanRepo) GetProfile(ctx context.Context, id string) (*db.ScanProfile, error) {
@@ -1296,4 +1312,175 @@ func TestValidatePortNumber(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a number")
 	})
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GetScanDiff tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+func svcPtr(s string) *string { return &s }
+
+func makeResult(hostID uuid.UUID, port int, svc string) *db.ScanResult {
+	return &db.ScanResult{
+		HostID:   hostID,
+		Port:     port,
+		Protocol: "tcp",
+		State:    "open",
+		Service:  svc,
+	}
+}
+
+func TestGetScanDiff_NewAndClosedPorts(t *testing.T) {
+	ctx := context.Background()
+	hostID := uuid.New()
+	scanA := uuid.New()
+	scanB := uuid.New()
+
+	// Scan A has port 22, scan B has port 22 (unchanged) + port 80 (new).
+	resultsA := []*db.ScanResult{makeResult(hostID, 22, "ssh")}
+	resultsB := []*db.ScanResult{
+		makeResult(hostID, 22, "ssh"),
+		makeResult(hostID, 80, "http"),
+	}
+
+	svc := NewScanService(&mockScanRepo{
+		getAllScanResults: func(_ context.Context, id uuid.UUID) ([]*db.ScanResult, error) {
+			if id == scanA {
+				return resultsA, nil
+			}
+			return resultsB, nil
+		},
+	}, slog.Default())
+
+	diff, err := svc.GetScanDiff(ctx, scanA, scanB)
+	require.NoError(t, err)
+	assert.Equal(t, hostID, diff.HostID)
+	assert.Equal(t, 1, diff.NewCount)
+	assert.Equal(t, 0, diff.ClosedCount)
+	assert.Equal(t, 0, diff.ChangedCount)
+	assert.Equal(t, 1, diff.UnchangedCount)
+
+	statuses := make(map[int]string)
+	for _, p := range diff.Ports {
+		statuses[p.Port] = p.Status
+	}
+	assert.Equal(t, db.DiffStatusNew, statuses[80])
+	assert.Equal(t, db.DiffStatusUnchanged, statuses[22])
+}
+
+func TestGetScanDiff_ClosedPorts(t *testing.T) {
+	ctx := context.Background()
+	hostID := uuid.New()
+	scanA := uuid.New()
+	scanB := uuid.New()
+
+	// Scan A has port 443; scan B doesn't → closed.
+	resultsA := []*db.ScanResult{makeResult(hostID, 443, "https")}
+
+	svc := NewScanService(&mockScanRepo{
+		getAllScanResults: func(_ context.Context, id uuid.UUID) ([]*db.ScanResult, error) {
+			if id == scanA {
+				return resultsA, nil
+			}
+			return make([]*db.ScanResult, 0), nil
+		},
+		getHostForScan: func(_ context.Context, id uuid.UUID) (uuid.UUID, error) {
+			return hostID, nil
+		},
+	}, slog.Default())
+
+	diff, err := svc.GetScanDiff(ctx, scanA, scanB)
+	require.NoError(t, err)
+	assert.Equal(t, 0, diff.NewCount)
+	assert.Equal(t, 1, diff.ClosedCount)
+	assert.Equal(t, db.DiffStatusClosed, diff.Ports[0].Status)
+}
+
+func TestGetScanDiff_ChangedService(t *testing.T) {
+	ctx := context.Background()
+	hostID := uuid.New()
+	scanA := uuid.New()
+	scanB := uuid.New()
+
+	// Same port, different service name → changed.
+	resultsA := []*db.ScanResult{makeResult(hostID, 8080, "http-old")}
+	resultsB := []*db.ScanResult{makeResult(hostID, 8080, "http-new")}
+
+	svc := NewScanService(&mockScanRepo{
+		getAllScanResults: func(_ context.Context, id uuid.UUID) ([]*db.ScanResult, error) {
+			if id == scanA {
+				return resultsA, nil
+			}
+			return resultsB, nil
+		},
+	}, slog.Default())
+
+	diff, err := svc.GetScanDiff(ctx, scanA, scanB)
+	require.NoError(t, err)
+	assert.Equal(t, 1, diff.ChangedCount)
+	require.Len(t, diff.Ports, 1)
+	assert.Equal(t, db.DiffStatusChanged, diff.Ports[0].Status)
+	assert.Equal(t, svcPtr("http-old"), diff.Ports[0].PrevServiceName)
+}
+
+func TestGetScanDiff_DifferentHosts(t *testing.T) {
+	ctx := context.Background()
+	hostA := uuid.New()
+	hostB := uuid.New()
+	scanA := uuid.New()
+	scanB := uuid.New()
+
+	svc := NewScanService(&mockScanRepo{
+		getAllScanResults: func(_ context.Context, id uuid.UUID) ([]*db.ScanResult, error) {
+			if id == scanA {
+				return []*db.ScanResult{makeResult(hostA, 22, "ssh")}, nil
+			}
+			return []*db.ScanResult{makeResult(hostB, 80, "http")}, nil
+		},
+	}, slog.Default())
+
+	_, err := svc.GetScanDiff(ctx, scanA, scanB)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "different hosts")
+}
+
+func TestGetScanDiff_RepoError(t *testing.T) {
+	ctx := context.Background()
+	svc := NewScanService(&mockScanRepo{
+		getAllScanResults: func(_ context.Context, _ uuid.UUID) ([]*db.ScanResult, error) {
+			return nil, fmt.Errorf("db error")
+		},
+	}, slog.Default())
+
+	_, err := svc.GetScanDiff(ctx, uuid.New(), uuid.New())
+	require.Error(t, err)
+}
+
+func TestGetScanDiff_OSChanged(t *testing.T) {
+	ctx := context.Background()
+	host := uuid.New()
+	scanA := uuid.New()
+	scanB := uuid.New()
+
+	resultA := makeResult(host, 22, "ssh")
+	resultA.OSName = "Linux"
+	resultB := makeResult(host, 22, "ssh")
+	resultB.OSName = "Windows"
+
+	svc := NewScanService(&mockScanRepo{
+		getAllScanResults: func(_ context.Context, id uuid.UUID) ([]*db.ScanResult, error) {
+			if id == scanA {
+				return []*db.ScanResult{resultA}, nil
+			}
+			return []*db.ScanResult{resultB}, nil
+		},
+	}, slog.Default())
+
+	diff, err := svc.GetScanDiff(ctx, scanA, scanB)
+	require.NoError(t, err)
+	assert.True(t, diff.OSChanged)
+	require.NotNil(t, diff.PrevOSName)
+	require.NotNil(t, diff.CurrOSName)
+	assert.Equal(t, "Linux", *diff.PrevOSName)
+	assert.Equal(t, "Windows", *diff.CurrOSName)
 }

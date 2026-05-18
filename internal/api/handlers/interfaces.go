@@ -32,6 +32,8 @@ type ScanServicer interface {
 	GetScanResults(ctx context.Context, scanID uuid.UUID, offset, limit int) ([]*db.ScanResult, int64, error)
 	GetScanSummary(ctx context.Context, scanID uuid.UUID) (*db.ScanSummary, error)
 	GetProfile(ctx context.Context, id string) (*db.ScanProfile, error)
+	// GetScanDiff compares two scans of the same host and returns a structured diff.
+	GetScanDiff(ctx context.Context, scanAID, scanBID uuid.UUID) (*db.ScanDiff, error)
 }
 
 // ScheduleServicer is the service-level interface consumed by ScheduleHandler.
