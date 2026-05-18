@@ -97,6 +97,12 @@ func (m *mockSmartScanRepo) GetScanResults(_ context.Context, _ uuid.UUID, _, _ 
 func (m *mockSmartScanRepo) GetScanSummary(_ context.Context, _ uuid.UUID) (*db.ScanSummary, error) {
 	return nil, nil
 }
+func (m *mockSmartScanRepo) GetAllScanResults(_ context.Context, _ uuid.UUID) ([]*db.ScanResult, error) {
+	return make([]*db.ScanResult, 0), nil
+}
+func (m *mockSmartScanRepo) GetHostForScan(_ context.Context, _ uuid.UUID) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
 func (m *mockSmartScanRepo) GetProfile(_ context.Context, _ string) (*db.ScanProfile, error) {
 	return nil, nil
 }

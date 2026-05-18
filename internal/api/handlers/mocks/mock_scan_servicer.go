@@ -196,6 +196,46 @@ func (c *MockScanServicerGetProfileCall) DoAndReturn(f func(context.Context, str
 	return c
 }
 
+// GetScanDiff mocks base method.
+func (m *MockScanServicer) GetScanDiff(ctx context.Context, scanAID, scanBID uuid.UUID) (*db.ScanDiff, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetScanDiff", ctx, scanAID, scanBID)
+	ret0, _ := ret[0].(*db.ScanDiff)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetScanDiff indicates an expected call of GetScanDiff.
+func (mr *MockScanServicerMockRecorder) GetScanDiff(ctx, scanAID, scanBID any) *MockScanServicerGetScanDiffCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetScanDiff",
+		reflect.TypeOf((*MockScanServicer)(nil).GetScanDiff), ctx, scanAID, scanBID)
+	return &MockScanServicerGetScanDiffCall{Call: call}
+}
+
+// MockScanServicerGetScanDiffCall wrap *gomock.Call
+type MockScanServicerGetScanDiffCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockScanServicerGetScanDiffCall) Return(arg0 *db.ScanDiff, arg1 error) *MockScanServicerGetScanDiffCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockScanServicerGetScanDiffCall) Do(f func(context.Context, uuid.UUID, uuid.UUID) (*db.ScanDiff, error)) *MockScanServicerGetScanDiffCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockScanServicerGetScanDiffCall) DoAndReturn(f func(context.Context, uuid.UUID, uuid.UUID) (*db.ScanDiff, error)) *MockScanServicerGetScanDiffCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // GetScan mocks base method.
 func (m *MockScanServicer) GetScan(ctx context.Context, id uuid.UUID) (*db.Scan, error) {
 	m.ctrl.T.Helper()

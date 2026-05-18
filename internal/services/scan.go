@@ -5,6 +5,8 @@ package services
 
 import (
 	"context"
+	"database/sql"
+	stderrors "errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -87,6 +89,8 @@ type scanRepository interface {
 	StopScan(ctx context.Context, id uuid.UUID, errMsg ...string) error
 	CompleteScan(ctx context.Context, id uuid.UUID) error
 	GetScanResults(ctx context.Context, scanID uuid.UUID, offset, limit int) ([]*db.ScanResult, int64, error)
+	GetAllScanResults(ctx context.Context, scanID uuid.UUID) ([]*db.ScanResult, error)
+	GetHostForScan(ctx context.Context, scanID uuid.UUID) (uuid.UUID, error)
 	GetScanSummary(ctx context.Context, scanID uuid.UUID) (*db.ScanSummary, error)
 	GetProfile(ctx context.Context, id string) (*db.ScanProfile, error)
 }
@@ -208,6 +212,223 @@ func (s *ScanService) GetScanSummary(ctx context.Context, scanID uuid.UUID) (*db
 // GetProfile retrieves a scan profile by its string ID.
 func (s *ScanService) GetProfile(ctx context.Context, id string) (*db.ScanProfile, error) {
 	return s.repo.GetProfile(ctx, id)
+}
+
+// portKey is used to index port scan results by (port, protocol).
+type portKey struct {
+	port     int
+	protocol string
+}
+
+// diffStatusOrder maps a diff status to a sort priority (lower = first).
+var diffStatusOrder = map[string]int{
+	db.DiffStatusNew:       0,
+	db.DiffStatusClosed:    1,
+	db.DiffStatusChanged:   2,
+	db.DiffStatusUnchanged: 3,
+}
+
+// GetScanDiff computes the diff between two scans of the same host.
+// It returns all ports classified as new, closed, changed, or unchanged.
+func (s *ScanService) GetScanDiff(ctx context.Context, scanAID, scanBID uuid.UUID) (*db.ScanDiff, error) {
+	// Verify both scans exist by looking up results (GetScan is also an option
+	// but GetAllScanResults covers both existence and data in one call).
+	resultsA, err := s.repo.GetAllScanResults(ctx, scanAID)
+	if err != nil {
+		return nil, fmt.Errorf("get scan A results: %w", err)
+	}
+
+	resultsB, err := s.repo.GetAllScanResults(ctx, scanBID)
+	if err != nil {
+		return nil, fmt.Errorf("get scan B results: %w", err)
+	}
+
+	// Resolve host IDs.
+	hostA, hostB, err := resolveHostIDs(ctx, s.repo, scanAID, scanBID, resultsA, resultsB)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build indexes.
+	indexA := indexResults(resultsA)
+	indexB := indexResults(resultsB)
+
+	diff := &db.ScanDiff{
+		ScanAID: scanAID,
+		ScanBID: scanBID,
+		HostID:  hostA,
+		Ports:   make([]db.ScanDiffEntry, 0),
+	}
+
+	// Ports present in scan B.
+	for key, b := range indexB {
+		entry := buildDiffEntry(b, indexA[key])
+		diff.Ports = append(diff.Ports, entry)
+		incrementCount(diff, entry.Status)
+	}
+
+	// Ports present only in scan A → closed.
+	for key, a := range indexA {
+		if _, inB := indexB[key]; !inB {
+			svcName := ptrString(a.Service)
+			entry := db.ScanDiffEntry{
+				Port:               a.Port,
+				Protocol:           a.Protocol,
+				State:              a.State,
+				ServiceName:        nil,
+				ServiceVersion:     nil,
+				Status:             db.DiffStatusClosed,
+				PrevState:          ptrString(a.State),
+				PrevServiceName:    svcName,
+				PrevServiceVersion: nil,
+			}
+			diff.Ports = append(diff.Ports, entry)
+			diff.ClosedCount++
+		}
+	}
+
+	// Sort: new → closed → changed → unchanged, then by port number.
+	sortDiffEntries(diff.Ports)
+
+	// OS diff: compare OS from first result in each scan.
+	diff.OSChanged, diff.PrevOSName, diff.CurrOSName = computeOSDiff(resultsA, resultsB)
+
+	// Use host B for HostID when host A is nil (scan A had no results).
+	if diff.HostID == (uuid.UUID{}) {
+		diff.HostID = hostB
+	}
+
+	return diff, nil
+}
+
+// resolveHostIDs resolves and validates host IDs from both scans.
+func resolveHostIDs(
+	ctx context.Context,
+	repo scanRepository,
+	scanAID, scanBID uuid.UUID,
+	resultsA, resultsB []*db.ScanResult,
+) (hostA, hostB uuid.UUID, err error) {
+	// Prefer host from results (already loaded); fall back to DB query.
+	if len(resultsA) > 0 {
+		hostA = resultsA[0].HostID
+	} else {
+		var err error
+		hostA, err = repo.GetHostForScan(ctx, scanAID)
+		if err != nil && !isNoRows(err) {
+			return uuid.Nil, uuid.Nil, fmt.Errorf("get host for scan A: %w", err)
+		}
+	}
+
+	if len(resultsB) > 0 {
+		hostB = resultsB[0].HostID
+	} else {
+		var err error
+		hostB, err = repo.GetHostForScan(ctx, scanBID)
+		if err != nil && !isNoRows(err) {
+			return uuid.Nil, uuid.Nil, fmt.Errorf("get host for scan B: %w", err)
+		}
+	}
+
+	if hostA != (uuid.UUID{}) && hostB != (uuid.UUID{}) && hostA != hostB {
+		return uuid.Nil, uuid.Nil,
+			errors.NewScanError(errors.CodeValidation, "scans belong to different hosts")
+	}
+	return hostA, hostB, nil
+}
+
+// isNoRows reports whether err wraps sql.ErrNoRows.
+func isNoRows(err error) bool {
+	return stderrors.Is(err, sql.ErrNoRows)
+}
+
+// indexResults builds a map from (port, protocol) → *ScanResult.
+func indexResults(results []*db.ScanResult) map[portKey]*db.ScanResult {
+	idx := make(map[portKey]*db.ScanResult, len(results))
+	for _, r := range results {
+		idx[portKey{r.Port, r.Protocol}] = r
+	}
+	return idx
+}
+
+// ptrString returns a non-nil pointer to s, or nil when s is empty.
+func ptrString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// buildDiffEntry constructs a ScanDiffEntry comparing b (current) against a (previous).
+// a may be nil when the port is new.
+func buildDiffEntry(b, a *db.ScanResult) db.ScanDiffEntry {
+	entry := db.ScanDiffEntry{
+		Port:        b.Port,
+		Protocol:    b.Protocol,
+		State:       b.State,
+		ServiceName: ptrString(b.Service),
+	}
+
+	if a == nil {
+		entry.Status = db.DiffStatusNew
+		return entry
+	}
+
+	// Compare state and service.
+	if a.State != b.State || a.Service != b.Service {
+		entry.Status = db.DiffStatusChanged
+		entry.PrevState = ptrString(a.State)
+		entry.PrevServiceName = ptrString(a.Service)
+	} else {
+		entry.Status = db.DiffStatusUnchanged
+	}
+	return entry
+}
+
+// incrementCount updates the appropriate counter on diff.
+func incrementCount(diff *db.ScanDiff, status string) {
+	switch status {
+	case db.DiffStatusNew:
+		diff.NewCount++
+	case db.DiffStatusClosed:
+		diff.ClosedCount++
+	case db.DiffStatusChanged:
+		diff.ChangedCount++
+	case db.DiffStatusUnchanged:
+		diff.UnchangedCount++
+	}
+}
+
+// sortDiffEntries sorts entries by status priority then port number.
+func sortDiffEntries(entries []db.ScanDiffEntry) {
+	n := len(entries)
+	for i := 1; i < n; i++ {
+		for j := i; j > 0; j-- {
+			a, b := entries[j-1], entries[j]
+			aOrd := diffStatusOrder[a.Status]
+			bOrd := diffStatusOrder[b.Status]
+			if aOrd > bOrd || (aOrd == bOrd && a.Port > b.Port) {
+				entries[j-1], entries[j] = entries[j], entries[j-1]
+			} else {
+				break
+			}
+		}
+	}
+}
+
+// computeOSDiff compares the OS observed in two scan result sets.
+func computeOSDiff(resultsA, resultsB []*db.ScanResult) (changed bool, prevOS, currOS *string) {
+	prevName := ""
+	currName := ""
+	if len(resultsA) > 0 {
+		prevName = resultsA[0].OSName
+	}
+	if len(resultsB) > 0 {
+		currName = resultsB[0].OSName
+	}
+	if prevName == currName {
+		return false, nil, nil
+	}
+	return true, ptrString(prevName), ptrString(currName)
 }
 
 // -- Input validation --

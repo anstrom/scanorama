@@ -64,6 +64,9 @@ func (nilScanServicer) GetScanSummary(_ context.Context, _ uuid.UUID) (*db.ScanS
 func (nilScanServicer) GetProfile(_ context.Context, _ string) (*db.ScanProfile, error) {
 	panic("nilScanServicer: GetProfile called unexpectedly")
 }
+func (nilScanServicer) GetScanDiff(_ context.Context, _, _ uuid.UUID) (*db.ScanDiff, error) {
+	panic("nilScanServicer: GetScanDiff called unexpectedly")
+}
 
 // nilScheduleServicer is a ScheduleServicer that panics if any method is called.
 type nilScheduleServicer struct{}
