@@ -1437,6 +1437,55 @@ definitions:
         example: 0.7.0
         type: string
     type: object
+  docs.WebhookCreateEndpointResponse:
+    properties:
+      created_at:
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      events:
+        example:
+        - host.online
+        - scan.completed
+        items:
+          type: string
+        type: array
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      secret:
+        example: abc123...
+        type: string
+      updated_at:
+        type: string
+      url:
+        example: https://example.com/webhook
+        type: string
+    type: object
+  docs.WebhookEndpointResponse:
+    properties:
+      created_at:
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      events:
+        example:
+        - host.online
+        - scan.completed
+        items:
+          type: string
+        type: array
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      updated_at:
+        type: string
+      url:
+        example: https://example.com/webhook
+        type: string
+    type: object
 host: localhost:8080
 info:
   contact:
@@ -4429,6 +4478,237 @@ paths:
       summary: Version information
       tags:
       - System
+  /webhooks:
+    get:
+      description: Returns all registered webhook delivery endpoints.
+      operationId: listWebhooks
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List webhook endpoints
+      tags:
+      - Webhooks
+    post:
+      consumes:
+      - application/json
+      description: Registers a new webhook delivery endpoint.
+      operationId: createWebhook
+      parameters:
+      - description: Webhook input
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/docs.WebhookEndpointResponse'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/docs.WebhookCreateEndpointResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create webhook endpoint
+      tags:
+      - Webhooks
+  /webhooks/{id}:
+    delete:
+      description: Removes a webhook endpoint and its delivery log.
+      operationId: deleteWebhook
+      parameters:
+      - description: Webhook UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Successfully deleted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete webhook endpoint
+      tags:
+      - Webhooks
+    get:
+      description: Returns a single webhook endpoint by ID.
+      operationId: getWebhook
+      parameters:
+      - description: Webhook UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.WebhookEndpointResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get webhook endpoint
+      tags:
+      - Webhooks
+    patch:
+      consumes:
+      - application/json
+      description: Applies partial updates to a webhook endpoint.
+      operationId: updateWebhook
+      parameters:
+      - description: Webhook UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/docs.WebhookEndpointResponse'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.WebhookEndpointResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update webhook endpoint
+      tags:
+      - Webhooks
+  /webhooks/{id}/logs:
+    get:
+      description: Returns delivery logs for a webhook endpoint (newest first, max
+        200).
+      operationId: listWebhookDeliveryLogs
+      parameters:
+      - description: Webhook UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Maximum log entries (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List delivery logs
+      tags:
+      - Webhooks
+  /webhooks/{id}/test:
+    post:
+      description: Fires a synchronous test event to the webhook endpoint.
+      operationId: testWebhook
+      parameters:
+      - description: Webhook UUID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Send test delivery
+      tags:
+      - Webhooks
 security:
 - ApiKeyAuth: []
 securityDefinitions:

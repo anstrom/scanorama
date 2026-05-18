@@ -1914,3 +1914,140 @@ func AcceptDeviceSuggestion(_ http.ResponseWriter, _ *http.Request) {}
 // @Router       /devices/suggestions/{id}/dismiss [post]
 // @ID           dismissDeviceSuggestion
 func DismissDeviceSuggestion(_ http.ResponseWriter, _ *http.Request) {}
+
+// ── Webhooks ─────────────────────────────────────────────────────────────────
+
+// WebhookEndpointResponse represents a registered webhook delivery endpoint (secret omitted).
+type WebhookEndpointResponse struct {
+	ID        string    `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	URL       string    `json:"url" example:"https://example.com/webhook"`
+	Events    []string  `json:"events" example:"host.online,scan.completed"`
+	Enabled   bool      `json:"enabled" example:"true"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// WebhookCreateEndpointResponse is returned only on POST /webhooks (includes secret).
+type WebhookCreateEndpointResponse struct {
+	ID        string    `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	URL       string    `json:"url" example:"https://example.com/webhook"`
+	Secret    string    `json:"secret" example:"abc123..."`
+	Events    []string  `json:"events" example:"host.online,scan.completed"`
+	Enabled   bool      `json:"enabled" example:"true"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// WebhookDeliveryLogResponse represents a single webhook delivery attempt.
+type WebhookDeliveryLogResponse struct {
+	ID           string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440001"`
+	EndpointID   string     `json:"endpoint_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	EventType    string     `json:"event_type" example:"host.online"`
+	StatusCode   *int       `json:"status_code" example:"200"`
+	AttemptCount int        `json:"attempt_count" example:"1"`
+	LastError    *string    `json:"last_error"`
+	DeliveredAt  *time.Time `json:"delivered_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+// ListWebhooks godoc
+// @Summary      List webhook endpoints
+// @Description  Returns all registered webhook delivery endpoints.
+// @Tags         Webhooks
+// @Produce      json
+// @Success      200 {object}  map[string]any
+// @Failure      500 {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /webhooks [get]
+// @ID           listWebhooks
+func ListWebhooks(_ http.ResponseWriter, _ *http.Request) {}
+
+// CreateWebhook godoc
+// @Summary      Create webhook endpoint
+// @Description  Registers a new webhook delivery endpoint.
+// @Tags         Webhooks
+// @Accept       json
+// @Produce      json
+// @Param        body  body      WebhookEndpointResponse       true  "Webhook input"
+// @Success      201   {object}  WebhookCreateEndpointResponse
+// @Failure      400   {object}  ErrorResponse
+// @Failure      500   {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /webhooks [post]
+// @ID           createWebhook
+func CreateWebhook(_ http.ResponseWriter, _ *http.Request) {}
+
+// GetWebhook godoc
+// @Summary      Get webhook endpoint
+// @Description  Returns a single webhook endpoint by ID.
+// @Tags         Webhooks
+// @Produce      json
+// @Param        id   path      string  true  "Webhook UUID" format(uuid)
+// @Success      200  {object}  WebhookEndpointResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      404  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /webhooks/{id} [get]
+// @ID           getWebhook
+func GetWebhook(_ http.ResponseWriter, _ *http.Request) {}
+
+// UpdateWebhook godoc
+// @Summary      Update webhook endpoint
+// @Description  Applies partial updates to a webhook endpoint.
+// @Tags         Webhooks
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                   true  "Webhook UUID" format(uuid)
+// @Param        body  body      WebhookEndpointResponse  true  "Update fields"
+// @Success      200   {object}  WebhookEndpointResponse
+// @Failure      400   {object}  ErrorResponse
+// @Failure      404   {object}  ErrorResponse
+// @Failure      500   {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /webhooks/{id} [patch]
+// @ID           updateWebhook
+func UpdateWebhook(_ http.ResponseWriter, _ *http.Request) {}
+
+// DeleteWebhook godoc
+// @Summary      Delete webhook endpoint
+// @Description  Removes a webhook endpoint and its delivery log.
+// @Tags         Webhooks
+// @Param        id  path  string  true  "Webhook UUID" format(uuid)
+// @Success      204 "Successfully deleted"
+// @Failure      400 {object}  ErrorResponse
+// @Failure      404 {object}  ErrorResponse
+// @Failure      500 {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /webhooks/{id} [delete]
+// @ID           deleteWebhook
+func DeleteWebhook(_ http.ResponseWriter, _ *http.Request) {}
+
+// TestWebhook godoc
+// @Summary      Send test delivery
+// @Description  Fires a synchronous test event to the webhook endpoint.
+// @Tags         Webhooks
+// @Param        id  path  string  true  "Webhook UUID" format(uuid)
+// @Success      200 {object}  map[string]any
+// @Failure      400 {object}  ErrorResponse
+// @Failure      404 {object}  ErrorResponse
+// @Failure      500 {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /webhooks/{id}/test [post]
+// @ID           testWebhook
+func TestWebhook(_ http.ResponseWriter, _ *http.Request) {}
+
+// ListWebhookDeliveryLogs godoc
+// @Summary      List delivery logs
+// @Description  Returns delivery logs for a webhook endpoint (newest first, max 200).
+// @Tags         Webhooks
+// @Produce      json
+// @Param        id     path      string  true   "Webhook UUID" format(uuid)
+// @Param        limit  query     int     false  "Maximum log entries (default 50, max 200)"
+// @Success      200    {object}  map[string]any
+// @Failure      400    {object}  ErrorResponse
+// @Failure      500    {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /webhooks/{id}/logs [get]
+// @ID           listWebhookDeliveryLogs
+func ListWebhookDeliveryLogs(_ http.ResponseWriter, _ *http.Request) {}

@@ -155,3 +155,16 @@ type GroupServicer interface {
 	RemoveHostsFromGroup(ctx context.Context, groupID uuid.UUID, hostIDs []uuid.UUID) error
 	GetGroupMembers(ctx context.Context, groupID uuid.UUID, offset, limit int) ([]*db.Host, int64, error)
 }
+
+// WebhookServicer is the service-level interface consumed by WebhookHandler.
+//
+//nolint:dupl // interface is structurally similar to the test mock by design
+type WebhookServicer interface {
+	ListWebhooks(ctx context.Context) ([]*db.WebhookEndpoint, error)
+	CreateWebhook(ctx context.Context, input db.CreateWebhookInput) (*db.WebhookEndpoint, error)
+	GetWebhook(ctx context.Context, id uuid.UUID) (*db.WebhookEndpoint, error)
+	UpdateWebhook(ctx context.Context, id uuid.UUID, input db.UpdateWebhookInput) (*db.WebhookEndpoint, error)
+	DeleteWebhook(ctx context.Context, id uuid.UUID) error
+	SendTestDelivery(ctx context.Context, id uuid.UUID) error
+	ListDeliveryLogs(ctx context.Context, endpointID uuid.UUID, limit int) ([]*db.WebhookDeliveryLog, error)
+}
