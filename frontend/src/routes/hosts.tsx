@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { Link } from "@tanstack/react-router";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { isNotFound } from "../api/errors";
 import {
@@ -33,6 +34,7 @@ import {
 } from "../api/hooks/use-hosts";
 import { useHostNetworks } from "../api/hooks/use-host-networks";
 import { useToast } from "../components/toast-provider";
+import { useDetachHost } from "../api/hooks/use-devices";
 import {
   StatusBadge,
   Skeleton,
@@ -120,6 +122,8 @@ type HostWithDetails = HostResponse & {
   banners?: PortBanner[];
   certificates?: TLSCertificate[];
   snmp_data?: SNMPData | null;
+  device_id?: string;
+  device_name?: string;
 };
 
 interface SNMPInterface {
@@ -144,6 +148,56 @@ interface SNMPData {
 }
 
 const PAGE_SIZE = 25;
+
+// ──────────────────────────────────────────────
+// Device card section
+// ──────────────────────────────────────────────
+
+function DeviceSection({ h }: { h: HostWithDetails }) {
+  const { toast } = useToast();
+  const { mutateAsync: detachHost, isPending: isDetaching } = useDetachHost();
+
+  if (!h.device_id) {
+    return (
+      <section data-testid="device-section">
+        <h3 className="text-xs font-medium text-text-primary mb-3">Device</h3>
+        <p className="text-xs text-text-muted">No device assigned.</p>
+      </section>
+    );
+  }
+
+  async function handleDetach() {
+    try {
+      await detachHost({ deviceId: h.device_id!, hostId: h.id ?? "" });
+      toast.success("Host detached from device.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to detach host.");
+    }
+  }
+
+  return (
+    <section data-testid="device-section">
+      <h3 className="text-xs font-medium text-text-primary mb-3">Device</h3>
+      <div className="bg-surface rounded border border-border p-3 text-xs flex items-center justify-between gap-2">
+        <Link
+          to="/devices/$id"
+          params={{ id: h.device_id! }}
+          className="font-medium text-accent hover:underline truncate"
+        >
+          {h.device_name ?? h.device_id}
+        </Link>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void handleDetach()}
+          loading={isDetaching}
+        >
+          Detach
+        </Button>
+      </div>
+    </section>
+  );
+}
 
 // ──────────────────────────────────────────────
 // Host detail panel
@@ -1293,6 +1347,9 @@ function HostDetailPanel({
                 </div>
               )}
           </section>
+
+          {/* Device */}
+          <DeviceSection h={h} />
 
           </> /* end overview tab */}
 

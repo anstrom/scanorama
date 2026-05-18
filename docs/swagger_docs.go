@@ -237,6 +237,10 @@ type HostResponse struct {
 	// host (usable or not). Only populated on GET /hosts/{id}; list responses
 	// leave it as an empty array.
 	NameCandidates []NameCandidateResponse `json:"name_candidates"`
+	// DeviceID is the stable device this host is attached to, if any.
+	DeviceID *string `json:"device_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
+	// DeviceName is the canonical name of the attached device, populated by JOIN in GetHost.
+	DeviceName *string `json:"device_name,omitempty" example:"Andreas's iPhone"`
 }
 
 // NameCandidateResponse is one row of the Identity tab's candidate table —

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X, Plus, ArrowRight, GitCompare } from "lucide-react";
 import { useSearch } from "@tanstack/react-router";
+import { useToast } from "../components/toast-provider";
 import { Button } from "../components/button";
 import {
   useDiscoveryJobs,
@@ -13,7 +14,12 @@ import type {
   DiscoveryDiff,
   DiscoveryDiffHost,
   DiscoveryCompareDiff,
+  DeviceSuggestion,
 } from "../api/hooks/use-discovery";
+import {
+  useAcceptSuggestion,
+  useDismissSuggestion,
+} from "../api/hooks/use-devices";
 import { StatusBadge, Skeleton, PaginationBar } from "../components";
 import { CreateDiscoveryModal } from "../components/create-discovery-modal";
 import { formatRelativeTime } from "../lib/utils";
@@ -136,6 +142,74 @@ function DiffSection({
   );
 }
 
+// ── Suggestion cards ──────────────────────────────────────────────────────────
+
+function confidenceBadgeClass(score: number): string {
+  if (score >= 70) return "bg-success/10 text-success border border-success/20";
+  if (score >= 40) return "bg-warning/10 text-warning border border-warning/20";
+  return "bg-danger/10 text-danger border border-danger/20";
+}
+
+function SuggestionCard({ suggestion }: { suggestion: DeviceSuggestion }) {
+  const { toast } = useToast();
+  const { mutateAsync: accept, isPending: isAccepting } = useAcceptSuggestion();
+  const { mutateAsync: dismiss, isPending: isDismissing } = useDismissSuggestion();
+
+  async function handleAccept() {
+    try {
+      await accept(suggestion.id);
+    } catch {
+      toast.error("Failed to accept suggestion.");
+    }
+  }
+
+  async function handleDismiss() {
+    try {
+      await dismiss(suggestion.id);
+    } catch {
+      toast.error("Failed to dismiss suggestion.");
+    }
+  }
+
+  return (
+    <div
+      className="bg-surface rounded border border-border p-3 text-xs space-y-2"
+      data-testid="suggestion-card"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${confidenceBadgeClass(suggestion.confidence_score)}`}
+        >
+          {suggestion.confidence_score}%
+        </span>
+        <div className="flex gap-1.5">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => void handleAccept()}
+            loading={isAccepting}
+            disabled={isDismissing}
+          >
+            Accept
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void handleDismiss()}
+            loading={isDismissing}
+            disabled={isAccepting}
+          >
+            Dismiss
+          </Button>
+        </div>
+      </div>
+      {suggestion.confidence_reason && (
+        <p className="text-text-muted">{suggestion.confidence_reason}</p>
+      )}
+    </div>
+  );
+}
+
 interface ChangesTabProps {
   diff?: DiscoveryDiff;
   isLoading: boolean;
@@ -200,6 +274,22 @@ function ChangesTab({ diff, isLoading, isError }: ChangesTabProps) {
           {diff.unchanged_count} hosts unchanged
         </p>
       </section>
+
+      {(() => {
+        const activeSuggestions = (diff.suggestions ?? []).filter((s) => !s.dismissed);
+        return activeSuggestions.length > 0 ? (
+          <section data-testid="suggestions-section">
+            <h4 className="text-xs font-medium text-warning mb-2">
+              Device Suggestions ({activeSuggestions.length})
+            </h4>
+            <div className="space-y-2">
+              {activeSuggestions.map((s) => (
+                <SuggestionCard key={s.id} suggestion={s} />
+              ))}
+            </div>
+          </section>
+        ) : null;
+      })()}
     </div>
   );
 }

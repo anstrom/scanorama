@@ -31,6 +31,10 @@ vi.mock("../api/hooks/use-host-networks", () => ({
   })),
 }));
 
+vi.mock("../api/hooks/use-devices", () => ({
+  useDetachHost: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+}));
+
 vi.mock("../api/hooks/use-tags", () => ({
   useTags: vi.fn(() => ({ data: [] })),
   useUpdateHostTags: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
@@ -78,6 +82,9 @@ import {
   useDeleteHost,
   useBulkDeleteHosts,
 } from "../api/hooks/use-hosts";
+
+import { useDetachHost } from "../api/hooks/use-devices";
+const mockUseDetachHost = vi.mocked(useDetachHost);
 
 import {
   useSmartScanStage,
@@ -142,6 +149,26 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
     ...actual,
     useSearch: vi.fn().mockReturnValue({}),
     useNavigate: vi.fn().mockReturnValue(vi.fn()),
+    Link: ({
+      to,
+      params,
+      children,
+      className,
+    }: {
+      to: string;
+      params?: Record<string, string>;
+      children: unknown;
+      className?: string;
+    }) => {
+      const resolved = params
+        ? to.replace(/\$(\w+)/g, (_, k) => params[k] ?? "")
+        : to;
+      return (
+        <a href={`#${resolved}`} className={className}>
+          {children}
+        </a>
+      );
+    },
   };
 });
 
@@ -389,6 +416,10 @@ beforeEach(async () => {
   mockUseUpdateHost.mockReturnValue(makeMutationResult());
   mockUseDeleteHost.mockReturnValue(makeDeleteMutationResult());
   mockUseBulkDeleteHosts.mockReturnValue(makeBulkDeleteMutationResult());
+  mockUseDetachHost.mockReturnValue({
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    isPending: false,
+  } as unknown as ReturnType<typeof useDetachHost>);
 
   const { useHostNetworks } = await import("../api/hooks/use-host-networks");
   vi.mocked(useHostNetworks).mockReturnValue({
@@ -1175,6 +1206,106 @@ describe("HostsPage", () => {
         screen.getByRole("button", { name: /run smart scan/i }),
       );
       expect(mockTrigger).toHaveBeenCalledWith("host-1");
+    });
+
+    // ── Device card ────────────────────────────────────────────────
+
+    it("shows 'No device assigned.' when host has no device_id", async () => {
+      // mockFullHost has no device_id by default
+      const panel = await openPanel();
+      expect(within(panel).getByText("No device assigned.")).toBeInTheDocument();
+    });
+
+    it("shows device name as a link when host has device_id", async () => {
+      mockUseHost.mockReturnValue(
+        makeUseHostResult({
+          data: {
+            ...mockFullHost,
+            device_id: "device-uuid-1",
+            device_name: "Office Router",
+          } as typeof mockFullHost,
+        }),
+      );
+
+      const panel = await openPanel();
+      const deviceSection = within(panel).getByTestId("device-section");
+      const link = within(deviceSection).getByRole("link", { name: "Office Router" });
+      expect(link).toBeInTheDocument();
+      expect(link).toHaveAttribute("href", "#/devices/device-uuid-1");
+    });
+
+    it("shows a Detach button when host has device_id", async () => {
+      mockUseHost.mockReturnValue(
+        makeUseHostResult({
+          data: {
+            ...mockFullHost,
+            device_id: "device-uuid-1",
+            device_name: "Office Router",
+          } as typeof mockFullHost,
+        }),
+      );
+
+      const panel = await openPanel();
+      const deviceSection = within(panel).getByTestId("device-section");
+      expect(
+        within(deviceSection).getByRole("button", { name: /detach/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("calls detachHost and shows success toast when Detach is clicked", async () => {
+      const detachMutateAsync = vi.fn().mockResolvedValue(undefined);
+      mockUseDetachHost.mockReturnValue({
+        mutateAsync: detachMutateAsync,
+        isPending: false,
+      } as unknown as ReturnType<typeof useDetachHost>);
+      mockUseHost.mockReturnValue(
+        makeUseHostResult({
+          data: {
+            ...mockFullHost,
+            device_id: "device-uuid-1",
+            device_name: "Office Router",
+          } as typeof mockFullHost,
+        }),
+      );
+
+      const panel = await openPanel();
+      const deviceSection = within(panel).getByTestId("device-section");
+      await userEvent.click(
+        within(deviceSection).getByRole("button", { name: /detach/i }),
+      );
+
+      expect(detachMutateAsync).toHaveBeenCalledWith({
+        deviceId: "device-uuid-1",
+        hostId: "host-1",
+      });
+      expect(mockToastSuccess).toHaveBeenCalledWith("Host detached from device.");
+    });
+
+    it("shows error toast when detach fails", async () => {
+      const detachMutateAsync = vi
+        .fn()
+        .mockRejectedValue(new Error("Network error"));
+      mockUseDetachHost.mockReturnValue({
+        mutateAsync: detachMutateAsync,
+        isPending: false,
+      } as unknown as ReturnType<typeof useDetachHost>);
+      mockUseHost.mockReturnValue(
+        makeUseHostResult({
+          data: {
+            ...mockFullHost,
+            device_id: "device-uuid-1",
+            device_name: "Office Router",
+          } as typeof mockFullHost,
+        }),
+      );
+
+      const panel = await openPanel();
+      const deviceSection = within(panel).getByTestId("device-section");
+      await userEvent.click(
+        within(deviceSection).getByRole("button", { name: /detach/i }),
+      );
+
+      expect(mockToastError).toHaveBeenCalledWith("Network error");
     });
   });
 
