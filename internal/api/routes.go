@@ -68,6 +68,19 @@ func (s *Server) setupRoutes() {
 		networkHandler = networkHandler.WithScanQueue(s.scanQueue)
 	}
 
+	networkSvc := services.NewNetworkService(s.database)
+	searchHandler := apihandlers.NewSearchHandler(
+		services.NewSearchService(
+			db.NewHostRepository(s.database),
+			db.NewScanRepository(s.database),
+			db.NewProfileRepository(s.database),
+			networkSvc,
+			s.logger,
+		),
+		s.logger,
+		s.metrics,
+	)
+
 	s.setupSmartScanRoutes(api, smartScanHandler)
 	s.setupScanRoutes(api, scanHandler)
 	s.setupHostRoutes(api, hostHandler)
@@ -80,6 +93,7 @@ func (s *Server) setupRoutes() {
 	s.setupNetworkRoutes(api, networkHandler)
 	s.setupPortRoutes(api, portHandler)
 	s.setupCertificateRoutes(api, certHandler)
+	api.HandleFunc("/search", searchHandler.Search).Methods("GET")
 
 	api.HandleFunc("/ws", handlerManager.GeneralWebSocket).Methods("GET")
 	api.HandleFunc("/ws/scans", handlerManager.ScanWebSocket).Methods("GET")

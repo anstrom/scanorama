@@ -29,6 +29,7 @@ const (
 	scanStatusFailed    = "failed"
 	scanStatusRunning   = "running"
 	entityTypeScan      = "scan"
+	entityTypeScans     = "scans"
 )
 
 // ScanHandler handles scan-related API endpoints.
@@ -152,7 +153,7 @@ type ScanResult struct {
 // ListScans handles GET /api/v1/scans - list scans with filtering and pagination.
 func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 	listOp := &ListOperation[*db.Scan, db.ScanFilters]{
-		EntityType: "scans",
+		EntityType: entityTypeScans,
 		MetricName: "api_scans_listed_total",
 		Logger:     h.logger,
 		Metrics:    h.metrics,

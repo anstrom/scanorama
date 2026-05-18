@@ -19,7 +19,10 @@ import (
 	"github.com/anstrom/scanorama/internal/services"
 )
 
-const entityTypeHost = "host"
+const (
+	entityTypeHost  = "host"
+	entityTypeHosts = "hosts"
+)
 
 // Validation constants for host fields.
 const (
@@ -175,7 +178,7 @@ type HostScanResponse struct {
 // ListHosts handles GET /api/v1/hosts - list all hosts with pagination.
 func (h *HostHandler) ListHosts(w http.ResponseWriter, r *http.Request) {
 	listOp := &ListOperation[*db.Host, *db.HostFilters]{
-		EntityType: "hosts",
+		EntityType: entityTypeHosts,
 		MetricName: "api_hosts_listed_total",
 		Logger:     h.logger,
 		Metrics:    h.metrics,

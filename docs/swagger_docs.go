@@ -2242,3 +2242,34 @@ func ExportHosts(_ http.ResponseWriter, _ *http.Request) {}
 // @Router       /scans/export [get]
 // @ID           exportScans
 func ExportScans(_ http.ResponseWriter, _ *http.Request) {}
+
+// SearchResult represents a single item returned by the unified search endpoint.
+type SearchResult struct {
+	ID    string `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Label string `json:"label" example:"192.168.1.1 (myserver)"`
+	URL   string `json:"url" example:"/hosts/550e8400-e29b-41d4-a716-446655440000"`
+	Type  string `json:"type" example:"host" enums:"host,network,scan,profile"`
+}
+
+// SearchResults is the top-level response from the unified search endpoint.
+type SearchResults struct {
+	Results map[string][]SearchResult `json:"results"`
+	Total   int                       `json:"total" example:"4"`
+}
+
+// GlobalSearch godoc
+// @Summary      Unified cross-entity search
+// @Description  Search across hosts (by IP/hostname), networks (by name/CIDR),
+// @Description  scans (by target), and profiles (by name) in a single request.
+// @Description  q must be 2–100 characters. Results are grouped by entity type.
+// @Tags         Search
+// @Produce      json
+// @Param        q      query    string  true   "Search query (2–100 characters)"
+// @Param        limit  query    int     false  "Max results per type (default 10, max 50)"
+// @Success      200    {object} SearchResults
+// @Failure      400    {object} ErrorResponse
+// @Failure      500    {object} ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /search [get]
+// @ID           globalSearch
+func GlobalSearch(_ http.ResponseWriter, _ *http.Request) {}

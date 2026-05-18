@@ -4654,6 +4654,59 @@
                 }
             }
         },
+        "/search": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Search across hosts (by IP/hostname), networks (by name/CIDR),\nscans (by target), and profiles (by name) in a single request.\nq must be 2–100 characters. Results are grouped by entity type.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Search"
+                ],
+                "summary": "Unified cross-entity search",
+                "operationId": "globalSearch",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query (2–100 characters)",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max results per type (default 10, max 50)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.SearchResults"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/smart-scan/hosts/{id}/refresh-identity": {
             "post": {
                 "security": [
@@ -7283,6 +7336,51 @@
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "docs.SearchResult": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "label": {
+                    "type": "string",
+                    "example": "192.168.1.1 (myserver)"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "host",
+                        "network",
+                        "scan",
+                        "profile"
+                    ],
+                    "example": "host"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "/hosts/550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "docs.SearchResults": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/docs.SearchResult"
+                        }
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 4
                 }
             }
         },
