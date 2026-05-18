@@ -681,6 +681,7 @@ func storeScanResults(
 		} else {
 			go runKnowledgeScoreUpdate(database, hostIDs)
 		}
+		go callAlertEvaluator()
 	}
 
 	// Launch banner enrichment in the background — best-effort, non-blocking.

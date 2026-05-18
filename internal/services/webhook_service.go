@@ -54,6 +54,8 @@ type WebhookEvent struct {
 }
 
 // webhookRepository defines the data-access interface used by WebhookService.
+//
+//nolint:dupl // interface mirrors mock struct in tests by design
 type webhookRepository interface {
 	ListWebhooks(ctx context.Context) ([]*db.WebhookEndpoint, error)
 	CreateWebhook(ctx context.Context, input db.CreateWebhookInput) (*db.WebhookEndpoint, error)
