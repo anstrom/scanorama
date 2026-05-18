@@ -13,9 +13,14 @@ import (
 )
 
 const (
-	// File permissions for directories and log files.
 	logDirPerm  = 0750
 	logFilePerm = 0600
+
+	outputStdout    = "stdout"
+	outputStderr    = "stderr"
+	componentDB     = "database"
+	componentDaemon = "daemon"
+	attrKeyError    = "error"
 )
 
 // LogLevel represents the available log levels.
@@ -49,7 +54,7 @@ func DefaultConfig() Config {
 	return Config{
 		Level:     LevelInfo,
 		Format:    FormatText,
-		Output:    "stdout",
+		Output:    outputStdout,
 		AddSource: false,
 	}
 }
@@ -80,9 +85,9 @@ func New(cfg Config) (*Logger, error) {
 	// Determine output writer
 	var writer io.Writer
 	switch cfg.Output {
-	case "stdout":
+	case outputStdout:
 		writer = os.Stdout
-	case "stderr":
+	case outputStderr:
 		writer = os.Stderr
 	default:
 		// Assume it's a file path
@@ -141,7 +146,7 @@ func (l *Logger) WithFields(fields ...any) *Logger {
 
 // WithComponent adds a component field to the logger.
 func (l *Logger) WithComponent(component string) *Logger {
-	return l.WithFields("component", component)
+	return l.WithFields(attrKeyComponent, component)
 }
 
 // WithScanID adds a scan ID field to the logger.
@@ -167,7 +172,7 @@ func (l *Logger) InfoScan(msg, target string, fields ...any) {
 
 // ErrorScan logs scan-related errors.
 func (l *Logger) ErrorScan(msg, target string, err error, fields ...any) {
-	allFields := append([]any{"target", target, "error", err}, fields...)
+	allFields := append([]any{"target", target, attrKeyError, err}, fields...)
 	l.Error(msg, allFields...)
 }
 
@@ -179,31 +184,31 @@ func (l *Logger) InfoDiscovery(msg, network string, fields ...any) {
 
 // ErrorDiscovery logs discovery-related errors.
 func (l *Logger) ErrorDiscovery(msg, network string, err error, fields ...any) {
-	allFields := append([]any{"network", network, "error", err}, fields...)
+	allFields := append([]any{"network", network, attrKeyError, err}, fields...)
 	l.Error(msg, allFields...)
 }
 
 // InfoDatabase logs database-related information.
 func (l *Logger) InfoDatabase(msg string, fields ...any) {
-	allFields := append([]any{"component", "database"}, fields...)
+	allFields := append([]any{attrKeyComponent, componentDB}, fields...)
 	l.Info(msg, allFields...)
 }
 
 // ErrorDatabase logs database-related errors.
 func (l *Logger) ErrorDatabase(msg string, err error, fields ...any) {
-	allFields := append([]any{"component", "database", "error", err}, fields...)
+	allFields := append([]any{attrKeyComponent, componentDB, attrKeyError, err}, fields...)
 	l.Error(msg, allFields...)
 }
 
 // InfoDaemon logs daemon-related information.
 func (l *Logger) InfoDaemon(msg string, fields ...any) {
-	allFields := append([]any{"component", "daemon"}, fields...)
+	allFields := append([]any{attrKeyComponent, componentDaemon}, fields...)
 	l.Info(msg, allFields...)
 }
 
 // ErrorDaemon logs daemon-related errors.
 func (l *Logger) ErrorDaemon(msg string, err error, fields ...any) {
-	allFields := append([]any{"component", "daemon", "error", err}, fields...)
+	allFields := append([]any{attrKeyComponent, componentDaemon, attrKeyError, err}, fields...)
 	l.Error(msg, allFields...)
 }
 

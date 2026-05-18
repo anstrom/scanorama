@@ -41,7 +41,7 @@ func completeNetworkNames(cmd *cobra.Command, args []string, toComplete string) 
 
 func completeDiscoveryMethods(cmd *cobra.Command, args []string, toComplete string) (
 	[]string, cobra.ShellCompDirective) {
-	methods := []string{"tcp", "ping", "arp", "icmp"}
+	methods := []string{methodTCP, defaultDiscoveryMethod, methodARP, methodICMP}
 	var matches []string
 
 	for _, method := range methods {

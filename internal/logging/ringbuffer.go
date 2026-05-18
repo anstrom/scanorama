@@ -20,6 +20,11 @@ const (
 	levelError = 3
 )
 
+const (
+	attrKeyComponent = "component"
+	attrKeyHandler   = "handler"
+)
+
 // LogEntry is a single captured log record stored in the ring buffer.
 type LogEntry struct {
 	Time      time.Time         `json:"time"`
@@ -229,7 +234,7 @@ func (h *ringBufferHandler) Handle(_ context.Context, record slog.Record) error 
 	// Pre-attached attrs (from logger.With(...)).
 	for _, a := range h.attrs {
 		switch a.Key {
-		case "component", "handler":
+		case attrKeyComponent, attrKeyHandler:
 			entry.Component = a.Value.String()
 		default:
 			entry.Attrs[a.Key] = a.Value.String()
@@ -239,7 +244,7 @@ func (h *ringBufferHandler) Handle(_ context.Context, record slog.Record) error 
 	// Per-record attrs.
 	record.Attrs(func(a slog.Attr) bool {
 		switch a.Key {
-		case "component", "handler":
+		case attrKeyComponent, attrKeyHandler:
 			entry.Component = a.Value.String()
 		default:
 			entry.Attrs[a.Key] = a.Value.String()
@@ -332,13 +337,13 @@ func (h *teeHandler) WithGroup(name string) slog.Handler {
 // comparisons. Unknown strings are treated as debug (0 = show everything).
 func parseLevel(level string) int {
 	switch strings.ToLower(level) {
-	case "debug":
+	case string(LevelDebug):
 		return levelDebug
-	case "info":
+	case string(LevelInfo):
 		return levelInfo
-	case "warn", "warning":
+	case string(LevelWarn), "warning":
 		return levelWarn
-	case "error":
+	case string(LevelError):
 		return levelError
 	default:
 		return levelDebug

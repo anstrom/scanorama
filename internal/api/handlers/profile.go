@@ -61,9 +61,18 @@ const (
 	maxProfileRatePPS     = 10000
 	maxProfileTagLength   = 50
 
-	// Scan type constants
 	scanTypeComprehensive = "comprehensive"
 	scanTypeAggressive    = "aggressive"
+	scanTypeConnect       = "connect"
+	scanTypeSYN           = "syn"
+	scanTypeACK           = "ack"
+	scanTypeUDP           = "udp"
+
+	timingParanoid = "paranoid"
+	timingSneaky   = "sneaky"
+	timingPolite   = "polite"
+	timingNormal   = "normal"
+	timingInsane   = "insane"
 )
 
 // ProfileHandler handles profile-related API endpoints.
@@ -421,11 +430,11 @@ func (h *ProfileHandler) validateBasicProfileFields(req *ProfileRequest) error {
 
 func (h *ProfileHandler) validateProfileScanType(scanType string) error {
 	validScanTypes := map[string]bool{
-		"connect":       true,
-		"syn":           true,
-		"ack":           true,
-		"aggressive":    true,
-		"comprehensive": true,
+		scanTypeConnect:       true,
+		scanTypeSYN:           true,
+		scanTypeACK:           true,
+		scanTypeAggressive:    true,
+		scanTypeComprehensive: true,
 	}
 	if !validScanTypes[scanType] {
 		return fmt.Errorf("invalid scan type: %s", scanType)
@@ -438,12 +447,12 @@ func (h *ProfileHandler) validateTimingTemplate(template string) error {
 		return nil
 	}
 	validTimingTemplates := map[string]bool{
-		"paranoid":   true,
-		"sneaky":     true,
-		"polite":     true,
-		"normal":     true,
-		"aggressive": true,
-		"insane":     true,
+		timingParanoid:     true,
+		timingSneaky:       true,
+		timingPolite:       true,
+		timingNormal:       true,
+		scanTypeAggressive: true,
+		timingInsane:       true,
 	}
 	if !validTimingTemplates[template] {
 		return fmt.Errorf("invalid timing template: %s", template)

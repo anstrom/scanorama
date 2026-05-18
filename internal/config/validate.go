@@ -25,14 +25,30 @@ const (
 )
 
 const (
-	// outputStdout is the constant for the "stdout" output target.
 	outputStdout = "stdout"
-	// outputStderr is the constant for the "stderr" output target.
 	outputStderr = "stderr"
 
-	// largeWorkerPoolThreshold is the threshold above which
-	// a worker pool size warning is emitted.
 	largeWorkerPoolThreshold = 1000
+
+	validScanConnect       = "connect"
+	validScanSYN           = "syn"
+	validScanACK           = "ack"
+	validScanUDP           = "udp"
+	validScanAggressive    = "aggressive"
+	validScanComprehensive = "comprehensive"
+
+	validLogDebug = "debug"
+	validLogInfo  = "info"
+	validLogWarn  = "warn"
+	validLogError = "error"
+	validLogText  = "text"
+	validLogJSON  = "json"
+
+	validDiscoveryPing = "ping"
+	validDiscoveryTCP  = "tcp"
+	validDiscoveryARP  = "arp"
+
+	sslModeDisable = "disable"
 )
 
 // ValidationIssue represents a single validation error or warning.
@@ -404,13 +420,13 @@ func ValidateDatabaseConfig(cfg *db.Config) *ValidationResult {
 
 	// Validate SSL mode
 	validSSLModes := map[string]bool{
-		"disable":     true,
-		"require":     true,
-		"verify-ca":   true,
-		"verify-full": true,
-		"prefer":      true,
-		"allow":       true,
-		"":            true,
+		sslModeDisable: true,
+		"require":      true,
+		"verify-ca":    true,
+		"verify-full":  true,
+		"prefer":       true,
+		"allow":        true,
+		"":             true,
 	}
 	if !validSSLModes[cfg.SSLMode] {
 		result.addError(
@@ -528,12 +544,12 @@ func ValidateScanningConfig(
 
 	// Validate scan mode
 	validScanTypes := map[string]bool{
-		"connect":       true,
-		"syn":           true,
-		"ack":           true,
-		"udp":           true,
-		"aggressive":    true,
-		"comprehensive": true,
+		validScanConnect:       true,
+		validScanSYN:           true,
+		validScanACK:           true,
+		validScanUDP:           true,
+		validScanAggressive:    true,
+		validScanComprehensive: true,
 	}
 	scanType := strings.ToLower(
 		strings.TrimSpace(cfg.ScanMode),
@@ -935,10 +951,10 @@ func ValidateLoggingConfig(
 
 	// Validate log level
 	validLogLevels := map[string]bool{
-		"debug": true,
-		"info":  true,
-		"warn":  true,
-		"error": true,
+		validLogDebug: true,
+		validLogInfo:  true,
+		validLogWarn:  true,
+		validLogError: true,
 	}
 	level := strings.ToLower(strings.TrimSpace(cfg.Level))
 	if !validLogLevels[level] {
@@ -954,8 +970,8 @@ func ValidateLoggingConfig(
 
 	// Validate log format
 	validLogFormats := map[string]bool{
-		"text": true,
-		"json": true,
+		validLogText: true,
+		validLogJSON: true,
 	}
 	format := strings.ToLower(strings.TrimSpace(cfg.Format))
 	if !validLogFormats[format] {
@@ -1050,10 +1066,10 @@ func ValidateDiscoveryConfig(
 
 	// Validate default method
 	validMethods := map[string]bool{
-		"ping": true,
-		"tcp":  true,
-		"arp":  true,
-		"":     true, // empty is OK
+		validDiscoveryPing: true,
+		validDiscoveryTCP:  true,
+		validDiscoveryARP:  true,
+		"":                 true,
 	}
 	method := strings.ToLower(
 		strings.TrimSpace(cfg.Defaults.Method),

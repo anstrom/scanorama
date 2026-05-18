@@ -65,8 +65,8 @@ func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		groups = []*db.HostGroup{}
 	}
 	writeJSON(w, r, http.StatusOK, map[string]interface{}{
-		"groups": groups,
-		"total":  len(groups),
+		"groups":         groups,
+		responseKeyTotal: len(groups),
 	})
 }
 

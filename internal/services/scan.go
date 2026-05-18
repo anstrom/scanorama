@@ -29,6 +29,15 @@ const MaxTargetLength = 200
 // MaxTargetCount is the maximum number of targets allowed per scan.
 const MaxTargetCount = 100
 
+const (
+	scanTypeConnect       = "connect"
+	scanTypeSYN           = "syn"
+	scanTypeACK           = "ack"
+	scanTypeUDP           = "udp"
+	scanTypeAggressive    = "aggressive"
+	scanTypeComprehensive = "comprehensive"
+)
+
 // hostnameLabel matches a single DNS label: 1–63 chars, alphanumeric plus
 // interior hyphens, not starting or ending with a hyphen (RFC 1123).
 var hostnameLabel = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
@@ -57,12 +66,12 @@ func IsValidScanTarget(s string) bool {
 
 // validScanTypes lists the scan-type values accepted by the service layer.
 var validScanTypes = map[string]bool{
-	"connect":       true,
-	"syn":           true,
-	"ack":           true,
-	"udp":           true,
-	"aggressive":    true,
-	"comprehensive": true,
+	scanTypeConnect:       true,
+	scanTypeSYN:           true,
+	scanTypeACK:           true,
+	scanTypeUDP:           true,
+	scanTypeAggressive:    true,
+	scanTypeComprehensive: true,
 }
 
 // -- Repository interface --

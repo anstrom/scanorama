@@ -32,14 +32,20 @@ const (
 	minTimeout            = 30 * time.Second
 	timeoutMultiplierBase = 6.0
 	timeoutMultiplierStep = 2.0
-	// SQL error constants
-
 	timeoutMultiplierMax  = 50.0
 	timeoutDivisor        = 100.0
 	maxHostBits           = 24
 	rfc3021NetworkSize    = 31
 	singleHostNetworkSize = 32
 	minNmapOutputFields   = 5
+
+	methodDNS        = "dns"
+	methodTCPConnect = "tcp_connect"
+	methodTCP        = "tcp"
+	methodPing       = "ping"
+	methodICMP       = "icmp"
+	methodARP        = "arp"
+	addrTypeMac      = "mac"
 )
 
 // Engine handles network discovery operations.
@@ -172,7 +178,7 @@ func (e *Engine) ScanNetwork(ctx context.Context, cfg *Config) (int, error) {
 
 	var discovered []Result
 	var scanErr error
-	if cfg.Method == "dns" {
+	if cfg.Method == methodDNS {
 		discovered, scanErr = e.dnsScan(ctx, *ipnet, maxHosts)
 	} else {
 		discovered, scanErr = e.nmapScan(ctx, *ipnet, maxHosts, cfg)
@@ -260,7 +266,7 @@ func (e *Engine) runDiscovery(ctx context.Context, job *db.DiscoveryJob, config 
 
 	var discoveredHosts []Result
 	var scanErr error
-	if config.Method == "dns" {
+	if config.Method == methodDNS {
 		discoveredHosts, scanErr = e.dnsScan(ctx, job.Network.IPNet, maxHosts)
 	} else {
 		discoveredHosts, scanErr = e.nmapScan(ctx, job.Network.IPNet, maxHosts, config)
@@ -446,13 +452,13 @@ func (e *Engine) buildNmapLibraryOptions(targets []string, config *Config, timeo
 
 	// Add method-specific options
 	switch config.Method {
-	case "tcp", "tcp_connect":
+	case methodTCP, methodTCPConnect:
 		// TCP SYN ping on common ports
 		options = append(options, nmap.WithSYNDiscovery("22", "80", "443", "8080", "8022", "8379"))
-	case "ping", "icmp":
+	case methodPing, methodICMP:
 		// ICMP echo ping
 		options = append(options, nmap.WithICMPEchoDiscovery())
-	case "arp":
+	case methodARP:
 		// ARP ping for local networks
 		options = append(options, nmap.WithCustomArguments("-PR")) //nolint:staticcheck
 	}
@@ -529,7 +535,7 @@ func (e *Engine) convertNmapResultsToDiscovery(nmapResult *nmap.Run, method stri
 		// Extract MAC address and vendor from nmap results.
 		// For ARP scans nmap populates the Vendor field from its built-in OUI DB.
 		for _, addr := range host.Addresses {
-			if addr.AddrType == "mac" {
+			if addr.AddrType == addrTypeMac {
 				result.MACAddress = addr.Addr
 				if addr.Vendor != "" {
 					result.Vendor = addr.Vendor

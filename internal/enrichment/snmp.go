@@ -59,6 +59,12 @@ const (
 	ifOperStatusLowerLayerDown = 7
 )
 
+const (
+	ifStatusUp      = "up"
+	ifStatusDown    = "down"
+	ifStatusUnknown = "unknown"
+)
+
 var systemOIDs = []string{
 	oidSysDescr,
 	oidSysUptime,
@@ -242,13 +248,13 @@ func parseIfPDUs(vars []gosnmp.SnmpPDU, count int) map[int]*ifData {
 func ifStatusString(code int64) string {
 	switch code {
 	case ifOperStatusUp:
-		return "up"
+		return ifStatusUp
 	case ifOperStatusDown:
-		return "down"
+		return ifStatusDown
 	case ifOperStatusTesting:
 		return "testing"
 	case ifOperStatusUnknown:
-		return "unknown"
+		return ifStatusUnknown
 	case ifOperStatusDormant:
 		return "dormant"
 	case ifOperStatusNotPresent:
@@ -256,7 +262,7 @@ func ifStatusString(code int64) string {
 	case ifOperStatusLowerLayerDown:
 		return "lowerLayerDown"
 	default:
-		return "unknown"
+		return ifStatusUnknown
 	}
 }
 

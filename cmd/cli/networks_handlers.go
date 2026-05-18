@@ -37,10 +37,10 @@ func runNetworksAdd(cmd *cobra.Command, args []string) {
 
 	// Validate discovery method
 	validMethods := map[string]bool{
-		"tcp":  true,
-		"ping": true,
-		"arp":  true,
-		"icmp": true,
+		methodTCP:              true,
+		defaultDiscoveryMethod: true,
+		methodARP:              true,
+		methodICMP:             true,
 	}
 	if !validMethods[networksMethod] {
 		fmt.Fprintf(os.Stderr, "Error: invalid discovery method '%s'. Valid methods: tcp, ping, arp, icmp\n",

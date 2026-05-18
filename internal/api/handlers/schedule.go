@@ -22,11 +22,25 @@ import (
 
 // Schedule validation constants.
 const (
-	maxScheduleNameLength = 255
-	maxScheduleDescLength = 1000
-	maxScheduleTagLength  = 50
-	maxScheduleRetries    = 10
-	scheduleStatusActive  = "active"
+	maxScheduleNameLength     = 255
+	maxScheduleDescLength     = 1000
+	maxScheduleTagLength      = 50
+	maxScheduleRetries        = 10
+	scheduleStatusActive      = "active"
+	scheduleStatusEnabled     = "enabled"
+	scheduleStatusDisabled    = "disabled"
+	scheduleStatusPending     = "pending"
+	scheduleTypeKey           = "scan"
+	scheduleDiscoveryKey      = "discovery"
+	scheduleJobConfigKeyID    = "schedule_id"
+	scheduleJobConfigNetID    = "network_id"
+	scheduleJobConfigRetry    = "retry_on_error"
+	scheduleJobConfigNotify   = "notify_on_fail"
+	scheduleJobConfigMaxRetry = "max_retries"
+	scheduleJobConfigEmails   = "notify_emails"
+	scheduleJobConfigTags     = "tags"
+	scheduleJobConfigOptions  = "options"
+	scheduleJobConfigLimit    = "limit"
 )
 
 // ScheduleHandler handles schedule-related API endpoints.
@@ -251,11 +265,11 @@ func (h *ScheduleHandler) EnableSchedule(w http.ResponseWriter, r *http.Request)
 	}
 
 	response := map[string]interface{}{
-		"schedule_id": scheduleID,
-		"status":      "enabled",
-		"message":     "Schedule has been enabled",
-		"timestamp":   time.Now().UTC(),
-		"request_id":  requestID,
+		scheduleJobConfigKeyID: scheduleID,
+		responseKeyStatus:      scheduleStatusEnabled,
+		responseKeyMessage:     "Schedule has been enabled",
+		responseKeyTS:          time.Now().UTC(),
+		responseKeyReqID:       requestID,
 	}
 
 	if schedule != nil {
@@ -303,11 +317,11 @@ func (h *ScheduleHandler) DisableSchedule(w http.ResponseWriter, r *http.Request
 	}
 
 	response := map[string]interface{}{
-		"schedule_id": scheduleID,
-		"status":      "disabled",
-		"message":     "Schedule has been disabled",
-		"timestamp":   time.Now().UTC(),
-		"request_id":  requestID,
+		scheduleJobConfigKeyID: scheduleID,
+		responseKeyStatus:      scheduleStatusDisabled,
+		responseKeyMessage:     "Schedule has been disabled",
+		responseKeyTS:          time.Now().UTC(),
+		responseKeyReqID:       requestID,
 	}
 
 	h.logger.Info("Schedule disabled successfully",
@@ -345,8 +359,8 @@ func (h *ScheduleHandler) GetScheduleNextRun(w http.ResponseWriter, r *http.Requ
 	}
 
 	writeJSON(w, r, http.StatusOK, map[string]interface{}{
-		"schedule_id": scheduleID,
-		"next_run":    nextRun,
+		scheduleJobConfigKeyID: scheduleID,
+		"next_run":             nextRun,
 	})
 }
 
@@ -391,10 +405,10 @@ func (h *ScheduleHandler) CreateSmartScanSchedule(w http.ResponseWriter, r *http
 		CronExpression: req.CronExpr,
 		Enabled:        req.Enabled,
 		JobConfig: map[string]interface{}{
-			"score_threshold":     req.ScoreThreshold,
-			"max_staleness_hours": req.MaxStalenessHours,
-			"network_cidr":        req.NetworkCIDR,
-			"limit":               req.Limit,
+			"score_threshold":      req.ScoreThreshold,
+			"max_staleness_hours":  req.MaxStalenessHours,
+			"network_cidr":         req.NetworkCIDR,
+			scheduleJobConfigLimit: req.Limit,
 		},
 	}
 	schedule, err := h.service.CreateSchedule(r.Context(), input)
@@ -473,8 +487,8 @@ func (h *ScheduleHandler) validateBasicScheduleFields(req *ScheduleRequest) erro
 
 func (h *ScheduleHandler) validateScheduleType(scheduleType string) error {
 	validTypes := map[string]bool{
-		"scan":      true,
-		"discovery": true,
+		scheduleTypeKey:      true,
+		scheduleDiscoveryKey: true,
 	}
 	if !validTypes[scheduleType] {
 		return fmt.Errorf("invalid schedule type: %s", scheduleType)
@@ -566,17 +580,17 @@ func (h *ScheduleHandler) getScheduleFilters(r *http.Request) db.ScheduleFilters
 // packing fields that don't have dedicated DB columns.
 func buildScheduleJobConfig(req *ScheduleRequest) map[string]interface{} {
 	jobConfig := map[string]interface{}{
-		"network_id":     req.NetworkID.String(),
-		"max_run_time":   req.MaxRunTime.String(),
-		"retry_on_error": req.RetryOnError,
-		"max_retries":    req.MaxRetries,
-		"retry_delay":    req.RetryDelay.String(),
-		"notify_on_fail": req.NotifyOnFail,
-		"notify_emails":  req.NotifyEmails,
-		"tags":           req.Tags,
+		scheduleJobConfigNetID:    req.NetworkID.String(),
+		"max_run_time":            req.MaxRunTime.String(),
+		scheduleJobConfigRetry:    req.RetryOnError,
+		scheduleJobConfigMaxRetry: req.MaxRetries,
+		"retry_delay":             req.RetryDelay.String(),
+		scheduleJobConfigNotify:   req.NotifyOnFail,
+		scheduleJobConfigEmails:   req.NotifyEmails,
+		scheduleJobConfigTags:     req.Tags,
 	}
 	if req.Options != nil {
-		jobConfig["options"] = req.Options
+		jobConfig[scheduleJobConfigOptions] = req.Options
 	}
 	return jobConfig
 }
@@ -629,11 +643,11 @@ func (h *ScheduleHandler) scheduleToResponse(schedule *db.Schedule) ScheduleResp
 	// Derive status from enabled + last run info
 	switch {
 	case !schedule.Enabled:
-		resp.Status = "disabled"
+		resp.Status = scheduleStatusDisabled
 	case schedule.LastRun != nil:
 		resp.Status = scheduleStatusActive
 	default:
-		resp.Status = "pending"
+		resp.Status = scheduleStatusPending
 	}
 
 	applyJobConfigToScheduleResponse(schedule.JobConfig, &resp)
@@ -648,34 +662,34 @@ func applyJobConfigToScheduleResponse(cfg map[string]interface{}, resp *Schedule
 		return
 	}
 
-	if networkID, ok := cfg["network_id"]; ok {
+	if networkID, ok := cfg[scheduleJobConfigNetID]; ok {
 		resp.NetworkID = fmt.Sprintf("%v", networkID)
 	}
-	if v, ok := cfg["retry_on_error"].(bool); ok {
+	if v, ok := cfg[scheduleJobConfigRetry].(bool); ok {
 		resp.RetryOnError = v
 	}
-	if v, ok := cfg["max_retries"].(float64); ok {
+	if v, ok := cfg[scheduleJobConfigMaxRetry].(float64); ok {
 		resp.MaxRetries = int(v)
 	}
-	if v, ok := cfg["notify_on_fail"].(bool); ok {
+	if v, ok := cfg[scheduleJobConfigNotify].(bool); ok {
 		resp.NotifyOnFail = v
 	}
 
-	if emails, ok := cfg["notify_emails"].([]interface{}); ok {
+	if emails, ok := cfg[scheduleJobConfigEmails].([]interface{}); ok {
 		for _, e := range emails {
 			if s, ok := e.(string); ok {
 				resp.NotifyEmails = append(resp.NotifyEmails, s)
 			}
 		}
 	}
-	if tags, ok := cfg["tags"].([]interface{}); ok {
+	if tags, ok := cfg[scheduleJobConfigTags].([]interface{}); ok {
 		for _, t := range tags {
 			if s, ok := t.(string); ok {
 				resp.Tags = append(resp.Tags, s)
 			}
 		}
 	}
-	if opts, ok := cfg["options"].(map[string]interface{}); ok {
+	if opts, ok := cfg[scheduleJobConfigOptions].(map[string]interface{}); ok {
 		resp.Options = make(map[string]string, len(opts))
 		for k, v := range opts {
 			resp.Options[k] = fmt.Sprintf("%v", v)

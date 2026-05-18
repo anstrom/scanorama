@@ -14,6 +14,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	updateFieldName      = "name"
+	updateFieldNotes     = "notes"
+	updateFieldExpiresAt = "expires_at"
+	statsKeyTotalKeys    = "total_keys"
+	statsKeyActiveKeys   = "active_keys"
+	statsKeyRevokedKeys  = "revoked_keys"
+	statsKeyExpiredKeys  = "expired_keys"
+	statsKeyUsedKeys     = "used_keys"
+)
+
 // APIKeyRepository provides database operations for API keys
 type APIKeyRepository struct {
 	db *db.DB
@@ -213,15 +224,15 @@ func (r *APIKeyRepository) UpdateAPIKey(keyID string, updates map[string]interfa
 
 	for field, value := range updates {
 		switch field {
-		case "name":
+		case updateFieldName:
 			setParts = append(setParts, fmt.Sprintf("name = $%d", argIndex))
 			args = append(args, value)
 			argIndex++
-		case "notes":
+		case updateFieldNotes:
 			setParts = append(setParts, fmt.Sprintf("notes = $%d", argIndex))
 			args = append(args, value)
 			argIndex++
-		case "expires_at":
+		case updateFieldExpiresAt:
 			setParts = append(setParts, fmt.Sprintf("expires_at = $%d", argIndex))
 			args = append(args, value)
 			argIndex++
@@ -394,11 +405,11 @@ func (r *APIKeyRepository) GetAPIKeyStats() (map[string]interface{}, error) {
 	}
 
 	result := map[string]interface{}{
-		"total_keys":   stats.TotalKeys,
-		"active_keys":  stats.ActiveKeys,
-		"revoked_keys": stats.RevokedKeys,
-		"expired_keys": stats.ExpiredKeys,
-		"used_keys":    stats.UsedKeys,
+		statsKeyTotalKeys:   stats.TotalKeys,
+		statsKeyActiveKeys:  stats.ActiveKeys,
+		statsKeyRevokedKeys: stats.RevokedKeys,
+		statsKeyExpiredKeys: stats.ExpiredKeys,
+		statsKeyUsedKeys:    stats.UsedKeys,
 	}
 
 	if stats.AvgUsageCount.Valid {

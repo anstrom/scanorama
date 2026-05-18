@@ -10,6 +10,8 @@ import (
 const (
 	// maxScanDurationMinutes defines the maximum allowed scan duration before considering it potentially hung.
 	maxScanDurationMinutes = 30
+
+	statsKeyClosed = "closed"
 )
 
 // ResourceManager manages scan resources and concurrency limits.
@@ -167,6 +169,6 @@ func (rm *FixedResourceManager) GetStats() map[string]interface{} {
 		"active_scans":    len(rm.activeScans),
 		"available_slots": rm.capacity - len(rm.activeScans),
 		"is_healthy":      rm.IsHealthy(),
-		"closed":          rm.closed,
+		statsKeyClosed:    rm.closed,
 	}
 }

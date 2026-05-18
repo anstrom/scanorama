@@ -29,7 +29,13 @@ func getVersion() string {
 
 // System handler constants.
 const (
-	healthCheckTimeout = 5 * time.Second
+	healthCheckTimeout  = 5 * time.Second
+	apiServiceNameFull  = "scanorama-api"
+	apiServiceName      = "scanorama"
+	apiRespKeyStatus    = "status"
+	apiRespKeyTimestamp = "timestamp"
+	apiRespKeyService   = "service"
+	apiRespKeyVersion   = "version"
 )
 
 // livenessHandler provides a simple liveness check endpoint.
@@ -42,9 +48,9 @@ const (
 // @Router /liveness [get]
 func (s *Server) livenessHandler(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
-		"status":    "alive",
-		"timestamp": time.Now().UTC(),
-		"uptime":    time.Since(s.startTime).String(),
+		apiRespKeyStatus:    "alive",
+		apiRespKeyTimestamp: time.Now().UTC(),
+		"uptime":            time.Since(s.startTime).String(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -81,9 +87,9 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"status":    status,
-		"timestamp": time.Now().UTC(),
-		"checks":    checks,
+		apiRespKeyStatus:    status,
+		apiRespKeyTimestamp: time.Now().UTC(),
+		"checks":            checks,
 	}
 
 	statusCode := http.StatusOK
@@ -106,10 +112,10 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 // @Router /status [get]
 func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
-		"service":   "scanorama-api",
-		"timestamp": time.Now().UTC(),
-		"uptime":    time.Since(s.startTime).String(),
-		"version":   getVersion(),
+		apiRespKeyService:   apiServiceNameFull,
+		apiRespKeyTimestamp: time.Now().UTC(),
+		"uptime":            time.Since(s.startTime).String(),
+		apiRespKeyVersion:   getVersion(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -126,11 +132,11 @@ func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
 // @Router /version [get]
 func (s *Server) versionHandler(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
-		"version":    getVersion(),
-		"commit":     buildCommit,
-		"build_time": buildTimestamp,
-		"timestamp":  time.Now().UTC(),
-		"service":    "scanorama",
+		apiRespKeyVersion:   getVersion(),
+		"commit":            buildCommit,
+		"build_time":        buildTimestamp,
+		apiRespKeyTimestamp: time.Now().UTC(),
+		apiRespKeyService:   apiServiceName,
 	}
 
 	s.WriteJSON(w, r, http.StatusOK, response)
@@ -182,8 +188,8 @@ func (s *Server) adminStatusHandler(w http.ResponseWriter, r *http.Request) {
 // redirectToAPI returns API information for root requests.
 func (s *Server) redirectToAPI(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
-		"service": "Scanorama API",
-		"version": "v1",
+		"service":         "Scanorama API",
+		apiRespKeyVersion: "v1",
 		"endpoints": map[string]string{
 			"liveness": "/api/v1/liveness",
 			"health":   "/api/v1/health",

@@ -60,6 +60,15 @@ const (
 	DefaultFilePermissions = 0o600
 )
 
+const (
+	defaultScanMode         = validScanSYN
+	defaultAPIHost          = "127.0.0.1"
+	defaultDiscoveryMethod  = validDiscoveryPing
+	defaultDiscoveryTimeout = "30s"
+	defaultLogLevel         = validLogInfo
+	defaultLogFormat        = validLogText
+)
+
 // Config represents the application configuration.
 type Config struct {
 	// Daemon configuration
@@ -363,7 +372,7 @@ func defaultScanningConfig() ScanningConfig {
 		DefaultInterval:        1 * time.Hour,
 		MaxScanTimeout:         defaultScanTimeoutMin * time.Minute,
 		DefaultPorts:           "22,80,443,8080,8443",
-		ScanMode:               "syn",
+		ScanMode:               defaultScanMode,
 		MaxConcurrentTargets:   defaultMaxConcurrentTargets,
 		EnableServiceDetection: true,
 		EnableOSDetection:      false,
@@ -385,7 +394,7 @@ func defaultScanningConfig() ScanningConfig {
 func defaultAPIConfig() APIConfig {
 	return APIConfig{
 		Enabled:        true,
-		Host:           "127.0.0.1",
+		Host:           defaultAPIHost,
 		Port:           defaultAPIPort,
 		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,
@@ -415,8 +424,8 @@ func defaultDiscoveryConfig() DiscoveryConfig {
 		Networks:         []NetworkConfig{},
 		GlobalExclusions: []string{},
 		Defaults: DiscoveryDefaults{
-			Method:   "ping",
-			Timeout:  "30s",
+			Method:   defaultDiscoveryMethod,
+			Timeout:  defaultDiscoveryTimeout,
 			Schedule: "0 */12 * * *", // Twice daily
 			Ports:    "22,80,443,8080,8443,3389,5432,6379",
 		},
@@ -427,9 +436,9 @@ func defaultDiscoveryConfig() DiscoveryConfig {
 // defaultLoggingConfig returns the default logging configuration.
 func defaultLoggingConfig() LoggingConfig {
 	return LoggingConfig{
-		Level:  "info",
-		Format: "text",
-		Output: "stdout",
+		Level:  defaultLogLevel,
+		Format: defaultLogFormat,
+		Output: outputStdout,
 		Rotation: RotationConfig{
 			Enabled:    false,
 			MaxSizeMB:  defaultMaxSizeMB,
@@ -478,7 +487,7 @@ func getDatabaseConfigFromEnv() db.Config {
 		Database:        getEnvString("SCANORAMA_DB_NAME", ""),
 		Username:        getEnvString("SCANORAMA_DB_USER", ""),
 		Password:        getEnvString("SCANORAMA_DB_PASSWORD", ""),
-		SSLMode:         getEnvString("SCANORAMA_DB_SSLMODE", "disable"),
+		SSLMode:         getEnvString("SCANORAMA_DB_SSLMODE", sslModeDisable),
 		MaxOpenConns:    getEnvInt("SCANORAMA_DB_MAX_OPEN_CONNS", DefaultMaxOpenConns),
 		MaxIdleConns:    getEnvInt("SCANORAMA_DB_MAX_IDLE_CONNS", DefaultMaxIdleConns),
 		ConnMaxLifetime: getEnvDuration("SCANORAMA_DB_CONN_MAX_LIFETIME", DefaultConnMaxLifetime),

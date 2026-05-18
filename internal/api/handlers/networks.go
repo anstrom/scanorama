@@ -107,7 +107,7 @@ type NetworkStatsResponse struct {
 // ---------------------------------------------------------------------------
 
 func (h *NetworkHandler) parseNetworkFilters(r *http.Request) (showInactive bool, nameFilter string) {
-	showInactive = r.URL.Query().Get("show_inactive") == "true"
+	showInactive = r.URL.Query().Get(queryShowInactive) == queryValTrue
 	nameFilter = r.URL.Query().Get("name")
 	return showInactive, nameFilter
 }
@@ -185,13 +185,21 @@ func (h *NetworkHandler) parseReasonFromRequest(req *CreateExclusionRequest) str
 // Validation helpers
 // ---------------------------------------------------------------------------
 
-const maxNetworkNameLen = 100
+const (
+	maxNetworkNameLen   = 100
+	discoveryMethodPing = "ping"
+	discoveryMethodARP  = "arp"
+	discoveryMethodICMP = "icmp"
+	defaultScanConnect  = "connect"
+	defaultPortRange    = "1-1024"
+	queryShowInactive   = "show_inactive"
+)
 
 var validDiscoveryMethods = map[string]bool{
-	"ping": true,
-	"tcp":  true,
-	"arp":  true,
-	"icmp": true,
+	discoveryMethodPing: true,
+	protoTCP:            true,
+	discoveryMethodARP:  true,
+	discoveryMethodICMP: true,
 }
 
 func (h *NetworkHandler) validateCreateNetworkRequest(req *CreateNetworkRequest) error {
@@ -292,7 +300,7 @@ func (h *NetworkHandler) ListNetworks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writePaginatedResponse(w, r, filteredNetworks, params, totalItems)
-	recordCRUDMetric(h.metrics, "networks_listed", map[string]string{"status": "success"})
+	recordCRUDMetric(h.metrics, "networks_listed", map[string]string{responseKeyStatus: statusSuccess})
 }
 
 // CreateNetwork handles POST /api/v1/networks.
@@ -411,7 +419,7 @@ func (h *NetworkHandler) DeleteNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-	recordCRUDMetric(h.metrics, "networks_deleted", map[string]string{"status": "success"})
+	recordCRUDMetric(h.metrics, "networks_deleted", map[string]string{responseKeyStatus: statusSuccess})
 }
 
 // EnableNetwork handles POST /api/v1/networks/{id}/enable.
@@ -646,7 +654,7 @@ func (h *NetworkHandler) StartNetworkDiscovery(w http.ResponseWriter, r *http.Re
 	cidr := network.CIDR.String()
 	method := network.DiscoveryMethod
 	if method == "" {
-		method = "tcp"
+		method = protoTCP
 	}
 
 	// Create the discovery job.
@@ -907,8 +915,8 @@ func (h *NetworkHandler) StartNetworkScan(w http.ResponseWriter, r *http.Request
 	scan, err := h.scanService.CreateScan(r.Context(), db.CreateScanInput{
 		Name:        scanName,
 		Targets:     targets,
-		ScanType:    "connect",
-		Ports:       "1-1024",
+		ScanType:    defaultScanConnect,
+		Ports:       defaultPortRange,
 		OSDetection: req.OSDetection,
 		NetworkID:   &networkID,
 	})

@@ -23,6 +23,14 @@ import (
 	"github.com/anstrom/scanorama/internal/services"
 )
 
+const (
+	labelScanType       = "scan_type"
+	scanStatusCompleted = "completed"
+	scanStatusFailed    = "failed"
+	scanStatusRunning   = "running"
+	entityTypeScan      = "scan"
+)
+
 // ScanHandler handles scan-related API endpoints.
 type ScanHandler struct {
 	service    ScanServicer
@@ -198,7 +206,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 
 	if h.metrics != nil {
 		h.metrics.Counter("api_scans_created_total", map[string]string{
-			"scan_type": req.ScanType,
+			labelScanType: req.ScanType,
 		})
 	}
 }
@@ -212,7 +220,7 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	crudOp := &CRUDOperation[db.Scan]{
-		EntityType: "scan",
+		EntityType: entityTypeScan,
 		Logger:     h.logger,
 		Metrics:    h.metrics,
 	}
@@ -253,7 +261,7 @@ func (h *ScanHandler) DeleteScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	crudOp := &CRUDOperation[db.Scan]{
-		EntityType: "scan",
+		EntityType: entityTypeScan,
 		Logger:     h.logger,
 		Metrics:    h.metrics,
 	}
@@ -395,7 +403,7 @@ func (h *ScanHandler) StartScan(w http.ResponseWriter, r *http.Request) {
 
 	if h.metrics != nil {
 		h.metrics.Counter("api_scans_started_total", map[string]string{
-			"scan_type": scan.ScanType,
+			labelScanType: scan.ScanType,
 		})
 	}
 
@@ -410,7 +418,7 @@ func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error
 		concreteDB = svc.DB()
 	}
 
-	scanType := firstNonEmpty(scan.ScanType, h.scanMode, "connect")
+	scanType := firstNonEmpty(scan.ScanType, h.scanMode, scanTypeConnect)
 	scanConfig := &scanning.ScanConfig{
 		Targets:     scan.Targets,
 		Ports:       scan.Ports,
@@ -464,7 +472,7 @@ func (h *ScanHandler) submitToQueue(scanID uuid.UUID, scan *db.Scan) (int, error
 func (h *ScanHandler) executeScanAsync(scanID uuid.UUID, scan *db.Scan) {
 	h.logger.Info("Starting async scan execution", "scan_id", scanID, "scan_name", scan.Name)
 
-	scanType := firstNonEmpty(scan.ScanType, h.scanMode, "connect")
+	scanType := firstNonEmpty(scan.ScanType, h.scanMode, scanTypeConnect)
 	scanConfig := &scanning.ScanConfig{
 		Targets:     scan.Targets,
 		Ports:       scan.Ports,
@@ -510,7 +518,7 @@ func (h *ScanHandler) StopScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobOp := &JobControlOperation{
-		EntityType: "scan",
+		EntityType: entityTypeScan,
 		Logger:     h.logger,
 		Metrics:    h.metrics,
 	}
@@ -544,8 +552,8 @@ func (h *ScanHandler) validateScanRequest(req *ScanRequest) error {
 	}
 
 	validScanTypes := map[string]bool{
-		"connect": true, "syn": true, "ack": true,
-		"udp": true, "aggressive": true, "comprehensive": true,
+		scanTypeConnect: true, scanTypeSYN: true, scanTypeACK: true,
+		scanTypeUDP: true, scanTypeAggressive: true, scanTypeComprehensive: true,
 	}
 	if !validScanTypes[req.ScanType] {
 		return fmt.Errorf("invalid scan type: %s", req.ScanType)
@@ -671,11 +679,11 @@ func (h *ScanHandler) scanToResponse(scan *db.Scan) ScanResponse {
 
 	// Compute progress from status
 	switch scan.Status {
-	case "completed":
+	case scanStatusCompleted:
 		resp.Progress = 100.0
-	case "failed":
+	case scanStatusFailed:
 		resp.Progress = 0.0
-	case "running":
+	case scanStatusRunning:
 		resp.Progress = 50.0 // Approximation without a dedicated progress field
 	default:
 		resp.Progress = 0.0

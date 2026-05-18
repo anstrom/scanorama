@@ -19,6 +19,7 @@ const (
 	// Default configuration constants.
 	defaultDatabasePort         = 5432 // PostgreSQL default port
 	defaultMaxConcurrentTargets = 100  // default max concurrent scan targets
+	defaultConfigFile           = "config.yaml"
 )
 
 var (
@@ -181,5 +182,5 @@ func getConfigFilePath() string {
 		return configFile
 	}
 	// Fallback to default if no config file was loaded
-	return "config.yaml"
+	return defaultConfigFile
 }

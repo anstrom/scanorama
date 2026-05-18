@@ -31,6 +31,18 @@ const (
 	methodOPTIONS = "OPTIONS"
 )
 
+const (
+	respKeyRequestID = "request_id"
+	respKeyTimestamp = "timestamp"
+	respKeyError     = "error"
+	respKeyMessage   = "message"
+	contentTypeJSON  = "application/json"
+	healthPathV1     = "/api/v1/health"
+	versionPathV1    = "/api/v1/version"
+	livenessPathV1   = "/api/v1/liveness"
+	unknownValue     = "unknown"
+)
+
 // ContextKey represents a context key type.
 type ContextKey string
 
@@ -235,13 +247,13 @@ func Recovery(logger *slog.Logger) func(http.Handler) http.Handler {
 						"remote_addr", getClientIP(r))
 
 					// Return 500 error
-					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set("Content-Type", contentTypeJSON)
 					w.WriteHeader(http.StatusInternalServerError)
 
 					response := map[string]interface{}{
-						"error":      "Internal server error",
-						"request_id": requestID,
-						"timestamp":  time.Now().UTC(),
+						respKeyError:     "Internal server error",
+						respKeyRequestID: requestID,
+						respKeyTimestamp: time.Now().UTC(),
 					}
 
 					if encodeErr := json.NewEncoder(w).Encode(response); encodeErr != nil {
@@ -272,7 +284,7 @@ func Authentication(configKeys []string, database *db.DB, logger *slog.Logger) f
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Skip authentication for health checks
-			if r.URL.Path == "/api/v1/health" || r.URL.Path == "/api/v1/version" || r.URL.Path == "/api/v1/liveness" {
+			if r.URL.Path == healthPathV1 || r.URL.Path == versionPathV1 || r.URL.Path == livenessPathV1 {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -293,13 +305,13 @@ func Authentication(configKeys []string, database *db.DB, logger *slog.Logger) f
 					"path", r.URL.Path,
 					"remote_addr", getClientIP(r))
 
-				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Content-Type", contentTypeJSON)
 				w.WriteHeader(http.StatusUnauthorized)
 				response := map[string]interface{}{
-					"error":      "Authentication required",
-					"message":    "Provide API key in X-API-Key header or Authorization: Bearer <key>",
-					"request_id": GetRequestID(r),
-					"timestamp":  time.Now().UTC(),
+					respKeyError:     "Authentication required",
+					respKeyMessage:   "Provide API key in X-API-Key header or Authorization: Bearer <key>",
+					respKeyRequestID: GetRequestID(r),
+					respKeyTimestamp: time.Now().UTC(),
 				}
 				_ = json.NewEncoder(w).Encode(response)
 				return
@@ -344,12 +356,12 @@ func Authentication(configKeys []string, database *db.DB, logger *slog.Logger) f
 				"path", r.URL.Path,
 				"remote_addr", getClientIP(r))
 
-			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Type", contentTypeJSON)
 			w.WriteHeader(http.StatusUnauthorized)
 			response := map[string]interface{}{
-				"error":      "Authentication failed: Invalid API key",
-				"request_id": GetRequestID(r),
-				"timestamp":  time.Now().UTC(),
+				respKeyError:     "Authentication failed: Invalid API key",
+				respKeyRequestID: GetRequestID(r),
+				respKeyTimestamp: time.Now().UTC(),
 			}
 			_ = json.NewEncoder(w).Encode(response)
 		})
@@ -381,17 +393,17 @@ func RateLimit(requests int, window time.Duration, logger *slog.Logger) func(htt
 					"limit", requests,
 					"window", window)
 
-				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Content-Type", contentTypeJSON)
 				w.Header().Set("X-RateLimit-Limit", strconv.Itoa(requests))
 				w.Header().Set("X-RateLimit-Window", window.String())
 				w.WriteHeader(http.StatusTooManyRequests)
 
 				response := map[string]interface{}{
-					"error":       "Rate limit exceeded",
-					"message":     fmt.Sprintf("Maximum %d requests per %s", requests, window),
-					"request_id":  GetRequestID(r),
-					"timestamp":   time.Now().UTC(),
-					"retry_after": window.Seconds(),
+					respKeyError:     "Rate limit exceeded",
+					respKeyMessage:   fmt.Sprintf("Maximum %d requests per %s", requests, window),
+					respKeyRequestID: GetRequestID(r),
+					respKeyTimestamp: time.Now().UTC(),
+					"retry_after":    window.Seconds(),
 				}
 				_ = json.NewEncoder(w).Encode(response)
 				return
@@ -419,17 +431,17 @@ func ContentType() func(http.Handler) http.Handler {
 			// For POST and PUT requests, expect JSON content type
 			if r.Method == methodPOST || r.Method == methodPUT {
 				contentType := r.Header.Get("Content-Type")
-				if contentType != "" && !strings.HasPrefix(contentType, "application/json") {
-					w.Header().Set("Content-Type", "application/json")
+				if contentType != "" && !strings.HasPrefix(contentType, contentTypeJSON) {
+					w.Header().Set("Content-Type", contentTypeJSON)
 					w.WriteHeader(http.StatusUnsupportedMediaType)
 
 					response := map[string]interface{}{
-						"error":      "Unsupported media type",
-						"message":    "Content-Type must be application/json",
-						"expected":   "application/json",
-						"received":   contentType,
-						"request_id": GetRequestID(r),
-						"timestamp":  time.Now().UTC(),
+						respKeyError:     "Unsupported media type",
+						respKeyMessage:   "Content-Type must be application/json",
+						"expected":       contentTypeJSON,
+						"received":       contentType,
+						respKeyRequestID: GetRequestID(r),
+						respKeyTimestamp: time.Now().UTC(),
 					}
 					_ = json.NewEncoder(w).Encode(response)
 					return
@@ -476,7 +488,7 @@ func GetRequestID(r *http.Request) string {
 	if requestID, ok := r.Context().Value(RequestIDKey).(string); ok {
 		return requestID
 	}
-	return "unknown"
+	return unknownValue
 }
 
 // getClientIP extracts the real client IP address from the request.
@@ -501,7 +513,7 @@ func getClientIP(r *http.Request) string {
 		}
 	}
 
-	return "unknown"
+	return unknownValue
 }
 
 // CORS creates a simple CORS middleware.

@@ -24,12 +24,19 @@ func NewPortRepository(db *DB) *PortRepository {
 	return &PortRepository{db: db}
 }
 
+const (
+	colPort     = "port"
+	colService  = "service"
+	colCategory = "category"
+	colProtocol = "protocol"
+)
+
 // validPortSortColumns maps safe sort keys to SQL column names.
 var validPortSortColumns = map[string]string{
-	"port":     "port",
-	"service":  "service",
-	"category": "category",
-	"protocol": "protocol",
+	colPort:     colPort,
+	colService:  colService,
+	colCategory: colCategory,
+	colProtocol: colProtocol,
 }
 
 // scanPortRow scans a single port_definitions row.

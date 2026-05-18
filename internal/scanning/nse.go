@@ -9,6 +9,15 @@ import (
 	nmap "github.com/Ullaakut/nmap/v3"
 )
 
+const (
+	nseScriptBanner    = "banner"
+	nseScriptHTTPTitle = "http-title"
+	nseScriptSSLCert   = "ssl-cert"
+	nseScriptSMBOSDisc = "smb-os-discovery"
+	nseScriptNBStat    = "nbstat"
+	osWindows          = "Windows"
+)
+
 // parsePortScripts extracts structured NSE data from nmap port-level scripts.
 // Returns nil when no scripts are present or none contain actionable data.
 func parsePortScripts(scripts []nmap.Script) *NSEData {
@@ -19,13 +28,13 @@ func parsePortScripts(scripts []nmap.Script) *NSEData {
 	for i := range scripts {
 		s := &scripts[i]
 		switch s.ID {
-		case "banner":
+		case nseScriptBanner:
 			out.Banner = strings.TrimSpace(s.Output)
-		case "http-title":
+		case nseScriptHTTPTitle:
 			out.HTTPTitle = extractHTTPTitle(s)
 		case "ssh-hostkey":
 			out.SSHKeyFingerprint = extractSSHFingerprint(s)
-		case "ssl-cert":
+		case nseScriptSSLCert:
 			out.SSLCert = parseSSLCert(s)
 		}
 	}
@@ -42,9 +51,9 @@ func parseHostScripts(scripts []nmap.Script, host *Host) {
 	for i := range scripts {
 		s := &scripts[i]
 		switch s.ID {
-		case "smb-os-discovery":
+		case nseScriptSMBOSDisc:
 			applySSBOSDiscovery(s, host)
-		case "nbstat":
+		case nseScriptNBStat:
 			if name := findElem(s.Elements, "NetBIOS_Computer_Name"); name != "" && host.SMBHostname == "" {
 				host.SMBHostname = name
 			}
@@ -125,7 +134,7 @@ func applySSBOSDiscovery(s *nmap.Script, host *Host) {
 			if host.OSAccuracy == 0 && host.OSName == "" {
 				host.OSName = e.Value
 				host.OSAccuracy = 60 // SMB OS is reliable but not fingerprint-grade
-				host.OSFamily = "Windows"
+				host.OSFamily = osWindows
 			}
 		case "domain":
 			host.SMBDomain = e.Value

@@ -435,10 +435,10 @@ func discoverLocalNetworks() ([]string, error) {
 func runDiscovery(cmd *cobra.Command, args []string) {
 	// Validate method
 	validMethods := map[string]bool{
-		"tcp":  true,
-		"ping": true,
-		"arp":  true,
-		"icmp": true,
+		methodTCP:              true,
+		defaultDiscoveryMethod: true,
+		methodARP:              true,
+		methodICMP:             true,
 	}
 	if !validMethods[discoverMethod] {
 		fmt.Fprintf(os.Stderr, "Error: invalid discovery method '%s'. Valid methods: tcp, ping, arp, icmp\n",

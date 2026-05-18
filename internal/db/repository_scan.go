@@ -26,6 +26,24 @@ const (
 	sortOrderDESC = "DESC"
 )
 
+// colName constants are DB column name strings shared across repository files.
+const (
+	colCreatedAt      = "created_at"
+	colUpdatedAt      = "updated_at"
+	colStartedAt      = "started_at"
+	colCompletedAt    = "completed_at"
+	colStatus         = "status"
+	colName           = "name"
+	colDescription    = "description"
+	colScanType       = "scan_type"
+	colOSDetection    = "os_detection"
+	colEnabled        = "enabled"
+	colCronExpression = "cron_expression"
+	colNextRun        = "next_run"
+	colLastRun        = "last_run"
+	colNullJSON       = "null"
+)
+
 // isHostTarget reports whether target represents a single host: a bare IP
 // address, a /32 (IPv4) / /128 (IPv6) CIDR, or a DNS hostname.
 // Such targets must not be stored as rows in the networks table;
@@ -181,11 +199,11 @@ func processScanRow(rows *sql.Rows) (*Scan, error) {
 
 // ListScans retrieves scans with filtering and pagination.
 var validScanSortColumns = map[string]string{
-	"status":       "sj.status",
-	"created_at":   "sj.created_at",
-	"started_at":   "sj.started_at",
-	"completed_at": "sj.completed_at",
-	"scan_type":    "COALESCE(sp.scan_type, sj.execution_details->>'scan_type', n.scan_type, '')",
+	colStatus:      "sj.status",
+	colCreatedAt:   "sj.created_at",
+	colStartedAt:   "sj.started_at",
+	colCompletedAt: "sj.completed_at",
+	colScanType:    "COALESCE(sp.scan_type, sj.execution_details->>'scan_type', n.scan_type, '')",
 }
 
 func (r *ScanRepository) ListScans(
@@ -341,7 +359,7 @@ func createScanJob(ctx context.Context, tx *sql.Tx, jobID uuid.UUID, networkID *
 	profileID *string, now time.Time, osDetection bool, allTargets []string,
 	name, description, ports, scanType string, source *string) error {
 	details := map[string]interface{}{
-		"os_detection": osDetection,
+		colOSDetection: osDetection,
 	}
 
 	// Always persist the target list for host-only scans; also persist when
@@ -355,7 +373,7 @@ func createScanJob(ctx context.Context, tx *sql.Tx, jobID uuid.UUID, networkID *
 	// in execution_details so it is available to GetScan and ListScans.
 	if networkID == nil {
 		details["name"] = name
-		details["description"] = description
+		details[colDescription] = description
 		details["ports"] = ports
 		details["scan_type"] = scanType
 	}
@@ -392,7 +410,7 @@ func buildScanResponse(jobID uuid.UUID, name, description string, targets []stri
 		Targets:     targets,
 		ScanType:    scanType,
 		Ports:       ports,
-		Status:      "pending",
+		Status:      ScanJobStatusPending,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -555,7 +573,7 @@ func (r *ScanRepository) GetScan(ctx context.Context, id uuid.UUID) (*Scan, erro
 	scan.ScanType = scanType.String
 	scan.Ports = ports.String
 	scan.Targets = scanTargetsFromExecDetails(execDetailsStr.String, networkCIDR.String)
-	scan.Options = map[string]interface{}{"os_detection": osDetection}
+	scan.Options = map[string]interface{}{colOSDetection: osDetection}
 
 	if profileID != nil {
 		scan.ProfileID = profileID
@@ -769,7 +787,7 @@ func (r *ScanRepository) DeleteScan(ctx context.Context, id uuid.UUID) error {
 	if err = tx.QueryRowContext(ctx, "SELECT status FROM scan_jobs WHERE id = $1", id).Scan(&status); err != nil {
 		return sanitizeDBError("get scan status", err)
 	}
-	if status == "running" {
+	if status == ScanJobStatusRunning {
 		return errors.ErrConflictWithReason("scan", "cannot delete a running scan; stop it first")
 	}
 

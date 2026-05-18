@@ -40,6 +40,17 @@ const (
 	serviceSSH   = "ssh"
 	serviceHTTP  = "http"
 	serviceHTTPS = "https"
+	serviceSMTP  = "smtp"
+	serviceFTP   = "ftp"
+	servicePOP3  = "pop3"
+	serviceIMAP  = "imap"
+
+	srvProtoTCP = "tcp"
+
+	tlsVersion10 = "TLS 1.0"
+	tlsVersion11 = "TLS 1.1"
+	tlsVersion12 = "TLS 1.2"
+	tlsVersion13 = "TLS 1.3"
 )
 
 // tlsPorts is the set of port numbers that should receive a TLS/HTTPS probe.
@@ -51,7 +62,7 @@ var tlsPorts = map[int]bool{
 // httpServices is the set of nmap service names that trigger an HTTP probe
 // on non-TLS ports.
 var httpServices = map[string]bool{
-	"http": true, "http-alt": true, "http-proxy": true,
+	serviceHTTP: true, "http-alt": true, "http-proxy": true,
 	"https-alt": true, "http-mgmt": true,
 }
 
@@ -367,7 +378,7 @@ func (g *BannerGrabber) grabTLS(ctx context.Context, t BannerTarget, port int, a
 func zgrabHTTPScanner(port int, useHTTPS bool) (*zgrabhttp.Scanner, *zgrab2.DialerGroup, error) {
 	flags := &zgrabhttp.Flags{
 		BaseFlags: zgrab2.BaseFlags{
-			Port:           uint(port), //nolint:gosec // port range is 1-65535
+			Port:           uint(port),
 			ConnectTimeout: bannerDialTimeout,
 			TargetTimeout:  bannerDialTimeout + bannerReadTimeout,
 		},
@@ -406,7 +417,7 @@ func (g *BannerGrabber) grabZGrabHTTPS(ctx context.Context, t BannerTarget, port
 	if ip == nil {
 		return fmt.Errorf("invalid IP: %s", t.IP)
 	}
-	target := &zgrab2.ScanTarget{IP: ip, Port: uint(port)} //nolint:gosec
+	target := &zgrab2.ScanTarget{IP: ip, Port: uint(port)}
 
 	_, result, scanErr := scanner.Scan(ctx, dialGroup, target)
 	httpResults, ok := result.(*zgrabhttp.Results)
@@ -444,7 +455,7 @@ func (g *BannerGrabber) grabZGrabHTTP(ctx context.Context, t BannerTarget, port 
 	if ip == nil {
 		return fmt.Errorf("invalid IP: %s", t.IP)
 	}
-	target := &zgrab2.ScanTarget{IP: ip, Port: uint(port)} //nolint:gosec
+	target := &zgrab2.ScanTarget{IP: ip, Port: uint(port)}
 
 	_, result, scanErr := scanner.Scan(ctx, dialGroup, target)
 	httpResults, ok := result.(*zgrabhttp.Results)
@@ -718,10 +729,10 @@ func buildTLSSummary(c *db.Certificate) string {
 // portServiceHints maps well-known port numbers to their service names for
 // use when banner text doesn't provide enough signal.
 var portServiceHints = map[int]string{
-	21: "ftp", 22: serviceSSH,
-	25: "smtp", 110: "pop3", 143: "imap",
-	465: "smtp", 587: "smtp",
-	993: "imap", 995: "pop3",
+	21: serviceFTP, 22: serviceSSH,
+	25: serviceSMTP, 110: servicePOP3, 143: serviceIMAP,
+	465: serviceSMTP, 587: serviceSMTP,
+	993: serviceIMAP, 995: servicePOP3,
 }
 
 // parseServiceFromBanner applies simple heuristics to identify the service and
@@ -742,14 +753,14 @@ func parseBannerText(lower, raw string, port int) (service, version string) {
 			version = strings.TrimPrefix(parts[0], "SSH-2.0-")
 		}
 	case strings.HasPrefix(lower, "220 ") && strings.Contains(lower, "ftp"):
-		service, version = "ftp", raw
+		service, version = serviceFTP, raw
 	case strings.HasPrefix(lower, "220 ") &&
 		(strings.Contains(lower, "smtp") || strings.Contains(lower, "mail")):
-		service = "smtp"
+		service = serviceSMTP
 	case strings.HasPrefix(lower, "+ok"):
-		service = "pop3"
+		service = servicePOP3
 	case strings.HasPrefix(lower, "* ok"):
-		service = "imap"
+		service = serviceIMAP
 	case strings.HasPrefix(lower, "http/") || strings.HasPrefix(lower, "http "):
 		service = serviceHTTP
 	default:
@@ -785,13 +796,13 @@ func keyTypeFromPublicKey(pub any) string {
 func tlsVersionString(v uint16) string {
 	switch v {
 	case tls.VersionTLS10:
-		return "TLS 1.0"
+		return tlsVersion10
 	case tls.VersionTLS11:
-		return "TLS 1.1"
+		return tlsVersion11
 	case tls.VersionTLS12:
-		return "TLS 1.2"
+		return tlsVersion12
 	case tls.VersionTLS13:
-		return "TLS 1.3"
+		return tlsVersion13
 	default:
 		return fmt.Sprintf("TLS 0x%04X", v)
 	}

@@ -23,32 +23,32 @@ type FilterExpr struct {
 
 // filterFieldSQL maps FilterExpr field names to their SQL column expressions.
 var filterFieldSQL = map[string]string{
-	"status":           "h.status",
-	"os_family":        "h.os_family",
-	"vendor":           "h.vendor",
-	"hostname":         "h.hostname",
-	"response_time_ms": "h.response_time_ms",
-	"first_seen":       "h.first_seen",
-	"last_seen":        "h.last_seen",
+	filterFieldStatus:         filterColStatus,
+	filterFieldOSFamily:       filterColOSFamily,
+	filterFieldVendor:         filterColVendor,
+	filterFieldHostname:       filterColHostname,
+	filterFieldResponseTimeMS: filterColResponseTimeMS,
+	filterFieldFirstSeen:      filterColFirstSeen,
+	filterFieldLastSeen:       filterColLastSeen,
 }
 
 // filterTextFields are simple-column fields that support the "contains" (ILIKE) operator.
 var filterTextFields = map[string]bool{
-	"status":    true,
-	"os_family": true,
-	"vendor":    true,
-	"hostname":  true,
+	filterFieldStatus:   true,
+	filterFieldOSFamily: true,
+	filterFieldVendor:   true,
+	filterFieldHostname: true,
 }
 
 // filterNumericFields are simple-column fields whose values must be parsed as integers.
 var filterNumericFields = map[string]bool{
-	"response_time_ms": true,
+	filterFieldResponseTimeMS: true,
 }
 
 // filterDateFields are simple-column fields whose values must be parsed as date/time.
 var filterDateFields = map[string]bool{
-	"first_seen": true,
-	"last_seen":  true,
+	filterFieldFirstSeen: true,
+	filterFieldLastSeen:  true,
 }
 
 // Repeated string literals extracted as constants to satisfy goconst.
@@ -61,6 +61,27 @@ const (
 	filterCmpBetween     = "between"
 	filterFieldOpenPort  = "open_port"
 	filterFieldScanCount = "scan_count"
+	filterOpAND          = "AND"
+)
+
+const (
+	filterFieldStatus         = "status"
+	filterFieldOSFamily       = "os_family"
+	filterFieldVendor         = "vendor"
+	filterFieldHostname       = "hostname"
+	filterFieldResponseTimeMS = "response_time_ms"
+	filterFieldFirstSeen      = "first_seen"
+	filterFieldLastSeen       = "last_seen"
+)
+
+const (
+	filterColStatus         = "h.status"
+	filterColOSFamily       = "h.os_family"
+	filterColVendor         = "h.vendor"
+	filterColHostname       = "h.hostname"
+	filterColResponseTimeMS = "h.response_time_ms"
+	filterColFirstSeen      = "h.first_seen"
+	filterColLastSeen       = "h.last_seen"
 )
 
 const (
@@ -114,7 +135,7 @@ func validateFilterExpr(expr *FilterExpr, depth int) error {
 
 // validateGroupExpr validates a group (AND/OR) node.
 func validateGroupExpr(expr *FilterExpr, depth int) error {
-	if expr.Op != "AND" && expr.Op != "OR" {
+	if expr.Op != filterOpAND && expr.Op != "OR" {
 		return fmt.Errorf("invalid group operator %q: must be AND or OR", expr.Op)
 	}
 	if len(expr.Conditions) == 0 {

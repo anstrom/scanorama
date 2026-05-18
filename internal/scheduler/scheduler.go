@@ -30,6 +30,9 @@ const (
 	scanTimeoutNormal     = 900  // 15 min  - matches nmap T3 (normal)
 	scanTimeoutAggressive = 600  // 10 min  - matches nmap T4 (aggressive)
 	scanTimeoutInsane     = 300  // 5 min   - matches nmap T5 (insane)
+
+	actionEnabled  = "enabled"
+	actionDisabled = "disabled"
 )
 
 // Scheduler manages scheduled discovery and scanning jobs.
@@ -424,9 +427,9 @@ func (s *Scheduler) setJobEnabled(ctx context.Context, jobID uuid.UUID, enabled 
 	// Update in-memory config
 	job.Config.Enabled = enabled
 
-	action := "disabled"
+	action := actionDisabled
 	if enabled {
-		action = "enabled"
+		action = actionEnabled
 	}
 
 	log.Printf("Job '%s' %s", job.Config.Name, action)

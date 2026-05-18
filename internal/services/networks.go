@@ -20,6 +20,15 @@ import (
 	apierrors "github.com/anstrom/scanorama/internal/errors"
 )
 
+const (
+	discoveryMethodPing = "ping"
+	discoveryMethodTCP  = "tcp"
+	discoveryMethodARP  = "arp"
+	discoveryMethodICMP = "icmp"
+
+	statsKeyTotal = "total"
+)
+
 // NetworkService manages network configuration and exclusions.
 type NetworkService struct {
 	database *db.DB
@@ -573,18 +582,18 @@ func (s *NetworkService) GetNetworkStats(ctx context.Context) (map[string]interf
 
 	return map[string]interface{}{
 		"networks": map[string]interface{}{
-			"total":        stats.TotalNetworks,
+			statsKeyTotal:  stats.TotalNetworks,
 			"active":       stats.ActiveNetworks,
 			"scan_enabled": stats.ScanEnabledNetworks,
 		},
 		"hosts": map[string]interface{}{
-			"total":  totalHosts,
-			"active": activeHosts,
+			statsKeyTotal: totalHosts,
+			"active":      activeHosts,
 		},
 		"exclusions": map[string]interface{}{
-			"total":   exclusionStats.TotalExclusions,
-			"global":  exclusionStats.GlobalExclusions,
-			"network": exclusionStats.NetworkExclusions,
+			statsKeyTotal: exclusionStats.TotalExclusions,
+			"global":      exclusionStats.GlobalExclusions,
+			"network":     exclusionStats.NetworkExclusions,
 		},
 	}, nil
 }
@@ -602,10 +611,10 @@ func (s *NetworkService) validateNetworkConfig(netConfig *config.NetworkConfig) 
 
 	// Validate method
 	validMethods := map[string]bool{
-		"ping": true,
-		"tcp":  true,
-		"arp":  true,
-		"icmp": true,
+		discoveryMethodPing: true,
+		discoveryMethodTCP:  true,
+		discoveryMethodARP:  true,
+		discoveryMethodICMP: true,
 	}
 	if netConfig.Method != "" && !validMethods[netConfig.Method] {
 		return fmt.Errorf("invalid discovery method: %s", netConfig.Method)
@@ -658,10 +667,10 @@ func (s *NetworkService) CreateNetwork(
 
 	// Validate method
 	validMethods := map[string]bool{
-		"ping": true,
-		"tcp":  true,
-		"arp":  true,
-		"icmp": true,
+		discoveryMethodPing: true,
+		discoveryMethodTCP:  true,
+		discoveryMethodARP:  true,
+		discoveryMethodICMP: true,
 	}
 	if !validMethods[method] {
 		return nil, fmt.Errorf("invalid discovery method: %s", method)
@@ -745,10 +754,10 @@ func (s *NetworkService) UpdateNetwork(
 
 	// Validate method
 	validMethods := map[string]bool{
-		"ping": true,
-		"tcp":  true,
-		"arp":  true,
-		"icmp": true,
+		discoveryMethodPing: true,
+		discoveryMethodTCP:  true,
+		discoveryMethodARP:  true,
+		discoveryMethodICMP: true,
 	}
 	if !validMethods[method] {
 		return nil, fmt.Errorf("invalid discovery method: %s", method)

@@ -113,12 +113,12 @@ func buildScheduleSetParts(input UpdateScheduleInput) (setParts []string, args [
 
 // validScheduleSortColumns maps API sort keys to safe SQL column expressions.
 var validScheduleSortColumns = map[string]string{
-	"name":            "name",
-	"enabled":         "enabled",
-	"cron_expression": "cron_expression",
-	"next_run":        "next_run",
-	"last_run":        "last_run",
-	"created_at":      "created_at",
+	colName:           colName,
+	colEnabled:        colEnabled,
+	colCronExpression: colCronExpression,
+	colNextRun:        colNextRun,
+	colLastRun:        colLastRun,
+	colCreatedAt:      colCreatedAt,
 }
 
 // ListSchedules retrieves schedules with filtering and pagination.

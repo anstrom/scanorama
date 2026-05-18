@@ -46,7 +46,7 @@ at specified intervals.`,
 
 // scheduleListCmd represents the schedule list command.
 var scheduleListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   cmdList,
 	Short: "List all scheduled jobs",
 	Long: `Display all currently scheduled jobs with their schedules,
 next run times, and job details.`,
@@ -134,7 +134,7 @@ func init() {
 	scheduleAddScanCmd.Flags().StringVar(&scheduleTargets, "targets", "", "Comma-separated list of targets to scan")
 	scheduleAddScanCmd.Flags().BoolVar(&scheduleLiveHosts, "live-hosts", false, "Scan only discovered live hosts")
 	scheduleAddScanCmd.Flags().StringVar(&schedulePorts, "ports", "22,80,443,8080,8443", "Ports to scan")
-	scheduleAddScanCmd.Flags().StringVar(&scheduleScanType, "type", "connect", "Scan type")
+	scheduleAddScanCmd.Flags().StringVar(&scheduleScanType, "type", scanTypeConnect, "Scan type")
 	scheduleAddScanCmd.Flags().StringVar(&scheduleProfile, "profile", "", "Scan profile to use")
 	scheduleAddScanCmd.Flags().IntVar(&scheduleTimeout, "timeout", scheduleDefaultTimeout, "Scan timeout in seconds")
 	scheduleAddScanCmd.Flags().StringVar(&scheduleOSFamily, "os-family", "", "Scan only specific OS family")

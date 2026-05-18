@@ -74,7 +74,7 @@ and monitoring the Scanorama API server process.`,
 
 // serverStartCmd represents the server start command.
 var serverStartCmd = &cobra.Command{
-	Use:   "start",
+	Use:   cmdStart,
 	Short: "Start the API server",
 	Long: `Start the Scanorama API server.
 
@@ -106,7 +106,7 @@ var serverRestartCmd = &cobra.Command{
 
 // serverStatusCmd represents the server status command.
 var serverStatusCmd = &cobra.Command{
-	Use:     "status",
+	Use:     cmdStatus,
 	Short:   "Show server status",
 	Long:    "Display the current status of the Scanorama API server.",
 	Example: `  scanorama server status`,
@@ -285,7 +285,7 @@ func runServerInBackground() error {
 
 // buildServerArgs constructs arguments for background server process.
 func buildServerArgs() []string {
-	args := []string{"server", "start", "--foreground"}
+	args := []string{"server", cmdStart, "--foreground"}
 	if cfgFile != "" {
 		args = append(args, "--config", cfgFile)
 	}

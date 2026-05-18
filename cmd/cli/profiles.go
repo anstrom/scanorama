@@ -43,7 +43,7 @@ predefined port lists, scan types, and timing configurations.`,
 
 // profilesListCmd represents the profiles list command.
 var profilesListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   cmdList,
 	Short: "List all available scan profiles",
 	Long: `Display a list of all available scan profiles with their
 basic information including name, description, and target OS family.`,

@@ -16,6 +16,14 @@ import (
 // Metrics constants.
 const (
 	statusServerErrorMin = 500
+	metricsLabelMethod   = "method"
+	metricsLabelStatus   = "status"
+	httpMethodGET        = "GET"
+	httpMethodPOST       = "POST"
+	httpMethodPUT        = "PUT"
+	httpMethodDELETE     = "DELETE"
+	httpMethodOPTIONS    = "OPTIONS"
+	contentTypeJSON      = "application/json"
 )
 
 // setupMiddleware configures middleware for the API server.
@@ -38,7 +46,8 @@ func (s *Server) setupMiddleware(apiConfig *Config) {
 	if apiConfig.EnableCORS {
 		corsOptions := gorilla.AllowedOrigins(apiConfig.CORSOrigins)
 		corsHeaders := gorilla.AllowedHeaders([]string{"Content-Type", "Authorization", "X-API-Key"})
-		corsMethods := gorilla.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"})
+		methods := []string{httpMethodGET, httpMethodPOST, httpMethodPUT, httpMethodDELETE, httpMethodOPTIONS}
+		corsMethods := gorilla.AllowedMethods(methods)
 		s.router.Use(gorilla.CORS(corsOptions, corsHeaders, corsMethods))
 	}
 
@@ -92,12 +101,12 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 
 		// Record metrics
 		s.metrics.Counter("http_requests_total", map[string]string{
-			"method": r.Method,
-			"status": fmt.Sprintf("%d", wrapped.statusCode),
+			metricsLabelMethod: r.Method,
+			metricsLabelStatus: fmt.Sprintf("%d", wrapped.statusCode),
 		})
 
 		s.metrics.Histogram("http_request_duration_seconds", duration.Seconds(), map[string]string{
-			"method": r.Method,
+			metricsLabelMethod: r.Method,
 		})
 
 		// Prometheus HTTP metrics (use route template to avoid high cardinality)
@@ -120,9 +129,9 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 // contentTypeMiddleware validates content type for POST/PUT requests.
 func (s *Server) contentTypeMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" || r.Method == "PUT" {
+		if r.Method == httpMethodPOST || r.Method == httpMethodPUT {
 			contentType := r.Header.Get("Content-Type")
-			if contentType != "" && contentType != "application/json" {
+			if contentType != "" && contentType != contentTypeJSON {
 				s.writeError(w, r, http.StatusUnsupportedMediaType,
 					fmt.Errorf("unsupported content type: %s", contentType))
 				return

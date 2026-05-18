@@ -24,12 +24,16 @@ import (
 
 // Validation constants.
 const (
-	maxDiscoveryNameLength = 255
-	maxDescriptionLength   = 255
-	maxPortsStringLength   = 50
-	maxValidationErrors    = 100
-	maxRetries             = 10
-	maxTagLength           = 50
+	maxDiscoveryNameLength  = 255
+	maxDescriptionLength    = 255
+	maxPortsStringLength    = 50
+	maxValidationErrors     = 100
+	maxRetries              = 10
+	maxTagLength            = 50
+	discoveryJobTypeStr     = "discovery"
+	discoveryStatusComplete = "completed"
+	discoveryMethodDNS      = "dns"
+	discoveryMethodTCP      = "tcp_connect"
 )
 
 // Progress estimation constants.
@@ -124,7 +128,7 @@ type discoveryJob struct {
 func (j *discoveryJob) ID() string { return j.id }
 
 // Type implements scanning.Job.
-func (j *discoveryJob) Type() string { return "discovery" }
+func (j *discoveryJob) Type() string { return discoveryJobTypeStr }
 
 // Target implements scanning.Job.
 func (j *discoveryJob) Target() string { return j.network }
@@ -178,7 +182,7 @@ func (j *discoveryJob) Execute(workerCtx context.Context) error {
 		if diff, dErr := j.database.GetDiscoveryDiff(dbCtx, j.jobID); dErr == nil {
 			_ = j.wsHandler.BroadcastDiscoveryUpdate(&DiscoveryUpdateMessage{
 				JobID:        j.jobID.String(),
-				Status:       "completed",
+				Status:       discoveryStatusComplete,
 				HostsFound:   hostsFound,
 				NewHosts:     len(diff.NewHosts),
 				GoneHosts:    len(diff.GoneHosts),
@@ -559,11 +563,11 @@ func (h *DiscoveryHandler) StopDiscovery(w http.ResponseWriter, r *http.Request)
 	}
 
 	response := map[string]interface{}{
-		"id":         jobID,
-		"status":     "stopped",
-		"message":    "discovery job has been stopped",
-		"timestamp":  time.Now().UTC(),
-		"request_id": requestID,
+		responseKeyID:      jobID,
+		responseKeyStatus:  statusStopped,
+		responseKeyMessage: "discovery job has been stopped",
+		responseKeyTS:      time.Now().UTC(),
+		responseKeyReqID:   requestID,
 	}
 
 	writeJSON(w, r, http.StatusOK, response)
@@ -608,11 +612,11 @@ func (h *DiscoveryHandler) validateBasicFields(req *DiscoveryRequest) error {
 
 func (h *DiscoveryHandler) validateMethod(method string) error {
 	validMethods := map[string]bool{
-		"ping":        true,
-		"arp":         true,
-		"icmp":        true,
-		"tcp_connect": true,
-		"dns":         true,
+		discoveryMethodPing: true,
+		discoveryMethodARP:  true,
+		discoveryMethodICMP: true,
+		discoveryMethodTCP:  true,
+		discoveryMethodDNS:  true,
 	}
 	if !validMethods[method] {
 		return fmt.Errorf("invalid discovery method: %s", method)

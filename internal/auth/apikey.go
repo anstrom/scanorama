@@ -32,6 +32,8 @@ const (
 	MinAPIKeyNameLength = 1
 	// MaxAPIKeyNameLength is the maximum length for API key names
 	MaxAPIKeyNameLength = 255
+
+	invalidKeyDisplay = "invalid_key"
 )
 
 // APIKeyInfo contains metadata about an API key
@@ -185,13 +187,13 @@ func IsValidAPIKeyFormat(apiKey string) bool {
 // CreateDisplayPrefix creates a safe-to-display prefix from a full API key
 func CreateDisplayPrefix(apiKey string) string {
 	if !IsValidAPIKeyFormat(apiKey) {
-		return "invalid_key"
+		return invalidKeyDisplay
 	}
 
 	// Find the underscore after the prefix
 	parts := strings.Split(apiKey, "_")
 	if len(parts) < 2 {
-		return "invalid_key"
+		return invalidKeyDisplay
 	}
 
 	// Return prefix + first few characters of random part

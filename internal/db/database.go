@@ -18,6 +18,12 @@ import (
 	"github.com/anstrom/scanorama/internal/errors"
 )
 
+const (
+	dbErrConnectionError = "Database connection error"
+	dbDefaultHost        = "localhost"
+	dbDefaultSSLMode     = "disable"
+)
+
 // pgErrMapping holds the sanitized error code and message for a PostgreSQL error code.
 type pgErrMapping struct {
 	code    errors.ErrorCode
@@ -39,11 +45,11 @@ var pgErrorCodeMap = map[pqerror.Code]pgErrMapping{
 	// admin_shutdown
 	pqerror.AdminShutdown: {errors.CodeDatabaseConnection, "Database connection lost"},
 	// connection_exception
-	pqerror.ConnectionException: {errors.CodeDatabaseConnection, "Database connection error"},
+	pqerror.ConnectionException: {errors.CodeDatabaseConnection, dbErrConnectionError},
 	// connection_does_not_exist
-	pqerror.ConnectionDoesNotExist: {errors.CodeDatabaseConnection, "Database connection error"},
+	pqerror.ConnectionDoesNotExist: {errors.CodeDatabaseConnection, dbErrConnectionError},
 	// connection_failure
-	pqerror.ConnectionFailure: {errors.CodeDatabaseConnection, "Database connection error"},
+	pqerror.ConnectionFailure: {errors.CodeDatabaseConnection, dbErrConnectionError},
 }
 
 // sanitizeDBError converts raw database errors into safe, sanitized errors
@@ -118,12 +124,12 @@ type Config struct {
 // Database name, username, and password must be explicitly configured.
 func DefaultConfig() Config {
 	return Config{
-		Host:            "localhost",
+		Host:            dbDefaultHost,
 		Port:            defaultPostgresPort,
 		Database:        "", // Must be configured.
 		Username:        "", // Must be configured.
 		Password:        "", // Must be configured.
-		SSLMode:         "disable",
+		SSLMode:         dbDefaultSSLMode,
 		MaxOpenConns:    defaultMaxOpenConns,
 		MaxIdleConns:    defaultMaxIdleConns,
 		ConnMaxLifetime: defaultConnMaxLifetime * time.Minute,

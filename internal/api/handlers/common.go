@@ -23,6 +23,20 @@ import (
 // ContextKey represents a context key type.
 type ContextKey string
 
+const (
+	contextKeyRequestID = "request_id"
+	responseKeyStatus   = "status"
+	responseKeyMessage  = "message"
+	responseKeyTS       = "timestamp"
+	responseKeyID       = "id"
+	responseKeyReqID    = "request_id"
+	responseKeyTotal    = "total"
+	statusStarted       = "started"
+	statusStopped       = "stopped"
+	statusSuccess       = "success"
+	statusUnknown       = "unknown"
+)
+
 // PaginationParams holds pagination parameters.
 type PaginationParams struct {
 	Page     int `json:"page"`
@@ -67,10 +81,10 @@ func NewBaseHandler(logger *slog.Logger, metricsRegistry metrics.MetricsRegistry
 
 // getRequestIDFromContext extracts request ID from context.
 func getRequestIDFromContext(ctx context.Context) string {
-	if requestID, ok := ctx.Value(ContextKey("request_id")).(string); ok {
+	if requestID, ok := ctx.Value(ContextKey(contextKeyRequestID)).(string); ok {
 		return requestID
 	}
-	return "unknown"
+	return statusUnknown
 }
 
 // getQueryParamInt extracts integer query parameter with default value.
@@ -325,7 +339,7 @@ func (op *ListOperation[T, F]) Execute(w http.ResponseWriter, r *http.Request) {
 
 	// Record metrics
 	recordCRUDMetric(op.Metrics, op.MetricName, map[string]string{
-		"status": "success",
+		responseKeyStatus: statusSuccess,
 	})
 }
 
@@ -388,7 +402,7 @@ func (op *CRUDOperation[T]) ExecuteDelete(
 
 	// Record metrics
 	recordCRUDMetric(op.Metrics, metricName, map[string]string{
-		"status": "success",
+		responseKeyStatus: statusSuccess,
 	})
 }
 
@@ -562,11 +576,11 @@ func (op *JobControlOperation) ExecuteStart(
 	}
 
 	response := map[string]interface{}{
-		"id":         id,
-		"status":     "started",
-		"message":    fmt.Sprintf("%s has been queued for execution", op.EntityType),
-		"timestamp":  time.Now().UTC(),
-		"request_id": requestID,
+		responseKeyID:      id,
+		responseKeyStatus:  statusStarted,
+		responseKeyMessage: fmt.Sprintf("%s has been queued for execution", op.EntityType),
+		responseKeyTS:      time.Now().UTC(),
+		responseKeyReqID:   requestID,
 	}
 
 	if item != nil {
@@ -602,11 +616,11 @@ func (op *JobControlOperation) ExecuteStop(
 	}
 
 	response := map[string]interface{}{
-		"id":         id,
-		"status":     "stopped",
-		"message":    fmt.Sprintf("%s has been stopped", op.EntityType),
-		"timestamp":  time.Now().UTC(),
-		"request_id": requestID,
+		responseKeyID:      id,
+		responseKeyStatus:  statusStopped,
+		responseKeyMessage: fmt.Sprintf("%s has been stopped", op.EntityType),
+		responseKeyTS:      time.Now().UTC(),
+		responseKeyReqID:   requestID,
 	}
 
 	op.Logger.Info(fmt.Sprintf("%s stopped successfully", op.EntityType),
