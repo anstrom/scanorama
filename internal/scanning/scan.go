@@ -55,6 +55,19 @@ const (
 	portStateClosed   = "closed"
 	portStateFiltered = "filtered"
 	portStateUnknown  = "unknown"
+
+	// Nmap hostname type constants.
+	hostnameTypeUser = "user"
+	hostnameTypePTR  = "PTR"
+
+	// loopbackHost is the well-known single-label loopback hostname.
+	loopbackHost = "localhost"
+
+	// Nmap timing template names.
+	timingParanoid = "paranoid"
+	timingPolite   = "polite"
+	timingNormal   = "normal"
+	timingInsane   = "insane"
 )
 
 // CalculateTimeout estimates a reasonable scan timeout based on the number of
@@ -396,15 +409,15 @@ func buildScanOptions(config *ScanConfig) []nmap.Option {
 // value is empty or unrecognized so the caller can apply its own fallback.
 func buildTimingOption(timing string) nmap.Option {
 	switch timing {
-	case "paranoid":
+	case timingParanoid:
 		return nmap.WithTimingTemplate(nmap.TimingSlowest)
-	case "polite":
+	case timingPolite:
 		return nmap.WithTimingTemplate(nmap.TimingSneaky)
-	case "normal":
+	case timingNormal:
 		return nmap.WithTimingTemplate(nmap.TimingNormal)
 	case scanTypeAggressive:
 		return nmap.WithTimingTemplate(nmap.TimingAggressive)
-	case "insane":
+	case timingInsane:
 		return nmap.WithTimingTemplate(nmap.TimingFastest)
 	default:
 		return nil
@@ -445,11 +458,11 @@ func convertNmapHost(h *nmap.Host) *Host {
 	// PTR record (type="PTR") from nmap's <hostnames> element.
 	// Prefer "user" so the name the operator typed is preserved over reverse DNS.
 	for _, hn := range h.Hostnames {
-		if hn.Type == "user" {
+		if hn.Type == hostnameTypeUser {
 			host.Hostname = hn.Name
 			break
 		}
-		if hn.Type == "PTR" && host.Hostname == "" {
+		if hn.Type == hostnameTypePTR && host.Hostname == "" {
 			host.Hostname = hn.Name
 		}
 	}
@@ -780,7 +793,7 @@ func parseTargetAddress(target string) (db.NetworkAddr, error) {
 		// Accept hostnames: either containing a dot (FQDNs like "example.com")
 		// or well-known single-label names like "localhost".
 		// Reject bare words that look neither like an IP nor a plausible hostname.
-		isHostname := strings.Contains(target, ".") || target == "localhost"
+		isHostname := strings.Contains(target, ".") || target == loopbackHost
 		if !isHostname {
 			return networkAddr, fmt.Errorf("invalid target address: %q is not a valid IP, CIDR, or hostname", target)
 		}
@@ -1100,7 +1113,7 @@ func runKnowledgeScoreUpdate(database *db.DB, hostIDs []uuid.UUID) {
 // hasSNMPPort reports whether port 161 UDP is open in a port list.
 func hasSNMPPort(ports []Port) bool {
 	for _, p := range ports {
-		if p.Number == snmpPort && p.Protocol == "udp" && p.State == portStateOpen {
+		if p.Number == snmpPort && p.Protocol == scanTypeUDP && p.State == portStateOpen {
 			return true
 		}
 	}

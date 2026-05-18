@@ -11,6 +11,8 @@ import (
 	"github.com/anstrom/scanorama/internal/db"
 )
 
+const jobTypeScan = "scan"
+
 // Job is implemented by any unit of work the ScanQueue can execute.
 // Both scan and discovery jobs implement this interface, allowing them to share
 // the same worker pool and appear uniformly in the admin worker view.
@@ -62,7 +64,7 @@ func NewScanJob(
 func (j *ScanJob) ID() string { return j.id }
 
 // Type implements Job.
-func (j *ScanJob) Type() string { return "scan" }
+func (j *ScanJob) Type() string { return jobTypeScan }
 
 // Target implements Job.
 func (j *ScanJob) Target() string {

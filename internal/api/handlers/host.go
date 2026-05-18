@@ -19,6 +19,8 @@ import (
 	"github.com/anstrom/scanorama/internal/services"
 )
 
+const entityTypeHost = "host"
+
 // Validation constants for host fields.
 const (
 	maxHostnameLength        = 255
@@ -242,7 +244,7 @@ func (h *HostHandler) GetHost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	crudOp := &CRUDOperation[db.Host]{
-		EntityType: "host",
+		EntityType: entityTypeHost,
 		Logger:     h.logger,
 		Metrics:    h.metrics,
 	}
@@ -285,7 +287,7 @@ func (h *HostHandler) GetHost(w http.ResponseWriter, r *http.Request) {
 func (h *HostHandler) UpdateHost(w http.ResponseWriter, r *http.Request) {
 	UpdateEntity[db.Host, db.UpdateHostInput](
 		w, r,
-		"host",
+		entityTypeHost,
 		h.logger,
 		h.metrics,
 		func(r *http.Request) (db.UpdateHostInput, error) {
@@ -378,7 +380,7 @@ func (h *HostHandler) DeleteHost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	crudOp := &CRUDOperation[db.Host]{
-		EntityType: "host",
+		EntityType: entityTypeHost,
 		Logger:     h.logger,
 		Metrics:    h.metrics,
 	}

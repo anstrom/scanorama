@@ -193,15 +193,15 @@ func (e *DNSEnricher) forwardRecords(ctx context.Context, hostID uuid.UUID, host
 	// net.Resolver.LookupSRV prepends underscores automatically, so the service
 	// and proto values must NOT include a leading underscore.
 	srvServices := []struct{ service, proto string }{
-		{"http", "tcp"},
-		{"https", "tcp"},
-		{"smtp", "tcp"},
-		{"imap", "tcp"},
-		{"imaps", "tcp"},
-		{"ldap", "tcp"},
-		{"ldaps", "tcp"},
-		{"xmpp-client", "tcp"},
-		{"xmpp-server", "tcp"},
+		{serviceHTTP, srvProtoTCP},
+		{serviceHTTPS, srvProtoTCP},
+		{serviceSMTP, srvProtoTCP},
+		{serviceIMAP, srvProtoTCP},
+		{"imaps", srvProtoTCP},
+		{"ldap", srvProtoTCP},
+		{"ldaps", srvProtoTCP},
+		{"xmpp-client", srvProtoTCP},
+		{"xmpp-server", srvProtoTCP},
 	}
 	for _, s := range srvServices {
 		_, addrs, err := e.netResolver.LookupSRV(ctx, s.service, s.proto, hostname)

@@ -24,6 +24,8 @@ const (
 	configSectionScanning = "scanning"
 	configSectionLogging  = "logging"
 	configSectionDaemon   = "daemon"
+
+	queryParamSection = "section"
 )
 
 // Validation limit constants.
@@ -75,7 +77,7 @@ func (h *AdminHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Getting configuration", "request_id", requestID)
 
 	// Get configuration sections
-	section := r.URL.Query().Get("section")
+	section := r.URL.Query().Get(queryParamSection)
 
 	// Get full config or specific section
 	config, err := h.getCurrentConfig(r.Context(), section)
@@ -91,7 +93,7 @@ func (h *AdminHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	// Record metrics
 	if h.metrics != nil {
 		h.metrics.Counter("api_admin_config_retrieved_total", map[string]string{
-			"section": section,
+			queryParamSection: section,
 		})
 	}
 }
@@ -122,7 +124,7 @@ func (h *AdminHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("UpdateConfig called but not yet implemented",
 		"request_id", requestID,
-		"section", req.Section)
+		queryParamSection, req.Section)
 
 	// Configuration persistence is not yet implemented.
 	writeError(w, r, http.StatusNotImplemented,

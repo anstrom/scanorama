@@ -262,22 +262,30 @@ type HostFilters struct {
 	Expr      *FilterExpr // structured JSON filter expression (optional)
 }
 
+const (
+	sortColIPAddress           = "ip_address"
+	sortColOpenPorts           = "open_ports"
+	sortColResponseTimeAvgMS   = "response_time_avg_ms"
+	filterColResponseTimeAvgMS = "h.response_time_avg_ms"
+	sortColIgnoreScanning      = "ignore_scanning"
+)
+
 // validHostSortColumns is the allowlist of columns that may be used in ORDER BY.
 var validHostSortColumns = map[string]string{
-	"ip_address": "h.ip_address",
-	"hostname":   "h.hostname",
-	"os_family":  "h.os_family",
-	"status":     "h.status",
-	"last_seen":  "h.last_seen",
-	"first_seen": "h.first_seen",
-	"vendor":     "h.vendor",
+	sortColIPAddress:     "h.ip_address",
+	filterFieldHostname:  filterColHostname,
+	filterFieldOSFamily:  filterColOSFamily,
+	filterFieldStatus:    filterColStatus,
+	filterFieldLastSeen:  filterColLastSeen,
+	filterFieldFirstSeen: filterColFirstSeen,
+	filterFieldVendor:    filterColVendor,
 	// Aggregate aliases from the SELECT clause — valid in PostgreSQL ORDER BY.
 	// These return NULL for unscanned hosts (see CASE WHEN below), so NULLS LAST
 	// naturally pushes them to the bottom without any workaround.
-	"open_ports":           "open_ports",
-	"scan_count":           "scan_count",
-	"response_time_ms":     "h.response_time_ms",
-	"response_time_avg_ms": "h.response_time_avg_ms",
+	sortColOpenPorts:          sortColOpenPorts,
+	filterFieldScanCount:      filterFieldScanCount,
+	filterFieldResponseTimeMS: filterColResponseTimeMS,
+	sortColResponseTimeAvgMS:  filterColResponseTimeAvgMS,
 }
 
 // ListHosts retrieves hosts with filtering and pagination.
@@ -398,7 +406,7 @@ func (r *HostRepository) CreateHost(ctx context.Context, input CreateHostInput) 
 	now := time.Now().UTC()
 
 	// Start with required columns.
-	columns := []string{"id", "ip_address", "first_seen", "last_seen", "ignore_scanning"}
+	columns := []string{"id", sortColIPAddress, filterFieldFirstSeen, filterFieldLastSeen, sortColIgnoreScanning}
 	placeholders := []string{"$1", "$2", "$3", "$4", "$5"}
 	args := []interface{}{hostID, input.IPAddress, now, now, input.IgnoreScanning}
 	argIndex := 6
@@ -413,12 +421,12 @@ func (r *HostRepository) CreateHost(ctx context.Context, input CreateHostInput) 
 		}
 	}
 
-	addStr("hostname", input.Hostname)
-	addStr("vendor", input.Vendor)
-	addStr("os_family", input.OSFamily)
+	addStr(filterFieldHostname, input.Hostname)
+	addStr(filterFieldVendor, input.Vendor)
+	addStr(filterFieldOSFamily, input.OSFamily)
 	addStr("os_name", input.OSName)
 	addStr("os_version", input.OSVersion)
-	addStr("status", input.Status)
+	addStr(filterFieldStatus, input.Status)
 
 	// Always include tags (defaults to empty array if nil/empty).
 	// Always include tags. Guard against nil so pq.Array does not serialize
@@ -696,15 +704,15 @@ func (r *HostRepository) UpdateHost(ctx context.Context, id uuid.UUID, input Upd
 		}
 	}
 
-	addStr("hostname", input.Hostname)
-	addStr("vendor", input.Vendor)
-	addStr("os_family", input.OSFamily)
+	addStr(filterFieldHostname, input.Hostname)
+	addStr(filterFieldVendor, input.Vendor)
+	addStr(filterFieldOSFamily, input.OSFamily)
 	addStr("os_name", input.OSName)
 	addStr("os_version", input.OSVersion)
-	addStr("status", input.Status)
+	addStr(filterFieldStatus, input.Status)
 
 	if input.IgnoreScanning != nil {
-		setParts = append(setParts, fmt.Sprintf("ignore_scanning = $%d", argIndex))
+		setParts = append(setParts, fmt.Sprintf("%s = $%d", sortColIgnoreScanning, argIndex))
 		args = append(args, *input.IgnoreScanning)
 		argIndex++
 	}
@@ -1031,10 +1039,10 @@ func buildHostFilters(filters *HostFilters) (whereClause string, args []interfac
 	var conditions []filterCondition
 
 	if filters.Status != "" {
-		conditions = append(conditions, filterCondition{"h.status", filters.Status})
+		conditions = append(conditions, filterCondition{filterColStatus, filters.Status})
 	}
 	if filters.OSFamily != "" {
-		conditions = append(conditions, filterCondition{"h.os_family", filters.OSFamily})
+		conditions = append(conditions, filterCondition{filterColOSFamily, filters.OSFamily})
 	}
 	whereClause, args = buildWhereClause(conditions)
 

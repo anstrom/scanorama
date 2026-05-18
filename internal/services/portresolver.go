@@ -25,9 +25,9 @@ const maxPortNumber = 65535
 // stageDefaultPorts maps each stage name to its hardcoded fallback port string.
 // Values are the single-source constants defined in smartscan.go.
 var stageDefaultPorts = map[string]string{
-	"os_detection":        osDetectionPorts,
-	"identity_enrichment": identityEnrichmentPorts,
-	"refresh":             refreshPorts,
+	stageOSDetection:        osDetectionPorts,
+	stageIdentityEnrichment: identityEnrichmentPorts,
+	stageRefresh:            refreshPorts,
 }
 
 // portRangeRE detects nmap range notation (e.g. "1-1024") inside a port string.
@@ -96,7 +96,7 @@ func (r *PortListResolver) readBasePorts(ctx context.Context, stage string) stri
 	fallback, ok := stageDefaultPorts[stage]
 	if !ok {
 		r.logger.Warn("unknown stage passed to port resolver, using broad fallback", "stage", stage)
-		fallback = "1-1024"
+		fallback = refreshPorts
 	}
 
 	key := "smartscan." + stage + ".ports"

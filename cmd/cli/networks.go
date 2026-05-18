@@ -52,7 +52,7 @@ methods, enable/disable networks, and view network statistics.`,
 
 // networksListCmd represents the networks list command.
 var networksListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   cmdList,
 	Short: "List configured networks",
 	Long: `List all configured network discovery targets with their status,
 host counts, and last discovery/scan times.`,
@@ -140,7 +140,7 @@ or network-specific.`,
 
 // networksExclusionsListCmd represents the exclusions list command.
 var networksExclusionsListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   cmdList,
 	Short: "List network exclusions",
 	Long: `List all configured network exclusions. Shows both global exclusions
 and network-specific exclusions with their reasons and status.`,
@@ -222,7 +222,7 @@ func init() {
 	networksAddCmd.Flags().StringVar(&networksMethod, "method", defaultDiscoveryMethod, "Discovery method")
 	networksAddCmd.Flags().StringVar(&networksDescription, "description", "", "Network description")
 	networksAddCmd.Flags().BoolVar(&networksActive, "active", true, "Enable network for discovery")
-	networksAddCmd.Flags().BoolVar(&networksScanEnabled, "scan", true, "Enable network for scanning")
+	networksAddCmd.Flags().BoolVar(&networksScanEnabled, cmdScan, true, "Enable network for scanning")
 
 	// Mark required flags
 	if err := networksAddCmd.MarkFlagRequired("name"); err != nil {
@@ -235,7 +235,7 @@ func init() {
 	// Add flag descriptions
 	networksAddCmd.Flags().Lookup("method").Usage = "Discovery method: tcp, ping, arp, icmp (default: ping)"
 	networksAddCmd.Flags().Lookup("active").Usage = "Enable network for discovery operations"
-	networksAddCmd.Flags().Lookup("scan").Usage = "Enable network for detailed scanning"
+	networksAddCmd.Flags().Lookup(cmdScan).Usage = "Enable network for detailed scanning"
 
 	// Add shell completion for discovery methods
 	if err := networksAddCmd.RegisterFlagCompletionFunc("method", completeDiscoveryMethods); err != nil {

@@ -97,7 +97,7 @@ Examples:
 }
 
 var groupsListCmd = &cobra.Command{
-	Use:     "list",
+	Use:     cmdList,
 	Aliases: []string{"ls"},
 	Short:   "List all host groups",
 	Long: `List all host groups with member counts and metadata.

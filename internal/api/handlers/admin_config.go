@@ -8,6 +8,19 @@ import (
 	"net/http"
 )
 
+const (
+	loopbackAddr      = "127.0.0.1"
+	defaultTimeout30s = "30s"
+
+	configKeyEnabled  = "enabled"
+	configKeyHost     = "host"
+	configKeyPort     = "port"
+	configKeyDatabase = "database"
+	configKeyScanMode = "scan_mode"
+	configKeyLevel    = "level"
+	configKeyInfo     = "info"
+)
+
 // getCurrentConfig retrieves current configuration.
 func (h *AdminHandler) getCurrentConfig(_ context.Context, section string) (map[string]interface{}, error) {
 	// This would get the actual configuration from the config manager
@@ -15,9 +28,9 @@ func (h *AdminHandler) getCurrentConfig(_ context.Context, section string) (map[
 
 	config := ConfigResponse{
 		API: map[string]interface{}{
-			"enabled":             true,
-			"host":                "127.0.0.1",
-			"port":                8080,
+			configKeyEnabled:      true,
+			configKeyHost:         loopbackAddr,
+			configKeyPort:         8080,
 			"auth_enabled":        false,
 			"rate_limit_enabled":  true,
 			"rate_limit_requests": 100,
@@ -25,28 +38,28 @@ func (h *AdminHandler) getCurrentConfig(_ context.Context, section string) (map[
 			"write_timeout":       "10s",
 		},
 		Database: map[string]interface{}{
-			"host":            "localhost",
-			"port":            5432,
-			"database":        "scanorama",
+			configKeyHost:     loopbackHostname,
+			configKeyPort:     5432,
+			configKeyDatabase: serviceNameScanorama,
 			"ssl_mode":        "require",
 			"max_connections": 25,
 		},
 		Scanning: map[string]interface{}{
 			"worker_pool_size":         10,
-			"scan_mode":                "syn",
+			configKeyScanMode:          scanTypeSYN,
 			"max_concurrent_targets":   100,
 			"default_ports":            "22,80,443,8080,8443",
 			"enable_service_detection": true,
 		},
 		Logging: map[string]interface{}{
-			"level":      "info",
-			"format":     "text",
-			"output":     "stdout",
-			"structured": true,
+			configKeyLevel: configKeyInfo,
+			"format":       "text",
+			"output":       "stdout",
+			"structured":   true,
 		},
 		Daemon: map[string]interface{}{
 			"pid_file":         "/tmp/scanorama.pid",
-			"shutdown_timeout": "30s",
+			"shutdown_timeout": defaultTimeout30s,
 			"daemonize":        true,
 		},
 	}
@@ -54,15 +67,15 @@ func (h *AdminHandler) getCurrentConfig(_ context.Context, section string) (map[
 	// Return specific section if requested
 	if section != "" {
 		switch section {
-		case "api":
+		case configSectionAPI:
 			return config.API.(map[string]interface{}), nil
-		case "database":
+		case configSectionDatabase:
 			return config.Database.(map[string]interface{}), nil
-		case "scanning":
+		case configSectionScanning:
 			return config.Scanning.(map[string]interface{}), nil
-		case "logging":
+		case configSectionLogging:
 			return config.Logging.(map[string]interface{}), nil
-		case "daemon":
+		case configSectionDaemon:
 			return config.Daemon.(map[string]interface{}), nil
 		default:
 			return nil, fmt.Errorf("unknown configuration section: %s", section)
@@ -71,11 +84,11 @@ func (h *AdminHandler) getCurrentConfig(_ context.Context, section string) (map[
 
 	// Return entire config as map
 	return map[string]interface{}{
-		"api":      config.API,
-		"database": config.Database,
-		"scanning": config.Scanning,
-		"logging":  config.Logging,
-		"daemon":   config.Daemon,
+		configSectionAPI:      config.API,
+		configSectionDatabase: config.Database,
+		configSectionScanning: config.Scanning,
+		configSectionLogging:  config.Logging,
+		configSectionDaemon:   config.Daemon,
 	}, nil
 }
 

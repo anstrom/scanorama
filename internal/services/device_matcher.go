@@ -141,12 +141,12 @@ func (m *DeviceMatcher) autoAttach(ctx context.Context, host *db.Host, sc device
 		}
 	}
 	if host.MDNSName != nil && *host.MDNSName != "" {
-		if err := m.repo.UpsertKnownName(ctx, sc.deviceID, *host.MDNSName, "mdns"); err != nil {
+		if err := m.repo.UpsertKnownName(ctx, sc.deviceID, *host.MDNSName, string(SourceMDNS)); err != nil {
 			m.logger.Warn("device matcher: upsert known mdns name failed", "error", err)
 		}
 	}
 	if host.Hostname != nil && *host.Hostname != "" {
-		if err := m.repo.UpsertKnownName(ctx, sc.deviceID, *host.Hostname, "dns"); err != nil {
+		if err := m.repo.UpsertKnownName(ctx, sc.deviceID, *host.Hostname, string(SourceDNS)); err != nil {
 			m.logger.Warn("device matcher: upsert known dns name failed", "error", err)
 		}
 	}
@@ -190,11 +190,11 @@ func isGloballyAdministeredMAC(mac string) bool {
 func (m *DeviceMatcher) scoreNames(host *db.Host, sig db.DeviceSignals, sc *deviceScore) {
 	for _, known := range sig.KnownNames {
 		switch known.Source {
-		case "mdns":
+		case string(SourceMDNS):
 			if host.MDNSName != nil && strings.EqualFold(*host.MDNSName, known.Name) {
 				sc.add(weightMDNSName, "mDNS:"+known.Name)
 			}
-		case "dns":
+		case string(SourceDNS):
 			if host.Hostname != nil && strings.EqualFold(*host.Hostname, known.Name) {
 				sc.add(weightDNSName, "DNS:"+known.Name)
 			}

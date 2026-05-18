@@ -35,7 +35,7 @@ var (
 // apiKeysCmd represents the apikeys command group
 var apiKeysCmd = &cobra.Command{
 	Use:     "apikeys",
-	Aliases: []string{"apikey", "keys", "key"},
+	Aliases: []string{"apikey", "keys", fieldKey},
 	Short:   "Manage API keys for client authentication",
 	Long: `Manage API keys for client authentication with the Scanorama API server.
 
@@ -76,7 +76,7 @@ Examples:
 
 // apiKeysListCmd lists all API keys
 var apiKeysListCmd = &cobra.Command{
-	Use:     "list",
+	Use:     cmdList,
 	Aliases: []string{"ls", "l"},
 	Short:   "List API keys",
 	Long: `List all API keys with their metadata.

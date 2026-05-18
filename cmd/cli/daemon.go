@@ -49,7 +49,7 @@ The daemon can be started, stopped, and monitored using subcommands.`,
 
 // daemonStartCmd represents the daemon start command.
 var daemonStartCmd = &cobra.Command{
-	Use:   "start",
+	Use:   cmdStart,
 	Short: "Start the scanorama daemon",
 	Long: `Start the scanorama daemon service in the background.
 The daemon will process scheduled jobs and provide API endpoints.`,
@@ -72,7 +72,7 @@ This will gracefully shut down the daemon and stop all background jobs.`,
 
 // daemonStatusCmd represents the daemon status command.
 var daemonStatusCmd = &cobra.Command{
-	Use:   "status",
+	Use:   cmdStatus,
 	Short: "Check the status of the scanorama daemon",
 	Long: `Check whether the scanorama daemon is currently running
 and display information about its status and configuration.`,

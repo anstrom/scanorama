@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	protoTCP = "tcp"
-	protoUDP = "udp"
+	protoTCP     = "tcp"
+	protoUDP     = "udp"
+	queryValTrue = "true"
 )
 
 // PortHandler handles port definition endpoints.
@@ -68,7 +69,7 @@ func (h *PortHandler) ListPorts(w http.ResponseWriter, r *http.Request) {
 		SortOrder: q.Get("sort_order"),
 	}
 	if s := q.Get("is_standard"); s != "" {
-		v := s == "true"
+		v := s == queryValTrue
 		filters.IsStandard = &v
 	}
 

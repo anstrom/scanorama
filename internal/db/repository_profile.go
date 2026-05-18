@@ -28,13 +28,15 @@ func NewProfileRepository(db *DB) *ProfileRepository {
 	return &ProfileRepository{db: db}
 }
 
+const colPriority = "priority"
+
 // validProfileSortColumns maps API sort keys to safe SQL column expressions.
 var validProfileSortColumns = map[string]string{
-	"name":       "name",
-	"scan_type":  "scan_type",
-	"created_at": "created_at",
-	"updated_at": "updated_at",
-	"priority":   "priority",
+	colName:      colName,
+	colScanType:  colScanType,
+	colCreatedAt: colCreatedAt,
+	colUpdatedAt: colUpdatedAt,
+	colPriority:  colPriority,
 }
 
 // scanProfileRow scans a single profile row from *sql.Rows into a *ScanProfile.
@@ -370,7 +372,7 @@ func buildProfileUpdateSetParts(input UpdateProfileInput) (setParts []string, ar
 	}
 
 	addStr("name", input.Name)
-	addStr("description", input.Description)
+	addStr(colDescription, input.Description)
 	addStr("scan_type", input.ScanType)
 	addStr("ports", input.Ports)
 	addStr("timing", input.Timing)

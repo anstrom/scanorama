@@ -38,7 +38,7 @@ func (r *GroupRepository) CreateGroup(ctx context.Context, input CreateGroupInpu
 	id := uuid.New()
 	now := time.Now().UTC()
 
-	columns := []string{"id", "name", "description", "created_at", "updated_at"}
+	columns := []string{"id", colName, colDescription, colCreatedAt, colUpdatedAt}
 	placeholders := []string{"$1", "$2", "$3", "$4", "$5"}
 	args := []interface{}{id, input.Name, input.Description, now, now}
 	argIndex := 6
@@ -102,7 +102,7 @@ func (r *GroupRepository) GetGroup(ctx context.Context, id uuid.UUID) (*HostGrou
 		}
 		return nil, sanitizeDBError("get group", err)
 	}
-	if filterRuleJSON != "null" && filterRuleJSON != "" {
+	if filterRuleJSON != colNullJSON && filterRuleJSON != "" {
 		g.FilterRule = JSONB(filterRuleJSON)
 	}
 	return g, nil
@@ -144,7 +144,7 @@ func (r *GroupRepository) ListGroups(ctx context.Context) ([]*HostGroup, error) 
 		); err != nil {
 			return nil, fmt.Errorf("scan group row: %w", err)
 		}
-		if filterRuleJSON != "null" && filterRuleJSON != "" {
+		if filterRuleJSON != colNullJSON && filterRuleJSON != "" {
 			g.FilterRule = JSONB(filterRuleJSON)
 		}
 		groups = append(groups, g)
@@ -188,7 +188,7 @@ func (r *GroupRepository) UpdateGroup(ctx context.Context, id uuid.UUID, input U
 		}
 	}
 	addStr("name", input.Name)
-	addStr("description", input.Description)
+	addStr(colDescription, input.Description)
 	addStr("color", input.Color)
 
 	if input.ClearFilter {

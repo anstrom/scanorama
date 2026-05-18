@@ -23,6 +23,7 @@ const (
 	SourcePTR    Source = "ptr"
 	SourceCert   Source = "cert"
 	SourceIP     Source = "ip"
+	SourceDNS    Source = "dns"
 )
 
 // DefaultIdentityRankOrder matches the seeded identity.rank_order setting
@@ -31,7 +32,9 @@ const (
 //
 // Don't take &DefaultIdentityRankOrder — it's meant to be copied or ranged
 // over, not mutated.
-var DefaultIdentityRankOrder = []string{"mdns", "snmp", "ptr", "cert"}
+var DefaultIdentityRankOrder = []string{
+	string(SourceMDNS), string(SourceSNMP), string(SourcePTR), string(SourceCert),
+}
 
 const (
 	maxSNMPSysNameLen = 253
@@ -44,6 +47,9 @@ const (
 	confidencePTR    = 0.6
 	confidenceCert   = 0.5
 	confidenceIP     = 0.0
+
+	sysNameTooLong      = "sys_name too long"
+	sysNameNonPrintable = "sys_name contains non-printable characters"
 )
 
 // IdentityResolution is the single winning display name for a host.
@@ -225,11 +231,11 @@ func snmpCandidates(in IdentityInputs) []NameCandidate {
 
 func validateSNMPSysName(name string) (usable bool, reason string) {
 	if len(name) > maxSNMPSysNameLen {
-		return false, "sys_name too long"
+		return false, sysNameTooLong
 	}
 	for _, r := range name {
 		if r < minPrintableASCII || r > maxPrintableASCII {
-			return false, "sys_name contains non-printable characters"
+			return false, sysNameNonPrintable
 		}
 	}
 	return true, ""

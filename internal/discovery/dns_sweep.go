@@ -43,7 +43,7 @@ func dnsSweep(ctx context.Context, ipnet net.IPNet, resolver *internaldns.Resolv
 		results = append(results, Result{
 			IPAddress: ip,
 			Status:    "up",
-			Method:    "dns",
+			Method:    methodDNS,
 		})
 		slog.Debug("dns sweep: PTR found", "ip", ipStr, "hostname", hostname)
 	}

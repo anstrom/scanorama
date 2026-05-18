@@ -118,6 +118,13 @@ const hostStatusGone = "gone"
 // harvest mDNS/SNMP sysName/PTR/cert signals on the next pass.
 const stageIdentityEnrichment = "identity_enrichment"
 
+const (
+	stageOSDetection   = "os_detection"
+	stagePortExpansion = "port_expansion"
+	stageServiceScan   = "service_scan"
+	stageRefresh       = "refresh"
+)
+
 // Stage-specific fallback port strings. Referenced by both SmartScanService
 // and stageDefaultPorts in portresolver.go — single source of truth.
 const (
@@ -258,22 +265,22 @@ func (s *SmartScanService) GetSuggestions(ctx context.Context) (*SuggestionSumma
 		NoOSInfo: SuggestionGroup{
 			Count:       noOS,
 			Description: "Hosts with no OS detection",
-			Action:      "os_detection",
+			Action:      stageOSDetection,
 		},
 		NoPorts: SuggestionGroup{
 			Count:       noPorts,
 			Description: "Hosts with OS known but no open ports found",
-			Action:      "port_expansion",
+			Action:      stagePortExpansion,
 		},
 		NoServices: SuggestionGroup{
 			Count:       noServices,
 			Description: "Hosts with open ports but no service identification",
-			Action:      "service_scan",
+			Action:      stageServiceScan,
 		},
 		Stale: SuggestionGroup{
 			Count:       stale,
 			Description: "Hosts not scanned in the last 30 days",
-			Action:      "refresh",
+			Action:      stageRefresh,
 		},
 		WellKnown: SuggestionGroup{
 			Count:       wellKnown,
@@ -343,7 +350,7 @@ func (s *SmartScanService) GetProfileRecommendations(ctx context.Context) ([]Pro
 			HostCount:   fc.count,
 			ProfileID:   p.ID,
 			ProfileName: p.Name,
-			Action:      "port_expansion",
+			Action:      stagePortExpansion,
 		})
 	}
 	return recs, nil
@@ -388,14 +395,14 @@ func (s *SmartScanService) EvaluateHost(ctx context.Context, host *db.Host) (*Sc
 	case host.Status == "up" && !hasUsableHostName(host):
 		return s.stageIdentityEnrichment(ctx, host), nil
 	case hasOS && !hasOpenPorts:
-		return s.stageWithProfile(ctx, host, "port_expansion"), nil
+		return s.stageWithProfile(ctx, host, stagePortExpansion), nil
 	case hasOpenPorts && !hasServices:
-		return s.stageWithProfile(ctx, host, "service_scan"), nil
+		return s.stageWithProfile(ctx, host, stageServiceScan), nil
 	case isStale:
-		ports := portListStr(ctx, s.portListResolver, "refresh", host, refreshPorts)
+		ports := portListStr(ctx, s.portListResolver, stageRefresh, host, refreshPorts)
 		return &ScanStage{
-			Stage:    "refresh",
-			ScanType: "connect",
+			Stage:    stageRefresh,
+			ScanType: scanTypeConnect,
 			Ports:    ports,
 			Reason:   fmt.Sprintf("last seen %s ago — refreshing scan", time.Since(host.LastSeen).Round(time.Hour)),
 		}, nil
@@ -412,7 +419,7 @@ func (s *SmartScanService) stageIdentityEnrichment(ctx context.Context, host *db
 	ports := portListStr(ctx, s.portListResolver, stageIdentityEnrichment, host, identityEnrichmentPorts)
 	return &ScanStage{
 		Stage:    stageIdentityEnrichment,
-		ScanType: "connect",
+		ScanType: scanTypeConnect,
 		Ports:    ports,
 		Reason:   "host has no usable name — probing identity surfaces (mDNS, SNMP, DNS, TLS)",
 	}
@@ -456,10 +463,10 @@ func hasNonBlank(p *string) bool {
 // stageOSDetection returns a ScanStage configured for OS fingerprinting.
 // SYN scan is required because OS detection needs raw socket access (-O flag).
 func (s *SmartScanService) stageOSDetection(ctx context.Context, host *db.Host) *ScanStage {
-	ports := portListStr(ctx, s.portListResolver, "os_detection", host, osDetectionPorts)
+	ports := portListStr(ctx, s.portListResolver, stageOSDetection, host, osDetectionPorts)
 	return &ScanStage{
-		Stage:       "os_detection",
-		ScanType:    "syn",
+		Stage:       stageOSDetection,
+		ScanType:    scanTypeSYN,
 		Ports:       ports,
 		OSDetection: true,
 		Reason:      "no OS information — running OS fingerprint scan",
@@ -482,12 +489,12 @@ func portListStr(ctx context.Context, r portListResolverIface, stage string, hos
 // falling back to a generic 1-1024 connect scan if none is found.
 func (s *SmartScanService) stageWithProfile(ctx context.Context, host *db.Host, stage string) *ScanStage {
 	fallbackReason := map[string]string{
-		"port_expansion": "OS known but no ports found — generic port scan",
-		"service_scan":   "open ports found but no service banners — generic service scan",
+		stagePortExpansion: "OS known but no ports found — generic port scan",
+		stageServiceScan:   "open ports found but no service banners — generic service scan",
 	}
 	profileReason := map[string]string{
-		"port_expansion": fmt.Sprintf("OS known (%s) but no ports found — using profile", safeStr(host.OSFamily)),
-		"service_scan":   "open ports found but no service banners — service scan",
+		stagePortExpansion: fmt.Sprintf("OS known (%s) but no ports found — using profile", safeStr(host.OSFamily)),
+		stageServiceScan:   "open ports found but no service banners — service scan",
 	}
 
 	if s.profileManager != nil {
@@ -505,8 +512,8 @@ func (s *SmartScanService) stageWithProfile(ctx context.Context, host *db.Host, 
 	}
 	return &ScanStage{
 		Stage:    stage,
-		ScanType: "connect",
-		Ports:    "1-1024",
+		ScanType: scanTypeConnect,
+		Ports:    refreshPorts,
 		Reason:   fallbackReason[stage],
 	}
 }

@@ -29,9 +29,11 @@ const (
 
 // Status constants.
 const (
-	StatusHealthy       = "healthy"
-	StatusUnhealthy     = "unhealthy"
-	StatusNotConfigured = "not configured"
+	StatusHealthy        = "healthy"
+	StatusUnhealthy      = "unhealthy"
+	StatusNotConfigured  = "not configured"
+	statusAlive          = "alive"
+	serviceNameScanorama = "scanorama"
 )
 
 // HealthHandler handles health check and status endpoints.
@@ -218,7 +220,7 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 	// Record metrics
 	if h.metrics != nil {
 		h.metrics.Counter("api_health_checks_total", metrics.Labels{
-			"status": response.Status,
+			responseKeyStatus: response.Status,
 		})
 	}
 }
@@ -228,7 +230,7 @@ func (h *HealthHandler) Liveness(w http.ResponseWriter, r *http.Request) {
 	h.logger.Debug("Liveness check requested", "remote_addr", r.RemoteAddr)
 
 	response := LivenessResponse{
-		Status:    "alive",
+		Status:    statusAlive,
 		Timestamp: time.Now().UTC(),
 		Uptime:    time.Since(h.startTime).String(),
 	}
@@ -254,7 +256,7 @@ func (h *HealthHandler) Status(w http.ResponseWriter, r *http.Request) {
 
 	// Service information
 	response.Service = ServiceInfo{
-		Name:      "scanorama",
+		Name:      serviceNameScanorama,
 		Version:   getVersion(),
 		StartTime: h.startTime,
 		Uptime:    time.Since(h.startTime).String(),
@@ -296,7 +298,7 @@ func (h *HealthHandler) Status(w http.ResponseWriter, r *http.Request) {
 	// Record metrics
 	if h.metrics != nil {
 		h.metrics.Counter("api_status_checks_total", metrics.Labels{
-			"status": response.Health.Status,
+			responseKeyStatus: response.Health.Status,
 		})
 	}
 }

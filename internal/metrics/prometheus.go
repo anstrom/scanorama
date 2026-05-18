@@ -14,15 +14,17 @@ import (
 )
 
 const (
-	// Namespace for all scanorama metrics
 	namespace = "scanorama"
 
-	// Subsystems
 	subsystemScan      = "scan"
 	subsystemDiscovery = "discovery"
 	subsystemDatabase  = "database"
 	subsystemSystem    = "system"
 	subsystemAPI       = "api"
+
+	labelPath      = "path"
+	labelErrorType = "error_type"
+	metricErrTotal = "errors_total"
 )
 
 // PrometheusMetrics holds all Prometheus metric collectors
@@ -104,7 +106,7 @@ func (pm *PrometheusMetrics) initScanMetrics() {
 			Name:      "total",
 			Help:      "Total number of scans performed by type and status",
 		},
-		[]string{"scan_type", "status"},
+		[]string{LabelScanType, LabelStatus},
 	)
 
 	pm.scanDuration = prometheus.NewHistogramVec(
@@ -115,17 +117,17 @@ func (pm *PrometheusMetrics) initScanMetrics() {
 			Help:      "Duration of scan operations in seconds",
 			Buckets:   []float64{0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0},
 		},
-		[]string{"scan_type"},
+		[]string{LabelScanType},
 	)
 
 	pm.scanErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystemScan,
-			Name:      "errors_total",
+			Name:      metricErrTotal,
 			Help:      "Total number of scan errors by type and error",
 		},
-		[]string{"scan_type", "error_type"},
+		[]string{LabelScanType, labelErrorType},
 	)
 
 	pm.portsScanned = prometheus.NewCounterVec(
@@ -135,7 +137,7 @@ func (pm *PrometheusMetrics) initScanMetrics() {
 			Name:      "ports_total",
 			Help:      "Total number of ports scanned",
 		},
-		[]string{"scan_type", "port_status"},
+		[]string{LabelScanType, "port_status"},
 	)
 
 	pm.hostsScanned = prometheus.NewCounterVec(
@@ -145,7 +147,7 @@ func (pm *PrometheusMetrics) initScanMetrics() {
 			Name:      "hosts_total",
 			Help:      "Total number of hosts scanned",
 		},
-		[]string{"scan_type", "host_status"},
+		[]string{LabelScanType, "host_status"},
 	)
 
 	pm.activeScans = prometheus.NewGauge(
@@ -195,7 +197,7 @@ func (pm *PrometheusMetrics) initDiscoveryMetrics() {
 			Name:      "total",
 			Help:      "Total number of discovery operations by method and status",
 		},
-		[]string{"method", "status"},
+		[]string{LabelMethod, LabelStatus},
 	)
 
 	pm.discoveryDuration = prometheus.NewHistogramVec(
@@ -206,17 +208,17 @@ func (pm *PrometheusMetrics) initDiscoveryMetrics() {
 			Help:      "Duration of discovery operations in seconds",
 			Buckets:   []float64{1.0, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0},
 		},
-		[]string{"method"},
+		[]string{LabelMethod},
 	)
 
 	pm.discoveryErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystemDiscovery,
-			Name:      "errors_total",
+			Name:      metricErrTotal,
 			Help:      "Total number of discovery errors by method and error type",
 		},
-		[]string{"method", "error_type"},
+		[]string{LabelMethod, labelErrorType},
 	)
 
 	pm.hostsDiscovered = prometheus.NewCounterVec(
@@ -226,7 +228,7 @@ func (pm *PrometheusMetrics) initDiscoveryMetrics() {
 			Name:      "hosts_total",
 			Help:      "Total number of hosts discovered",
 		},
-		[]string{"method", "network"},
+		[]string{LabelMethod, LabelNetwork},
 	)
 
 	pm.activeDiscovery = prometheus.NewGauge(
@@ -248,7 +250,7 @@ func (pm *PrometheusMetrics) initDatabaseMetrics() {
 			Name:      "queries_total",
 			Help:      "Total number of database queries by operation and status",
 		},
-		[]string{"operation", "status"},
+		[]string{LabelOperation, LabelStatus},
 	)
 
 	pm.dbQueryDuration = prometheus.NewHistogramVec(
@@ -259,7 +261,7 @@ func (pm *PrometheusMetrics) initDatabaseMetrics() {
 			Help:      "Duration of database queries in seconds",
 			Buckets:   []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0},
 		},
-		[]string{"operation"},
+		[]string{LabelOperation},
 	)
 
 	pm.dbConnections = prometheus.NewGauge(
@@ -275,10 +277,10 @@ func (pm *PrometheusMetrics) initDatabaseMetrics() {
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystemDatabase,
-			Name:      "errors_total",
+			Name:      metricErrTotal,
 			Help:      "Total number of database errors by operation and error type",
 		},
-		[]string{"operation", "error_type"},
+		[]string{LabelOperation, labelErrorType},
 	)
 }
 
@@ -291,7 +293,7 @@ func (pm *PrometheusMetrics) initAPIMetrics() {
 			Name:      "requests_total",
 			Help:      "Total number of HTTP requests by method, path and status",
 		},
-		[]string{"method", "path", "status"},
+		[]string{LabelMethod, labelPath, LabelStatus},
 	)
 
 	pm.httpDuration = prometheus.NewHistogramVec(
@@ -302,17 +304,17 @@ func (pm *PrometheusMetrics) initAPIMetrics() {
 			Help:      "Duration of HTTP requests in seconds",
 			Buckets:   []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0},
 		},
-		[]string{"method", "path"},
+		[]string{LabelMethod, labelPath},
 	)
 
 	pm.httpErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystemAPI,
-			Name:      "errors_total",
+			Name:      metricErrTotal,
 			Help:      "Total number of HTTP errors by method, path and error type",
 		},
-		[]string{"method", "path", "error_type"},
+		[]string{LabelMethod, labelPath, labelErrorType},
 	)
 }
 

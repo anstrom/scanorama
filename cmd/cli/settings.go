@@ -14,6 +14,7 @@ import (
 
 const (
 	settingsMaxValueLen = 40
+	fieldKey            = "key"
 )
 
 var (
@@ -128,8 +129,8 @@ func executeSettingsGet(client *APIClient) error {
 
 func executeSettingsUpdate(client *APIClient) error {
 	payload := map[string]string{
-		"key":   settingsKey,
-		"value": settingsValue,
+		fieldKey: settingsKey,
+		"value":  settingsValue,
 	}
 
 	resp, err := client.Put("/admin/settings", payload)
@@ -146,7 +147,7 @@ func executeSettingsUpdate(client *APIClient) error {
 		fmt.Printf("Setting %q updated successfully.\n", settingsKey)
 	} else {
 		fmt.Printf("Setting %q update response received (key: %v).\n",
-			settingsKey, result["key"])
+			settingsKey, result[fieldKey])
 	}
 
 	return nil
@@ -247,10 +248,10 @@ func init() {
 		"Output format (table, json)")
 
 	// update flags
-	settingsUpdateCmd.Flags().StringVar(&settingsKey, "key", "",
+	settingsUpdateCmd.Flags().StringVar(&settingsKey, fieldKey, "",
 		"Setting key to update (required)")
 	settingsUpdateCmd.Flags().StringVar(&settingsValue, "value", "",
 		"New value as valid JSON (required) — e.g. true, 42, or '\"text\"'")
-	_ = settingsUpdateCmd.MarkFlagRequired("key")
+	_ = settingsUpdateCmd.MarkFlagRequired(fieldKey)
 	_ = settingsUpdateCmd.MarkFlagRequired("value")
 }

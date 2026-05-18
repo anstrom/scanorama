@@ -29,7 +29,13 @@ const (
 	bufferSize       = 256                                                // Size of the broadcast channel buffer
 	logsHistoryBurst = 100                                                // Recent log entries sent on connect
 
-	loopbackHostname = "localhost" // hostname alias for loopback; IPs checked via net.IP.IsLoopback
+	loopbackHostname    = "localhost"
+	wsConnTypeScan      = "scan"
+	wsConnTypeDiscovery = "discovery"
+	wsConnTypeSingle    = "single"
+	wsConnTypeGeneral   = "general"
+	wsLabelType         = "type"
+	wsLabelMessage      = "message"
 )
 
 // checkOrigin returns true if the WebSocket upgrade request should be accepted.
@@ -158,7 +164,7 @@ func (h *WebSocketHandler) ScanWebSocket(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Set up the connection for scan updates only
-	h.setupConnection(conn, []string{"scan"}, requestID)
+	h.setupConnection(conn, []string{wsConnTypeScan}, requestID)
 }
 
 // DiscoveryWebSocket handles WebSocket connections for discovery updates.
@@ -173,7 +179,7 @@ func (h *WebSocketHandler) DiscoveryWebSocket(w http.ResponseWriter, r *http.Req
 	}
 
 	// Set up the connection for discovery updates only
-	h.setupConnection(conn, []string{"discovery"}, requestID)
+	h.setupConnection(conn, []string{wsConnTypeDiscovery}, requestID)
 }
 
 // GeneralWebSocket handles general WebSocket connections for all updates.
@@ -188,7 +194,7 @@ func (h *WebSocketHandler) GeneralWebSocket(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Set up the connection for both scan and discovery updates
-	h.setupConnection(conn, []string{"scan", "discovery"}, requestID)
+	h.setupConnection(conn, []string{wsConnTypeScan, wsConnTypeDiscovery}, requestID)
 }
 
 // setupConnection configures a WebSocket connection for the specified connection types and starts read/write pumps.
@@ -221,9 +227,9 @@ func (h *WebSocketHandler) setupConnection(conn *websocket.Conn, connTypes []str
 	}
 
 	// Determine connection type label for logging
-	connTypeLabel := "single"
+	connTypeLabel := wsConnTypeSingle
 	if len(connTypes) > 1 {
-		connTypeLabel = "general"
+		connTypeLabel = wsConnTypeGeneral
 	} else if len(connTypes) == 1 {
 		connTypeLabel = connTypes[0]
 	}
@@ -248,9 +254,9 @@ func (h *WebSocketHandler) run() {
 		case registration := <-h.register:
 			h.mutex.Lock()
 			switch registration.connType {
-			case "scan":
+			case wsConnTypeScan:
 				h.scanClients[registration.conn] = true
-			case "discovery":
+			case wsConnTypeDiscovery:
 				h.discoveryClients[registration.conn] = true
 			}
 			h.mutex.Unlock()
@@ -266,10 +272,10 @@ func (h *WebSocketHandler) run() {
 			h.logger.Debug("Client unregistered", "total_clients", h.getTotalClients())
 
 		case message := <-h.scanBroadcast:
-			h.broadcastToClients(h.scanClients, message, "scan")
+			h.broadcastToClients(h.scanClients, message, wsConnTypeScan)
 
 		case message := <-h.discoveryBroadcast:
-			h.broadcastToClients(h.discoveryClients, message, "discovery")
+			h.broadcastToClients(h.discoveryClients, message, wsConnTypeDiscovery)
 
 		case <-ticker.C:
 			h.pingClients()
@@ -358,7 +364,7 @@ func (h *WebSocketHandler) broadcastToClients(clients map[*websocket.Conn]bool, 
 	// Record metrics
 	if h.metrics != nil {
 		h.metrics.Counter("websocket_messages_sent_total", map[string]string{
-			"type": clientType,
+			wsLabelType: clientType,
 		})
 	}
 }
@@ -465,7 +471,7 @@ func (h *WebSocketHandler) BroadcastSystemMessage(messageType, content string) e
 		Type:      messageType,
 		Timestamp: time.Now().UTC(),
 		Data: map[string]string{
-			"message": content,
+			wsLabelMessage: content,
 		},
 	}
 
@@ -496,9 +502,9 @@ func (h *WebSocketHandler) GetConnectedClients() map[string]int {
 	defer h.mutex.RUnlock()
 
 	return map[string]int{
-		"scan":      len(h.scanClients),
-		"discovery": len(h.discoveryClients),
-		"total":     len(h.scanClients) + len(h.discoveryClients),
+		wsConnTypeScan:      len(h.scanClients),
+		wsConnTypeDiscovery: len(h.discoveryClients),
+		responseKeyTotal:    len(h.scanClients) + len(h.discoveryClients),
 	}
 }
 
@@ -550,7 +556,7 @@ func (h *WebSocketHandler) sendLogsHistory(conn *websocket.Conn) {
 	msg := WebSocketMessage{
 		Type:      "log_history",
 		Timestamp: time.Now().UTC(),
-		Data:      map[string]interface{}{"entries": recent, "total": len(recent)},
+		Data:      map[string]interface{}{"entries": recent, responseKeyTotal: len(recent)},
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {

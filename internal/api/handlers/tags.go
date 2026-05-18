@@ -13,6 +13,8 @@ import (
 	"github.com/anstrom/scanorama/internal/errors"
 )
 
+const responseKeyTags = "tags"
+
 // tagModifyRequest is the body for PUT/POST/DELETE /api/v1/hosts/{id}/tags.
 type tagModifyRequest struct {
 	Tags []string `json:"tags"`
@@ -36,7 +38,7 @@ func (h *HostHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 	if tags == nil {
 		tags = []string{}
 	}
-	writeJSON(w, r, http.StatusOK, map[string]interface{}{"tags": tags})
+	writeJSON(w, r, http.StatusOK, map[string]interface{}{responseKeyTags: tags})
 }
 
 // applyTagsOp is a shared helper for tag-mutation endpoints that parse the
@@ -67,13 +69,13 @@ func (h *HostHandler) applyTagsOp(
 	}
 
 	if err := serviceOp(r.Context(), id, tags); err != nil {
-		handleDatabaseError(w, r, err, opName+" tags for", "host", h.logger)
+		handleDatabaseError(w, r, err, opName+" tags for", entityTypeHost, h.logger)
 		return
 	}
 
 	host, err := h.service.GetHost(r.Context(), id)
 	if err != nil {
-		handleDatabaseError(w, r, err, "get", "host", h.logger)
+		handleDatabaseError(w, r, err, "get", entityTypeHost, h.logger)
 		return
 	}
 	writeJSON(w, r, http.StatusOK, h.hostToResponse(host))
@@ -107,13 +109,13 @@ func (h *HostHandler) DeleteHostTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.RemoveHostTags(r.Context(), id, req.Tags); err != nil {
-		handleDatabaseError(w, r, err, "remove tags for", "host", h.logger)
+		handleDatabaseError(w, r, err, "remove tags for", entityTypeHost, h.logger)
 		return
 	}
 
 	host, err := h.service.GetHost(r.Context(), id)
 	if err != nil {
-		handleDatabaseError(w, r, err, "get", "host", h.logger)
+		handleDatabaseError(w, r, err, "get", entityTypeHost, h.logger)
 		return
 	}
 	writeJSON(w, r, http.StatusOK, h.hostToResponse(host))

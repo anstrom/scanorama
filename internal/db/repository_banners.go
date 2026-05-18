@@ -318,7 +318,7 @@ func (r *BannerRepository) ListExpiringCertificatesWithHosts(
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan expiring cert row: %w", err)
 		}
-		c.Protocol = "tcp"
+		c.Protocol = DiscoveryMethodTCP
 		c.DaysLeft = int(c.NotAfter.Sub(now).Hours() / hoursPerDay)
 		result = append(result, c)
 	}

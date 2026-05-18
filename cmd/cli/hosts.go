@@ -20,6 +20,11 @@ const (
 	maxOSNameLength      = 18  // max OS name length before truncation
 	ipAddressParts       = 4   // expected parts in IP address
 	hoursPerDay          = 24  // hours in a day for duration calculation
+
+	hostStatusDown  = "down"
+	osFamilyWindows = "windows"
+	osFamilyLinux   = "linux"
+	osFamilyUnknown = "unknown"
 )
 
 var (
@@ -101,8 +106,8 @@ func runHosts(_ *cobra.Command, _ []string) {
 	// Validate status if provided
 	if hostsStatus != "" {
 		validStatuses := map[string]bool{
-			"up":   true,
-			"down": true,
+			"up":           true,
+			hostStatusDown: true,
 		}
 		if !validStatuses[hostsStatus] {
 			fmt.Fprintf(os.Stderr, "Error: invalid status '%s'. Valid statuses: up, down\n", hostsStatus)
@@ -113,10 +118,10 @@ func runHosts(_ *cobra.Command, _ []string) {
 	// Validate OS family if provided
 	if hostsOSFamily != "" {
 		validOSFamilies := map[string]bool{
-			"windows": true,
-			"linux":   true,
-			"macos":   true,
-			"unknown": true,
+			osFamilyWindows: true,
+			osFamilyLinux:   true,
+			"macos":         true,
+			osFamilyUnknown: true,
 		}
 		if !validOSFamilies[hostsOSFamily] {
 			fmt.Fprintf(os.Stderr, "Error: invalid OS family '%s'. "+

@@ -20,6 +20,7 @@ import (
 const (
 	// Scan operation constants.
 	defaultScanTimeout = 300 // default scan timeout in seconds
+	scanTypeVersion    = "version"
 )
 
 var (
@@ -34,7 +35,7 @@ var (
 
 // scanCmd represents the scan command.
 var scanCmd = &cobra.Command{
-	Use:   "scan",
+	Use:   cmdScan,
 	Short: "Scan hosts for open ports and services",
 	Long: `Scan discovered hosts or specific targets for open ports,
 running services, and other network information.
@@ -58,7 +59,7 @@ func init() {
 	scanCmd.Flags().StringVar(&scanTargets, "targets", "", "Comma-separated list of targets to scan")
 	scanCmd.Flags().BoolVar(&scanLiveHosts, "live-hosts", false, "Scan only discovered live hosts")
 	scanCmd.Flags().StringVar(&scanPorts, "ports", "22,80,443,8080,8443", "Ports to scan (comma-separated)")
-	scanCmd.Flags().StringVar(&scanType, "type", "connect",
+	scanCmd.Flags().StringVar(&scanType, "type", scanTypeConnect,
 		"Scan type: connect, syn, version, aggressive, stealth")
 	scanCmd.Flags().StringVar(&scanProfile, "profile", "", "Scan profile to use (overrides scan type)")
 	scanCmd.Flags().IntVar(&scanTimeout, "timeout", defaultScanTimeout, "Scan timeout in seconds")
@@ -92,9 +93,9 @@ func runScan(cmd *cobra.Command, _ []string) {
 
 	// Validate scan type
 	validTypes := map[string]bool{
-		"connect":       true,
+		scanTypeConnect: true,
 		"syn":           true,
-		"version":       true,
+		scanTypeVersion: true,
 		"comprehensive": true,
 		"aggressive":    true,
 		"stealth":       true,

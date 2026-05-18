@@ -15,6 +15,11 @@ import (
 	"github.com/anstrom/scanorama/internal/metrics"
 )
 
+const (
+	labelJobType = "job_type"
+	labelStatus  = "status"
+)
+
 // Job represents a unit of work to be executed by a worker.
 type Job interface {
 	// Execute performs the job and returns an error if it fails.
@@ -155,9 +160,9 @@ func (p *Pool) Submit(job Job) error {
 	case p.jobs <- job:
 		logging.Debug("Job submitted to worker pool",
 			"job_id", job.ID(),
-			"job_type", job.Type())
+			labelJobType, job.Type())
 		metrics.Counter("jobs_submitted_total", metrics.Labels{
-			"job_type": job.Type(),
+			labelJobType: job.Type(),
 		})
 		return nil
 	case <-p.ctx.Done():
@@ -275,7 +280,7 @@ func (w *worker) executeJob(job Job) {
 			stack := debug.Stack()
 			logging.Error("Job panicked",
 				"job_id", job.ID(),
-				"job_type", job.Type(),
+				labelJobType, job.Type(),
 				"worker_id", w.id,
 				"panic", r,
 				"stack", string(stack))
@@ -290,15 +295,15 @@ func (w *worker) executeJob(job Job) {
 			}
 
 			metrics.Counter("jobs_completed_total", metrics.Labels{
-				"job_type": job.Type(),
-				"status":   "panic",
+				labelJobType: job.Type(),
+				labelStatus:  "panic",
 			})
 		}
 	}()
 
 	jobTimer := metrics.NewTimer("job_duration_seconds", metrics.Labels{
-		"job_type":  job.Type(),
-		"worker_id": fmt.Sprintf("worker-%d", w.id),
+		labelJobType: job.Type(),
+		"worker_id":  fmt.Sprintf("worker-%d", w.id),
 	})
 	defer jobTimer.Stop()
 
@@ -338,12 +343,12 @@ func (w *worker) runWithRetry(job Job) {
 				Retries:  retries,
 			}
 			metrics.Counter("jobs_completed_total", metrics.Labels{
-				"job_type": job.Type(),
-				"status":   "success",
+				labelJobType: job.Type(),
+				labelStatus:  "success",
 			})
 			logging.Debug("Job completed successfully",
 				"job_id", job.ID(),
-				"job_type", job.Type(),
+				labelJobType, job.Type(),
 				"duration", duration,
 				"worker_id", w.id,
 				"retries", retries)
@@ -356,7 +361,7 @@ func (w *worker) runWithRetry(job Job) {
 		if attempt < w.pool.config.MaxRetries {
 			logging.Debug("Job failed, retrying",
 				"job_id", job.ID(),
-				"job_type", job.Type(),
+				labelJobType, job.Type(),
 				"attempt", attempt+1,
 				"max_retries", w.pool.config.MaxRetries,
 				"error", err)
@@ -376,12 +381,12 @@ func (w *worker) runWithRetry(job Job) {
 		Retries: retries,
 	}
 	metrics.Counter("jobs_completed_total", metrics.Labels{
-		"job_type": job.Type(),
-		"status":   "error",
+		labelJobType: job.Type(),
+		labelStatus:  "error",
 	})
 	logging.Error("Job failed after retries",
 		"job_id", job.ID(),
-		"job_type", job.Type(),
+		labelJobType, job.Type(),
 		"retries", retries,
 		"error", lastErr,
 		"worker_id", w.id)
@@ -415,16 +420,16 @@ func (p *Pool) processResults() {
 			// Update metrics based on result
 			if result.Error != nil {
 				metrics.Counter("job_errors_total", metrics.Labels{
-					"job_type": result.JobType,
+					labelJobType: result.JobType,
 				})
 			} else {
 				metrics.Counter("jobs_completed_total", metrics.Labels{
-					"job_type": result.JobType,
+					labelJobType: result.JobType,
 				})
 			}
 
 			metrics.Histogram("job_retry_count", float64(result.Retries), metrics.Labels{
-				"job_type": result.JobType,
+				labelJobType: result.JobType,
 			})
 		}
 	}
