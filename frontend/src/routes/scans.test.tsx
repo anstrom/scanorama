@@ -3,6 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ScansPage } from "./scans";
 
+const mockNavigate = vi.fn();
+
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
+
 vi.mock("../api/hooks/use-scans", () => ({
   useScans: vi.fn(),
   useScanResults: vi.fn(),
@@ -93,6 +100,22 @@ const mockScans = [
     ports: undefined,
     profile_id: undefined,
     error_message: "Connection refused",
+  },
+  {
+    id: "scan-4",
+    status: "completed" as const,
+    targets: ["10.0.0.0/8"],
+    hosts_discovered: 5,
+    ports_scanned: "22",
+    duration: "2m10s",
+    started_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    completed_at: new Date().toISOString(),
+    name: undefined,
+    scan_type: "connect" as const,
+    ports: "22",
+    profile_id: undefined,
+    error_message: undefined,
   },
 ];
 
@@ -257,9 +280,9 @@ describe("ScansPage", () => {
 
   it("renders a row for each scan", () => {
     render(<ScansPage />);
-    // 1 header row + 3 data rows
+    // 1 header row + 4 data rows
     const rows = screen.getAllByRole("row");
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
   });
 
   // ── Scan data ─────────────────────────────────────────────────
@@ -271,7 +294,7 @@ describe("ScansPage", () => {
 
   it("renders StatusBadge for each scan", () => {
     render(<ScansPage />);
-    expect(screen.getByText("completed")).toBeInTheDocument();
+    expect(screen.getAllByText("completed")).toHaveLength(2);
     expect(screen.getByText("running")).toBeInTheDocument();
     expect(screen.getByText("failed")).toBeInTheDocument();
   });
@@ -292,8 +315,8 @@ describe("ScansPage", () => {
     const rows = screen.getAllByRole("row");
     // scan-3 is the last data row (index 3)
     const cells = within(rows[3]).getAllByRole("cell");
-    // Targets is index 0
-    expect(cells[0]).toHaveTextContent("—");
+    // Targets is index 1 (checkbox at 0)
+    expect(cells[1]).toHaveTextContent("—");
   });
 
   it("shows em-dash for missing ports_scanned", () => {
@@ -301,8 +324,8 @@ describe("ScansPage", () => {
     const rows = screen.getAllByRole("row");
     // scan-2 is index 2
     const cells = within(rows[2]).getAllByRole("cell");
-    // Ports is index 2 (Targets, Status, Ports, Duration, Started)
-    expect(cells[2]).toHaveTextContent("—");
+    // Ports is index 3 (checkbox, Targets, Status, Ports, Duration, Started)
+    expect(cells[3]).toHaveTextContent("—");
   });
 
   it("shows em-dash for missing duration", () => {
@@ -310,8 +333,8 @@ describe("ScansPage", () => {
     const rows = screen.getAllByRole("row");
     // scan-2 is index 2
     const cells = within(rows[2]).getAllByRole("cell");
-    // Duration is index 3 (Targets, Status, Ports, Duration, Started)
-    expect(cells[3]).toHaveTextContent("—");
+    // Duration is index 4 (checkbox, Targets, Status, Ports, Duration, Started)
+    expect(cells[4]).toHaveTextContent("—");
   });
 
   it("shows em-dash for missing started_at", () => {
@@ -319,8 +342,8 @@ describe("ScansPage", () => {
     const rows = screen.getAllByRole("row");
     // scan-3 is index 3 — no started_at
     const cells = within(rows[3]).getAllByRole("cell");
-    // Started is index 4 (Targets, Status, Ports, Duration, Started)
-    expect(cells[4]).toHaveTextContent("—");
+    // Started is index 5 (checkbox, Targets, Status, Ports, Duration, Started)
+    expect(cells[5]).toHaveTextContent("—");
   });
 
   // ── Status filter interaction ─────────────────────────────────
@@ -568,5 +591,47 @@ describe("ScansPage", () => {
     // containerProps mock sets tabIndex: 0 on the wrapping div
     const navDiv = document.querySelector('[tabindex="0"]');
     expect(navDiv).toBeInTheDocument();
+  });
+
+  // ── Compare button ────────────────────────────────────────────
+  describe("Compare button", () => {
+    beforeEach(() => mockNavigate.mockClear());
+
+    it("does not show Compare button initially", () => {
+      render(<ScansPage />);
+      expect(screen.queryByRole("button", { name: /compare/i })).not.toBeInTheDocument();
+    });
+
+    it("shows Compare button when exactly 2 completed scans are checked", async () => {
+      render(<ScansPage />);
+      const checkboxes = screen.getAllByRole("checkbox");
+      // scan-1 (idx 0) and scan-4 (idx 3) are completed; scan-2 (idx 1) and scan-3 (idx 2) are disabled
+      await userEvent.click(checkboxes[0]); // scan-1
+      expect(screen.queryByRole("button", { name: /compare/i })).not.toBeInTheDocument();
+      await userEvent.click(checkboxes[3]); // scan-4
+      expect(screen.getByRole("button", { name: /compare/i })).toBeInTheDocument();
+    });
+
+    it("navigates to /scans/diff with correct a and b params on Compare click", async () => {
+      render(<ScansPage />);
+      const checkboxes = screen.getAllByRole("checkbox");
+      await userEvent.click(checkboxes[0]); // scan-1
+      await userEvent.click(checkboxes[3]); // scan-4
+      await userEvent.click(screen.getByRole("button", { name: /compare/i }));
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: "/scans/diff",
+        search: { a: "scan-1", b: "scan-4" },
+      });
+    });
+
+    it("disables checkboxes for non-completed scans", () => {
+      render(<ScansPage />);
+      const checkboxes = screen.getAllByRole("checkbox");
+      // scan-2 is running, scan-3 is failed — both disabled
+      const disabled = checkboxes.filter(
+        (cb) => (cb as HTMLInputElement).disabled,
+      );
+      expect(disabled).toHaveLength(2);
+    });
   });
 });
