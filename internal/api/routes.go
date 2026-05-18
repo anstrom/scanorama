@@ -116,9 +116,12 @@ func (s *Server) setupSmartScanRoutes(api *mux.Router, h *apihandlers.SmartScanH
 }
 
 // setupScanRoutes registers scan CRUD and action endpoints.
+//
+//nolint:dupl // route functions share structural patterns by design
 func (s *Server) setupScanRoutes(api *mux.Router, h *apihandlers.ScanHandler) {
 	// Fixed-path routes must be registered before /scans/{id} to avoid mux ambiguity.
 	api.HandleFunc("/scans/diff", h.GetScanDiff).Methods("GET")
+	api.HandleFunc("/scans/export", h.ExportScans).Methods("GET")
 	api.HandleFunc("/scans", h.ListScans).Methods("GET")
 	api.HandleFunc("/scans", h.CreateScan).Methods("POST")
 	api.HandleFunc("/scans/{id}", h.GetScan).Methods("GET")
@@ -130,7 +133,11 @@ func (s *Server) setupScanRoutes(api *mux.Router, h *apihandlers.ScanHandler) {
 }
 
 // setupHostRoutes registers host CRUD endpoints.
+//
+//nolint:dupl // route functions share structural patterns by design
 func (s *Server) setupHostRoutes(api *mux.Router, h *apihandlers.HostHandler) {
+	// Fixed-path routes must be registered before /hosts/{id} to avoid mux ambiguity.
+	api.HandleFunc("/hosts/export", h.ExportHosts).Methods("GET")
 	api.HandleFunc("/hosts", h.ListHosts).Methods("GET")
 	api.HandleFunc("/hosts", h.CreateHost).Methods("POST")
 	api.HandleFunc("/hosts", h.BulkDeleteHosts).Methods("DELETE")

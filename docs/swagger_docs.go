@@ -2202,3 +2202,43 @@ func DeleteAlertRule(_ http.ResponseWriter, _ *http.Request) {}
 // @Router       /hosts/{id}/alerts [get]
 // @ID           listHostAlertRules
 func ListHostAlertRules(_ http.ResponseWriter, _ *http.Request) {}
+
+// ExportHosts godoc
+// @Summary      Export hosts as CSV or JSON
+// @Description  Streams all hosts matching the active filters as a file download.
+// @Description  Uses chunked DB reads so large exports do not buffer in memory.
+// @Tags         Hosts
+// @Produce      text/csv,application/json
+// @Param        format      query  string  false  "Output format: csv (default) or json"  Enums(csv,json)
+// @Param        status      query  string  false  "Filter by host status"
+// @Param        os          query  string  false  "Filter by OS family"
+// @Param        network     query  string  false  "Filter by network CIDR"
+// @Param        vendor      query  string  false  "Filter by vendor"
+// @Param        search      query  string  false  "Full-text search"
+// @Param        sort_by     query  string  false  "Sort column"
+// @Param        sort_order  query  string  false  "Sort direction: asc or desc"
+// @Success      200  "CSV or JSON file download"
+// @Failure      500  {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /hosts/export [get]
+// @ID           exportHosts
+func ExportHosts(_ http.ResponseWriter, _ *http.Request) {}
+
+// ExportScans godoc
+// @Summary      Export scans as CSV or JSON
+// @Description  Streams all scans matching the active filters as a file download.
+// @Description  Uses chunked DB reads so large exports do not buffer in memory.
+// @Tags         Scans
+// @Produce      text/csv,application/json
+// @Param        format      query  string  false  "Output format: csv (default) or json"  Enums(csv,json)
+// @Param        status      query  string  false  "Filter by scan status"
+// @Param        scan_type   query  string  false  "Filter by scan type"
+// @Param        profile_id  query  string  false  "Filter by profile ID"
+// @Param        sort_by     query  string  false  "Sort column"
+// @Param        sort_order  query  string  false  "Sort direction: asc or desc"
+// @Success      200  "CSV or JSON file download"
+// @Failure      500  {object}  ErrorResponse
+// @Security     ApiKeyAuth
+// @Router       /scans/export [get]
+// @ID           exportScans
+func ExportScans(_ http.ResponseWriter, _ *http.Request) {}

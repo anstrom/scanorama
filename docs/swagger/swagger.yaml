@@ -2911,6 +2911,63 @@ paths:
       summary: Set or clear a host's custom display name
       tags:
       - Hosts
+  /hosts/export:
+    get:
+      description: |-
+        Streams all hosts matching the active filters as a file download.
+        Uses chunked DB reads so large exports do not buffer in memory.
+      operationId: exportHosts
+      parameters:
+      - description: 'Output format: csv (default) or json'
+        enum:
+        - csv
+        - json
+        in: query
+        name: format
+        type: string
+      - description: Filter by host status
+        in: query
+        name: status
+        type: string
+      - description: Filter by OS family
+        in: query
+        name: os
+        type: string
+      - description: Filter by network CIDR
+        in: query
+        name: network
+        type: string
+      - description: Filter by vendor
+        in: query
+        name: vendor
+        type: string
+      - description: Full-text search
+        in: query
+        name: search
+        type: string
+      - description: Sort column
+        in: query
+        name: sort_by
+        type: string
+      - description: 'Sort direction: asc or desc'
+        in: query
+        name: sort_order
+        type: string
+      produces:
+      - text/csv
+      - application/json
+      responses:
+        "200":
+          description: CSV or JSON file download
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Export hosts as CSV or JSON
+      tags:
+      - Hosts
   /liveness:
     get:
       description: Returns simple liveness status without dependency checks
@@ -4278,6 +4335,55 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Compare two scans
+      tags:
+      - Scans
+  /scans/export:
+    get:
+      description: |-
+        Streams all scans matching the active filters as a file download.
+        Uses chunked DB reads so large exports do not buffer in memory.
+      operationId: exportScans
+      parameters:
+      - description: 'Output format: csv (default) or json'
+        enum:
+        - csv
+        - json
+        in: query
+        name: format
+        type: string
+      - description: Filter by scan status
+        in: query
+        name: status
+        type: string
+      - description: Filter by scan type
+        in: query
+        name: scan_type
+        type: string
+      - description: Filter by profile ID
+        in: query
+        name: profile_id
+        type: string
+      - description: Sort column
+        in: query
+        name: sort_by
+        type: string
+      - description: 'Sort direction: asc or desc'
+        in: query
+        name: sort_order
+        type: string
+      produces:
+      - text/csv
+      - application/json
+      responses:
+        "200":
+          description: CSV or JSON file download
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Export scans as CSV or JSON
       tags:
       - Scans
   /schedules:
