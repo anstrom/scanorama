@@ -48,7 +48,14 @@ export function useKeyboardShortcuts(): UseKeyboardShortcutsResult {
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      // Ignore modifier-key combos (Ctrl, Alt, Meta) — let the browser handle them.
+      // Cmd+K (macOS) or Ctrl+K (Windows/Linux) opens the command palette.
+      if ((e.metaKey || e.ctrlKey) && e.key === "k" && !e.altKey) {
+        e.preventDefault();
+        document.dispatchEvent(new CustomEvent("search-requested"));
+        return;
+      }
+
+      // Ignore other modifier-key combos (Ctrl, Alt, Meta) — let the browser handle them.
       if (e.ctrlKey || e.altKey || e.metaKey) return;
 
       // Suppress shortcuts when typing in an input field.

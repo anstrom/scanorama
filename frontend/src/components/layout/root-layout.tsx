@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useRouterState, useNavigate } from "@tanstack/react-router";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { ToastProvider, useToast } from "../toast-provider";
 import { KeyboardShortcutHelp } from "../keyboard-shortcut-help";
+import { CommandPalette } from "../command-palette";
 import { useKeyboardShortcuts } from "../../hooks/use-keyboard-shortcuts";
 import { useWs } from "../../lib/use-ws";
 import type { WsMessage } from "../../lib/ws";
@@ -63,15 +64,27 @@ function DiscoveryNotifications() {
   return null;
 }
 
-// ── Global keyboard shortcuts ──────────────────────────────────────────────────
+// ── Global keyboard shortcuts + command palette ────────────────────────────────
 // Must live inside <ToastProvider> (same as DiscoveryNotifications).
 
 function GlobalShortcuts() {
   const { showHelp, setShowHelp } = useKeyboardShortcuts();
+  const [showPalette, setShowPalette] = useState(false);
 
-  return showHelp ? (
-    <KeyboardShortcutHelp onClose={() => setShowHelp(false)} />
-  ) : null;
+  useEffect(() => {
+    function onSearchRequested() {
+      setShowPalette((prev) => !prev);
+    }
+    document.addEventListener("search-requested", onSearchRequested);
+    return () => document.removeEventListener("search-requested", onSearchRequested);
+  }, []);
+
+  return (
+    <>
+      {showHelp && <KeyboardShortcutHelp onClose={() => setShowHelp(false)} />}
+      {showPalette && <CommandPalette onClose={() => setShowPalette(false)} />}
+    </>
+  );
 }
 
 // ── Root layout ────────────────────────────────────────────────────────────────

@@ -245,7 +245,7 @@ describe("useKeyboardShortcuts", () => {
     document.removeEventListener("new-scan-requested", listener);
   });
 
-  it("ignores modifier-key combos", () => {
+  it("ignores modifier-key combos (other than Cmd/Ctrl+K)", () => {
     renderHook(() => useKeyboardShortcuts());
 
     act(() => {
@@ -253,5 +253,36 @@ describe("useKeyboardShortcuts", () => {
     });
 
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("dispatches search-requested on Cmd+K (metaKey)", () => {
+    const listener = vi.fn();
+    document.addEventListener("search-requested", listener);
+
+    renderHook(() => useKeyboardShortcuts());
+
+    act(() => {
+      fireKey("k", { metaKey: true });
+    });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    document.removeEventListener("search-requested", listener);
+  });
+
+  it("dispatches search-requested on Ctrl+K", () => {
+    const listener = vi.fn();
+    document.addEventListener("search-requested", listener);
+
+    renderHook(() => useKeyboardShortcuts());
+
+    act(() => {
+      fireKey("k", { ctrlKey: true });
+    });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    document.removeEventListener("search-requested", listener);
   });
 });
