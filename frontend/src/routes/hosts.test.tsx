@@ -1021,19 +1021,25 @@ describe("HostsPage", () => {
 
     // ── Inline hostname editing ───────────────────────────────────
 
-    it("shows a pencil button to edit the hostname", async () => {
+    function getHostnameRow(panel: HTMLElement) {
+      // Find the "Hostname" label span, then scope to its parent div row
+      const label = within(panel).getByText("Hostname");
+      return label.closest("div") as HTMLElement;
+    }
+
+    it("shows an edit button for the hostname field", async () => {
       const panel = await openPanel();
       expect(
-        within(panel).getByRole("button", { name: /edit hostname/i }),
+        within(getHostnameRow(panel)).getByRole("button", { name: /^edit$/i }),
       ).toBeInTheDocument();
     });
 
-    it("opens the hostname input when the pencil is clicked", async () => {
+    it("opens the hostname input when the edit button is clicked", async () => {
       const panel = await openPanel();
       await userEvent.click(
-        within(panel).getByRole("button", { name: /edit hostname/i }),
+        within(getHostnameRow(panel)).getByRole("button", { name: /^edit$/i }),
       );
-      expect(within(panel).getByRole("textbox", { name: /edit hostname/i })).toBeInTheDocument();
+      expect(within(getHostnameRow(panel)).getByRole("textbox")).toBeInTheDocument();
     });
 
     it("calls updateHost with the new hostname when saved", async () => {
@@ -1041,15 +1047,14 @@ describe("HostsPage", () => {
       mockUseUpdateHost.mockReturnValue(makeMutationResult({ mutateAsync }));
 
       const panel = await openPanel();
+      const hostnameRow = getHostnameRow(panel);
       await userEvent.click(
-        within(panel).getByRole("button", { name: /edit hostname/i }),
+        within(hostnameRow).getByRole("button", { name: /^edit$/i }),
       );
-      const input = within(panel).getByRole("textbox", { name: /edit hostname/i });
+      const input = within(hostnameRow).getByRole("textbox");
       await userEvent.clear(input);
       await userEvent.type(input, "new-hostname");
-      await userEvent.click(
-        within(panel).getByRole("button", { name: /save hostname/i }),
-      );
+      await userEvent.keyboard("{Enter}");
 
       expect(mutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1063,15 +1068,16 @@ describe("HostsPage", () => {
       mockUseUpdateHost.mockReturnValue(makeMutationResult({ mutateAsync }));
 
       const panel = await openPanel();
+      const hostnameRow = getHostnameRow(panel);
       await userEvent.click(
-        within(panel).getByRole("button", { name: /edit hostname/i }),
+        within(hostnameRow).getByRole("button", { name: /^edit$/i }),
       );
       await userEvent.click(
-        within(panel).getByRole("button", { name: /cancel/i }),
+        within(panel).getByRole("button", { name: /^cancel$/i }),
       );
 
       expect(mutateAsync).not.toHaveBeenCalled();
-      expect(within(panel).queryByRole("textbox", { name: /edit hostname/i })).not.toBeInTheDocument();
+      expect(within(hostnameRow).queryByRole("textbox")).not.toBeInTheDocument();
     });
 
     // ── Delete flow ───────────────────────────────────────────────
@@ -1307,6 +1313,122 @@ describe("HostsPage", () => {
 
       expect(mockToastError).toHaveBeenCalledWith("Network error");
     });
+
+    // ── Notes section ─────────────────────────────────────────────
+
+    it("shows the Notes section in the detail panel", async () => {
+      const panel = await openPanel();
+      expect(within(panel).getByTestId("notes-section")).toBeInTheDocument();
+    });
+
+    it("shows 'No notes.' placeholder when description is absent", async () => {
+      const panel = await openPanel();
+      expect(within(panel).getByText("No notes.")).toBeInTheDocument();
+    });
+
+    it("shows description text when host has a description", async () => {
+      mockUseHost.mockReturnValue(
+        makeUseHostResult({
+          data: {
+            ...mockFullHost,
+            description: "This is a test server.",
+          } as typeof mockFullHost,
+        }),
+      );
+      const panel = await openPanel();
+      expect(within(panel).getByText("This is a test server.")).toBeInTheDocument();
+    });
+
+    it("enters edit mode for notes when the edit button is clicked", async () => {
+      mockUseHost.mockReturnValue(
+        makeUseHostResult({
+          data: {
+            ...mockFullHost,
+            description: "Initial notes.",
+          } as typeof mockFullHost,
+        }),
+      );
+      const panel = await openPanel();
+      const notesSection = within(panel).getByTestId("notes-section");
+      const editBtns = within(notesSection).getAllByRole("button", { name: /edit/i });
+      await userEvent.click(editBtns[0]);
+      expect(within(notesSection).getByRole("textbox")).toBeInTheDocument();
+    });
+
+    it("saves notes via updateHost when Ctrl+Enter is pressed", async () => {
+      const mutateAsync = vi.fn().mockResolvedValue({});
+      mockUseUpdateHost.mockReturnValue(makeMutationResult({ mutateAsync }));
+      mockUseHost.mockReturnValue(
+        makeUseHostResult({
+          data: {
+            ...mockFullHost,
+            description: "Old notes.",
+          } as typeof mockFullHost,
+        }),
+      );
+
+      const panel = await openPanel();
+      const notesSection = within(panel).getByTestId("notes-section");
+      const editBtns = within(notesSection).getAllByRole("button", { name: /edit/i });
+      await userEvent.click(editBtns[0]);
+      const textarea = within(notesSection).getByRole("textbox");
+      await userEvent.clear(textarea);
+      await userEvent.type(textarea, "New notes.");
+      await userEvent.keyboard("{Control>}{Enter}{/Control}");
+
+      expect(mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({ description: "New notes." }),
+        }),
+      );
+    });
+  });
+
+  // ── Hostname cell inline editing (table row) ─────────────────
+
+  it("shows hostname value in the hostname cell", () => {
+    render(<HostsPage />);
+    expect(screen.getByText("router.local")).toBeInTheDocument();
+  });
+
+  it("entering edit mode on hostname cell does not open the detail panel", async () => {
+    render(<HostsPage />);
+    const rows = screen.getAllByRole("row");
+    // The hostname cell is index 2 in the data row
+    const cells = within(rows[1]).getAllByRole("cell");
+    const hostnameCell = cells[2];
+    // Click the edit button inside the hostname cell
+    const editBtns = within(hostnameCell).getAllByRole("button", { name: /edit/i });
+    await userEvent.click(editBtns[0]);
+    // The input should be visible inside the cell
+    expect(within(hostnameCell).getByRole("textbox")).toBeInTheDocument();
+    // The detail panel should NOT have opened
+    expect(
+      screen.queryByRole("dialog", { name: /host details/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("calls updateHostInline when hostname is edited and Enter is pressed", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({});
+    mockUseUpdateHost.mockReturnValue(makeMutationResult({ mutateAsync }));
+
+    render(<HostsPage />);
+    const rows = screen.getAllByRole("row");
+    const cells = within(rows[1]).getAllByRole("cell");
+    const hostnameCell = cells[2];
+    const editBtns = within(hostnameCell).getAllByRole("button", { name: /edit/i });
+    await userEvent.click(editBtns[0]);
+    const input = within(hostnameCell).getByRole("textbox");
+    await userEvent.clear(input);
+    await userEvent.type(input, "new-hostname");
+    await userEvent.keyboard("{Enter}");
+
+    expect(mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hostId: "host-1",
+        body: expect.objectContaining({ hostname: "new-hostname" }),
+      }),
+    );
   });
 
   // ── Scan selected (bulk scan) ─────────────────────────────────

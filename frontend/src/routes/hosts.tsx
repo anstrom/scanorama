@@ -7,8 +7,6 @@ import {
   ScanLine,
   X,
   Monitor,
-  Pencil,
-  Check,
   Trash2,
   Activity,
   Play,
@@ -59,6 +57,7 @@ import {
   type TriggerHostResponse,
 } from "../api/hooks/use-smart-scan";
 import { HostSmartScanPreviewModal } from "../components/smart-scan-preview-modal";
+import { InlineEditText } from "../components/inline-edit-text";
 
 type HostResponse = components["schemas"]["docs.HostResponse"];
 
@@ -292,11 +291,6 @@ function HostDetailPanel({
     });
   }
 
-  // Hostname editing
-  const [isEditingHostname, setIsEditingHostname] = useState(false);
-  const [hostnameInput, setHostnameInput] = useState("");
-  const [hostnameError, setHostnameError] = useState<string | null>(null);
-
   // Tags
   const [localTags, setLocalTags] = useState<string[] | null>(null);
   const { mutateAsync: updateTags } = useUpdateHostTags();
@@ -371,24 +365,6 @@ function HostDetailPanel({
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to queue Smart Scan.",
-      );
-    }
-  }
-
-  async function handleSaveHostname() {
-    setHostnameError(null);
-    const trimmed = hostnameInput.trim();
-    try {
-      await updateHost({
-        hostId: h.id ?? "",
-        body: { hostname: trimmed || undefined },
-      });
-      setIsEditingHostname(false);
-      toast.success("Hostname updated");
-    } catch (err) {
-      setHostnameError(err instanceof Error ? err.message : "Update failed.");
-      toast.error(
-        err instanceof Error ? err.message : "Failed to update hostname.",
       );
     }
   }
@@ -588,67 +564,18 @@ function HostDetailPanel({
                   value={<span className="font-mono">{h.ip_address}</span>}
                 />
 
-                {/* Inline hostname editing */}
                 <div className="flex gap-2 text-xs">
-                  <span className="text-text-muted w-28 shrink-0">
-                    Hostname
-                  </span>
-                  {isEditingHostname ? (
-                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                      <input
-                        type="text"
-                        value={hostnameInput}
-                        onChange={(e) => setHostnameInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") void handleSaveHostname();
-                          if (e.key === "Escape") setIsEditingHostname(false);
-                        }}
-                        autoFocus
-                        aria-label="Edit hostname"
-                        className="flex-1 px-2 py-0.5 text-xs rounded border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-border min-w-0"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void handleSaveHostname()}
-                        disabled={isUpdatingHost}
-                        aria-label="Save hostname"
-                        className="p-0.5 rounded text-success hover:bg-surface-raised"
-                      >
-                        <Check className="h-3 w-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsEditingHostname(false)}
-                        aria-label="Cancel"
-                        className="p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-surface-raised"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-text-secondary break-all">
-                        {h.hostname ?? "—"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsEditingHostname(true);
-                          setHostnameInput(h.hostname ?? "");
-                        }}
-                        aria-label="Edit hostname"
-                        className="p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-surface-raised shrink-0"
-                      >
-                        <Pencil className="h-2.5 w-2.5" />
-                      </button>
-                    </div>
-                  )}
+                  <span className="text-text-muted w-28 shrink-0">Hostname</span>
+                  <InlineEditText
+                    value={h.hostname ?? ""}
+                    placeholder="—"
+                    onSave={async (value) => {
+                      await updateHost({ hostId: h.id ?? "", body: { hostname: value || null } });
+                      toast.success("Hostname updated.");
+                    }}
+                    disabled={isUpdatingHost}
+                  />
                 </div>
-                {hostnameError && (
-                  <p className="text-[11px] text-danger ml-30">
-                    {hostnameError}
-                  </p>
-                )}
 
                 <MetaRow
                   label="MAC Address"
@@ -699,6 +626,29 @@ function HostDetailPanel({
                   </div>
                 )}
               </div>
+            )}
+          </section>
+
+          {/* Notes */}
+          <section data-testid="notes-section">
+            <h3 className="text-xs font-medium text-text-primary mb-3">
+              Notes
+            </h3>
+            {isLoading ? (
+              <Skeleton className="h-10 w-full rounded" />
+            ) : (
+              <InlineEditText
+                value={h.description ?? ""}
+                placeholder="No notes."
+                multiline
+                onSave={async (val) => {
+                  await updateHost({
+                    hostId: h.id ?? "",
+                    body: { description: val || undefined },
+                  });
+                  toast.success("Notes updated.");
+                }}
+              />
             )}
           </section>
 
@@ -1638,6 +1588,7 @@ export function HostsPage() {
     useAddHostsToGroup();
   const { data: allTags = [] } = useTags();
   const { data: allGroups = [] } = useGroups();
+  const { mutateAsync: updateHostInline } = useUpdateHost();
   const { toast } = useToast();
   const navigate = useNavigate();
   const search = useSearch({ from: "/hosts" });
@@ -2196,10 +2147,23 @@ export function HostsPage() {
                           {host.ip_address ?? "—"}
                         </td>
                         {colVis.hostname && (
-                          <td className="py-3 pr-4 text-text-secondary">
-                            {(host as HostWithDetails).display_name ??
-                              host.hostname ??
-                              "—"}
+                          <td
+                            className="py-3 pr-4"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <InlineEditText
+                              value={host.hostname ?? ""}
+                              placeholder={
+                                (host as HostWithDetails).display_name ?? "—"
+                              }
+                              onSave={async (val) => {
+                                await updateHostInline({
+                                  hostId: host.id ?? "",
+                                  body: { hostname: val || undefined },
+                                });
+                                toast.success("Hostname updated.");
+                              }}
+                            />
                           </td>
                         )}
                         <td className="py-3 pr-4">
