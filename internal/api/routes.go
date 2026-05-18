@@ -90,8 +90,7 @@ func (s *Server) setupRoutes() {
 
 	s.setupStatsSettingsRoutes(api)
 	s.setupAdminSNMPRoutes(api)
-	s.setupWebhookRoutes(api, apihandlers.NewWebhookHandler(
-		services.NewWebhookService(db.NewWebhookRepository(s.database), s.logger), s.logger, s.metrics))
+	s.setupWebhookAlertRoutes(api)
 	s.setupDocRoutes()
 	s.router.HandleFunc("/", s.redirectToAPI).Methods("GET")
 }
@@ -242,6 +241,25 @@ func (s *Server) setupPortRoutes(api *mux.Router, h *apihandlers.PortHandler) {
 	api.HandleFunc("/ports/host-counts", h.ListPortHostCounts).Methods("GET")
 	api.HandleFunc("/ports", h.ListPorts).Methods("GET")
 	api.HandleFunc("/ports/{port}", h.GetPort).Methods("GET")
+}
+
+// setupWebhookAlertRoutes wires the webhook and alert services and registers their routes.
+func (s *Server) setupWebhookAlertRoutes(api *mux.Router) {
+	webhookSvc := services.NewWebhookService(db.NewWebhookRepository(s.database), s.logger)
+	s.setupWebhookRoutes(api, apihandlers.NewWebhookHandler(webhookSvc, s.logger, s.metrics))
+	alertSvc := services.NewAlertService(db.NewAlertRepository(s.database), webhookSvc, s.logger)
+	s.setupAlertRoutes(api, apihandlers.NewAlertHandler(alertSvc, s.logger, s.metrics))
+	scanning.SetAlertEvaluator(alertSvc.EvaluateAlerts)
+}
+
+// setupAlertRoutes registers alert rule CRUD and host-scoped endpoints.
+func (s *Server) setupAlertRoutes(api *mux.Router, h *apihandlers.AlertHandler) {
+	api.HandleFunc("/alerts", h.ListAlertRules).Methods("GET")
+	api.HandleFunc("/alerts", h.CreateAlertRule).Methods("POST")
+	api.HandleFunc("/alerts/{id}", h.GetAlertRule).Methods("GET")
+	api.HandleFunc("/alerts/{id}", h.UpdateAlertRule).Methods("PATCH")
+	api.HandleFunc("/alerts/{id}", h.DeleteAlertRule).Methods("DELETE")
+	api.HandleFunc("/hosts/{id}/alerts", h.ListAlertRulesForHost).Methods("GET")
 }
 
 // setupWebhookRoutes registers webhook CRUD, test, and delivery log endpoints.
