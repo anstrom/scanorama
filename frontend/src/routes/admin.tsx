@@ -11,6 +11,14 @@ import {
   AlertCircle,
   Save,
   AlertTriangle,
+  Link2,
+  Plus,
+  Trash2,
+  FlaskConical,
+  ChevronDown,
+  ChevronRight,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import {
   useAdminStatus,
@@ -23,6 +31,16 @@ import { cn, formatRelativeTime } from "../lib/utils";
 import { LogViewer } from "../components/log-viewer";
 import { Button } from "../components/button";
 import { useToast } from "../components/toast-provider";
+import {
+  useWebhooks,
+  useCreateWebhook,
+  useUpdateWebhook,
+  useDeleteWebhook,
+  useTestWebhook,
+  useDeliveryLogs,
+  type WebhookEndpoint,
+  type WebhookDeliveryLog,
+} from "../api/hooks/use-webhooks";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -562,6 +580,431 @@ function SettingsCard() {
   );
 }
 
+// ── Section 5 — Webhooks ──────────────────────────────────────────────────────
+
+const WEBHOOK_EVENTS = [
+  { value: "host.online", label: "Host Online" },
+  { value: "host.offline", label: "Host Offline" },
+  { value: "scan.started", label: "Scan Started" },
+  { value: "scan.completed", label: "Scan Completed" },
+  { value: "discovery.completed", label: "Discovery Completed" },
+] as const;
+
+function statusCodeClass(code: number | null): string {
+  if (code === null) return "text-text-muted";
+  if (code >= 200 && code < 300) return "text-success";
+  return "text-danger";
+}
+
+function DeliveryLogsPanel({ endpointId }: { endpointId: string }) {
+  const { data: logs = [], isLoading, isError } = useDeliveryLogs(endpointId);
+
+  if (isError) {
+    return (
+      <div className="px-4 py-3">
+        <p className="text-xs text-danger">Failed to load delivery logs.</p>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="p-3 space-y-2">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-4 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  if (logs.length === 0) {
+    return (
+      <div className="px-4 py-3 text-xs text-text-muted">
+        No delivery logs yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-border/40">
+            {["Event", "Status", "Attempts", "Delivered", "Error"].map((h) => (
+              <th
+                key={h}
+                className="text-left px-4 py-2 text-[10px] uppercase tracking-wide text-text-muted font-medium whitespace-nowrap"
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {(logs as WebhookDeliveryLog[]).map((log) => (
+            <tr key={log.id} className="border-b border-border/20 last:border-0">
+              <td className="px-4 py-2 font-mono text-text-secondary whitespace-nowrap">
+                {log.event_type}
+              </td>
+              <td className={cn("px-4 py-2 font-mono whitespace-nowrap", statusCodeClass(log.status_code))}>
+                {log.status_code ?? "—"}
+              </td>
+              <td className="px-4 py-2 text-text-muted">{log.attempt_count}</td>
+              <td className="px-4 py-2 text-text-muted whitespace-nowrap">
+                {log.delivered_at ? formatRelativeTime(log.delivered_at) : "—"}
+              </td>
+              <td className="px-4 py-2 text-text-muted truncate max-w-xs">
+                {log.last_error ?? "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function WebhookRow({
+  endpoint,
+  expanded,
+  onToggleExpand,
+}: {
+  endpoint: WebhookEndpoint;
+  expanded: boolean;
+  onToggleExpand: () => void;
+}) {
+  const { toast } = useToast();
+  const { mutateAsync: updateWebhook, isPending: updatePending } = useUpdateWebhook();
+  const { mutateAsync: deleteWebhook, isPending: deletePending } = useDeleteWebhook();
+  const { mutateAsync: testWebhook, isPending: testPending } = useTestWebhook();
+
+  async function handleToggleEnabled() {
+    try {
+      await updateWebhook({ id: endpoint.id, body: { enabled: !endpoint.enabled } });
+    } catch {
+      toast.error("Failed to update webhook.");
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Delete webhook for ${endpoint.url}?`)) return;
+    try {
+      await deleteWebhook(endpoint.id);
+      toast.success("Webhook deleted.");
+    } catch {
+      toast.error("Failed to delete webhook.");
+    }
+  }
+
+  async function handleTest() {
+    try {
+      await testWebhook(endpoint.id);
+      toast.success("Test delivery sent successfully.");
+    } catch {
+      toast.error("Test delivery failed. Check delivery logs for details.");
+    }
+  }
+
+  return (
+    <>
+      <tr
+        className="border-b border-border last:border-0 hover:bg-surface-raised/30 transition-colors"
+      >
+        <td className="px-4 py-3">
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            className="flex items-center gap-1 text-text-primary hover:text-text-primary"
+          >
+            {expanded ? (
+              <ChevronDown className="h-3 w-3 text-text-muted shrink-0" />
+            ) : (
+              <ChevronRight className="h-3 w-3 text-text-muted shrink-0" />
+            )}
+            <span className="font-mono text-xs truncate max-w-xs">{endpoint.url}</span>
+          </button>
+        </td>
+        <td className="px-4 py-3">
+          <div className="flex flex-wrap gap-1">
+            {endpoint.events.map((e) => (
+              <span
+                key={e}
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent/10 text-accent"
+              >
+                {e}
+              </span>
+            ))}
+          </div>
+        </td>
+        <td className="px-4 py-3">
+          {endpoint.enabled ? (
+            <span className="inline-flex items-center gap-1 text-success text-xs">
+              <CheckCircle className="h-3 w-3" />
+              Enabled
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-text-muted text-xs">
+              <XCircle className="h-3 w-3" />
+              Disabled
+            </span>
+          )}
+        </td>
+        <td className="px-4 py-3 text-xs text-text-muted whitespace-nowrap">
+          {formatRelativeTime(endpoint.created_at)}
+        </td>
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-1">
+            <Button
+              onClick={() => void handleToggleEnabled()}
+              loading={updatePending}
+              className="text-[10px] h-6 px-2"
+            >
+              {endpoint.enabled ? "Disable" : "Enable"}
+            </Button>
+            <Button
+              onClick={() => void handleTest()}
+              loading={testPending}
+              icon={<FlaskConical className="h-3 w-3" />}
+              className="text-[10px] h-6 px-2"
+            >
+              Test
+            </Button>
+            <Button
+              onClick={() => void handleDelete()}
+              loading={deletePending}
+              icon={<Trash2 className="h-3 w-3" />}
+              className="text-[10px] h-6 px-2 text-danger hover:bg-danger/10"
+            >
+              Delete
+            </Button>
+          </div>
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="bg-surface-raised/20 border-b border-border">
+          <td colSpan={5} className="px-0 py-0">
+            <div className="border-t border-border/40">
+              <div className="px-4 py-2 text-[10px] uppercase tracking-wide text-text-muted font-medium">
+                Delivery Logs (last 50)
+              </div>
+              <DeliveryLogsPanel endpointId={endpoint.id} />
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function AddWebhookForm({ onClose }: { onClose: () => void }) {
+  const { toast } = useToast();
+  const [url, setUrl] = useState("");
+  const [secret, setSecret] = useState("");
+  const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const { mutateAsync: createWebhook, isPending } = useCreateWebhook();
+
+  function toggleEvent(value: string) {
+    setSelectedEvents((prev) =>
+      prev.includes(value) ? prev.filter((e) => e !== value) : [...prev, value],
+    );
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!url.trim()) {
+      setError("URL is required.");
+      return;
+    }
+    if (selectedEvents.length === 0) {
+      setError("Select at least one event type.");
+      return;
+    }
+    try {
+      await createWebhook({ url: url.trim(), secret: secret.trim() || undefined, events: selectedEvents });
+      toast.success("Webhook created.");
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create webhook.");
+    }
+  }
+
+  return (
+    <div className="border-t border-border bg-surface-raised/20 px-4 py-4">
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[10px] uppercase tracking-wide text-text-muted mb-1">
+              URL <span className="text-danger">*</span>
+            </label>
+            <input
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://example.com/webhook"
+              className={cn(
+                "w-full px-2 py-1.5 text-xs rounded border border-border",
+                "bg-surface text-text-primary placeholder:text-text-muted",
+                "focus:outline-none focus:ring-1 focus:ring-border",
+              )}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-wide text-text-muted mb-1">
+              Secret (optional, auto-generated if empty)
+            </label>
+            <input
+              type="text"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              placeholder="Leave blank to auto-generate"
+              className={cn(
+                "w-full px-2 py-1.5 text-xs rounded border border-border",
+                "bg-surface text-text-primary placeholder:text-text-muted",
+                "focus:outline-none focus:ring-1 focus:ring-border",
+              )}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[10px] uppercase tracking-wide text-text-muted mb-1.5">
+            Events <span className="text-danger">*</span>
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {WEBHOOK_EVENTS.map(({ value, label }) => (
+              <label key={value} className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedEvents.includes(value)}
+                  onChange={() => toggleEvent(value)}
+                  className="h-3 w-3 rounded border-border"
+                />
+                <span className="text-xs text-text-secondary">{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {error && (
+          <p className="text-xs text-danger flex items-center gap-1">
+            <AlertCircle className="h-3 w-3 shrink-0" />
+            {error}
+          </p>
+        )}
+
+        <div className="flex items-center gap-2">
+          <Button type="submit" loading={isPending} icon={<Plus className="h-3 w-3" />}>
+            Create Webhook
+          </Button>
+          <Button type="button" onClick={onClose} className="text-text-muted">
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function WebhooksCard() {
+  const { data: webhooks = [], isLoading, error } = useWebhooks();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  function toggleExpand(id: string) {
+    setExpandedId((prev) => (prev === id ? null : id));
+  }
+
+  return (
+    <div className="bg-surface rounded-lg border border-border overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+        <Link2 className="h-4 w-4 text-text-muted" />
+        <span className="text-xs font-medium text-text-primary">Webhooks</span>
+        {!isLoading && (webhooks as WebhookEndpoint[]).length > 0 && (
+          <span className="ml-auto text-[10px] text-text-muted">
+            {(webhooks as WebhookEndpoint[]).length} endpoint
+            {(webhooks as WebhookEndpoint[]).length !== 1 ? "s" : ""}
+          </span>
+        )}
+        {!showAddForm && (
+          <Button
+            onClick={() => setShowAddForm(true)}
+            icon={<Plus className="h-3 w-3" />}
+            className={cn("text-[10px] h-6 px-2", !isLoading && (webhooks as WebhookEndpoint[]).length > 0 ? "" : "ml-auto")}
+          >
+            Add Webhook
+          </Button>
+        )}
+      </div>
+
+      {showAddForm && <AddWebhookForm onClose={() => setShowAddForm(false)} />}
+
+      {error ? (
+        <div className="flex items-center gap-2 text-danger text-xs px-4 py-3">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>Failed to load webhooks.</span>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border">
+                {["URL", "Events", "Status", "Created", "Actions"].map((col) => (
+                  <th
+                    key={col}
+                    className="text-left px-4 py-2 text-[10px] uppercase tracking-wide text-text-muted font-medium whitespace-nowrap"
+                  >
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading &&
+                [1, 2].map((i) => (
+                  <tr key={i} className="border-b border-border last:border-0">
+                    {[1, 2, 3, 4, 5].map((j) => (
+                      <td key={j} className="px-4 py-3">
+                        <Skeleton className="h-3 w-24" />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+
+              {!isLoading &&
+                (webhooks as WebhookEndpoint[]).map((ep) => (
+                  <WebhookRow
+                    key={ep.id}
+                    endpoint={ep}
+                    expanded={expandedId === ep.id}
+                    onToggleExpand={() => toggleExpand(ep.id)}
+                  />
+                ))}
+
+              {!isLoading && (webhooks as WebhookEndpoint[]).length === 0 && !showAddForm && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-text-muted">
+                    No webhook endpoints configured. Click{" "}
+                    <button
+                      type="button"
+                      className="underline text-accent"
+                      onClick={() => setShowAddForm(true)}
+                    >
+                      Add Webhook
+                    </button>{" "}
+                    to get started.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export function AdminPage() {
@@ -596,6 +1039,9 @@ export function AdminPage() {
           <LogViewer />
         </div>
       </div>
+
+      {/* Section 5 — Webhooks */}
+      <WebhooksCard />
     </div>
   );
 }
