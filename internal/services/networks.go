@@ -852,3 +852,26 @@ func (s *NetworkService) ListNetworks(ctx context.Context, activeOnly bool) ([]*
 
 	return networks, nil
 }
+
+// SearchNetworks returns networks whose name or CIDR matches the given query.
+func (s *NetworkService) SearchNetworks(ctx context.Context, query string, limit int) ([]*db.Network, error) {
+	q := `
+		SELECT
+			id, name, cidr, description, discovery_method,
+			is_active, scan_enabled, last_discovery, last_scan,
+			host_count, active_host_count, created_at, updated_at, created_by
+		FROM networks
+		WHERE name ILIKE $1 OR cidr::text ILIKE $1
+		ORDER BY name
+		LIMIT $2`
+
+	pattern := "%" + query + "%"
+	var networks []*db.Network
+	if err := s.database.SelectContext(ctx, &networks, q, pattern, limit); err != nil {
+		return nil, fmt.Errorf("search networks: %w", err)
+	}
+	if networks == nil {
+		networks = []*db.Network{}
+	}
+	return networks, nil
+}
