@@ -533,6 +533,15 @@ definitions:
       description:
         example: Primary web server
         type: string
+      device_id:
+        description: DeviceID is the stable device this host is attached to, if any.
+        example: 550e8400-e29b-41d4-a716-446655440001
+        type: string
+      device_name:
+        description: DeviceName is the canonical name of the attached device, populated
+          by JOIN in GetHost.
+        example: Andreas's iPhone
+        type: string
       display_name:
         description: |-
           DisplayName is the winning display name chosen by the identity resolver.

@@ -11,8 +11,21 @@ vi.mock("../api/hooks/use-discovery", () => ({
   useDiscoveryCompare: vi.fn(),
 }));
 
+vi.mock("../api/hooks/use-devices", () => ({
+  useAcceptSuggestion: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useDismissSuggestion: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+}));
+
 vi.mock("@tanstack/react-router", () => ({
   useSearch: vi.fn().mockReturnValue({}),
+}));
+
+const mockToastSuccess = vi.fn();
+const mockToastError = vi.fn();
+vi.mock("../components/toast-provider", () => ({
+  useToast: () => ({
+    toast: { success: mockToastSuccess, error: mockToastError },
+  }),
 }));
 
 vi.mock("../components/create-discovery-modal", () => ({
@@ -32,6 +45,14 @@ import {
   useDiscoveryDiff,
   useDiscoveryCompare,
 } from "../api/hooks/use-discovery";
+
+import {
+  useAcceptSuggestion,
+  useDismissSuggestion,
+} from "../api/hooks/use-devices";
+
+const mockUseAcceptSuggestion = vi.mocked(useAcceptSuggestion);
+const mockUseDismissSuggestion = vi.mocked(useDismissSuggestion);
 
 const mockUseDiscoveryJobs = vi.mocked(useDiscoveryJobs);
 const mockUseStartDiscovery = vi.mocked(useStartDiscovery);
@@ -121,6 +142,14 @@ beforeEach(() => {
     isLoading: false,
     error: null,
   } as unknown as ReturnType<typeof useDiscoveryCompare>);
+  mockUseAcceptSuggestion.mockReturnValue({
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    isPending: false,
+  } as unknown as ReturnType<typeof useAcceptSuggestion>);
+  mockUseDismissSuggestion.mockReturnValue({
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    isPending: false,
+  } as unknown as ReturnType<typeof useDismissSuggestion>);
 });
 
 describe("DiscoveryPage", () => {
@@ -642,5 +671,206 @@ describe("DiscoveryPage", () => {
     expect(
       screen.queryByTestId("create-discovery-modal"),
     ).not.toBeInTheDocument();
+  });
+
+  // ── Suggestion cards ──────────────────────────────────────────
+
+  async function openChangesTabWithDiff(suggestions = []) {
+    const diffData = {
+      job_id: "job-1",
+      new_hosts: [],
+      gone_hosts: [],
+      changed_hosts: [],
+      unchanged_count: 5,
+      suggestions,
+    };
+    mockUseDiscoveryDiff.mockReturnValue({
+      data: diffData,
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useDiscoveryDiff>);
+    render(<DiscoveryPage />);
+    const rows = screen.getAllByRole("row");
+    // job-1 is completed
+    await userEvent.click(rows[1]);
+    const dialog = screen.getByRole("dialog", {
+      name: /discovery job details/i,
+    });
+    const changesTab = within(dialog).getByRole("button", { name: /changes/i });
+    await userEvent.click(changesTab);
+    return dialog;
+  }
+
+  it("does not render suggestion cards when suggestions array is empty", async () => {
+    const dialog = await openChangesTabWithDiff([]);
+    expect(
+      within(dialog).queryByTestId("suggestions-section"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders suggestion cards for active (non-dismissed) suggestions", async () => {
+    const suggestions = [
+      {
+        id: "s1",
+        host_id: "h1",
+        device_id: "d1",
+        confidence_score: 85,
+        confidence_reason: "MAC address matches known device",
+        dismissed: false,
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: "s2",
+        host_id: "h2",
+        device_id: "d2",
+        confidence_score: 45,
+        confidence_reason: "IP in known subnet",
+        dismissed: false,
+        created_at: new Date().toISOString(),
+      },
+    ];
+    const dialog = await openChangesTabWithDiff(suggestions);
+    expect(within(dialog).getByTestId("suggestions-section")).toBeInTheDocument();
+    const cards = within(dialog).getAllByTestId("suggestion-card");
+    expect(cards).toHaveLength(2);
+    expect(within(dialog).getByText("MAC address matches known device")).toBeInTheDocument();
+    expect(within(dialog).getByText("IP in known subnet")).toBeInTheDocument();
+  });
+
+  it("filters out dismissed suggestions", async () => {
+    const suggestions = [
+      {
+        id: "s1",
+        host_id: "h1",
+        device_id: "d1",
+        confidence_score: 80,
+        confidence_reason: "High confidence",
+        dismissed: false,
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: "s2",
+        host_id: "h2",
+        device_id: "d2",
+        confidence_score: 60,
+        confidence_reason: "Should be hidden",
+        dismissed: true,
+        created_at: new Date().toISOString(),
+      },
+    ];
+    const dialog = await openChangesTabWithDiff(suggestions);
+    const cards = within(dialog).getAllByTestId("suggestion-card");
+    expect(cards).toHaveLength(1);
+    expect(within(dialog).queryByText("Should be hidden")).not.toBeInTheDocument();
+  });
+
+  it("shows confidence score badge on suggestion card", async () => {
+    const suggestions = [
+      {
+        id: "s1",
+        host_id: "h1",
+        device_id: "d1",
+        confidence_score: 75,
+        confidence_reason: "Good match",
+        dismissed: false,
+        created_at: new Date().toISOString(),
+      },
+    ];
+    const dialog = await openChangesTabWithDiff(suggestions);
+    expect(within(dialog).getByText("75%")).toBeInTheDocument();
+  });
+
+  it("calls acceptSuggestion when Accept button is clicked", async () => {
+    const acceptMutateAsync = vi.fn().mockResolvedValue(undefined);
+    mockUseAcceptSuggestion.mockReturnValue({
+      mutateAsync: acceptMutateAsync,
+      isPending: false,
+    } as unknown as ReturnType<typeof useAcceptSuggestion>);
+
+    const suggestions = [
+      {
+        id: "s1",
+        host_id: "h1",
+        device_id: "d1",
+        confidence_score: 80,
+        confidence_reason: "Good",
+        dismissed: false,
+        created_at: new Date().toISOString(),
+      },
+    ];
+    const dialog = await openChangesTabWithDiff(suggestions);
+    const card = within(dialog).getByTestId("suggestion-card");
+    await userEvent.click(within(card).getByRole("button", { name: /accept/i }));
+    expect(acceptMutateAsync).toHaveBeenCalledWith("s1");
+  });
+
+  it("calls dismissSuggestion when Dismiss button is clicked", async () => {
+    const dismissMutateAsync = vi.fn().mockResolvedValue(undefined);
+    mockUseDismissSuggestion.mockReturnValue({
+      mutateAsync: dismissMutateAsync,
+      isPending: false,
+    } as unknown as ReturnType<typeof useDismissSuggestion>);
+
+    const suggestions = [
+      {
+        id: "s1",
+        host_id: "h1",
+        device_id: "d1",
+        confidence_score: 80,
+        confidence_reason: "Good",
+        dismissed: false,
+        created_at: new Date().toISOString(),
+      },
+    ];
+    const dialog = await openChangesTabWithDiff(suggestions);
+    const card = within(dialog).getByTestId("suggestion-card");
+    await userEvent.click(within(card).getByRole("button", { name: /dismiss/i }));
+    expect(dismissMutateAsync).toHaveBeenCalledWith("s1");
+  });
+
+  it("shows error toast when accept fails", async () => {
+    mockUseAcceptSuggestion.mockReturnValue({
+      mutateAsync: vi.fn().mockRejectedValue(new Error("Server error")),
+      isPending: false,
+    } as unknown as ReturnType<typeof useAcceptSuggestion>);
+
+    const suggestions = [
+      {
+        id: "s1",
+        host_id: "h1",
+        device_id: "d1",
+        confidence_score: 80,
+        confidence_reason: "Good",
+        dismissed: false,
+        created_at: new Date().toISOString(),
+      },
+    ];
+    const dialog = await openChangesTabWithDiff(suggestions);
+    const card = within(dialog).getByTestId("suggestion-card");
+    await userEvent.click(within(card).getByRole("button", { name: /accept/i }));
+    expect(mockToastError).toHaveBeenCalledWith("Failed to accept suggestion.");
+  });
+
+  it("shows error toast when dismiss fails", async () => {
+    mockUseDismissSuggestion.mockReturnValue({
+      mutateAsync: vi.fn().mockRejectedValue(new Error("Server error")),
+      isPending: false,
+    } as unknown as ReturnType<typeof useDismissSuggestion>);
+
+    const suggestions = [
+      {
+        id: "s1",
+        host_id: "h1",
+        device_id: "d1",
+        confidence_score: 80,
+        confidence_reason: "Good",
+        dismissed: false,
+        created_at: new Date().toISOString(),
+      },
+    ];
+    const dialog = await openChangesTabWithDiff(suggestions);
+    const card = within(dialog).getByTestId("suggestion-card");
+    await userEvent.click(within(card).getByRole("button", { name: /dismiss/i }));
+    expect(mockToastError).toHaveBeenCalledWith("Failed to dismiss suggestion.");
   });
 });

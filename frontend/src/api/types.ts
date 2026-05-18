@@ -1513,6 +1513,16 @@ export interface components {
             /** @example Primary web server */
             description?: string;
             /**
+             * @description DeviceID is the stable device this host is attached to, if any.
+             * @example 550e8400-e29b-41d4-a716-446655440001
+             */
+            device_id?: string;
+            /**
+             * @description DeviceName is the canonical name of the attached device, populated by JOIN in GetHost.
+             * @example Andreas's iPhone
+             */
+            device_name?: string;
+            /**
              * @description DisplayName is the winning display name chosen by the identity resolver.
              *     Always set; falls back to IPAddress when no source produced a usable name.
              * @example sams-macbook.local

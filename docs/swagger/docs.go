@@ -5285,6 +5285,16 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Primary web server"
                 },
+                "device_id": {
+                    "description": "DeviceID is the stable device this host is attached to, if any.",
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                },
+                "device_name": {
+                    "description": "DeviceName is the canonical name of the attached device, populated by JOIN in GetHost.",
+                    "type": "string",
+                    "example": "Andreas's iPhone"
+                },
                 "display_name": {
                     "description": "DisplayName is the winning display name chosen by the identity resolver.\nAlways set; falls back to IPAddress when no source produced a usable name.",
                     "type": "string",
