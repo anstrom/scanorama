@@ -143,6 +143,16 @@ export function ScansPage() {
     }
   }, [isLoading, page, totalPages, setPage]);
 
+  // Open the new-scan modal when the keyboard shortcut `n` fires on this page.
+  useEffect(() => {
+    function handleNewScanRequested() {
+      setShowRunScan(true);
+    }
+    document.addEventListener("new-scan-requested", handleNewScanRequested);
+    return () =>
+      document.removeEventListener("new-scan-requested", handleNewScanRequested);
+  }, []);
+
   return (
     <>
       <div className="space-y-4">
