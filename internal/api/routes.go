@@ -88,15 +88,10 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/admin/status", s.adminStatusHandler).Methods("GET")
 	api.HandleFunc("/admin/workers", handlerManager.GetWorkerStatus).Methods("GET")
 
-	statsHandler := apihandlers.NewStatsHandler(s.database, s.logger)
-	settingsHandler := apihandlers.NewSettingsHandler(
-		db.NewSettingsRepository(s.database), s.logger)
-
-	api.HandleFunc("/stats/summary", statsHandler.GetStatsSummary).Methods("GET")
-	api.HandleFunc("/admin/settings", settingsHandler.GetSettings).Methods("GET")
-	api.HandleFunc("/admin/settings", settingsHandler.UpdateSettings).Methods("PUT")
-
+	s.setupStatsSettingsRoutes(api)
 	s.setupAdminSNMPRoutes(api)
+	s.setupWebhookRoutes(api, apihandlers.NewWebhookHandler(
+		services.NewWebhookService(db.NewWebhookRepository(s.database), s.logger), s.logger, s.metrics))
 	s.setupDocRoutes()
 	s.router.HandleFunc("/", s.redirectToAPI).Methods("GET")
 }
@@ -249,9 +244,29 @@ func (s *Server) setupPortRoutes(api *mux.Router, h *apihandlers.PortHandler) {
 	api.HandleFunc("/ports/{port}", h.GetPort).Methods("GET")
 }
 
+// setupWebhookRoutes registers webhook CRUD, test, and delivery log endpoints.
+func (s *Server) setupWebhookRoutes(api *mux.Router, h *apihandlers.WebhookHandler) {
+	api.HandleFunc("/webhooks", h.ListWebhooks).Methods("GET")
+	api.HandleFunc("/webhooks", h.CreateWebhook).Methods("POST")
+	api.HandleFunc("/webhooks/{id}", h.GetWebhook).Methods("GET")
+	api.HandleFunc("/webhooks/{id}", h.UpdateWebhook).Methods("PATCH")
+	api.HandleFunc("/webhooks/{id}", h.DeleteWebhook).Methods("DELETE")
+	api.HandleFunc("/webhooks/{id}/test", h.TestWebhook).Methods("POST")
+	api.HandleFunc("/webhooks/{id}/logs", h.ListDeliveryLogs).Methods("GET")
+}
+
 // setupCertificateRoutes registers TLS certificate endpoints.
 func (s *Server) setupCertificateRoutes(api *mux.Router, h *apihandlers.CertificateHandler) {
 	api.HandleFunc("/certificates/expiring", h.GetExpiringCertificates).Methods("GET")
+}
+
+// setupStatsSettingsRoutes registers stats summary and settings endpoints.
+func (s *Server) setupStatsSettingsRoutes(api *mux.Router) {
+	statsHandler := apihandlers.NewStatsHandler(s.database, s.logger)
+	settingsHandler := apihandlers.NewSettingsHandler(db.NewSettingsRepository(s.database), s.logger)
+	api.HandleFunc("/stats/summary", statsHandler.GetStatsSummary).Methods("GET")
+	api.HandleFunc("/admin/settings", settingsHandler.GetSettings).Methods("GET")
+	api.HandleFunc("/admin/settings", settingsHandler.UpdateSettings).Methods("PUT")
 }
 
 // setupAdminSNMPRoutes registers SNMP credential management endpoints.

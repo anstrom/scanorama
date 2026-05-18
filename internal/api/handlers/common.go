@@ -31,6 +31,7 @@ const (
 	responseKeyID       = "id"
 	responseKeyReqID    = "request_id"
 	responseKeyTotal    = "total"
+	statusDelivered     = "delivered"
 	statusStarted       = "started"
 	statusStopped       = "stopped"
 	statusSuccess       = "success"
