@@ -474,6 +474,35 @@ type LivenessResponse struct {
 	Uptime    string    `json:"uptime" example:"2h30m45s"`
 }
 
+// ScanDiffEntryResponse represents one port's state in a scan diff.
+type ScanDiffEntryResponse struct {
+	Port           int     `json:"port" example:"443"`
+	Protocol       string  `json:"protocol" example:"tcp"`
+	State          string  `json:"state" example:"open"`
+	ServiceName    *string `json:"service_name,omitempty" example:"https"`
+	ServiceVersion *string `json:"service_version,omitempty" example:"nginx/1.24.0"`
+	// Status is "new" | "closed" | "changed" | "unchanged"
+	Status             string  `json:"status" example:"new" enums:"new,closed,changed,unchanged"`
+	PrevState          *string `json:"prev_state,omitempty" example:"filtered"`
+	PrevServiceName    *string `json:"prev_service_name,omitempty" example:"http"`
+	PrevServiceVersion *string `json:"prev_service_version,omitempty"`
+}
+
+// ScanDiffResponse is the result of comparing two scans of the same host.
+type ScanDiffResponse struct {
+	ScanAID        string                  `json:"scan_a_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	ScanBID        string                  `json:"scan_b_id" example:"550e8400-e29b-41d4-a716-446655440001"`
+	HostID         string                  `json:"host_id" example:"550e8400-e29b-41d4-a716-446655440002"`
+	Ports          []ScanDiffEntryResponse `json:"ports"`
+	OSChanged      bool                    `json:"os_changed" example:"false"`
+	PrevOSName     *string                 `json:"prev_os_name,omitempty" example:"Ubuntu 20.04"`
+	CurrOSName     *string                 `json:"curr_os_name,omitempty" example:"Ubuntu 22.04"`
+	NewCount       int                     `json:"new_count" example:"3"`
+	ClosedCount    int                     `json:"closed_count" example:"1"`
+	ChangedCount   int                     `json:"changed_count" example:"2"`
+	UnchangedCount int                     `json:"unchanged_count" example:"47"`
+}
+
 // UpdateScanRequest represents a request to update an existing scan
 type UpdateScanRequest struct {
 	Name        string            `json:"name" example:"Updated scan name"`
@@ -1117,6 +1146,25 @@ func StopScan(_ http.ResponseWriter, _ *http.Request) {}
 // @Router /scans/{scanId} [put]
 // @ID updateScan
 func UpdateScan(_ http.ResponseWriter, _ *http.Request) {}
+
+// GetScanDiff godoc
+// @Summary Compare two scans
+// @Description Compare two scans of the same host and return a structured port diff.
+// @Description New ports are marked "new", ports that disappeared are "closed",
+// @Description ports with changed service or state are "changed", the rest are "unchanged".
+// @Tags Scans
+// @Produce json
+// @Param a query string true "Scan A ID (older/baseline)" format(uuid)
+// @Param b query string true "Scan B ID (newer/current)" format(uuid)
+// @Success 200 {object} ScanDiffResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /scans/diff [get]
+// @ID getScanDiff
+func GetScanDiff(_ http.ResponseWriter, _ *http.Request) {}
 
 // Liveness godoc
 // @Summary Liveness check

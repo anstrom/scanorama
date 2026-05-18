@@ -3613,6 +3613,74 @@ const docTemplate = `{
                 }
             }
         },
+        "/scans/diff": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Compare two scans of the same host and return a structured port diff.\nNew ports are marked \"new\", ports that disappeared are \"closed\",\nports with changed service or state are \"changed\", the rest are \"unchanged\".",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Scans"
+                ],
+                "summary": "Compare two scans",
+                "operationId": "getScanDiff",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Scan A ID (older/baseline)",
+                        "name": "a",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Scan B ID (newer/current)",
+                        "name": "b",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ScanDiffResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/scans/{scanId}": {
             "get": {
                 "security": [
@@ -6763,6 +6831,104 @@ const docTemplate = `{
                 "tx_bytes": {
                     "type": "integer",
                     "example": 524288
+                }
+            }
+        },
+        "docs.ScanDiffEntryResponse": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer",
+                    "example": 443
+                },
+                "prev_service_name": {
+                    "type": "string",
+                    "example": "http"
+                },
+                "prev_service_version": {
+                    "type": "string"
+                },
+                "prev_state": {
+                    "type": "string",
+                    "example": "filtered"
+                },
+                "protocol": {
+                    "type": "string",
+                    "example": "tcp"
+                },
+                "service_name": {
+                    "type": "string",
+                    "example": "https"
+                },
+                "service_version": {
+                    "type": "string",
+                    "example": "nginx/1.24.0"
+                },
+                "state": {
+                    "type": "string",
+                    "example": "open"
+                },
+                "status": {
+                    "description": "Status is \"new\" | \"closed\" | \"changed\" | \"unchanged\"",
+                    "type": "string",
+                    "enum": [
+                        "new",
+                        "closed",
+                        "changed",
+                        "unchanged"
+                    ],
+                    "example": "new"
+                }
+            }
+        },
+        "docs.ScanDiffResponse": {
+            "type": "object",
+            "properties": {
+                "changed_count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "closed_count": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "curr_os_name": {
+                    "type": "string",
+                    "example": "Ubuntu 22.04"
+                },
+                "host_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440002"
+                },
+                "new_count": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "os_changed": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "ports": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.ScanDiffEntryResponse"
+                    }
+                },
+                "prev_os_name": {
+                    "type": "string",
+                    "example": "Ubuntu 20.04"
+                },
+                "scan_a_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "scan_b_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                },
+                "unchanged_count": {
+                    "type": "integer",
+                    "example": 47
                 }
             }
         },

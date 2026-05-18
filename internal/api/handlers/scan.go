@@ -730,4 +730,47 @@ func (h *ScanHandler) resultToResponse(result *db.ScanResult) ScanResult {
 	}
 }
 
+// GetScanDiff handles GET /api/v1/scans/diff?a=<id>&b=<id>
+// It compares two scans of the same host and returns a structured port diff.
+func (h *ScanHandler) GetScanDiff(w http.ResponseWriter, r *http.Request) {
+	aStr := r.URL.Query().Get("a")
+	bStr := r.URL.Query().Get("b")
+
+	if aStr == "" || bStr == "" {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("query params 'a' and 'b' are required"))
+		return
+	}
+
+	scanAID, err := uuid.Parse(aStr)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("invalid scan id 'a': must be a valid UUID"))
+		return
+	}
+
+	scanBID, err := uuid.Parse(bStr)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, fmt.Errorf("invalid scan id 'b': must be a valid UUID"))
+		return
+	}
+
+	diff, err := h.service.GetScanDiff(r.Context(), scanAID, scanBID)
+	if err != nil {
+		if errors.IsCode(err, errors.CodeNotFound) {
+			writeError(w, r, http.StatusNotFound, err)
+			return
+		}
+		if errors.IsCode(err, errors.CodeValidation) {
+			writeError(w, r, http.StatusBadRequest, err)
+			return
+		}
+		h.logger.Error("Failed to compute scan diff",
+			"scan_a", aStr, "scan_b", bStr, "error", err)
+		writeError(w, r, http.StatusInternalServerError,
+			fmt.Errorf("failed to compute scan diff: %w", err))
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, diff)
+}
+
 // Helper functions for response utilities

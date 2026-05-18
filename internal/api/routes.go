@@ -117,6 +117,8 @@ func (s *Server) setupSmartScanRoutes(api *mux.Router, h *apihandlers.SmartScanH
 
 // setupScanRoutes registers scan CRUD and action endpoints.
 func (s *Server) setupScanRoutes(api *mux.Router, h *apihandlers.ScanHandler) {
+	// Fixed-path routes must be registered before /scans/{id} to avoid mux ambiguity.
+	api.HandleFunc("/scans/diff", h.GetScanDiff).Methods("GET")
 	api.HandleFunc("/scans", h.ListScans).Methods("GET")
 	api.HandleFunc("/scans", h.CreateScan).Methods("POST")
 	api.HandleFunc("/scans/{id}", h.GetScan).Methods("GET")
