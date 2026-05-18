@@ -50,6 +50,18 @@ body {
     font-family: var(--font-mono);
 }
 
+/* ── Theme transition ────────────────────────────────────────────────────────── */
+/* Smooth 150ms fade when switching between dark and light themes.               */
+*, *::before, *::after {
+    transition: background-color 150ms ease, color 150ms ease,
+                border-color 150ms ease;
+}
+
+/* Suppress transitions for elements where animation would be jarring.           */
+[data-no-transition], [data-no-transition] * {
+    transition: none !important;
+}
+
 /* ── Light theme ─────────────────────────────────────────────────────────────── */
 /* Applied by setting data-theme="light" on <html>.                               */
 /* All semantic tokens are overridden here; components need no changes.           */
