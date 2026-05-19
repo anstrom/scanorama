@@ -5,7 +5,6 @@ package auth
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base32"
 	"fmt"
 	"strings"
@@ -121,11 +120,11 @@ func HashAPIKey(apiKey string) (string, error) {
 		return "", fmt.Errorf("API key cannot be empty")
 	}
 
-	// bcrypt has a 72-byte limit, so for longer keys we first hash with SHA-256
+	// bcrypt has a 72-byte limit; truncate longer keys rather than pre-hashing,
+	// since API keys are high-entropy random strings and truncation is safe.
 	keyBytes := []byte(apiKey)
 	if len(keyBytes) > BcryptMaxInputLength {
-		sha256Hash := sha256.Sum256(keyBytes)
-		keyBytes = sha256Hash[:]
+		keyBytes = keyBytes[:BcryptMaxInputLength]
 	}
 
 	hash, err := bcrypt.GenerateFromPassword(keyBytes, BcryptCost)
@@ -142,11 +141,10 @@ func ValidateAPIKey(apiKey, storedHash string) bool {
 		return false
 	}
 
-	// Apply the same pre-processing as HashAPIKey for consistency
+	// Apply the same pre-processing as HashAPIKey for consistency.
 	keyBytes := []byte(apiKey)
 	if len(keyBytes) > BcryptMaxInputLength {
-		sha256Hash := sha256.Sum256(keyBytes)
-		keyBytes = sha256Hash[:]
+		keyBytes = keyBytes[:BcryptMaxInputLength]
 	}
 
 	err := bcrypt.CompareHashAndPassword([]byte(storedHash), keyBytes)
