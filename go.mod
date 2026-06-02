@@ -70,7 +70,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.3.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.67.5 // indirect
+	github.com/prometheus/common v0.68.0 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
@@ -81,7 +81,6 @@ require (
 	github.com/swaggo/files/v2 v2.0.2 // indirect
 	github.com/weppos/publicsuffix-go v0.50.4-0.20260514081422-6efa9030e80b // indirect
 	github.com/zmap/zflags v1.4.0-beta.1.0.20251126025438-ec78c6d2f8e9 // indirect
-	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
