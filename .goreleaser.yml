@@ -34,6 +34,37 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+nfpms:
+  - id: scanorama
+    package_name: scanorama
+    vendor: Andreas Strøm
+    homepage: https://github.com/anstrom/scanorama
+    maintainer: Andreas Strøm <33042658+anstrom@users.noreply.github.com>
+    description: |-
+      Self-hosted network scanning and asset management.
+      Scanorama discovers hosts, runs nmap-based scans, and tracks network
+      inventory over time, exposing a REST API and web dashboard.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    # Binary lands at /usr/bin/scanorama — matches ExecStart in the unit.
+    bindir: /usr/bin
+    dependencies:
+      - nmap
+    contents:
+      - src: deploy/scanorama.service
+        dst: /usr/lib/systemd/system/scanorama.service
+      - src: deploy/config.example.yaml
+        dst: /etc/scanorama/config.yaml
+        type: "config|noreplace"
+        file_info:
+          mode: 0640
+    scripts:
+      postinstall: deploy/packaging/postinstall.sh
+      preremove: deploy/packaging/preremove.sh
+      postremove: deploy/packaging/postremove.sh
+
 dockers:
   - image_templates:
       - "ghcr.io/anstrom/scanorama:latest"
