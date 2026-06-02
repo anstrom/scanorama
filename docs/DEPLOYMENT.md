@@ -301,7 +301,7 @@ Start the full daemon (API server + scheduler) in the foreground:
 ./scanorama daemon restart
 ```
 
-The daemon writes a PID file (default `/tmp/scanorama.pid`, overridden by `daemon.pid_file` in config or `--pid-file` flag).
+The daemon writes a PID file (default `/var/run/scanorama.pid`, overridden by `daemon.pid_file` in config or `--pid-file` flag).
 
 ### API Server Only
 
@@ -352,6 +352,11 @@ sudo systemctl start scanorama
 sudo systemctl status scanorama
 ```
 
+> **Privilege drop:** the unit above runs scanorama directly as the `scanorama` user via systemd's
+> `User=`/`Group=` directives. Prefer this over the `daemon.user`/`daemon.group` config fields — let
+> systemd perform the privilege drop at `exec` time and leave those config fields unset. (The in-process
+> drop is being hardened separately; see issue #554.)
+
 ---
 
 ## Using the CLI
@@ -400,13 +405,20 @@ nmap requires root or Linux capabilities for raw-socket scan types:
 | `version` | No |
 | `comprehensive` | Yes |
 
-**Recommended approach:** Run the daemon as a dedicated non-root user (`scanorama`) and grant the binary Linux capabilities:
+**Recommended approach:** Run the daemon as a dedicated non-root user (`scanorama`) and grant the
+**nmap** binary the capabilities. scanorama never needs elevated privileges itself — it executes `nmap`
+as a child process, and only that child requires raw-socket access:
 
 ```sh
-sudo setcap cap_net_raw,cap_net_admin=eip /usr/local/bin/scanorama
+sudo setcap cap_net_raw,cap_net_admin+eip "$(command -v nmap)"
 ```
 
-Or use `AmbientCapabilities` in the systemd unit as shown above. Do not run the daemon as root in production.
+> **Do not** `setcap` the `scanorama` binary. File capabilities on `scanorama` are *not* ambient, so
+> they are not inherited by the `nmap` child process — and they are cleared if the daemon switches to
+> an unprivileged user. Grant the capability to `nmap` as above, **or** use
+> `AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN` in the systemd unit (shown above); ambient
+> capabilities *are* preserved across `exec` and inherited by the nmap child. Either way the
+> `scanorama` process stays unprivileged. Do not run the daemon as root in production.
 
 ### API Authentication
 
@@ -520,7 +532,8 @@ Set `logging.level: debug` to see detailed per-request and per-scan traces. For 
 
 - The scan type requires raw socket access. Either:
   - Switch to `default_scan_type: connect` in config, or
-  - Grant capabilities: `sudo setcap cap_net_raw,cap_net_admin=eip /usr/local/bin/scanorama`
+  - Grant capabilities to the **nmap** binary: `sudo setcap cap_net_raw,cap_net_admin+eip "$(command -v nmap)"`
+    (not the `scanorama` binary — see [nmap Privileges](#nmap-privileges))
 
 ### nmap not found
 
@@ -558,6 +571,3 @@ The `daemon stop` command sends `SIGTERM` and waits up to 30 seconds. If the dae
 
 /usr/local/bin/scanorama   # binary
 ```
-```
-
-Now let me update the `docs/README.md` to reference the new files:
