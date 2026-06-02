@@ -1,0 +1,55 @@
+[Unit]
+Description=Scanorama network scanner daemon
+Documentation=https://github.com/anstrom/scanorama
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=scanorama
+Group=scanorama
+ExecStart=/usr/bin/scanorama daemon start --background=false --config /etc/scanorama/config.yaml
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=35s
+KillMode=mixed
+EnvironmentFile=-/etc/scanorama/env
+
+# Directories managed by systemd (created with the right ownership on start):
+#   StateDirectory     -> /var/lib/scanorama
+#   RuntimeDirectory   -> /run/scanorama        (holds the PID file)
+#   ConfigurationDir   -> /etc/scanorama
+StateDirectory=scanorama
+StateDirectoryMode=0750
+RuntimeDirectory=scanorama
+RuntimeDirectoryMode=0750
+ConfigurationDirectory=scanorama
+ConfigurationDirectoryMode=0750
+WorkingDirectory=/var/lib/scanorama
+
+# Raw-socket privilege for SYN/ACK/UDP scans.
+#
+# Recommended: grant the capability to the *nmap* binary (the install script and
+# the package postinstall do this), keeping scanorama itself fully unprivileged:
+#     setcap cap_net_raw,cap_net_admin+eip "$(command -v nmap)"
+#
+# NoNewPrivileges is intentionally NOT enabled — nmap relies on file
+# capabilities, which NoNewPrivileges would block.
+#
+# Alternative: grant the capabilities to this service instead (uncomment the two
+# lines below), in which case the nmap setcap step is unnecessary:
+# AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+# CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+
+# Hardening (kept compatible with nmap raw-socket scanning — do not add
+# RestrictAddressFamilies or NoNewPrivileges, both of which break scans).
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
