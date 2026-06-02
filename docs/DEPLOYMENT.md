@@ -314,48 +314,60 @@ Use `server` subcommands when you want only the REST API without the cron schedu
 ./scanorama server logs [--follow]
 ```
 
-### systemd Service (Recommended for Production)
+### Installing as a systemd Service (Recommended for Production)
 
-Create `/etc/systemd/system/scanorama.service`:
+All three install methods below use the same committed unit
+([`deploy/scanorama.service`](../deploy/scanorama.service)) and the same production layout. Pick one.
 
-```ini
-[Unit]
-Description=Scanorama Network Scanner Daemon
-After=network.target postgresql.service
-Requires=postgresql.service
+#### Option A — Distribution package (`.deb` / `.rpm`)
 
-[Service]
-Type=simple
-User=scanorama
-Group=scanorama
-WorkingDirectory=/var/lib/scanorama
-ExecStart=/usr/local/bin/scanorama daemon start --background=false --config /etc/scanorama/config.yaml
-ExecStop=/usr/local/bin/scanorama daemon stop
-Restart=on-failure
-RestartSec=5s
-
-# Environment (alternative to config file for secrets)
-EnvironmentFile=-/etc/scanorama/env
-
-# Allow nmap to use raw sockets for SYN scans (remove if using connect scans only)
-AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
-CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
-
-[Install]
-WantedBy=multi-user.target
-```
+Each release publishes Debian and RPM packages that install the binary to `/usr/bin/scanorama`, drop in
+the systemd unit and a default `/etc/scanorama/config.yaml`, create the `scanorama` system user, and grant
+the nmap binary raw-socket capability. The package depends on `nmap` and pulls it in automatically.
 
 ```sh
-sudo systemctl daemon-reload
-sudo systemctl enable scanorama
-sudo systemctl start scanorama
+# Debian / Ubuntu
+sudo apt-get install ./scanorama_<version>_linux_amd64.deb
+
+# RHEL / Fedora
+sudo dnf install ./scanorama-<version>.x86_64.rpm
+```
+
+#### Option B — Install script (from the release tarball)
+
+If you installed from the `.tar.gz`, run the bundled installer as root. It is idempotent and performs the
+same steps as the package: creates the service user, lays out `/etc/scanorama` and `/var/lib/scanorama`,
+installs the binary and unit, installs a default config, and sets the nmap capability.
+
+```sh
+sudo ./deploy/install.sh ./scanorama
+```
+
+#### Option C — Manual
+
+Copy the binary to `/usr/bin/scanorama`, install [`deploy/scanorama.service`](../deploy/scanorama.service)
+to `/etc/systemd/system/`, and create the `scanorama` user, directories, and nmap capability yourself —
+`deploy/install.sh` documents the exact commands.
+
+#### Start it
+
+```sh
+sudo systemctl daemon-reload          # only needed for Option C
+sudo systemctl enable --now scanorama
 sudo systemctl status scanorama
 ```
 
-> **Privilege drop:** the unit above runs scanorama directly as the `scanorama` user via systemd's
+Before the first start, set `database.password` in `/etc/scanorama/config.yaml` to match the PostgreSQL
+role you created (see [Database Setup](#database-setup)).
+
+> **Privilege drop:** the unit runs scanorama directly as the `scanorama` user via systemd's
 > `User=`/`Group=` directives. Prefer this over the `daemon.user`/`daemon.group` config fields — let
 > systemd perform the privilege drop at `exec` time and leave those config fields unset. (The in-process
 > drop is being hardened separately; see issue #554.)
+>
+> SYN/ACK/UDP scans need raw sockets: the package and install script `setcap` the **nmap** binary for you
+> (see [nmap Privileges](#nmap-privileges)). The unit also ships a commented `AmbientCapabilities`
+> alternative if you prefer to grant the capability to the service instead.
 
 ---
 
@@ -565,9 +577,9 @@ The `daemon stop` command sends `SIGTERM` and waits up to 30 seconds. If the dae
     server.crt
     server.key
 
-/var/lib/scanorama/    # working directory (daemon.work_dir)
-/var/run/scanorama/    # PID file directory
-/var/log/scanorama/    # log files (if logging.output points here)
+/var/lib/scanorama/    # working directory (daemon.work_dir; systemd StateDirectory)
+/run/scanorama/        # PID file directory (systemd RuntimeDirectory)
+/var/log/scanorama/    # log files (only if logging.output points here; default is journald)
 
-/usr/local/bin/scanorama   # binary
+/usr/bin/scanorama     # binary (package and install.sh location)
 ```
