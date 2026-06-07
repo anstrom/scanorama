@@ -20,6 +20,8 @@ const (
 	defaultDatabasePort         = 5432 // PostgreSQL default port
 	defaultMaxConcurrentTargets = 100  // default max concurrent scan targets
 	defaultConfigFile           = "config.yaml"
+	// appName is the binary name and the default database role/database name.
+	appName = "scanorama"
 )
 
 var (
@@ -36,7 +38,7 @@ var (
 
 // rootCmd represents the base command when called without any subcommands.
 var rootCmd = &cobra.Command{
-	Use:   "scanorama",
+	Use:   appName,
 	Short: "Advanced Network Scanner",
 	Long: `Scanorama is an advanced network scanning and discovery tool designed for
 continuous network monitoring with OS-aware scanning capabilities, automated
@@ -104,8 +106,8 @@ func setConfigDefaults() {
 	// Database configuration
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", defaultDatabasePort)
-	viper.SetDefault("database.database", "scanorama")
-	viper.SetDefault("database.username", "scanorama")
+	viper.SetDefault("database.database", appName)
+	viper.SetDefault("database.username", appName)
 	viper.SetDefault("database.ssl_mode", "require")
 
 	// Scanning configuration
