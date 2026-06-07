@@ -16,15 +16,18 @@ KillMode=mixed
 EnvironmentFile=-/etc/scanorama/env
 
 # Directories managed by systemd (created with the right ownership on start):
-#   StateDirectory     -> /var/lib/scanorama
+#   StateDirectory     -> /var/lib/scanorama   (writable by the daemon)
 #   RuntimeDirectory   -> /run/scanorama        (holds the PID file)
-#   ConfigurationDir   -> /etc/scanorama
+#
+# /etc/scanorama is deliberately NOT a ConfigurationDirectory: the daemon only
+# reads its config, never writes it, so the directory is laid down by the
+# installer/package (root-owned) rather than chowned to the service user here.
+# 0755 is intentional: scan results live in PostgreSQL, not these directories, so
+# they hold no secrets; the config file (0640) is what guards the DB credentials.
 StateDirectory=scanorama
-StateDirectoryMode=0750
+StateDirectoryMode=0755
 RuntimeDirectory=scanorama
-RuntimeDirectoryMode=0750
-ConfigurationDirectory=scanorama
-ConfigurationDirectoryMode=0750
+RuntimeDirectoryMode=0755
 WorkingDirectory=/var/lib/scanorama
 
 # Raw-socket privilege for SYN/ACK/UDP scans.

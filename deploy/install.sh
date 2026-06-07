@@ -46,8 +46,8 @@ getent passwd "${SVC_USER}" >/dev/null || useradd --system --gid "${SVC_GROUP}" 
   --home-dir "${STATE_DIR}" --shell /usr/sbin/nologin --comment "Scanorama daemon" "${SVC_USER}"
 
 info "Creating directories"
-install -d -o "${SVC_USER}" -g "${SVC_GROUP}" -m 0750 "${STATE_DIR}"
-install -d -o root -g "${SVC_GROUP}" -m 0750 "${CONF_DIR}"
+install -d -o "${SVC_USER}" -g "${SVC_GROUP}" -m 0755 "${STATE_DIR}"
+install -d -o root -g root -m 0755 "${CONF_DIR}"
 
 info "Installing binary -> ${BIN_DST}"
 install -o root -g root -m 0755 "${BINARY_SRC}" "${BIN_DST}"
@@ -73,16 +73,24 @@ fi
 info "Reloading systemd"
 systemctl daemon-reload
 
-cat <<EOF
+# Bootstrap the database via peer auth (the scanorama role authenticates as the
+# scanorama OS user over the local socket — no password). Needs a running local
+# PostgreSQL; if absent, print the manual steps instead of failing.
+if command -v runuser >/dev/null 2>&1 && getent passwd postgres >/dev/null 2>&1 \
+   && runuser -u postgres -- "${BIN_DST}" setup; then
+  info "Enabling and starting the service"
+  systemctl enable --now scanorama
+  cat <<EOF
 
-Scanorama installed.
-
-Next steps:
-  1. Create the database and role (local PostgreSQL):
-       sudo -u postgres psql -c "CREATE USER scanorama WITH PASSWORD 'changeme';"
-       sudo -u postgres psql -c "CREATE DATABASE scanorama OWNER scanorama;"
-  2. Set the same password in ${CONF_FILE} (database.password).
-  3. Start the service:
-       sudo systemctl enable --now scanorama
-       systemctl status scanorama
+Scanorama installed and started. Check it with:
+  systemctl status scanorama
 EOF
+else
+  cat <<EOF
+
+Scanorama installed, but the database was not bootstrapped (PostgreSQL not found
+or not running). Once a local PostgreSQL is running, finish with:
+  sudo -u postgres ${BIN_DST} setup
+  sudo systemctl enable --now scanorama
+EOF
+fi
