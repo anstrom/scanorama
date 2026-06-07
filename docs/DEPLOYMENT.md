@@ -241,7 +241,27 @@ All configuration values can be set or overridden using environment variables pr
 
 ## Database Setup
 
-### Create the Database and User
+### Local PostgreSQL (recommended) — `scanorama setup`
+
+The package and install script target a local PostgreSQL using **peer
+authentication**: the daemon runs as the `scanorama` OS user and connects over
+the Unix socket as a `scanorama` database role, so there is no password to store
+or rotate. `scanorama setup` creates the role and database idempotently:
+
+```sh
+# Run as the postgres superuser so peer auth can create the role and database.
+sudo -u postgres scanorama setup
+```
+
+The package postinstall (and `deploy/install.sh`) run this for you on a fresh
+install. Re-running it is a no-op. The matching config is the default in
+`/etc/scanorama/config.yaml`: `host: /var/run/postgresql`, `username: scanorama`,
+empty `password`.
+
+### Remote or password-authenticated PostgreSQL
+
+For a remote database, create the role and database manually and use password
+auth instead of peer:
 
 ```sql
 -- Run as a PostgreSQL superuser
@@ -249,6 +269,9 @@ CREATE USER scanorama WITH PASSWORD 'changeme';
 CREATE DATABASE scanorama OWNER scanorama;
 GRANT ALL PRIVILEGES ON DATABASE scanorama TO scanorama;
 ```
+
+Then set `database.host` to the server address, `database.password` to the role
+password, and `database.ssl_mode` to `require` in `/etc/scanorama/config.yaml`.
 
 ### Migrations
 
@@ -323,7 +346,8 @@ All three install methods below use the same committed unit
 
 Each release publishes Debian and RPM packages that install the binary to `/usr/bin/scanorama`, drop in
 the systemd unit and a default `/etc/scanorama/config.yaml`, create the `scanorama` system user, and grant
-the nmap binary raw-socket capability. The package depends on `nmap` and pulls it in automatically.
+the nmap binary raw-socket capability. The package depends on `nmap` and PostgreSQL (`postgresql` on
+Debian, `postgresql-server` on RHEL) and pulls them in automatically.
 
 ```sh
 # Debian / Ubuntu
@@ -333,11 +357,19 @@ sudo apt-get install ./scanorama_<version>_linux_amd64.deb
 sudo dnf install ./scanorama-<version>.x86_64.rpm
 ```
 
+On Debian/Ubuntu the postinstall bootstraps the database (`scanorama setup`) and
+enables and starts the service, so a fresh install comes up working with no
+further steps. On RHEL/Fedora the PostgreSQL cluster is not initialized by the
+package; run `sudo postgresql-setup --initdb && sudo systemctl enable --now
+postgresql`, then `sudo -u postgres scanorama setup` and `sudo systemctl enable
+--now scanorama`.
+
 #### Option B — Install script (from the release tarball)
 
 If you installed from the `.tar.gz`, run the bundled installer as root. It is idempotent and performs the
 same steps as the package: creates the service user, lays out `/etc/scanorama` and `/var/lib/scanorama`,
-installs the binary and unit, installs a default config, and sets the nmap capability.
+installs the binary and unit, installs a default config, sets the nmap capability, and — when a local
+PostgreSQL is running — bootstraps the database and starts the service.
 
 ```sh
 sudo ./deploy/install.sh ./scanorama
@@ -351,14 +383,18 @@ to `/etc/systemd/system/`, and create the `scanorama` user, directories, and nma
 
 #### Start it
 
+The package (Option A on Debian/Ubuntu) and the install script (Option B) bootstrap the database and start
+the service for you. You only need this for Option C, or after a manual `scanorama setup`:
+
 ```sh
 sudo systemctl daemon-reload          # only needed for Option C
 sudo systemctl enable --now scanorama
 sudo systemctl status scanorama
 ```
 
-Before the first start, set `database.password` in `/etc/scanorama/config.yaml` to match the PostgreSQL
-role you created (see [Database Setup](#database-setup)).
+The default config uses local peer authentication, so there is no password to set before the first start
+(see [Database Setup](#database-setup)). For a remote database, set `database.host`/`password`/`ssl_mode`
+in `/etc/scanorama/config.yaml` before starting.
 
 > **Privilege drop:** the unit runs scanorama directly as the `scanorama` user via systemd's
 > `User=`/`Group=` directives. Prefer this over the `daemon.user`/`daemon.group` config fields — let
