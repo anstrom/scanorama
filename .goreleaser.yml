@@ -50,8 +50,17 @@ nfpms:
       - rpm
     # Binary lands at /usr/bin/scanorama — matches ExecStart in the unit.
     bindir: /usr/bin
+    # nmap is the scan engine; PostgreSQL is the datastore. The package targets a
+    # local-Postgres install (peer auth, no passwords), so the DB server is a hard
+    # dependency. The package name differs per distro, hence the format overrides.
     dependencies:
       - nmap
+      - postgresql
+    overrides:
+      rpm:
+        dependencies:
+          - nmap
+          - postgresql-server
     contents:
       - src: deploy/scanorama.service
         dst: /usr/lib/systemd/system/scanorama.service

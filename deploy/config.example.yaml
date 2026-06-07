@@ -16,12 +16,17 @@ daemon:
   group: ""
 
 database:
-  host: localhost
+  # Local PostgreSQL over the Unix socket with peer authentication: the daemon
+  # runs as the scanorama OS user, so a scanorama DB role authenticates with no
+  # password. `scanorama setup` (run by the package postinstall) creates the role
+  # and database. For a remote DB, set host to its address, add a password, and
+  # switch ssl_mode to require.
+  host: /var/run/postgresql      # socket directory; peer auth keyed on the OS user
   port: 5432
   database: scanorama
   username: scanorama
-  password: CHANGE_ME            # match the PostgreSQL role you created
-  ssl_mode: disable              # local socket/loopback; use require for remote DBs
+  password: ""                   # empty: peer auth over the local socket
+  ssl_mode: disable              # not used over the Unix socket; require for remote
   max_open_conns: 25
   max_idle_conns: 5
   conn_max_lifetime: 5m
