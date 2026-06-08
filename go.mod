@@ -44,7 +44,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/go-openapi/jsonpointer v0.23.1 // indirect
 	github.com/go-openapi/jsonreference v0.21.6 // indirect
-	github.com/go-openapi/spec v0.22.4 // indirect
+	github.com/go-openapi/spec v0.22.5 // indirect
 	github.com/go-openapi/swag/conv v0.26.0 // indirect
 	github.com/go-openapi/swag/jsonname v0.26.0 // indirect
 	github.com/go-openapi/swag/jsonutils v0.26.0 // indirect
