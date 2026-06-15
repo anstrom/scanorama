@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@quobix/vacuum": "0.29.2",
-    "@redocly/cli": "2.31.6",
+    "@redocly/cli": "2.32.2",
     "js-yaml": "4.2.0"
   },
   "overrides": {
@@ -32,7 +32,7 @@
   },
   "engines": {
     "node": "25.9.0",
-    "npm": "11.16.0"
+    "npm": "11.17.0"
   },
   "repository": {
     "type": "git",
