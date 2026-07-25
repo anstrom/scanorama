@@ -17,24 +17,18 @@
   "gomod": {
     "postUpdateOptions": ["gomodTidy"]
   },
-  "customManagers": [
-    {
-      "description": "Sync GO_VERSION in CI workflows with go.mod",
-      "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
-      "matchStrings": [
-        "# renovate: datasource=golang-version depName=go\\s+GO_VERSION: \"(?<currentValue>[^\"]+)\""
-      ],
-      "datasourceTemplate": "golang-version",
-      "depNameTemplate": "go",
-      "versioningTemplate": "semver-coerced"
-    }
-  ],
   "packageRules": [
     {
-      "matchManagers": ["gomod", "custom.regex"],
+      "matchManagers": ["gomod"],
       "groupName": "Go modules",
       "labels": ["dependencies", "go"]
+    },
+    {
+      "description": "Keep toolchain bumps separate — they carry stdlib security fixes",
+      "matchManagers": ["gomod"],
+      "matchDatasources": ["golang-version"],
+      "groupName": "Go toolchain",
+      "labels": ["dependencies", "go", "security"]
     },
     {
       "matchManagers": ["npm"],
