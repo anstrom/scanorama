@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@quobix/vacuum": "0.30.0",
-    "@redocly/cli": "2.35.1",
+    "@redocly/cli": "2.40.0",
     "js-yaml": "4.3.0"
   },
   "overrides": {
