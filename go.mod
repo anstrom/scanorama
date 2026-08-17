@@ -1,8 +1,6 @@
 module github.com/anstrom/scanorama
 
-go 1.26.0
-
-toolchain go1.26.5
+go 1.26.6
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
