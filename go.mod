@@ -28,7 +28,7 @@ require (
 	github.com/zmap/zcrypto v0.0.0-20260725024403-2c658ce3c66f
 	github.com/zmap/zgrab2 v1.0.0
 	go.uber.org/mock v0.6.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
