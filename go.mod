@@ -7,7 +7,7 @@ toolchain go1.27.1
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/Ullaakut/nmap/v3 v3.1.0
-	github.com/go-playground/validator/v10 v10.30.3
+	github.com/go-playground/validator/v10 v10.30.4
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
@@ -25,7 +25,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/swaggo/http-swagger/v2 v2.0.2
 	github.com/swaggo/swag v1.16.6
-	github.com/zmap/zcrypto v0.0.0-20260725024403-2c658ce3c66f
+	github.com/zmap/zcrypto v0.0.0-20260906180147-3ed30b1e9340
 	github.com/zmap/zgrab2 v1.0.0
 	go.uber.org/mock v0.6.0
 	golang.org/x/crypto v0.56.0
@@ -79,7 +79,7 @@ require (
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/swaggo/files/v2 v2.0.2 // indirect
-	github.com/weppos/publicsuffix-go v0.50.4-0.20260715080728-6ed62ce99a4a // indirect
+	github.com/weppos/publicsuffix-go v0.50.4-0.20260821095816-b0fdb5c2d345 // indirect
 	github.com/zmap/zflags v1.4.0-beta.1.0.20251126025438-ec78c6d2f8e9 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/mod v0.40.0 // indirect
