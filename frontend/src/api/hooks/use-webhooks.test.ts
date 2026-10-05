@@ -28,15 +28,20 @@ const mockPost = vi.mocked(api.POST);
 const mockPatch = vi.mocked(api.PATCH);
 const mockDelete = vi.mocked(api.DELETE);
 
-const ok = (data: unknown) =>
-  ({ data, error: undefined, response: new Response() }) as Awaited<ReturnType<typeof mockGet>>;
+// ok/fail feed mockImplementation, so they return the Promise api.GET resolves.
+const ok = (data: unknown): ReturnType<typeof mockGet> =>
+  Promise.resolve({
+    data,
+    error: undefined,
+    response: new Response(),
+  }) as ReturnType<typeof mockGet>;
 
-const fail = (msg = "error") =>
-  ({
+const fail = (msg = "error"): ReturnType<typeof mockGet> =>
+  Promise.resolve({
     data: undefined,
     error: { message: msg },
     response: new Response(null, { status: 500 }),
-  }) as Awaited<ReturnType<typeof mockGet>>;
+  }) as ReturnType<typeof mockGet>;
 
 const okMut = (data: unknown) =>
   ({ data, error: undefined, response: new Response() }) as Awaited<ReturnType<typeof mockPost>>;
