@@ -54,6 +54,7 @@ type CreateHostInput struct {
 // UpdateHostInput holds the optional fields that may be changed on an existing
 // host.  A nil pointer means "leave this field unchanged".
 type UpdateHostInput struct {
+	// Hostname sets the hostname when non-nil; a pointer to "" clears it.
 	Hostname       *string
 	Vendor         *string
 	OSFamily       *string

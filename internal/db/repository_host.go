@@ -740,7 +740,12 @@ func buildHostUpdateSet(input UpdateHostInput) (setParts []string, args []interf
 		}
 	}
 
-	addStr(filterFieldHostname, input.Hostname)
+	// An empty hostname clears it; store NULL like a host that never had one.
+	if input.Hostname != nil && *input.Hostname == "" {
+		setParts = append(setParts, filterFieldHostname+" = NULL")
+	} else {
+		addStr(filterFieldHostname, input.Hostname)
+	}
 	addStr(filterFieldVendor, input.Vendor)
 	addStr(filterFieldOSFamily, input.OSFamily)
 	addStr("os_name", input.OSName)
