@@ -117,7 +117,7 @@ jobs:
           name: unit-coverage
           slug: anstrom/scanorama
           flags: unit
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           verbose: true
 
   # Stage 3: Frontend Tests (runs in parallel with integration)
@@ -385,5 +385,5 @@ jobs:
           name: codecov-umbrella
           slug: anstrom/scanorama
           flags: integration
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           verbose: true
