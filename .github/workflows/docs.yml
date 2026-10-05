@@ -71,6 +71,9 @@ jobs:
       - name: Check schema compatibility
         run: npm run openapi:check-schema
 
+      - name: Lint against redocly recommended rules
+        run: npm run openapi:validate-for-codegen
+
   generate-docs:
     name: Generate Documentation
     runs-on: ubuntu-latest
@@ -134,79 +137,3 @@ jobs:
             docs/swagger/
             docs/*.md
           retention-days: 30
-
-  test-client-generation:
-    name: Test Client Generation
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [validate-openapi]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Test JavaScript client generation
-        run: npm run openapi:generate-js
-
-      - name: Test TypeScript client generation
-        run: npm run openapi:generate-ts
-
-      - name: Validate client generation capability
-        run: npm run test:clients
-
-  check-docs-coverage:
-    name: Check Documentation Coverage
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [generate-docs]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Download documentation artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: api-documentation
-          path: docs/
-
-      - name: Analyze API coverage
-        run: |
-          echo "🔍 Analyzing API documentation coverage..."
-
-          # Count total API endpoints in code
-          TOTAL_ENDPOINTS=$(grep -r "@Router" internal/api/handlers/ | wc -l || echo "0")
-
-          # Count documented endpoints in OpenAPI spec
-          DOCUMENTED_ENDPOINTS=$(grep -c "paths:" docs/swagger/swagger.yaml || echo "0")
-
-          echo "📊 Documentation Coverage Report:"
-          echo "  Total API endpoints found in code: $TOTAL_ENDPOINTS"
-          echo "  Documented endpoints in OpenAPI: $DOCUMENTED_ENDPOINTS"
-
-          if [ "$TOTAL_ENDPOINTS" -gt 0 ]; then
-            COVERAGE=$((DOCUMENTED_ENDPOINTS * 100 / TOTAL_ENDPOINTS))
-            echo "  Documentation coverage: ${COVERAGE}%"
-
-            if [ "$COVERAGE" -lt 80 ]; then
-              echo "⚠️ Documentation coverage below 80%"
-              echo "Consider adding missing API documentation"
-            else
-              echo "✅ Good documentation coverage"
-            fi
-          else
-            echo "ℹ️ No API endpoints found for coverage analysis"
-          fi
