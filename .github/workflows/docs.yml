@@ -35,6 +35,7 @@ jobs:
   validate-openapi:
     name: Validate OpenAPI Spec
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -60,6 +61,7 @@ jobs:
   generate-docs:
     name: Generate Documentation
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -123,6 +125,7 @@ jobs:
   test-client-generation:
     name: Test Client Generation
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [validate-openapi]
     steps:
       - name: Checkout code
@@ -149,6 +152,7 @@ jobs:
   check-docs-coverage:
     name: Check Documentation Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [generate-docs]
     steps:
       - name: Checkout code
