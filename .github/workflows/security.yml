@@ -127,25 +127,25 @@ jobs:
         with:
           node-version: 24.21.0
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
 
-      - name: Run npm audit
+      # Blocking: the frontend bundle ships to users, so a high or critical
+      # advisory in a production dependency fails the job.
+      - name: Audit frontend production dependencies
+        run: npm audit --prefix frontend --omit=dev --audit-level=high
+
+      # Non-blocking: build and docs tooling never ships, so findings are
+      # reported without failing the job. npm audit reads the lockfile, so
+      # the root docs tooling needs no install.
+      - name: Audit dev and docs tooling (informational)
         run: |
-          echo "🔍 Running npm security audit..."
-          # Temporarily exclude dev dependencies due to fast-xml-parser CVE-2026-25128
-          # waiting for upstream fix to be published to npm
-          # See: https://github.com/advisories/GHSA-37qj-frw5-hhjh
-          npm audit --omit=dev --audit-level moderate || true
-          npm audit --audit-level moderate || echo "⚠️ Dev dependency vulnerabilities detected (non-blocking)"
-          echo "✅ NPM audit completed"
-
-      - name: Check for outdated packages
-        run: |
-          echo "📦 Checking for outdated packages..."
-          npm outdated || true
-          echo "ℹ️ Outdated package check completed"
+          npm audit --prefix frontend --audit-level=moderate || echo "::warning::Frontend dev dependency advisories found"
+          npm audit --audit-level=moderate || echo "::warning::Docs tooling advisories found"
 
   license-compliance:
     name: License Compliance
