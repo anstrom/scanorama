@@ -20,10 +20,12 @@ import (
 )
 
 // captureUpdateHostServicer records the UpdateHostInput the handler builds.
+// It returns host when set, otherwise a bare host with the requested ID.
 type captureUpdateHostServicer struct {
 	nilHostServicer
-	got *db.UpdateHostInput
-	err error
+	got  *db.UpdateHostInput
+	host *db.Host
+	err  error
 }
 
 func (m *captureUpdateHostServicer) UpdateHost(
@@ -32,6 +34,9 @@ func (m *captureUpdateHostServicer) UpdateHost(
 	m.got = &input
 	if m.err != nil {
 		return nil, m.err
+	}
+	if m.host != nil {
+		return m.host, nil
 	}
 	return &db.Host{ID: id}, nil
 }
@@ -61,6 +66,7 @@ func TestHostHandler_UpdateHost_OmittedFieldsAreUnchanged(t *testing.T) {
 	assert.Nil(t, svc.got.OSFamily)
 	assert.Nil(t, svc.got.OSName)
 	assert.Nil(t, svc.got.Tags)
+	assert.Nil(t, svc.got.Notes, "omitted notes must not change notes")
 }
 
 func TestHostHandler_UpdateHost_ActiveMapsToIgnoreScanning(t *testing.T) {
@@ -113,7 +119,7 @@ func TestHostHandler_UpdateHost_HostnameTooLong(t *testing.T) {
 }
 
 func TestHostHandler_UpdateHost_NoUpdatableFields(t *testing.T) {
-	for _, body := range []string{`{}`, `{"description":"notes"}`, `{"hostname":null}`} {
+	for _, body := range []string{`{}`, `{"description":"notes"}`, `{"hostname":null}`, `{"notes":null}`} {
 		t.Run(body, func(t *testing.T) {
 			w := putHost(t, &captureUpdateHostServicer{}, body)
 
@@ -123,6 +129,74 @@ func TestHostHandler_UpdateHost_NoUpdatableFields(t *testing.T) {
 			assert.Contains(t, raw["message"], "no updatable fields")
 		})
 	}
+}
+
+func TestHostHandler_UpdateHost_NotesOnlySavesNotes(t *testing.T) {
+	notes := "rack 4, owned by infra"
+	svc := &captureUpdateHostServicer{host: &db.Host{ID: uuid.New(), Notes: &notes}}
+
+	w := putHost(t, svc, `{"notes":"rack 4, owned by infra"}`)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, svc.got.Notes)
+	assert.Equal(t, notes, *svc.got.Notes)
+	assert.Nil(t, svc.got.Hostname, "a notes-only update must not touch hostname")
+
+	var raw map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&raw))
+	assert.Equal(t, notes, raw["notes"])
+}
+
+func TestHostHandler_UpdateHost_EmptyNotesClear(t *testing.T) {
+	svc := &captureUpdateHostServicer{}
+
+	w := putHost(t, svc, `{"notes":""}`)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, svc.got.Notes, "an explicit empty notes value must reach the DB layer")
+	assert.Empty(t, *svc.got.Notes)
+
+	var raw map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&raw))
+	assert.NotContains(t, raw, "notes", "cleared notes are omitted from the response")
+}
+
+func TestHostHandler_UpdateHost_NotesTooLong(t *testing.T) {
+	body, err := json.Marshal(map[string]string{"notes": strings.Repeat("a", maxHostNotesLength+1)})
+	require.NoError(t, err)
+	svc := &captureUpdateHostServicer{}
+
+	w := putHost(t, svc, string(body))
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Nil(t, svc.got, "an invalid request must not reach the service")
+	var raw map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&raw))
+	assert.Contains(t, raw["message"], "notes too long")
+}
+
+func TestHostHandler_UpdateHost_NotesAtLimitAccepted(t *testing.T) {
+	body, err := json.Marshal(map[string]string{"notes": strings.Repeat("a", maxHostNotesLength)})
+	require.NoError(t, err)
+	svc := &captureUpdateHostServicer{}
+
+	w := putHost(t, svc, string(body))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, svc.got.Notes)
+	assert.Len(t, *svc.got.Notes, maxHostNotesLength)
+}
+
+func TestHostHandler_UpdateHost_NotesLimitCountsCharacters(t *testing.T) {
+	// Multi-byte characters count once each, matching the error message.
+	body, err := json.Marshal(map[string]string{"notes": strings.Repeat("ø", maxHostNotesLength)})
+	require.NoError(t, err)
+	svc := &captureUpdateHostServicer{}
+
+	w := putHost(t, svc, string(body))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, svc.got)
 }
 
 func TestHostHandler_UpdateHost_ServiceErrors(t *testing.T) {
