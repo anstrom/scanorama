@@ -1332,31 +1332,37 @@ describe("HostsPage", () => {
       expect(within(panel).getByTestId("notes-section")).toBeInTheDocument();
     });
 
-    it("shows 'No notes.' placeholder when description is absent", async () => {
+    it("shows 'No notes.' placeholder when notes are absent", async () => {
       const panel = await openPanel();
       expect(within(panel).getByText("No notes.")).toBeInTheDocument();
     });
 
-    it("shows description text when host has a description", async () => {
+    it("shows notes text when host has notes", async () => {
       mockUseHost.mockReturnValue(
         makeUseHostResult({
-          data: {
-            ...mockFullHost,
-            description: "This is a test server.",
-          } as typeof mockFullHost,
+          data: { ...mockFullHost, notes: "This is a test server." },
         }),
       );
       const panel = await openPanel();
       expect(within(panel).getByText("This is a test server.")).toBeInTheDocument();
     });
 
+    it("does not show the legacy description field as notes", async () => {
+      mockUseHost.mockReturnValue(
+        makeUseHostResult({
+          data: { ...mockFullHost, description: "Legacy description." },
+        }),
+      );
+      const panel = await openPanel();
+      const notesSection = within(panel).getByTestId("notes-section");
+      expect(within(notesSection).getByText("No notes.")).toBeInTheDocument();
+      expect(within(notesSection).queryByText("Legacy description.")).not.toBeInTheDocument();
+    });
+
     it("enters edit mode for notes when the edit button is clicked", async () => {
       mockUseHost.mockReturnValue(
         makeUseHostResult({
-          data: {
-            ...mockFullHost,
-            description: "Initial notes.",
-          } as typeof mockFullHost,
+          data: { ...mockFullHost, notes: "Initial notes." },
         }),
       );
       const panel = await openPanel();
@@ -1371,10 +1377,7 @@ describe("HostsPage", () => {
       mockUseUpdateHost.mockReturnValue(makeMutationResult({ mutateAsync }));
       mockUseHost.mockReturnValue(
         makeUseHostResult({
-          data: {
-            ...mockFullHost,
-            description: "Old notes.",
-          } as typeof mockFullHost,
+          data: { ...mockFullHost, notes: "Old notes." },
         }),
       );
 
@@ -1387,11 +1390,51 @@ describe("HostsPage", () => {
       await userEvent.type(textarea, "New notes.");
       await userEvent.keyboard("{Control>}{Enter}{/Control}");
 
-      expect(mutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({
-          body: expect.objectContaining({ description: "New notes." }),
+      expect(mutateAsync).toHaveBeenCalledWith({
+        hostId: mockFullHost.id,
+        body: { notes: "New notes." },
+      });
+      expect(mockToastSuccess).toHaveBeenCalledWith("Notes updated.");
+    });
+
+    it("clears notes by sending an empty string", async () => {
+      const mutateAsync = vi.fn().mockResolvedValue({});
+      mockUseUpdateHost.mockReturnValue(makeMutationResult({ mutateAsync }));
+      mockUseHost.mockReturnValue(
+        makeUseHostResult({
+          data: { ...mockFullHost, notes: "Old notes." },
         }),
       );
+
+      const panel = await openPanel();
+      const notesSection = within(panel).getByTestId("notes-section");
+      const editBtns = within(notesSection).getAllByRole("button", { name: /edit/i });
+      await userEvent.click(editBtns[0]);
+      await userEvent.clear(within(notesSection).getByRole("textbox"));
+      await userEvent.keyboard("{Control>}{Enter}{/Control}");
+
+      expect(mutateAsync).toHaveBeenCalledWith({
+        hostId: mockFullHost.id,
+        body: { notes: "" },
+      });
+    });
+
+    it("keeps the editor open and shows the error when saving notes fails", async () => {
+      const mutateAsync = vi.fn().mockRejectedValue(new Error("notes too long (max 10000 characters)"));
+      mockUseUpdateHost.mockReturnValue(makeMutationResult({ mutateAsync }));
+
+      const panel = await openPanel();
+      const notesSection = within(panel).getByTestId("notes-section");
+      const editBtns = within(notesSection).getAllByRole("button", { name: /edit/i });
+      await userEvent.click(editBtns[0]);
+      await userEvent.type(within(notesSection).getByRole("textbox"), "Too long.");
+      await userEvent.keyboard("{Control>}{Enter}{/Control}");
+
+      expect(
+        await within(notesSection).findByText("notes too long (max 10000 characters)"),
+      ).toBeInTheDocument();
+      expect(within(notesSection).getByRole("textbox")).toBeInTheDocument();
+      expect(mockToastSuccess).not.toHaveBeenCalledWith("Notes updated.");
     });
   });
 
