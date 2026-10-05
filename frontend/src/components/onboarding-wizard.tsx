@@ -473,7 +473,7 @@ export function OnboardingWizard() {
 
   // Don't render while loading, when dismissed, or when networks already exist.
   if (isLoading || dismissed) return null;
-  const total = networksData?.total ?? 0;
+  const total = networksData?.pagination?.total_items ?? 0;
   if (total > 0) return null;
 
   const titles: Record<number, string> = {

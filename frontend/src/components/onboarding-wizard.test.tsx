@@ -61,7 +61,7 @@ const SKIP_KEY = "scanorama_onboarding_skipped";
 
 function setupDefaultMocks() {
   mockUseNetworks.mockReturnValue({
-    data: { data: [], total: 0 },
+    data: { data: [], pagination: { total_items: 0 } },
     isLoading: false,
   } as unknown as ReturnType<typeof useNetworks>);
 
@@ -98,10 +98,10 @@ describe("OnboardingWizard", () => {
     vi.unstubAllGlobals();
   });
 
-  // 1. Does not render wizard when networks.total > 0
+  // 1. Does not render wizard when networks pagination.total_items > 0
   it("does not render wizard when networks already exist", async () => {
     mockUseNetworks.mockReturnValue({
-      data: { data: [{ id: "net-existing" }], total: 1 },
+      data: { data: [{ id: "net-existing" }], pagination: { total_items: 1 } },
       isLoading: false,
     } as unknown as ReturnType<typeof useNetworks>);
 
