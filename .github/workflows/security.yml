@@ -15,6 +15,13 @@ permissions:
   security-events: write
   actions: read
 
+# PR runs share a group per branch, so a new push cancels the superseded run.
+# Every other run (main, tags, schedule, dispatch) gets a unique group via
+# run_id: a shared group would still cancel queued runs during merge bursts.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   vulnerability-scan:
     name: Vulnerability Scan

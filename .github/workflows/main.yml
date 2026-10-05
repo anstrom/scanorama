@@ -17,6 +17,15 @@ permissions:
   pull-requests: write
   security-events: write
 
+# PR runs share a group per branch, so a new push cancels the superseded run.
+# Every other run (main, tags, schedule, dispatch) gets a unique group via
+# run_id: a shared group would still cancel queued runs during merge bursts.
+# release.yml calls this workflow; do not give the caller the same group
+# expression, or caller and callee would share a group and cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   # Stage 0: Detect which paths changed so downstream jobs can skip if irrelevant
   changes:
