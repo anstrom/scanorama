@@ -210,7 +210,7 @@ export function ScanDiffPage() {
           </div>
 
           {/* Port table */}
-          {(diff.ports?.length ?? 0) > 0 ? (
+          {diff.ports && diff.ports.length > 0 ? (
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full text-xs border-collapse">
                 <thead>

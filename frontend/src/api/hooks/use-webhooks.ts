@@ -79,7 +79,7 @@ export function useCreateWebhook() {
   return useMutation({
     mutationFn: async (body: CreateWebhookBody) => {
       const { data, error, response } = await api.POST("/webhooks", {
-        body: body as Parameters<typeof api.POST<"/webhooks">>[1]["body"],
+        body,
       });
       if (error) throw new ApiError(response.status, error);
       return data as WebhookEndpoint | undefined;
@@ -96,7 +96,7 @@ export function useUpdateWebhook() {
     mutationFn: async ({ id, body }: { id: string; body: UpdateWebhookBody }) => {
       const { data, error, response } = await api.PATCH("/webhooks/{id}", {
         params: { path: { id } },
-        body: body as Parameters<typeof api.PATCH<"/webhooks/{id}">>[1]["body"],
+        body,
       });
       if (error) throw new ApiError(response.status, error);
       return data as WebhookEndpoint | undefined;

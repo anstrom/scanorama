@@ -249,8 +249,10 @@ function AlertsSection({ hostID }: { hostID: string }) {
   }
 
   async function handleDelete(rule: AlertRule) {
+    const id = rule.id;
+    if (!id) return;
     try {
-      await deleteRule({ id: rule.id, hostID });
+      await deleteRule({ id, hostID });
       toast.success("Alert rule deleted.");
     } catch {
       toast.error("Failed to delete alert rule.");
@@ -336,7 +338,7 @@ function AlertsSection({ hostID }: { hostID: string }) {
                       : "bg-warning/10 text-warning",
                 )}
               >
-                {TRIGGER_LABELS[rule.trigger] ?? rule.trigger}
+                {rule.trigger ? TRIGGER_LABELS[rule.trigger] ?? rule.trigger : "—"}
               </span>
               <span className="flex-1 text-xs font-mono text-text-muted truncate">
                 {rule.channel_url}
@@ -736,7 +738,7 @@ function HostDetailPanel({
                     value={h.hostname ?? ""}
                     placeholder="—"
                     onSave={async (value) => {
-                      await updateHost({ hostId: h.id ?? "", body: { hostname: value || null } });
+                      await updateHost({ hostId: h.id ?? "", body: { hostname: value } });
                       toast.success("Hostname updated.");
                     }}
                     disabled={isUpdatingHost}
