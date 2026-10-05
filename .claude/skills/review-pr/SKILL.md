@@ -76,7 +76,7 @@ Report coverage gaps here, before agents launch, so the user sees them immediate
 
 ## Code change detection (do this before Phase A)
 
-Run `git diff --name-only origin/main...HEAD` and check whether any changed file has a code extension (`.go`, `.ts`, `.tsx`, `.sql`, `.py`, `.sh`).
+Run `git diff --name-only origin/main...HEAD` and check whether any changed file **outside `.claude/`** has a code extension (`.go`, `.ts`, `.tsx`, `.sql`, `.py`, `.sh`). Hook scripts under `.claude/hooks/` don't touch the running app.
 
 - If **yes**: launch both Phase A agents (code-quality-reviewer + integration-tester).
 - If **no** (docs, markdown, YAML, skill files only): launch **only the code-quality-reviewer**. Skip the integration-tester entirely and note "N/A (docs-only)" in the final report under Live API smoke test.
