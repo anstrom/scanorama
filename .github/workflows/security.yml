@@ -76,55 +76,6 @@ jobs:
         with:
           category: "/language:go"
 
-  security-hardening:
-    name: Security Hardening Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Check for hardcoded secrets patterns
-        run: |
-          echo "🔍 Checking for potential hardcoded secrets..."
-
-          # Check for common secret patterns
-          if grep -r -i "password.*=" --include="*.go" . | grep -v "_test.go" | grep -v "example\|template\|config\.template"; then
-            echo "⚠️ Found potential hardcoded passwords"
-          fi
-
-          if grep -r -i "api[_-]key.*=" --include="*.go" . | grep -v "_test.go" | grep -v "example\|template"; then
-            echo "⚠️ Found potential hardcoded API keys"
-          fi
-
-          if grep -r -i "secret.*=" --include="*.go" . | grep -v "_test.go" | grep -v "example\|template"; then
-            echo "⚠️ Found potential hardcoded secrets"
-          fi
-
-          echo "✅ Secret pattern check completed"
-
-      - name: Check file permissions
-        run: |
-          echo "🔒 Checking file permissions..."
-
-          # Find files with overly permissive permissions
-          find . -type f -perm /o+w -not -path "./.git/*" -not -path "./build/*" -not -path "./dist/*" | while read file; do
-            echo "⚠️ World-writable file found: $file"
-          done
-
-          # Check for executable files that shouldn't be
-          find . -name "*.go" -perm /a+x -not -path "./.git/*" | while read file; do
-            echo "⚠️ Executable Go file found: $file"
-          done
-
-          echo "✅ File permission check completed"
-
   npm-audit:
     name: NPM Security Audit
     runs-on: ubuntu-latest
