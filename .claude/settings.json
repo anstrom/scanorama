@@ -1,0 +1,82 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(go *)",
+      "Bash(make *)",
+      "Bash(gh pr *)",
+      "Bash(gh issue *)",
+      "Bash(gh api *)",
+      "Bash(gh run *)",
+      "Bash(npm --prefix frontend *)",
+      "WebFetch(domain:github.com)",
+      "Skill(review-pr)",
+      "Skill(product-manager)",
+      "Skill(dep-maintenance)"
+    ],
+    "deny": [
+      "Bash(make *dev-nuke*)",
+      "Bash(gh pr merge * --admin*)",
+      "Bash(gh pr merge --admin*)"
+    ],
+    "ask": [
+      "Bash(make dev)",
+      "Bash(make dev *)",
+      "Bash(git tag *)",
+      "Bash(git push origin v*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push origin main*)",
+      "Bash(gh api -X DELETE*)",
+      "Bash(gh api --method DELETE*)",
+      "Bash(gh pr close*)",
+      "Bash(gh release *)",
+      "Bash(make nmap-check*)",
+      "Bash(gh issue delete*)",
+      "Bash(gh api * -X DELETE*)",
+      "Bash(gh api * -XDELETE*)",
+      "Bash(gh api -XDELETE*)",
+      "Bash(gh api * --method*DELETE*)",
+      "Bash(gh api --method=DELETE*)",
+      "Bash(gh api * -X PUT*)",
+      "Bash(gh api -X PUT*)",
+      "Bash(gh api * --method*PUT*)",
+      "Bash(gh api --method PUT*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean *)",
+      "Bash(git branch -D*)",
+      "Bash(git push * --delete*)",
+      "Bash(git push * +*)",
+      "Bash(git push * HEAD:main*)"
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/pm-milestone-trigger.py\" 2>/dev/null || true",
+            "statusMessage": "Checking for milestone completion..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(gh pr create*)",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/queue-pr-review.sh\"",
+            "statusMessage": "Queuing PR review...",
+            "asyncRewake": true,
+            "rewakeMessage": "PR review trigger: "
+          }
+        ]
+      }
+    ]
+  }
+}
