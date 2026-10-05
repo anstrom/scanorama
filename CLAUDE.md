@@ -221,18 +221,56 @@ work doesn't end in a PR, run `/review-pr --branch` yourself. The skill
 ## Project Structure
 
 ```
+cmd/
+  scanorama/      — main binary
+  cli/            — cobra commands (server, daemon, setup, scan, ...)
 internal/
-  api/handlers/   — HTTP handlers + tests
-  api/routes.go   — route registration
+  api/            — routes.go (route registration), handlers/, middleware/
   services/       — business logic
-  db/             — repository pattern, migrations
-  scanning/       — scan queue, job execution
+  db/             — repositories + migrations (internal/db/*.sql, embedded via go:embed)
+  scanning/       — scan queue, nmap execution
+  discovery/      — host discovery, DNS sweep
+  enrichment/     — banner grabbing, DNS, mDNS, SNMP, fingerprints
+  scheduler/      — cron-driven scans and discovery
   profiles/       — scan profile management
+  daemon/         — daemon lifecycle, privilege handling
+  workers/        — worker pool
+  auth/ crypto/   — API keys, AES-GCM secrets
+  frontend/dist/  — committed SPA build, not yet served by the binary (#749)
+  config/ dns/ errors/ logging/ metrics/
 frontend/src/
   api/hooks/      — React Query hooks
+  api/types.ts    — generated from swagger (never edit manually)
   routes/         — page components
   components/     — shared UI
 docs/
   swagger/        — generated (never edit manually)
   swagger_docs.go — source of truth for swagger annotations
+test/             — end-to-end tests (skipped under -short); DB tests in internal/ use build tag `integration`
 ```
+
+## Local Development
+
+| Command | What it does |
+|---------|--------------|
+| `make dev` | Starts the dev DB (Docker), rebuilds, runs backend **as root via sudo** (nmap SYN/OS scans) + Vite frontend in the background |
+| `make stop` / `make dev-down` | Stop backend+frontend / stop dev containers |
+| `make test-unit` | Go unit tests, no DB |
+| `make test` | All Go tests incl. `-tags=integration`; starts the test DB on **port 5433** |
+| `make ci` | Local mirror of CI (fmt, vet, lint, tidy, tests, frontend, swagger drift); regenerates swagger + `types.ts` |
+| `npm --prefix frontend test` / `run lint` / `run build` | Frontend tests (vitest), eslint, type-check + build |
+
+- The dev DB (Docker) listens on **5432**, matching `config/environments/config.dev.yaml` (`scanorama_dev`). A host Postgres on
+  5432 (e.g. Homebrew) captures `localhost` connections and causes `role "scanorama_dev" does not exist`.
+- `make dev` needs Docker running and an interactive sudo prompt — ask before starting it.
+- Never run `make dev-nuke` without asking; it deletes the dev volumes.
+
+## Gotchas
+
+- **Go version lives in `go.mod`'s `toolchain` line.** The `go` directive is the language floor and
+  must stay *below* `toolchain` — `go mod tidy` (which Renovate runs) deletes a `toolchain` line at or
+  below the `go` directive, silently stopping Go toolchain updates. Stdlib CVEs are fixed by bumping
+  `toolchain`, not by any dependency PR.
+- **Deployment target is bare-metal Linux**: static binary + systemd + local PostgreSQL. scanorama
+  execs the system `nmap`; raw-socket capabilities go on the **nmap binary**, not scanorama. Prefer
+  systemd `User=`/`Group=` for privilege drop until #554 lands. Tracking issue: #860.
