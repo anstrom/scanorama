@@ -323,8 +323,12 @@ docs: frontend-deps ## Generate Swagger/OpenAPI docs and regenerate frontend typ
 .PHONY: ci
 ci: deps check test ## Run full CI pipeline locally
 
+.PHONY: setup-hooks
+setup-hooks: ## Install the repository git hooks (.githooks)
+	@./scripts/setup-hooks.sh
+
 .PHONY: dev-setup
-dev-setup: deps frontend-deps ## Set up dev environment (install tools + deps)
+dev-setup: deps frontend-deps setup-hooks ## Set up dev environment (install tools, deps and git hooks)
 	@if ! command -v golangci-lint >/dev/null 2>&1; then \
 		echo "Installing golangci-lint..."; \
 		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
