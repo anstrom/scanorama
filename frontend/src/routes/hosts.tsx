@@ -414,6 +414,9 @@ function HostDetailPanel({
 }) {
   const { data: full, isLoading, isError, error } = useHost(host.id ?? "");
   const h = (full ?? host) as HostWithDetails;
+  // Reference time for certificate expiry, captured once per panel mount so
+  // render stays pure.
+  const [now] = useState(() => Date.now());
 
   // Active detail tab. "interfaces" is only shown when SNMP interface data is
   // present; "identity" is always available.
@@ -1014,7 +1017,7 @@ function HostDetailPanel({
                         const isExpanded = expandedBanners.has(portKey);
                         const certDaysLeft = cert?.not_after
                           ? Math.ceil(
-                              (new Date(cert.not_after).getTime() - Date.now()) /
+                              (new Date(cert.not_after).getTime() - now) /
                                 86400000,
                             )
                           : null;
@@ -1289,7 +1292,7 @@ function HostDetailPanel({
                       : null;
                     const daysLeft = expiry
                       ? Math.ceil(
-                          (expiry.getTime() - Date.now()) / 86400000,
+                          (expiry.getTime() - now) / 86400000,
                         )
                       : null;
                     const expiryClass =
@@ -1772,6 +1775,12 @@ const HOST_COLUMNS: ColumnDef[] = [
   { key: "scans", label: "Scans" },
 ];
 
+function filterGroupFromParam(encoded: string | undefined): FilterGroup | null {
+  if (!encoded) return null;
+  const expr = deserializeFilter(encoded);
+  return expr && "op" in expr && "conditions" in expr ? (expr as FilterGroup) : null;
+}
+
 export function HostsPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<HostStatus>("all");
@@ -1789,8 +1798,12 @@ export function HostsPage() {
   const [colVis, setColVis] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(HOST_COLUMNS.map((c) => [c.key, true])),
   );
-  const [showFilterBuilder, setShowFilterBuilder] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<FilterGroup | null>(null);
+  const search = useSearch({ from: "/hosts" });
+  // Initialise the active filter from the URL ?filter= param on first render.
+  const [activeFilter, setActiveFilter] = useState<FilterGroup | null>(() =>
+    filterGroupFromParam(search.filter),
+  );
+  const [showFilterBuilder, setShowFilterBuilder] = useState(activeFilter !== null);
   const { mutateAsync: bulkDeleteHosts, isPending: isBulkDeleting } =
     useBulkDeleteHosts();
   const { mutateAsync: bulkAddToGroup, isPending: isBulkAddingToGroup } =
@@ -1800,21 +1813,6 @@ export function HostsPage() {
   const { mutateAsync: updateHostInline } = useUpdateHost();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const search = useSearch({ from: "/hosts" });
-
-  // Initialise active filter from the URL ?filter= param on first render
-  useEffect(() => {
-    const encoded = search.filter;
-    if (encoded) {
-      const expr = deserializeFilter(encoded);
-      if (expr && "op" in expr && "conditions" in expr) {
-        setActiveFilter(expr as FilterGroup);
-        setShowFilterBuilder(true);
-      }
-    }
-    // Only run once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Debounce search input ~300ms
   // Use the functional updater form to compare against the previous debounced
@@ -1933,6 +1931,9 @@ export function HostsPage() {
   // Must be in useEffect — calling setPage during render causes an infinite loop.
   useEffect(() => {
     if (!isLoading && totalPages > 0 && page > totalPages) {
+      // Reacts to server-reported total_pages shrinking (e.g. after deletes);
+      // a render-time setPage loops while the query result is unchanged.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPage(totalPages);
     }
   }, [isLoading, page, totalPages, setPage]);

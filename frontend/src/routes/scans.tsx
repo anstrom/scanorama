@@ -164,6 +164,9 @@ export function ScansPage() {
   // Must be in useEffect — calling setPage during render causes an infinite loop.
   useEffect(() => {
     if (!isLoading && totalPages > 0 && page > totalPages) {
+      // Reacts to server-reported total_pages shrinking (e.g. after deletes);
+      // a render-time setPage loops while the query result is unchanged.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPage(totalPages);
     }
   }, [isLoading, page, totalPages, setPage]);

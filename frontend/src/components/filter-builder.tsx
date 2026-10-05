@@ -596,9 +596,11 @@ export function FilterBuilder({ value, onApply, tagSuggestions = [], groupOption
   const allTags = tagSuggestions;
 
   // Sync draft when external value changes (e.g., cleared or loaded from URL)
-  useEffect(() => {
+  const [prevValue, setPrevValue] = useState(value);
+  if (prevValue !== value) {
+    setPrevValue(value);
     setDraft(value ?? makeDefaultGroup());
-  }, [value]);
+  }
 
   // ── Top-level group helpers ────────────────────────────────────────────────
 

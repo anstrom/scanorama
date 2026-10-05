@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { RefreshCw, Info } from "lucide-react";
 
 import { cn } from "../lib/utils";
@@ -140,9 +140,11 @@ function FullPanel({
   // Keep the input in sync when the host prop changes underneath us (e.g.
   // the refresh-identity mutation invalidates the query and fetches fresh
   // data with a new custom_name).
-  useEffect(() => {
+  const [prevHost, setPrevHost] = useState({ id: host.id, customName: host.custom_name });
+  if (prevHost.id !== host.id || prevHost.customName !== host.custom_name) {
+    setPrevHost({ id: host.id, customName: host.custom_name });
     setInput(host.custom_name ?? "");
-  }, [host.id, host.custom_name]);
+  }
 
   const hostId = host.id ?? "";
 
