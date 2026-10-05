@@ -190,14 +190,18 @@ GO CONVENTIONS
   fmt.Errorf("context: %w", err) for wrapping.
 - Test assertions: require for fatal (stops test on failure), assert for non-fatal. Never use
   require where the test can meaningfully continue.
-- Services: DB-touching code uses go-sqlmock. Verify ExpectationsWereMet() is called at the
-  end of every test that sets up mock expectations.
+- Services: DB-touching code uses go-sqlmock. Verify the ExpectQuery/ExpectExec patterns match
+  the real SQL the code runs, and that ExpectationsWereMet() is called at the end of every test
+  that sets up mock expectations.
+- Service methods: errors wrapped with context, ctx threaded through to every IO call, timeouts
+  on external calls, nil-receiver guard where the receiver can be nil.
 - Routes: if a new handler is added, verify it is registered in internal/api/routes.go.
   A handler that isn't registered compiles and tests fine but doesn't exist at runtime.
 
 TYPESCRIPT CONVENTIONS
 - Every hook used in a page component must have a vi.mock(...) at the top of the component's
   test file and a default return in setupDefaultMocks(). Missing mock = "No QueryClient set" in CI.
+- Hooks: error and loading states handled; staleTime set deliberately.
 - Hook tests: use renderHookWithQuery. Provide ok() and fail() helpers. Cover loading state,
   success with real field assertions, and error state.
 - Component tests: assert on rendered text, not internals. Test loading skeleton (animate-pulse),
