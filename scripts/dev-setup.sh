@@ -230,21 +230,10 @@ setup_go_environment() {
         log_success "golangci-lint already installed"
     fi
 
-    # govulncheck for security scanning
-    if ! command_exists govulncheck; then
-        log_command "go install golang.org/x/vuln/cmd/govulncheck@latest"
-        go install golang.org/x/vuln/cmd/govulncheck@latest
-    else
-        log_success "govulncheck already installed"
-    fi
-
-    # swag for API documentation
-    if ! command_exists swag; then
-        log_command "go install github.com/swaggo/swag/cmd/swag@latest"
-        go install github.com/swaggo/swag/cmd/swag@latest
-    else
-        log_success "swag already installed"
-    fi
+    # swag, govulncheck and go-licenses are pinned in tools/go.mod and run
+    # with `go tool -modfile=tools/go.mod <name>`; fetch them now.
+    log_command "go mod download -modfile=tools/go.mod"
+    go mod download -modfile=tools/go.mod
 
     log_success "Go environment setup complete!"
 }
@@ -396,16 +385,12 @@ setup_documentation() {
     cd "$PROJECT_ROOT"
 
     # Generate API documentation
-    if command_exists swag; then
-        log_info "Generating API documentation..."
-        if make docs-generate >/dev/null 2>&1; then
-            log_success "API documentation generated"
-        else
-            log_warning "API documentation generation failed"
-            log_info "Run 'make docs-generate' to see detailed output"
-        fi
+    log_info "Generating API documentation..."
+    if make docs >/dev/null 2>&1; then
+        log_success "API documentation generated"
     else
-        log_info "swag not available, skipping API documentation generation"
+        log_warning "API documentation generation failed"
+        log_info "Run 'make docs' to see detailed output"
     fi
 
     # Validate documentation if tools are available
@@ -469,7 +454,7 @@ show_final_info() {
     fi
     echo ""
     echo -e "${CYAN}API Documentation:${NC}"
-    echo "  make docs-generate # Generate API docs from code"
+    echo "  make docs          # Generate API docs from code"
     echo "  make docs-serve    # Serve docs at http://localhost:8081"
     echo ""
     echo -e "${CYAN}Configuration Files:${NC}"
