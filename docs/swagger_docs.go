@@ -191,6 +191,17 @@ type SNMPDataResponse struct {
 	CollectedAt time.Time               `json:"collected_at"`
 }
 
+// HostCreateRequest is the body of POST /hosts.
+type HostCreateRequest struct {
+	IPAddress string   `json:"ip_address" example:"192.168.1.100" validate:"required"`
+	Hostname  string   `json:"hostname,omitempty" example:"web-01.local"`
+	OS        string   `json:"os,omitempty" example:"Linux"`
+	OSVersion string   `json:"os_version,omitempty" example:"Ubuntu 22.04"`
+	Tags      []string `json:"tags,omitempty" example:"web,production"`
+	// Active controls scanning; omitted or null means the host is scanned.
+	Active *bool `json:"active,omitempty" example:"true"`
+}
+
 // HostUpdateRequest is the body of PUT /hosts/{hostId}. Every field is
 // optional; omitted or null fields are left unchanged.
 type HostUpdateRequest struct {
@@ -688,7 +699,7 @@ func ListHosts(_ http.ResponseWriter, _ *http.Request) {}
 // @Tags Hosts
 // @Accept json
 // @Produce json
-// @Param host body HostResponse true "Host information"
+// @Param host body HostCreateRequest true "Host information"
 // @Success 201 {object} HostResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
