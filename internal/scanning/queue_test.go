@@ -722,28 +722,31 @@ func TestScanQueue_Snapshot_LastJobAt(t *testing.T) {
 
 	assert.True(t, q.Snapshot()[0].LastJobAt.IsZero(), "LastJobAt should be zero before any job")
 
-	before := time.Now()
 	done := make(chan struct{})
+	var doneAt time.Time
 	require.NoError(t, q.Submit(&mockJob{
 		id: "snap-lastjob-1", jobType: "scan", target: "127.0.0.1",
 		execute: func(_ context.Context) error { return nil },
-		onDone:  func(_ error) { close(done) },
+		onDone: func(_ error) {
+			doneAt = time.Now()
+			close(done)
+		},
 	}))
 	select {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("job did not complete in time")
 	}
-	after := time.Now()
 
 	ok := waitForCondition(3*time.Second, 20*time.Millisecond, func() bool {
 		return !q.Snapshot()[0].LastJobAt.IsZero()
 	})
 	require.True(t, ok, "LastJobAt should be set after a completed job")
 
+	// onDone fires inside Execute, and executeJob records completedAt only
+	// after Execute returns, so LastJobAt must not precede onDone.
 	lastJobAt := q.Snapshot()[0].LastJobAt
-	assert.True(t, !lastJobAt.Before(before) && !lastJobAt.After(after),
-		"LastJobAt should fall within the job execution window")
+	assert.False(t, lastJobAt.Before(doneAt), "LastJobAt should be recorded after the job finished executing")
 }
 
 func TestScanQueue_Snapshot_MultiTargetJob(t *testing.T) {
