@@ -809,13 +809,14 @@ function HostDetailPanel({
               <Skeleton className="h-10 w-full rounded" />
             ) : (
               <InlineEditText
-                value={h.description ?? ""}
+                value={h.notes ?? ""}
                 placeholder="No notes."
                 multiline
                 onSave={async (val) => {
+                  // An empty string clears the stored notes.
                   await updateHost({
                     hostId: h.id ?? "",
-                    body: { description: val || undefined },
+                    body: { notes: val },
                   });
                   toast.success("Notes updated.");
                 }}
