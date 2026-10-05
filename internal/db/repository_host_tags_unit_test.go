@@ -371,7 +371,7 @@ func TestHostRepository_GetHost_PopulatesTags(t *testing.T) {
 				pq.StringArray{"prod", "web"}, // tags
 				0,                             // knowledge_score
 				nil, nil, nil,                 // device_id, mdns_name, device_name
-				nil, nil, // custom_name, hostname_source
+				nil, nil, nil, // custom_name, hostname_source, notes
 			))
 
 	// fetchHostPorts — no ports.
@@ -416,7 +416,7 @@ func TestHostRepository_GetHost_EmptyTags(t *testing.T) {
 				pq.StringArray{},
 				0,             // knowledge_score
 				nil, nil, nil, // device_id, mdns_name, device_name
-				nil, nil, // custom_name, hostname_source
+				nil, nil, nil, // custom_name, hostname_source, notes
 			))
 
 	mock.ExpectQuery("SELECT DISTINCT").
@@ -445,14 +445,14 @@ func TestHostRepository_ScanHostRows_PopulatesTags(t *testing.T) {
 	id := uuid.New()
 	now := time.Now().UTC()
 
-	// The listHosts query selects aggregate columns then device columns after
-	// the standard host columns (excluding device cols from getHostColumns
-	// which are for the GetHost detail query only).
-	hostBaseCols := getHostColumns[:len(getHostColumns)-3] // strip device_id, mdns_name, device_name
+	// The listHosts query selects aggregate columns between the standard host
+	// columns and the trailing device/identity columns shared with GetHost.
+	const trailingCols = 6 // device_id, mdns_name, device_name, custom_name, hostname_source, notes
+	hostBaseCols := getHostColumns[:len(getHostColumns)-trailingCols]
 	listCols := append(append([]string{}, hostBaseCols...),
 		"open_ports", "total_ports_scanned", "scan_count",
-		"device_id", "mdns_name", "device_name",
 	)
+	listCols = append(listCols, getHostColumns[len(getHostColumns)-trailingCols:]...)
 
 	// getHostCount runs first in ListHosts.
 	mock.ExpectQuery("SELECT COUNT").
@@ -476,7 +476,7 @@ func TestHostRepository_ScanHostRows_PopulatesTags(t *testing.T) {
 				int64(3),                             // total_ports_scanned
 				sql.NullInt64{Int64: 1, Valid: true}, // scan_count
 				nil, nil, nil,                        // device_id, mdns_name, device_name
-				nil, nil, // custom_name, hostname_source
+				nil, nil, nil, // custom_name, hostname_source, notes
 			))
 
 	filters := &HostFilters{}

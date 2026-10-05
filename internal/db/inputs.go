@@ -65,6 +65,8 @@ type UpdateHostInput struct {
 	// Tags replaces the host's entire tag list when non-nil.
 	// A pointer to an empty slice clears all tags; nil means "leave unchanged".
 	Tags *[]string
+	// Notes sets the host's notes when non-nil; a pointer to "" clears them.
+	Notes *string
 }
 
 // ── Profile inputs ────────────────────────────────────────────────────────────

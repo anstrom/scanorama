@@ -332,7 +332,8 @@ func (r *HostRepository) ListHosts(
 			h.mdns_name,
 			dv.name AS device_name,
 			h.custom_name,
-			h.hostname_source
+			h.hostname_source,
+			h.notes
 		FROM hosts h
 		LEFT JOIN port_scans ps ON h.id = ps.host_id
 		LEFT JOIN port_scans ps2 ON h.id = ps2.host_id
@@ -357,7 +358,7 @@ func (r *HostRepository) ListHosts(
 			h.response_time_ms, h.response_time_min_ms, h.response_time_max_ms, h.response_time_avg_ms,
 			h.ignore_scanning, h.first_seen, h.last_seen, h.status,
 			h.status_changed_at, h.previous_status, h.timeout_count, h.tags, h.knowledge_score,
-			h.device_id, h.mdns_name, dv.name, h.custom_name, h.hostname_source
+			h.device_id, h.mdns_name, dv.name, h.custom_name, h.hostname_source, h.notes
 	`
 
 	// Resolve ORDER BY clause from validated sort parameters.
@@ -539,6 +540,7 @@ type hostScanVars struct {
 	timeoutCount                          int
 	customName                            *string
 	hostnameSource                        *string
+	notes                                 *string
 }
 
 // applyHostScanVars copies the scanned nullable fields from vars into host,
@@ -565,6 +567,7 @@ func applyHostScanVars(host *Host, vars hostScanVars) {
 	host.TimeoutCount = vars.timeoutCount
 	assignStringPtr(&host.CustomName, vars.customName)
 	assignStringPtr(&host.HostnameSource, vars.hostnameSource)
+	assignStringPtr(&host.Notes, vars.notes)
 }
 
 func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, error) {
@@ -600,7 +603,8 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 			h.mdns_name,
 			dv.name AS device_name,
 			h.custom_name,
-			h.hostname_source
+			h.hostname_source,
+			h.notes
 		FROM hosts h
 		LEFT JOIN devices dv ON dv.id = h.device_id
 		WHERE h.id = $1
@@ -641,6 +645,7 @@ func (r *HostRepository) GetHost(ctx context.Context, id uuid.UUID) (*Host, erro
 		&host.DeviceName,
 		&vars.customName,
 		&vars.hostnameSource,
+		&vars.notes,
 	)
 	if err != nil {
 		if stderrors.Is(err, sql.ErrNoRows) {
@@ -740,12 +745,18 @@ func buildHostUpdateSet(input UpdateHostInput) (setParts []string, args []interf
 		}
 	}
 
-	// An empty hostname clears it; store NULL like a host that never had one.
-	if input.Hostname != nil && *input.Hostname == "" {
-		setParts = append(setParts, filterFieldHostname+" = NULL")
-	} else {
-		addStr(filterFieldHostname, input.Hostname)
+	// An empty string clears a nullable text column; store NULL like a host
+	// that never had a value.
+	addClearableStr := func(col string, val *string) {
+		if val != nil && *val == "" {
+			setParts = append(setParts, col+" = NULL")
+		} else {
+			addStr(col, val)
+		}
 	}
+
+	addClearableStr(filterFieldHostname, input.Hostname)
+	addClearableStr("notes", input.Notes)
 	addStr(filterFieldVendor, input.Vendor)
 	addStr(filterFieldOSFamily, input.OSFamily)
 	addStr("os_name", input.OSName)
@@ -1175,6 +1186,7 @@ func scanSingleHostRow(rows *sql.Rows) (*Host, error) {
 		&host.DeviceName,
 		&vars.customName,
 		&vars.hostnameSource,
+		&vars.notes,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan host row: %w", err)
