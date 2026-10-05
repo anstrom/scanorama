@@ -1437,6 +1437,59 @@ func TestHostHandler_CreateHost_Conflict(t *testing.T) {
 	})
 }
 
+func TestHostHandler_CreateHost_ActiveDefaultsToScanned(t *testing.T) {
+	tests := []struct {
+		name               string
+		body               string
+		wantIgnoreScanning bool
+	}{
+		{"omitted active is scanned", `{"ip_address":"192.168.1.60"}`, false},
+		{"active true is scanned", `{"ip_address":"192.168.1.60","active":true}`, false},
+		{"active false is excluded", `{"ip_address":"192.168.1.60","active":false}`, true},
+		{"active null is scanned", `{"ip_address":"192.168.1.60","active":null}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, store, ctrl := newHostHandlerWithMock(t)
+			defer ctrl.Finish()
+
+			var got db.CreateHostInput
+			store.EXPECT().
+				CreateHost(gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input db.CreateHostInput) (*db.Host, error) {
+					got = input
+					return &db.Host{
+						ID:        uuid.New(),
+						IPAddress: db.IPAddr{IP: net.ParseIP("192.168.1.60")},
+					}, nil
+				})
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/hosts", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			h.CreateHost(w, req)
+
+			require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+			assert.Equal(t, tt.wantIgnoreScanning, got.IgnoreScanning)
+		})
+	}
+}
+
+func TestHostHandler_CreateHost_InvalidActive(t *testing.T) {
+	h, _, ctrl := newHostHandlerWithMock(t)
+	defer ctrl.Finish()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/hosts",
+		strings.NewReader(`{"ip_address":"192.168.1.60","active":"yes"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.CreateHost(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 // ── UpdateCustomName ─────────────────────────────────────────────────────────
 
 func TestHostHandler_UpdateCustomName_Success(t *testing.T) {
