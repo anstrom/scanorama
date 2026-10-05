@@ -337,6 +337,38 @@ func TestUpdateHost_Unit(t *testing.T) {
 		assert.Contains(t, err.Error(), "update host")
 	})
 
+	t.Run("empty hostname is stored as NULL", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		empty := ""
+		mock.ExpectBegin()
+		mock.ExpectQuery(`SELECT EXISTS`).
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectExec(`UPDATE hosts SET hostname = NULL, last_seen = NOW\(\) WHERE id = \$1`).
+			WithArgs(id).
+			WillReturnError(fmt.Errorf("stop after update"))
+		mock.ExpectRollback()
+
+		_, err := NewHostRepository(db).UpdateHost(context.Background(), id, UpdateHostInput{Hostname: &empty})
+		require.Error(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("non-empty hostname is bound as a parameter", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		hostname := "web-01"
+		mock.ExpectBegin()
+		mock.ExpectQuery(`SELECT EXISTS`).
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectExec(`UPDATE hosts SET hostname = \$1, last_seen = NOW\(\) WHERE id = \$2`).
+			WithArgs(hostname, id).
+			WillReturnError(fmt.Errorf("stop after update"))
+		mock.ExpectRollback()
+
+		_, err := NewHostRepository(db).UpdateHost(context.Background(), id, UpdateHostInput{Hostname: &hostname})
+		require.Error(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
 	t.Run("existence check error is wrapped", func(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectBegin()
