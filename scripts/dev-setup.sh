@@ -223,11 +223,26 @@ setup_go_environment() {
     log_info "Installing Go development tools..."
 
     # golangci-lint for linting
+    # Install the version CI pins in the golangci-lint-action step (Renovate bumps it there).
+    local lint_version
+    lint_version=$(sed -n '/golangci-lint-action/,/version:/s/^ *version: *\(v[0-9.]*\).*/\1/p' \
+        "$PROJECT_ROOT/.github/workflows/main.yml")
+    if [ -z "$lint_version" ]; then
+        log_error "Could not read the golangci-lint version from .github/workflows/main.yml"
+        exit 1
+    fi
+    local lint_installer="https://raw.githubusercontent.com/golangci/golangci-lint/${lint_version}/install.sh"
+    local lint_bin
+    lint_bin="$(go env GOPATH)/bin"
+    local lint_install="curl -sSfL ${lint_installer} | sh -s -- -b ${lint_bin} ${lint_version}"
     if ! command_exists golangci-lint; then
-        log_command "Installing golangci-lint..."
-        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "$(go env GOPATH)/bin" latest
+        log_command "Installing golangci-lint ${lint_version}..."
+        curl -sSfL "$lint_installer" | sh -s -- -b "$lint_bin" "$lint_version"
+    elif [ "v$(golangci-lint version --short 2>/dev/null)" != "$lint_version" ]; then
+        log_warning "golangci-lint $(golangci-lint version --short 2>/dev/null) is installed; CI uses ${lint_version}"
+        log_warning "To install the CI version: ${lint_install}"
     else
-        log_success "golangci-lint already installed"
+        log_success "golangci-lint ${lint_version} already installed"
     fi
 
     # swag, govulncheck and go-licenses are pinned in tools/go.mod and run
