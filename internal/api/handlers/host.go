@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -28,6 +29,7 @@ const (
 const (
 	maxHostnameLength        = 255
 	maxHostDescriptionLength = 1000
+	maxHostNotesLength       = 10000
 	maxOSInfoLength          = 100
 	maxOSVersionLength       = 100
 	maxServicesLength        = 100
@@ -99,9 +101,12 @@ type HostUpdateRequest struct {
 	Tags *[]string `json:"tags,omitempty"`
 	// Active toggles scanning (ignore_scanning = !active).
 	Active *bool `json:"active,omitempty"`
+	// Notes sets the free-form host notes; an empty string clears them.
+	Notes *string `json:"notes,omitempty"`
 
 	// Accepted for compatibility with clients that send the full HostRequest
-	// shape; hosts have no stored description and the IP is immutable.
+	// shape; hosts have no stored description (notes replace it) and the IP
+	// is immutable.
 	IP          string            `json:"ip_address,omitempty"`
 	Description string            `json:"description,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
@@ -162,6 +167,8 @@ type HostResponse struct {
 	CustomName *string `json:"custom_name,omitempty"`
 	// HostnameSource is the provenance tag for Hostname: manual|ptr|mdns|snmp|cert.
 	HostnameSource *string `json:"hostname_source,omitempty"`
+	// Notes is the free-form user notes for the host; omitted when unset.
+	Notes string `json:"notes,omitempty"`
 	// NameCandidates is every automatic name candidate (usable or not) observed
 	// for this host. Always present — make([]..., 0) rather than nil so it
 	// serializes as [] not null. Empty on list responses (computed only on
@@ -326,7 +333,7 @@ func (h *HostHandler) UpdateHost(w http.ResponseWriter, r *http.Request) {
 			// compatibility fields, instead of failing in the DB layer.
 			if hostUpdateIsEmpty(&input) {
 				return db.UpdateHostInput{}, errors.NewScanError(errors.CodeValidation,
-					"no updatable fields in request (expected hostname, os, os_version, tags or active)")
+					"no updatable fields in request (expected hostname, os, os_version, tags, active or notes)")
 			}
 			return input, nil
 		},
@@ -721,7 +728,7 @@ func (h *HostHandler) requestToCreateHost(req *HostRequest) db.CreateHostInput {
 // hostUpdateIsEmpty reports whether input would leave the host unchanged.
 func hostUpdateIsEmpty(input *db.UpdateHostInput) bool {
 	return input.Hostname == nil && input.OSFamily == nil && input.OSName == nil &&
-		input.Tags == nil && input.IgnoreScanning == nil
+		input.Tags == nil && input.IgnoreScanning == nil && input.Notes == nil
 }
 
 // validateHostUpdateRequest enforces the same length limits as host creation
@@ -736,6 +743,9 @@ func validateHostUpdateRequest(req *HostUpdateRequest) error {
 	if req.OSVersion != nil && len(*req.OSVersion) > maxOSInfoLength {
 		return fmt.Errorf("OS version too long (max %d characters)", maxOSInfoLength)
 	}
+	if req.Notes != nil && utf8.RuneCountInString(*req.Notes) > maxHostNotesLength {
+		return fmt.Errorf("notes too long (max %d characters)", maxHostNotesLength)
+	}
 	return nil
 }
 
@@ -745,6 +755,7 @@ func (h *HostHandler) requestToUpdateHost(req *HostUpdateRequest) db.UpdateHostI
 	input := db.UpdateHostInput{
 		Hostname: req.Hostname,
 		Tags:     req.Tags,
+		Notes:    req.Notes,
 	}
 	// Empty OS strings have always meant "leave unchanged"; keep that.
 	if req.OS != nil && *req.OS != "" {
@@ -829,6 +840,9 @@ func (h *HostHandler) hostToResponse(host *db.Host) HostResponse {
 	// Handle optional fields
 	if host.Hostname != nil {
 		response.Hostname = *host.Hostname
+	}
+	if host.Notes != nil {
+		response.Notes = *host.Notes
 	}
 
 	// Populate all OS fields individually so the frontend can display each one.
