@@ -86,7 +86,9 @@ type HostRequest struct {
 	OSVersion   string            `json:"os_version,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
-	Active      bool              `json:"active"`
+	// Active controls scanning (ignore_scanning = !active). Omitted or null
+	// means active: a created host is scanned unless the client opts out.
+	Active *bool `json:"active,omitempty"`
 }
 
 // HostUpdateRequest is the body of PUT /hosts/{id}. Every field is optional:
@@ -710,7 +712,7 @@ func (h *HostHandler) requestToCreateHost(req *HostRequest) db.CreateHostInput {
 	input := db.CreateHostInput{
 		IPAddress:      req.IP,
 		Status:         "up",
-		IgnoreScanning: !req.Active,
+		IgnoreScanning: req.Active != nil && !*req.Active,
 		Tags:           req.Tags,
 	}
 	if req.Hostname != "" {
