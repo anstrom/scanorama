@@ -2383,7 +2383,7 @@ export function HostsPage() {
                               onSave={async (val) => {
                                 await updateHostInline({
                                   hostId: host.id ?? "",
-                                  body: { hostname: val || undefined },
+                                  body: { hostname: val },
                                 });
                                 toast.success("Hostname updated.");
                               }}
