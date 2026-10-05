@@ -87,6 +87,26 @@ type HostRequest struct {
 	Active      bool              `json:"active"`
 }
 
+// HostUpdateRequest is the body of PUT /hosts/{id}. Every field is optional:
+// an omitted or null field leaves the stored value unchanged, so clients can
+// send partial updates such as {"hostname": "web-01"}.
+type HostUpdateRequest struct {
+	// Hostname sets the hostname; an empty string clears it.
+	Hostname  *string `json:"hostname,omitempty"`
+	OS        *string `json:"os,omitempty"`
+	OSVersion *string `json:"os_version,omitempty"`
+	// Tags replaces the tag list; an empty list clears it.
+	Tags *[]string `json:"tags,omitempty"`
+	// Active toggles scanning (ignore_scanning = !active).
+	Active *bool `json:"active,omitempty"`
+
+	// Accepted for compatibility with clients that send the full HostRequest
+	// shape; hosts have no stored description and the IP is immutable.
+	IP          string            `json:"ip_address,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+}
+
 // HostResponse represents a host response.
 type HostResponse struct {
 	ID          string `json:"id"`
@@ -294,11 +314,21 @@ func (h *HostHandler) UpdateHost(w http.ResponseWriter, r *http.Request) {
 		h.logger,
 		h.metrics,
 		func(r *http.Request) (db.UpdateHostInput, error) {
-			var req HostRequest
+			var req HostUpdateRequest
 			if err := parseJSON(r, &req); err != nil {
 				return db.UpdateHostInput{}, err
 			}
-			return h.requestToUpdateHost(&req), nil
+			if err := validateHostUpdateRequest(&req); err != nil {
+				return db.UpdateHostInput{}, err
+			}
+			input := h.requestToUpdateHost(&req)
+			// Reject bodies that would change nothing, e.g. {} or only the
+			// compatibility fields, instead of failing in the DB layer.
+			if hostUpdateIsEmpty(&input) {
+				return db.UpdateHostInput{}, errors.NewScanError(errors.CodeValidation,
+					"no updatable fields in request (expected hostname, os, os_version, tags or active)")
+			}
+			return input, nil
 		},
 		h.service.UpdateHost,
 		func(host *db.Host) interface{} {
@@ -688,23 +718,44 @@ func (h *HostHandler) requestToCreateHost(req *HostRequest) db.CreateHostInput {
 	return input
 }
 
-// requestToUpdateHost converts a HostRequest to a typed UpdateHostInput for the DB layer.
-func (h *HostHandler) requestToUpdateHost(req *HostRequest) db.UpdateHostInput {
-	input := db.UpdateHostInput{}
-	if req.Hostname != "" {
-		input.Hostname = &req.Hostname
+// hostUpdateIsEmpty reports whether input would leave the host unchanged.
+func hostUpdateIsEmpty(input *db.UpdateHostInput) bool {
+	return input.Hostname == nil && input.OSFamily == nil && input.OSName == nil &&
+		input.Tags == nil && input.IgnoreScanning == nil
+}
+
+// validateHostUpdateRequest enforces the same length limits as host creation
+// on the fields that are present.
+func validateHostUpdateRequest(req *HostUpdateRequest) error {
+	if req.Hostname != nil && len(*req.Hostname) > maxHostnameLength {
+		return fmt.Errorf("hostname too long (max %d characters)", maxHostnameLength)
 	}
-	if req.OS != "" {
-		input.OSFamily = &req.OS
+	if req.OS != nil && len(*req.OS) > maxOSInfoLength {
+		return fmt.Errorf("OS info too long (max %d characters)", maxOSInfoLength)
 	}
-	if req.OSVersion != "" {
-		input.OSName = &req.OSVersion
+	if req.OSVersion != nil && len(*req.OSVersion) > maxOSInfoLength {
+		return fmt.Errorf("OS version too long (max %d characters)", maxOSInfoLength)
 	}
-	// Always propagate the active/ignore_scanning flag.
-	ignoreScanning := !req.Active
-	input.IgnoreScanning = &ignoreScanning
-	if req.Tags != nil {
-		input.Tags = &req.Tags
+	return nil
+}
+
+// requestToUpdateHost converts a HostUpdateRequest to a typed UpdateHostInput
+// for the DB layer. Only fields present in the request are set.
+func (h *HostHandler) requestToUpdateHost(req *HostUpdateRequest) db.UpdateHostInput {
+	input := db.UpdateHostInput{
+		Hostname: req.Hostname,
+		Tags:     req.Tags,
+	}
+	// Empty OS strings have always meant "leave unchanged"; keep that.
+	if req.OS != nil && *req.OS != "" {
+		input.OSFamily = req.OS
+	}
+	if req.OSVersion != nil && *req.OSVersion != "" {
+		input.OSName = req.OSVersion
+	}
+	if req.Active != nil {
+		ignoreScanning := !*req.Active
+		input.IgnoreScanning = &ignoreScanning
 	}
 	return input
 }
