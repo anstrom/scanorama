@@ -191,6 +191,19 @@ type SNMPDataResponse struct {
 	CollectedAt time.Time               `json:"collected_at"`
 }
 
+// HostUpdateRequest is the body of PUT /hosts/{hostId}. Every field is
+// optional; omitted or null fields are left unchanged.
+type HostUpdateRequest struct {
+	// Hostname sets the hostname; an empty string clears it.
+	Hostname  *string `json:"hostname,omitempty" example:"web-01.local"`
+	OS        *string `json:"os,omitempty" example:"Linux"`
+	OSVersion *string `json:"os_version,omitempty" example:"Ubuntu 22.04"`
+	// Tags replaces the tag list; an empty list clears it.
+	Tags []string `json:"tags,omitempty" example:"web,production"`
+	// Active toggles scanning for the host.
+	Active *bool `json:"active,omitempty" example:"true"`
+}
+
 // HostResponse represents a discovered host
 type HostResponse struct {
 	ID          string  `json:"id" example:"550e8400-e29b-41d4-a716-446655440002"`
@@ -701,12 +714,12 @@ func GetHost(_ http.ResponseWriter, _ *http.Request) {}
 
 // UpdateHost godoc
 // @Summary Update host
-// @Description Update host information
+// @Description Partially update a host. Only fields present in the body are changed; send an empty hostname to clear it.
 // @Tags Hosts
 // @Accept json
 // @Produce json
 // @Param hostId path string true "Host ID" format(uuid)
-// @Param host body HostResponse true "Updated host information"
+// @Param host body HostUpdateRequest true "Fields to change; omitted fields are left unchanged"
 // @Success 200 {object} HostResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse

@@ -420,7 +420,7 @@ export interface paths {
         get: operations["getHost"];
         /**
          * Update host
-         * @description Update host information
+         * @description Partially update a host. Only fields present in the body are changed; send an empty hostname to clear it.
          */
         put: operations["updateHost"];
         post?: never;
@@ -1882,6 +1882,30 @@ export interface components {
             tags?: string[];
             /** @example Dell Inc. */
             vendor?: string;
+        };
+        "docs.HostUpdateRequest": {
+            /**
+             * @description Active toggles scanning for the host.
+             * @example true
+             */
+            active?: boolean;
+            /**
+             * @description Hostname sets the hostname; an empty string clears it.
+             * @example web-01.local
+             */
+            hostname?: string;
+            /** @example Linux */
+            os?: string;
+            /** @example Ubuntu 22.04 */
+            os_version?: string;
+            /**
+             * @description Tags replaces the tag list; an empty list clears it.
+             * @example [
+             *       "web",
+             *       "production"
+             *     ]
+             */
+            tags?: string[];
         };
         "docs.LivenessResponse": {
             /** @example alive */
@@ -4056,10 +4080,10 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description Updated host information */
+        /** @description Fields to change; omitted fields are left unchanged */
         requestBody: {
             content: {
-                "application/json": components["schemas"]["docs.HostResponse"];
+                "application/json": components["schemas"]["docs.HostUpdateRequest"];
             };
         };
         responses: {

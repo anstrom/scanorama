@@ -1686,7 +1686,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Update host information",
+                "description": "Partially update a host. Only fields present in the body are changed; send an empty hostname to clear it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1708,12 +1708,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Updated host information",
+                        "description": "Fields to change; omitted fields are left unchanged",
                         "name": "host",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/docs.HostResponse"
+                            "$ref": "#/definitions/docs.HostUpdateRequest"
                         }
                     }
                 ],
@@ -6420,6 +6420,40 @@ const docTemplate = `{
                 "vendor": {
                     "type": "string",
                     "example": "Dell Inc."
+                }
+            }
+        },
+        "docs.HostUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "description": "Active toggles scanning for the host.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "hostname": {
+                    "description": "Hostname sets the hostname; an empty string clears it.",
+                    "type": "string",
+                    "example": "web-01.local"
+                },
+                "os": {
+                    "type": "string",
+                    "example": "Linux"
+                },
+                "os_version": {
+                    "type": "string",
+                    "example": "Ubuntu 22.04"
+                },
+                "tags": {
+                    "description": "Tags replaces the tag list; an empty list clears it.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "web",
+                        "production"
+                    ]
                 }
             }
         },
