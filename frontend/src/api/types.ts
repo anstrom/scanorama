@@ -1775,6 +1775,28 @@ export interface components {
             /** @example 2h30m45s */
             uptime?: string;
         };
+        "docs.HostCreateRequest": {
+            /**
+             * @description Active controls scanning; omitted or null means the host is scanned.
+             * @example true
+             */
+            active?: boolean;
+            /** @example web-01.local */
+            hostname?: string;
+            /** @example 192.168.1.100 */
+            ip_address: string;
+            /** @example Linux */
+            os?: string;
+            /** @example Ubuntu 22.04 */
+            os_version?: string;
+            /**
+             * @example [
+             *       "web",
+             *       "production"
+             *     ]
+             */
+            tags?: string[];
+        };
         "docs.HostResponse": {
             /** @description Banners are populated when banner grabbing has run for this host. */
             banners?: components["schemas"]["docs.PortBannerResponse"][];
@@ -3916,7 +3938,7 @@ export interface operations {
         /** @description Host information */
         requestBody: {
             content: {
-                "application/json": components["schemas"]["docs.HostResponse"];
+                "application/json": components["schemas"]["docs.HostCreateRequest"];
             };
         };
         responses: {

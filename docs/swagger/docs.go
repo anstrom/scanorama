@@ -1493,7 +1493,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/docs.HostResponse"
+                            "$ref": "#/definitions/docs.HostCreateRequest"
                         }
                     }
                 ],
@@ -6239,6 +6239,45 @@ const docTemplate = `{
                 "uptime": {
                     "type": "string",
                     "example": "2h30m45s"
+                }
+            }
+        },
+        "docs.HostCreateRequest": {
+            "type": "object",
+            "required": [
+                "ip_address"
+            ],
+            "properties": {
+                "active": {
+                    "description": "Active controls scanning; omitted or null means the host is scanned.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "hostname": {
+                    "type": "string",
+                    "example": "web-01.local"
+                },
+                "ip_address": {
+                    "type": "string",
+                    "example": "192.168.1.100"
+                },
+                "os": {
+                    "type": "string",
+                    "example": "Linux"
+                },
+                "os_version": {
+                    "type": "string",
+                    "example": "Ubuntu 22.04"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "web",
+                        "production"
+                    ]
                 }
             }
         },

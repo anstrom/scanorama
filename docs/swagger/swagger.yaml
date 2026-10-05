@@ -553,6 +553,34 @@ definitions:
         example: 2h30m45s
         type: string
     type: object
+  docs.HostCreateRequest:
+    properties:
+      active:
+        description: Active controls scanning; omitted or null means the host is scanned.
+        example: true
+        type: boolean
+      hostname:
+        example: web-01.local
+        type: string
+      ip_address:
+        example: 192.168.1.100
+        type: string
+      os:
+        example: Linux
+        type: string
+      os_version:
+        example: Ubuntu 22.04
+        type: string
+      tags:
+        example:
+        - web
+        - production
+        items:
+          type: string
+        type: array
+    required:
+    - ip_address
+    type: object
   docs.HostResponse:
     properties:
       banners:
@@ -2655,7 +2683,7 @@ paths:
         name: host
         required: true
         schema:
-          $ref: '#/definitions/docs.HostResponse'
+          $ref: '#/definitions/docs.HostCreateRequest'
       produces:
       - application/json
       responses:
