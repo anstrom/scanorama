@@ -313,6 +313,12 @@ deps: ## Download and tidy Go dependencies
 
 .PHONY: docs
 docs: frontend-deps ## Generate Swagger/OpenAPI docs and regenerate frontend types
+	@$(MAKE) --no-print-directory docs-generate
+
+# Generation step without the `npm install` from frontend-deps, so docs-check
+# cannot rewrite package-lock.json. Requires frontend/node_modules.
+.PHONY: docs-generate
+docs-generate:
 	@cd docs && go tool -modfile=../tools/go.mod swag init -g swagger_docs.go -o ./swagger --parseDependency --parseInternal
 	@echo "✓ Swagger docs generated"
 	@cd frontend && npm run generate-types
@@ -320,8 +326,46 @@ docs: frontend-deps ## Generate Swagger/OpenAPI docs and regenerate frontend typ
 
 # ─── CI / Workflows ─────────────────────────────────────────────────────────
 
+# Read-only: fails instead of rewriting. docs-check regenerates swagger/types,
+# but any change it makes fails the drift check. Integration tests need the test
+# DB and are not included; run `make test` for those.
+# The checks run one after another even under -j: docs-check rewrites
+# docs/swagger/docs.go and types.ts, which the Go and frontend checks read.
+CI_CHECKS := fmt-check vet lint tidy-check test-unit frontend-check docs-check
+
 .PHONY: ci
-ci: deps check test ## Run full CI pipeline locally
+ci: ## Read-only mirror of main.yml: fmt, vet, lint, tidy, unit tests, frontend, swagger drift
+	@for t in $(CI_CHECKS); do $(MAKE) --no-print-directory $$t || exit 1; done
+	@echo "✓ CI checks passed"
+
+.PHONY: fmt-check
+fmt-check: ## Fail if any Go file needs gofmt -s (does not rewrite)
+	@UNFORMATTED=$$(gofmt -s -l .); \
+	if [ -n "$$UNFORMATTED" ]; then \
+		echo "✗ Not gofmt -s formatted (run make fmt):"; echo "$$UNFORMATTED"; exit 1; \
+	fi
+	@echo "✓ Formatting OK"
+
+.PHONY: tidy-check
+tidy-check: ## Verify modules and fail if go mod tidy would change go.mod/go.sum (does not rewrite)
+	@$(GO) mod verify
+	@$(GO) mod tidy -diff || (echo "✗ go.mod/go.sum not tidy (run make deps)" && exit 1)
+	@echo "✓ go.mod/go.sum tidy"
+
+.PHONY: frontend-check
+frontend-check: ## Run frontend lint, build and tests (needs npm ci --prefix frontend)
+	@test -d frontend/node_modules \
+		|| (echo "✗ frontend/node_modules missing (run npm ci --prefix frontend)" && exit 1)
+	@npm run lint --prefix frontend
+	@npm run build --prefix frontend
+	@npm test --prefix frontend
+	@echo "✓ Frontend checks passed"
+
+.PHONY: docs-check
+docs-check: docs-generate ## Regenerate swagger + frontend types, fail if they differ from git
+	@git diff --exit-code docs/swagger/ frontend/src/api/types.ts \
+		|| (echo "✗ Swagger drift (run make docs and commit the result)" && exit 1)
+	@echo "✓ No swagger drift"
 
 .PHONY: setup-hooks
 setup-hooks: ## Install the repository git hooks (.githooks)
