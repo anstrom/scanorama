@@ -30,6 +30,18 @@ chmod +x "$HOOKS_DIR"/*
 echo "⚙️  Configuring Git to use custom hooks directory..."
 git config core.hooksPath .githooks
 
+# Hooks left in .git/hooks no longer run once core.hooksPath points at
+# .githooks; point them out so a stale copy isn't mistaken for the real one.
+GIT_HOOKS_DIR="$(git rev-parse --git-common-dir)/hooks"
+STALE_HOOKS=$(find "$GIT_HOOKS_DIR" -maxdepth 1 -type f ! -name '*.sample' 2>/dev/null || true)
+if [ -n "$STALE_HOOKS" ]; then
+    echo "⚠️  These hooks in $GIT_HOOKS_DIR are now inactive (core.hooksPath=.githooks):"
+    while IFS= read -r hook; do
+        echo "     $hook"
+    done <<< "$STALE_HOOKS"
+    echo "   Delete them once you have checked nothing in them is still needed."
+fi
+
 # Verify the configuration
 CONFIGURED_PATH=$(git config core.hooksPath)
 if [ "$CONFIGURED_PATH" = ".githooks" ]; then
