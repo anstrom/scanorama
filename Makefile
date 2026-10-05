@@ -21,6 +21,13 @@ GO      := go
 GOTEST  := $(GO) test -race
 GOBUILD := $(GO) build
 
+# golangci-lint version pinned in CI (Renovate bumps it there); `dev-setup` installs the same one
+GOLANGCI_LINT_VERSION := $(shell sed -n '/golangci-lint-action/,/version:/s/^ *version: *\(v[0-9.]*\).*/\1/p' \
+	.github/workflows/main.yml)
+GOLANGCI_LINT_INSTALL := curl -sSfL \
+	https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh \
+	| sh -s -- -b $$(go env GOPATH)/bin $(GOLANGCI_LINT_VERSION)
+
 # Docker compose
 DOCKER_COMPOSE  := docker compose
 DEV_COMPOSE     := docker/docker-compose.dev.yml
@@ -381,10 +388,14 @@ setup-hooks: ## Install the repository git hooks (.githooks)
 
 .PHONY: dev-setup
 dev-setup: deps frontend-deps setup-hooks ## Set up dev environment (install tools, deps and git hooks)
+	@test -n "$(GOLANGCI_LINT_VERSION)" \
+		|| (echo "Could not read the golangci-lint version from .github/workflows/main.yml" && exit 1)
 	@if ! command -v golangci-lint >/dev/null 2>&1; then \
-		echo "Installing golangci-lint..."; \
-		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
-			| sh -s -- -b $$(go env GOPATH)/bin; \
+		echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)..."; \
+		$(GOLANGCI_LINT_INSTALL); \
+	elif [ "v$$(golangci-lint version --short 2>/dev/null)" != "$(GOLANGCI_LINT_VERSION)" ]; then \
+		echo "⚠ golangci-lint $$(golangci-lint version --short 2>/dev/null) is installed; CI uses $(GOLANGCI_LINT_VERSION)."; \
+		echo "  To install the CI version: $(GOLANGCI_LINT_INSTALL)"; \
 	fi
 	@echo ""
 	@echo "✓ Ready. Run 'make dev' to start developing."
