@@ -36,12 +36,12 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
       - name: Run Go vulnerability check in source mode
-        run: govulncheck -mode source ./...
+        run: go tool -modfile=tools/go.mod govulncheck -mode source ./...
 
   codeql-analysis:
     name: CodeQL Analysis
@@ -171,18 +171,18 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
       - name: Check Go module licenses
         run: |
           echo "📄 Checking Go module licenses..."
 
-          # Install go-licenses tool
-          go install github.com/google/go-licenses@latest
-
           # Check licenses (allow common permissive licenses)
-          go-licenses check ./... --allowed_licenses=Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC,MPL-2.0 || {
+          go tool -modfile=tools/go.mod go-licenses check ./... --allowed_licenses=Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC,MPL-2.0 || {
             echo "❌ License compliance check failed"
-            echo "Run 'go-licenses report ./...' to see all licenses"
+            echo "Run 'go tool -modfile=tools/go.mod go-licenses report ./...' to see all licenses"
             exit 1
           }
 
