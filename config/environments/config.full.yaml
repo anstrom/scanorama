@@ -178,15 +178,15 @@ scanning:
   # Common services: web, ssh, database, remote desktop
   default_ports: "22,80,443,8080,8443,9000,3000,5000,3389,5432,3306,6379,27017"
 
-  # Default scan type
-  # Options: connect, syn, version, comprehensive, aggressive, stealth
-  # connect: TCP connect scan (no root required)
-  # syn: SYN stealth scan (requires root)
-  # version: Service version detection
-  # comprehensive: Thorough scan with version detection
-  # aggressive: Fast aggressive scan
-  # stealth: Slow stealth scan to avoid detection
-  default_scan_type: "connect"
+  # Default scan type for manual and CLI scans that don't name a profile
+  # Options: connect, syn, ack, udp, aggressive, comprehensive
+  # connect: TCP connect scan (no raw-socket privilege needed)
+  # syn: SYN scan (needs raw-socket privilege on nmap)
+  # ack: ACK scan for firewall rule mapping (needs privilege)
+  # udp: UDP scan (needs privilege)
+  # aggressive: OS, version, script and traceroute detection (needs privilege)
+  # comprehensive: Thorough scan with version detection (needs privilege)
+  scan_mode: "connect"
 
   # Maximum concurrent targets to scan simultaneously
   max_concurrent_targets: 100
