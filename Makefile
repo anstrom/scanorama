@@ -296,6 +296,14 @@ lint: ## Run golangci-lint
 	@golangci-lint run ./...
 	@echo "✓ Lint passed"
 
+.PHONY: lint-fix
+lint-fix: ## Auto-fix formatting, imports and simple lint issues (rewrites files)
+	@command -v golangci-lint >/dev/null 2>&1 \
+		|| (echo "Install: https://golangci-lint.run/welcome/install/" && exit 1)
+	@gofmt -s -w .
+	@golangci-lint run --fix ./...
+	@echo "✓ Lint fixes applied"
+
 .PHONY: check
 check: fmt vet test-unit ## Quick checks: format, vet, unit tests
 
