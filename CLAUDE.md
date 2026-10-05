@@ -8,8 +8,9 @@ To determine the current version and what comes next:
 
 ```bash
 git describe --tags --abbrev=0          # current released version
-gh milestone list                       # active milestones = upcoming releases
-gh issue list --state open --milestone <name>  # issues in the next milestone
+gh api repos/anstrom/scanorama/milestones \
+  --jq '.[] | "\(.title) open=\(.open_issues) closed=\(.closed_issues)"'  # active milestones
+gh issue list --state open --milestone "<title>"  # issues in a milestone
 ```
 
 - Local planning docs (`docs/planning/`) may be stale — always cross-check against GitHub milestones and open issues
