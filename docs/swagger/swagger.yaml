@@ -11,6 +11,13 @@ definitions:
       timestamp:
         type: string
     type: object
+  docs.AlertRuleListResponse:
+    properties:
+      alert_rules:
+        items:
+          $ref: '#/definitions/docs.AlertRuleResponse'
+        type: array
+    type: object
   docs.AlertRuleResponse:
     properties:
       channel_type:
@@ -1695,9 +1702,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/docs.AlertRuleResponse'
-            type: array
+            $ref: '#/definitions/docs.AlertRuleListResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2879,9 +2884,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/docs.AlertRuleResponse'
-            type: array
+            $ref: '#/definitions/docs.AlertRuleListResponse'
         "400":
           description: Bad Request
           schema:

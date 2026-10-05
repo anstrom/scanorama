@@ -1438,6 +1438,9 @@ export interface components {
             };
             timestamp?: string;
         };
+        "docs.AlertRuleListResponse": {
+            alert_rules?: components["schemas"]["docs.AlertRuleResponse"][];
+        };
         "docs.AlertRuleResponse": {
             /** @example webhook */
             channel_type?: string;
@@ -2550,7 +2553,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["docs.AlertRuleResponse"][];
+                    "application/json": components["schemas"]["docs.AlertRuleListResponse"];
                 };
             };
             /** @description Internal Server Error */
@@ -4314,7 +4317,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["docs.AlertRuleResponse"][];
+                    "application/json": components["schemas"]["docs.AlertRuleListResponse"];
                 };
             };
             /** @description Bad Request */

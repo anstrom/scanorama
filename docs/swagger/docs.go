@@ -86,10 +86,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/docs.AlertRuleResponse"
-                            }
+                            "$ref": "#/definitions/docs.AlertRuleListResponse"
                         }
                     },
                     "500": {
@@ -1979,10 +1976,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/docs.AlertRuleResponse"
-                            }
+                            "$ref": "#/definitions/docs.AlertRuleListResponse"
                         }
                     },
                     "400": {
@@ -5482,6 +5476,17 @@ const docTemplate = `{
                 },
                 "timestamp": {
                     "type": "string"
+                }
+            }
+        },
+        "docs.AlertRuleListResponse": {
+            "type": "object",
+            "properties": {
+                "alert_rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.AlertRuleResponse"
+                    }
                 }
             }
         },
