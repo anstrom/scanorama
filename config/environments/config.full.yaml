@@ -141,8 +141,8 @@ discovery:
 
   # Default discovery settings for networks without explicit configuration
   defaults:
-    # Discovery method: ping, arp, icmp, tcp_connect
-    method: "tcp_connect"
+    # Discovery method: ping, tcp, arp
+    method: "tcp"
 
     # Discovery timeout per operation
     timeout: "30s"

@@ -53,7 +53,7 @@ discovery:
 
   # Default settings
   defaults:
-    method: "tcp_connect"
+    method: "tcp"
     timeout: "30s"
     ports: "22,80,443,8080,8443"
 
