@@ -616,7 +616,7 @@ scanorama/
 ├── config/environments/    Example and environment-specific config files
 ├── docker/                 Production Docker Compose stack
 ├── docs/
-│   ├── planning/           ROADMAP.md, FRONTEND_PLAN.md
+│   ├── planning/           ROADMAP.md
 │   └── swagger/            Generated OpenAPI spec
 └── test/                   Integration test helpers
 ```
