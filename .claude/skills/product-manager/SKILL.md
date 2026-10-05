@@ -1,6 +1,5 @@
 ---
 name: product-manager
-model: claude-opus-4-6
 description: >
   Product manager agent for Scanorama. Governs the roadmap, plans milestones and iterations, creates GitHub issues, advises on priorities,
   and researches what features would make the product attractive. Invoke this skill whenever the user asks: what to work on next, how to plan
