@@ -1,5 +1,3 @@
-//go:build !integration
-
 // Package scheduler – gap-filling unit tests.
 //
 // Target functions and their coverage before this file:
