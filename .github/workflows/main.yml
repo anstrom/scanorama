@@ -23,11 +23,18 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.force.outputs.all == 'true' || steps.filter.outputs.backend == 'true' }}
+      frontend: ${{ steps.force.outputs.all == 'true' || steps.filter.outputs.frontend == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+
+      # Tag pushes (including release.yml's workflow_call, which inherits the
+      # caller's ref) have no diff for paths-filter to inspect, so every filter
+      # would report false and the release would ship without running tests.
+      - name: Force full run for tags and manual dispatch
+        id: force
+        run: echo "all=${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}" >> "$GITHUB_OUTPUT"
 
       - name: Filter changed paths
         id: filter
