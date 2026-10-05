@@ -47,6 +47,8 @@ git checkout -b feat/my-feature
 
 - **Scope** = subsystem name (`queue`, `handlers`, `smartscan`, `dashboard`) — never a plan/wave/ticket reference
 - **Imperative mood**, present tense: "add X" not "added X"
+- **`feat:` names the capability**, not the act of adding it: `feat(deploy): nfpm deb/rpm packaging`,
+  not `feat(deploy): add nfpm deb/rpm packaging` (the "add" is implicit in `feat`)
 - **No adjectives**, no marketing language: "implement pagination" not "add robust comprehensive pagination"
 - **One concern per commit** — if a commit touches two unrelated things, split it
 
