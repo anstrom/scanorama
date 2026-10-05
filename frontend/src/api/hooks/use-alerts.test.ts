@@ -35,13 +35,33 @@ const fail = (message = "error"): Awaited<ReturnType<typeof mockGet>> =>
     ReturnType<typeof mockGet>
   >;
 
+const okPatch = (data: unknown): Awaited<ReturnType<typeof mockPatch>> =>
+  ({ data, error: undefined, response: new Response() }) as Awaited<
+    ReturnType<typeof mockPatch>
+  >;
+
+const failPatch = (message = "error"): Awaited<ReturnType<typeof mockPatch>> =>
+  ({ data: undefined, error: { message }, response: new Response() }) as Awaited<
+    ReturnType<typeof mockPatch>
+  >;
+
+const okDelete = (): Awaited<ReturnType<typeof mockDelete>> =>
+  ({
+    data: undefined,
+    error: undefined,
+    response: new Response(null, { status: 204 }),
+  }) as Awaited<ReturnType<typeof mockDelete>>;
+
+const failDelete = (message = "error"): Awaited<ReturnType<typeof mockDelete>> =>
+  ({ data: undefined, error: { message }, response: new Response() }) as Awaited<
+    ReturnType<typeof mockDelete>
+  >;
+
 // ── sample data ───────────────────────────────────────────────────────────────
 
 const sampleRule: AlertRule = {
   id: "rule-1",
   host_id: "host-1",
-  group_id: null,
-  tag: null,
   trigger: "online",
   channel_type: "webhook",
   channel_url: "https://example.com/hook",
@@ -153,7 +173,7 @@ describe("useUpdateAlertRule", () => {
 
   it("fires PATCH and returns updated rule on success", async () => {
     const updated = { ...sampleRule, enabled: false };
-    mockPatch.mockResolvedValue(ok(updated));
+    mockPatch.mockResolvedValue(okPatch(updated));
 
     const { result, actHook } = renderHookWithQuery(() => useUpdateAlertRule());
     let updatedRule: AlertRule | undefined;
@@ -168,7 +188,7 @@ describe("useUpdateAlertRule", () => {
   });
 
   it("throws on error", async () => {
-    mockPatch.mockResolvedValue(fail("bad trigger"));
+    mockPatch.mockResolvedValue(failPatch("bad trigger"));
 
     const { result, actHook } = renderHookWithQuery(() => useUpdateAlertRule());
     await expect(
@@ -188,7 +208,7 @@ describe("useDeleteAlertRule", () => {
   afterEach(() => vi.resetAllMocks());
 
   it("fires DELETE and resolves on success", async () => {
-    mockDelete.mockResolvedValue(ok(undefined));
+    mockDelete.mockResolvedValue(okDelete());
 
     const { result, actHook } = renderHookWithQuery(() => useDeleteAlertRule());
     let resolved = false;
@@ -201,7 +221,7 @@ describe("useDeleteAlertRule", () => {
   });
 
   it("throws on error", async () => {
-    mockDelete.mockResolvedValue(fail("not found"));
+    mockDelete.mockResolvedValue(failDelete("not found"));
 
     const { result, actHook } = renderHookWithQuery(() => useDeleteAlertRule());
     await expect(

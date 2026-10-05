@@ -23,35 +23,35 @@ const mockPost = vi.mocked(api.POST);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const ok = (data: unknown): ReturnType<typeof mockGet> =>
-  Promise.resolve({
+const ok = (data: unknown): Awaited<ReturnType<typeof mockGet>> =>
+  ({
     data,
     error: undefined,
     response: new Response(),
-  }) as ReturnType<typeof mockGet>;
+  }) as Awaited<ReturnType<typeof mockGet>>;
 
-const fail = (message = "something went wrong"): ReturnType<typeof mockGet> =>
-  Promise.resolve({
+const fail = (message = "something went wrong"): Awaited<ReturnType<typeof mockGet>> =>
+  ({
     data: undefined,
     error: { message },
     response: new Response(),
-  }) as ReturnType<typeof mockGet>;
+  }) as Awaited<ReturnType<typeof mockGet>>;
 
-const okPost = (data: unknown): ReturnType<typeof mockPost> =>
-  Promise.resolve({
+const okPost = (data: unknown): Awaited<ReturnType<typeof mockPost>> =>
+  ({
     data,
     error: undefined,
     response: new Response(),
-  }) as ReturnType<typeof mockPost>;
+  }) as Awaited<ReturnType<typeof mockPost>>;
 
 const failPost = (
   message = "something went wrong",
-): ReturnType<typeof mockPost> =>
-  Promise.resolve({
+): Awaited<ReturnType<typeof mockPost>> =>
+  ({
     data: undefined,
     error: { message },
     response: new Response(),
-  }) as ReturnType<typeof mockPost>;
+  }) as Awaited<ReturnType<typeof mockPost>>;
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -316,11 +316,11 @@ describe("useCreateDiscoveryJob", () => {
 
   it("throws a fallback error when the error has no message", async () => {
     mockPost.mockResolvedValue(
-      Promise.resolve({
+      ({
         data: undefined,
         error: {},
         response: new Response(),
-      }) as ReturnType<typeof mockPost>,
+      }) as Awaited<ReturnType<typeof mockPost>>,
     );
 
     const { result, actHook } = renderHookWithQuery(() =>

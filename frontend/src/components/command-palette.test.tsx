@@ -31,7 +31,7 @@ vi.mock("../hooks/use-recent-pages", () => ({
   useRecentPages: vi.fn(),
 }));
 
-import { useSearch } from "../api/hooks/use-search";
+import { useSearch, type SearchResults } from "../api/hooks/use-search";
 import { useRecentPages } from "../hooks/use-recent-pages";
 
 const mockUseSearch = vi.mocked(useSearch);
@@ -39,12 +39,14 @@ const mockUseRecentPages = vi.mocked(useRecentPages);
 
 const mockAddRecentPage = vi.fn();
 
+// The palette only reads data/isLoading/isError from the query result, so the
+// mock supplies that subset; the payload itself is checked against SearchResults.
+function searchReturning(data: SearchResults | undefined): ReturnType<typeof useSearch> {
+  return { data, isLoading: false, isError: false } as unknown as ReturnType<typeof useSearch>;
+}
+
 function setupDefaultMocks() {
-  mockUseSearch.mockReturnValue({
-    data: undefined,
-    isLoading: false,
-    isError: false,
-  } as ReturnType<typeof useSearch>);
+  mockUseSearch.mockReturnValue(searchReturning(undefined));
 
   mockUseRecentPages.mockReturnValue({
     recentPages: [],
@@ -109,21 +111,17 @@ describe("CommandPalette", () => {
 
   it("shows search results grouped by type when query has 2+ chars", async () => {
     // Return results for any query (debounce is bypassed since hook is mocked).
-    mockUseSearch.mockReturnValue({
-      data: {
-        results: {
-          hosts: [
-            { id: "h1", label: "192.168.1.1 (myhost)", url: "/hosts/h1", type: "host" },
-          ],
-          networks: [],
-          scans: [],
-          profiles: [],
-        },
-        total: 1,
+    mockUseSearch.mockReturnValue(searchReturning({
+      results: {
+        hosts: [
+          { id: "h1", label: "192.168.1.1 (myhost)", url: "/hosts/h1", type: "host" },
+        ],
+        networks: [],
+        scans: [],
+        profiles: [],
       },
-      isLoading: false,
-      isError: false,
-    } as ReturnType<typeof useSearch>);
+      total: 1,
+    }));
 
     await renderWithRouter(<CommandPalette onClose={onClose} />);
 
@@ -138,11 +136,9 @@ describe("CommandPalette", () => {
   });
 
   it("shows 'no results' message when search returns empty", async () => {
-    mockUseSearch.mockReturnValue({
-      data: { results: { hosts: [], networks: [], scans: [], profiles: [] }, total: 0 },
-      isLoading: false,
-      isError: false,
-    } as ReturnType<typeof useSearch>);
+    mockUseSearch.mockReturnValue(
+      searchReturning({ results: { hosts: [], networks: [], scans: [], profiles: [] }, total: 0 }),
+    );
 
     await renderWithRouter(<CommandPalette onClose={onClose} />);
 
@@ -155,19 +151,15 @@ describe("CommandPalette", () => {
   });
 
   it("navigates and calls addRecentPage when a result is clicked", async () => {
-    mockUseSearch.mockReturnValue({
-      data: {
-        results: {
-          hosts: [{ id: "h1", label: "192.168.1.1", url: "/hosts/h1", type: "host" }],
-          networks: [],
-          scans: [],
-          profiles: [],
-        },
-        total: 1,
+    mockUseSearch.mockReturnValue(searchReturning({
+      results: {
+        hosts: [{ id: "h1", label: "192.168.1.1", url: "/hosts/h1", type: "host" }],
+        networks: [],
+        scans: [],
+        profiles: [],
       },
-      isLoading: false,
-      isError: false,
-    } as ReturnType<typeof useSearch>);
+      total: 1,
+    }));
 
     await renderWithRouter(<CommandPalette onClose={onClose} />);
 
@@ -188,22 +180,18 @@ describe("CommandPalette", () => {
   });
 
   it("navigates with arrow keys and Enter", async () => {
-    mockUseSearch.mockReturnValue({
-      data: {
-        results: {
-          hosts: [
-            { id: "h1", label: "192.168.1.1", url: "/hosts/h1", type: "host" },
-            { id: "h2", label: "192.168.1.2", url: "/hosts/h2", type: "host" },
-          ],
-          networks: [],
-          scans: [],
-          profiles: [],
-        },
-        total: 2,
+    mockUseSearch.mockReturnValue(searchReturning({
+      results: {
+        hosts: [
+          { id: "h1", label: "192.168.1.1", url: "/hosts/h1", type: "host" },
+          { id: "h2", label: "192.168.1.2", url: "/hosts/h2", type: "host" },
+        ],
+        networks: [],
+        scans: [],
+        profiles: [],
       },
-      isLoading: false,
-      isError: false,
-    } as ReturnType<typeof useSearch>);
+      total: 2,
+    }));
 
     await renderWithRouter(<CommandPalette onClose={onClose} />);
 

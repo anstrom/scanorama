@@ -44,6 +44,8 @@ import {
   useStopDiscovery,
   useDiscoveryDiff,
   useDiscoveryCompare,
+  type DeviceSuggestion,
+  type DiscoveryDiff,
 } from "../api/hooks/use-discovery";
 
 import {
@@ -675,8 +677,8 @@ describe("DiscoveryPage", () => {
 
   // ── Suggestion cards ──────────────────────────────────────────
 
-  async function openChangesTabWithDiff(suggestions = []) {
-    const diffData = {
+  async function openChangesTabWithDiff(suggestions: DeviceSuggestion[] = []) {
+    const diffData: DiscoveryDiff = {
       job_id: "job-1",
       new_hosts: [],
       gone_hosts: [],

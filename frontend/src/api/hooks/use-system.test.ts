@@ -13,19 +13,19 @@ vi.mock("../client", () => ({
 import { api } from "../client";
 const mockGet = vi.mocked(api.GET);
 
-const ok = (data: unknown): ReturnType<typeof mockGet> =>
-  Promise.resolve({
+const ok = (data: unknown): Awaited<ReturnType<typeof mockGet>> =>
+  ({
     data,
     error: undefined,
     response: new Response(),
-  }) as ReturnType<typeof mockGet>;
+  }) as Awaited<ReturnType<typeof mockGet>>;
 
-const fail = (message = "something went wrong"): ReturnType<typeof mockGet> =>
-  Promise.resolve({
+const fail = (message = "something went wrong"): Awaited<ReturnType<typeof mockGet>> =>
+  ({
     data: undefined,
     error: { message },
     response: new Response(),
-  }) as ReturnType<typeof mockGet>;
+  }) as Awaited<ReturnType<typeof mockGet>>;
 
 // ── useHealth ─────────────────────────────────────────────────────────────────
 
