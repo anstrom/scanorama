@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Pre-push hook — runs the mandatory test gate before every push.
-# See: .claude/instructions.md "Before Every Push"
+# See: CLAUDE.md "Before Every Push"
 
 set -e
 
