@@ -52,7 +52,7 @@ if [ "$CONFIGURED_PATH" = ".githooks" ]; then
     echo ""
     echo "🔍 The pre-commit hook will now run linting checks before each commit."
     echo "💡 You can run 'make lint-fix' to automatically fix linting issues."
-    echo "🚀 You can run 'make ci-local' to run all CI checks locally."
+    echo "🚀 You can run 'make ci' to run all CI checks locally."
 else
     echo "❌ Error: Failed to configure Git hooks"
     exit 1
