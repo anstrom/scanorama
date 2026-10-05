@@ -2116,12 +2116,17 @@ type AlertRuleResponse struct {
 	UpdatedAt   string  `json:"updated_at"`
 }
 
+// AlertRuleListResponse wraps a list of alert rules.
+type AlertRuleListResponse struct {
+	AlertRules []AlertRuleResponse `json:"alert_rules"`
+}
+
 // ListAlertRules godoc
 // @Summary      List all alert rules
 // @Description  Returns all configured alert rules.
 // @Tags         Alerts
 // @Produce      json
-// @Success      200  {array}   AlertRuleResponse
+// @Success      200  {object}  AlertRuleListResponse
 // @Failure      500  {object}  ErrorResponse
 // @Security     ApiKeyAuth
 // @Router       /alerts [get]
@@ -2195,7 +2200,7 @@ func DeleteAlertRule(_ http.ResponseWriter, _ *http.Request) {}
 // @Tags         Alerts
 // @Produce      json
 // @Param        id  path      string  true  "Host UUID" format(uuid)
-// @Success      200 {array}   AlertRuleResponse
+// @Success      200 {object}  AlertRuleListResponse
 // @Failure      400 {object}  ErrorResponse
 // @Failure      500 {object}  ErrorResponse
 // @Security     ApiKeyAuth
