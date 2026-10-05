@@ -172,10 +172,12 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
     inputRef.current?.focus();
   }, []);
 
-  // Reset active index when the flat item list changes.
-  useEffect(() => {
+  // Reset active index when the debounced query (and so the result list) changes.
+  const [prevQuery, setPrevQuery] = useState(debouncedQuery);
+  if (prevQuery !== debouncedQuery) {
+    setPrevQuery(debouncedQuery);
     setActiveIndex(-1);
-  }, [debouncedQuery]);
+  }
 
   // Navigate to the selected item and close the palette.
   const selectItem = useCallback(

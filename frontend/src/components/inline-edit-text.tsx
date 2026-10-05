@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { Pencil, Check, X } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -31,13 +31,6 @@ export function InlineEditText({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
-
-  // Sync external value changes when not editing.
-  useEffect(() => {
-    if (!isEditing) {
-      setInputValue(value);
-    }
-  }, [value, isEditing]);
 
   function startEditing() {
     if (disabled) return;

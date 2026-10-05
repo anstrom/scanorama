@@ -2,7 +2,9 @@ import type { ReactNode } from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useSearch } from "@tanstack/react-router";
 import { HostsPage } from "./hosts";
+import { serializeFilter, type FilterGroup } from "../lib/filter-expr";
 
 vi.mock("../api/hooks/use-hosts", () => ({
   useHosts: vi.fn(),
@@ -96,6 +98,7 @@ const mockUseSmartScanStage = vi.mocked(useSmartScanStage);
 const mockUseTriggerSmartScan = vi.mocked(useTriggerSmartScan);
 
 const mockUseHosts = vi.mocked(useHosts);
+const mockUseSearch = vi.mocked(useSearch);
 const mockUseHost = vi.mocked(useHost);
 const mockUseHostScans = vi.mocked(useHostScans);
 const mockUseUpdateHost = vi.mocked(useUpdateHost);
@@ -417,6 +420,7 @@ function makeBulkDeleteMutationResult(overrides = {}) {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  mockUseSearch.mockReturnValue({});
   mockUseHosts.mockReturnValue(makeUseHostsResult());
   mockUseHost.mockReturnValue(makeUseHostResult());
   mockUseHostScans.mockReturnValue(makeUseHostScansResult());
@@ -1541,5 +1545,32 @@ describe("HostsPage", () => {
 
     // The active filter chip should now be visible
     expect(screen.getByText("Active filter:")).toBeInTheDocument();
+  });
+
+  it("initialises the active filter from the ?filter= URL param", () => {
+    const group: FilterGroup = {
+      op: "AND",
+      conditions: [{ field: "status", cmp: "is", value: "up" }],
+    };
+    mockUseSearch.mockReturnValue({ filter: serializeFilter(group) });
+
+    render(<HostsPage />);
+
+    expect(screen.getByTestId("filter-builder")).toBeInTheDocument();
+    // The first query must already carry the filter, not a follow-up render.
+    expect(mockUseHosts.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ filter: JSON.stringify(group) }),
+    );
+  });
+
+  it("ignores an undecodable ?filter= URL param", () => {
+    mockUseSearch.mockReturnValue({ filter: "not-a-valid-filter" });
+
+    render(<HostsPage />);
+
+    expect(screen.queryByTestId("filter-builder")).not.toBeInTheDocument();
+    expect(mockUseHosts).not.toHaveBeenCalledWith(
+      expect.objectContaining({ filter: expect.anything() }),
+    );
   });
 });

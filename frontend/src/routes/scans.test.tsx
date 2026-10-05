@@ -191,11 +191,11 @@ beforeEach(() => {
   mockUseStopScan.mockReturnValue({
     mutateAsync: vi.fn(),
     isPending: false,
-  } as any);
+  } as unknown as ReturnType<typeof useStopScan>);
   mockUseDeleteScan.mockReturnValue({
     mutateAsync: vi.fn(),
     isPending: false,
-  } as any);
+  } as unknown as ReturnType<typeof useDeleteScan>);
 });
 
 describe("ScansPage", () => {
