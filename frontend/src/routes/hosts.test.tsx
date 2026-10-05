@@ -1442,6 +1442,25 @@ describe("HostsPage", () => {
     );
   });
 
+  it("sends an empty hostname when the inline hostname is cleared", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({});
+    mockUseUpdateHost.mockReturnValue(makeMutationResult({ mutateAsync }));
+
+    render(<HostsPage />);
+    const rows = screen.getAllByRole("row");
+    const cells = within(rows[1]).getAllByRole("cell");
+    const hostnameCell = cells[2];
+    const editBtns = within(hostnameCell).getAllByRole("button", { name: /edit/i });
+    await userEvent.click(editBtns[0]);
+    const input = within(hostnameCell).getByRole("textbox");
+    await userEvent.clear(input);
+    await userEvent.keyboard("{Enter}");
+
+    expect(mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ hostId: "host-1", body: { hostname: "" } }),
+    );
+  });
+
   // ── Scan selected (bulk scan) ─────────────────────────────────
 
   it("does not show the Scan selected button when nothing is selected", () => {
