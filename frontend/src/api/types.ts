@@ -420,7 +420,7 @@ export interface paths {
         get: operations["getHost"];
         /**
          * Update host
-         * @description Partially update a host. Only fields present in the body are changed; send an empty hostname to clear it.
+         * @description Partially update a host. Only fields present in the body are changed; send an empty hostname or notes to clear it.
          */
         put: operations["updateHost"];
         post?: never;
@@ -1841,6 +1841,11 @@ export interface components {
             /** @description NetworkID is the network this host belongs to, if any. */
             network_id?: string;
             /**
+             * @description Notes holds the free-form user notes for the host; omitted when unset.
+             * @example Rack 4, owned by infra
+             */
+            notes?: string;
+            /**
              * @example [
              *       22,
              *       80,
@@ -1894,6 +1899,11 @@ export interface components {
              * @example web-01.local
              */
             hostname?: string;
+            /**
+             * @description Notes sets the free-form host notes; an empty string clears them.
+             * @example Rack 4, owned by infra
+             */
+            notes?: string;
             /** @example Linux */
             os?: string;
             /** @example Ubuntu 22.04 */

@@ -648,6 +648,11 @@ definitions:
       network_id:
         description: NetworkID is the network this host belongs to, if any.
         type: string
+      notes:
+        description: Notes holds the free-form user notes for the host; omitted when
+          unset.
+        example: Rack 4, owned by infra
+        type: string
       open_ports:
         example:
         - 22
@@ -708,6 +713,11 @@ definitions:
       hostname:
         description: Hostname sets the hostname; an empty string clears it.
         example: web-01.local
+        type: string
+      notes:
+        description: Notes sets the free-form host notes; an empty string clears them.
+        example: Rack 4, owned by infra
+        maxLength: 10000
         type: string
       os:
         example: Linux
@@ -2755,7 +2765,7 @@ paths:
       consumes:
       - application/json
       description: Partially update a host. Only fields present in the body are changed;
-        send an empty hostname to clear it.
+        send an empty hostname or notes to clear it.
       operationId: updateHost
       parameters:
       - description: Host ID

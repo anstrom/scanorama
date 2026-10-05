@@ -202,6 +202,8 @@ type HostUpdateRequest struct {
 	Tags []string `json:"tags,omitempty" example:"web,production"`
 	// Active toggles scanning for the host.
 	Active *bool `json:"active,omitempty" example:"true"`
+	// Notes sets the free-form host notes; an empty string clears them.
+	Notes *string `json:"notes,omitempty" example:"Rack 4, owned by infra" maxLength:"10000"`
 }
 
 // HostResponse represents a discovered host
@@ -246,6 +248,8 @@ type HostResponse struct {
 	CustomName *string `json:"custom_name,omitempty" example:"office-router"`
 	// HostnameSource is the provenance tag for Hostname: manual|ptr|mdns|snmp|cert.
 	HostnameSource *string `json:"hostname_source,omitempty" example:"ptr" enums:"manual,ptr,mdns,snmp,cert"`
+	// Notes holds the free-form user notes for the host; omitted when unset.
+	Notes *string `json:"notes,omitempty" example:"Rack 4, owned by infra"`
 	// NameCandidates enumerates every automatic name candidate observed for this
 	// host (usable or not). Only populated on GET /hosts/{id}; list responses
 	// leave it as an empty array.
@@ -714,7 +718,7 @@ func GetHost(_ http.ResponseWriter, _ *http.Request) {}
 
 // UpdateHost godoc
 // @Summary Update host
-// @Description Partially update a host. Only fields present in the body are changed; send an empty hostname to clear it.
+// @Description Partially update a host. Only fields present in the body are changed; send an empty hostname or notes to clear it.
 // @Tags Hosts
 // @Accept json
 // @Produce json
