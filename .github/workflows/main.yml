@@ -11,11 +11,10 @@ on:
 env:
   NODE_VERSION: "22"
 
+# paths-filter lists PR files through the API, hence pull-requests: read.
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
-  security-events: write
+  pull-requests: read
 
 # PR runs share a group per branch, so a new push cancels the superseded run.
 # Every other run (main, tags, schedule, dispatch) gets a unique group via
