@@ -31,6 +31,7 @@ jobs:
     outputs:
       backend: ${{ steps.force.outputs.all == 'true' || steps.filter.outputs.backend == 'true' }}
       frontend: ${{ steps.force.outputs.all == 'true' || steps.filter.outputs.frontend == 'true' }}
+      docs: ${{ steps.force.outputs.all == 'true' || steps.filter.outputs.docs == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -58,6 +59,18 @@ jobs:
               - '.github/workflows/**'
             frontend:
               - 'frontend/**'
+              - '.github/workflows/**'
+            # Everything that can change the output of make docs.
+            docs:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'docs/**'
+              - 'tools/go.mod'
+              - 'tools/go.sum'
+              - 'frontend/package.json'
+              - 'frontend/package-lock.json'
+              - 'Makefile'
               - '.github/workflows/**'
 
   # Stage 1: Code Quality & Security (runs in parallel)
@@ -97,6 +110,53 @@ jobs:
           go mod verify
           go mod tidy
           git diff --exit-code go.mod go.sum
+
+  # Regenerates the OpenAPI spec and frontend types and fails if the committed
+  # files differ. Lives here rather than in docs.yml so CI OK can require it.
+  swagger-drift:
+    name: Swagger Drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [changes]
+    if: needs.changes.outputs.docs == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Regenerate API documentation
+        run: make docs
+
+      - name: Check for swagger drift
+        run: |
+          if ! git diff --exit-code docs/swagger/ frontend/src/api/types.ts; then
+            echo ""
+            echo "::error::Swagger spec is out of sync with code annotations."
+            echo "Run 'make docs' locally and commit the updated files:"
+            echo "  docs/swagger/swagger.json"
+            echo "  docs/swagger/swagger.yaml"
+            echo "  docs/swagger/docs.go"
+            echo "  frontend/src/api/types.ts"
+            exit 1
+          fi
 
   # Stage 2: Unit Tests (fast tests, no external dependencies)
   unit-tests:
@@ -423,6 +483,7 @@ jobs:
     needs:
       - changes
       - code-quality
+      - swagger-drift
       - unit-tests
       - frontend-tests
       - integration-tests-nodb
