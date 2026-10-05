@@ -387,3 +387,31 @@ jobs:
           flags: integration
           fail_ci_if_error: false
           verbose: true
+
+  # Single required status check for the Main ruleset. Jobs skipped by the
+  # path filter report "skipped", which passes; Coverage Upload is left out
+  # so Codecov availability never blocks a merge.
+  ci-ok:
+    name: CI OK
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - changes
+      - code-quality
+      - unit-tests
+      - frontend-tests
+      - integration-tests-nodb
+      - integration-tests-services
+    if: always()
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "::error::A required CI job did not succeed"
+              exit 1
+            fi
+          done
