@@ -38,6 +38,10 @@ jobs:
               - '**/*.go'
               - 'go.mod'
               - 'go.sum'
+              - 'internal/db/**/*.sql'
+              - 'test/fixtures/**'
+              - '.golangci.yml'
+              - 'Makefile'
               - '.github/workflows/**'
             frontend:
               - 'frontend/**'
