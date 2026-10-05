@@ -412,7 +412,7 @@ The scheduler's concurrency limit is set programmatically via `WithMaxConcurrent
 | `scanning.default_interval` | `duration` | `1h` | Default scan interval for targets |
 | `scanning.max_scan_timeout` | `duration` | `10m` | Maximum timeout per individual scan |
 | `scanning.default_ports` | `string` | `22,80,443,8080,8443` | Default ports when no profile specifies them |
-| `scanning.default_scan_type` | `string` | `connect` | Default scan type when no profile specifies one |
+| `scanning.scan_mode` | `string` | `syn` | Default scan type when no profile specifies one |
 | `scanning.enable_service_detection` | `bool` | `true` | Enable nmap service/version detection |
 | `scanning.enable_os_detection` | `bool` | `false` | Enable nmap OS detection |
 

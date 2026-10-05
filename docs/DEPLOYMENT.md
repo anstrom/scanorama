@@ -122,7 +122,7 @@ scanning:
   default_interval: 1h
   max_scan_timeout: 10m
   default_ports: "22,80,443,8080,8443"
-  default_scan_type: connect  # connect | syn | version | aggressive | stealth | comprehensive
+  scan_mode: connect  # connect | syn | ack | udp | aggressive | comprehensive
   max_concurrent_targets: 100
   enable_service_detection: false
   enable_os_detection: false
@@ -579,7 +579,7 @@ Set `logging.level: debug` to see detailed per-request and per-scan traces. For 
 ### nmap scans fail with "permission denied"
 
 - The scan type requires raw socket access. Either:
-  - Switch to `default_scan_type: connect` in config, or
+  - Switch to `scan_mode: connect` in config, or
   - Grant capabilities to the **nmap** binary: `sudo setcap cap_net_raw,cap_net_admin+eip "$(command -v nmap)"`
     (not the `scanorama` binary — see [nmap Privileges](#nmap-privileges))
 

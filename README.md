@@ -289,7 +289,7 @@ database:
 scanning:
   worker_pool_size: 10
   default_ports: "22,80,443,8080,8443"
-  default_scan_type: connect  # connect | syn | version | aggressive | comprehensive
+  scan_mode: connect  # connect | syn | ack | udp | aggressive | comprehensive
   enable_os_detection: false  # requires root / CAP_NET_RAW
   max_scan_timeout: "10m"
   rate_limit:
