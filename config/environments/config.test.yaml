@@ -22,7 +22,7 @@ scanning:
   default_interval: "5m"
   max_scan_timeout: "1m"
   default_ports: "22,80,443"
-  default_scan_type: "connect"
+  scan_mode: "connect"
   max_concurrent_targets: 5
   enable_service_detection: false
   enable_os_detection: false

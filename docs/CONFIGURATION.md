@@ -177,7 +177,7 @@ Controls the scan execution engine: worker pool, timeouts, default scan paramete
 | Default Interval | `default_interval` | duration | `1h` | Default re-scan interval for targets without an explicit schedule. |
 | Max Scan Timeout | `max_scan_timeout` | duration | `10m` | Maximum allowed timeout for a single scan operation. |
 | Default Ports | `default_ports` | string | `22,80,443,8080,8443` | Comma-separated list of ports to scan when no ports are specified. |
-| Default Scan Type | `default_scan_type` | string | `connect` | Default nmap scan type. Valid values: `connect`, `syn`, `version`. |
+| Scan Mode | `scan_mode` | string | `syn` | Default nmap scan type when no profile sets one. Valid values: `connect`, `syn`, `ack`, `udp`, `aggressive`, `comprehensive`. `connect` is the only mode that needs no raw-socket privilege on the nmap binary. |
 | Max Concurrent Targets | `max_concurrent_targets` | int | `100` | Maximum number of targets scanned concurrently within a single job. |
 | Enable Service Detection | `enable_service_detection` | bool | `true` | Run nmap service/version detection probes on open ports. |
 | Enable OS Detection | `enable_os_detection` | bool | `false` | Run nmap OS fingerprinting (requires elevated privileges). |
@@ -208,7 +208,7 @@ scanning:
   default_interval: 1h
   max_scan_timeout: 10m
   default_ports: "22,80,443,8080,8443"
-  default_scan_type: connect
+  scan_mode: connect
   max_concurrent_targets: 100
   enable_service_detection: true
   enable_os_detection: false
@@ -449,7 +449,7 @@ Configuration is validated by `Config.Validate()` after loading. If any rule fai
 | `worker_pool_size` must be > 0 | `worker pool size must be positive` |
 | `max_concurrent_targets` must be > 0 | `max concurrent targets must be positive` |
 | `default_interval` must be > 0 | `default scan interval must be positive` |
-| `default_scan_type` must be one of `connect`, `syn`, `version` | `invalid default scan type: <value>` |
+| `scan_mode` must be one of `connect`, `syn`, `ack`, `udp`, `aggressive`, `comprehensive` | `invalid scan_mode: "<value>" (valid: connect, syn, ack, udp, aggressive, comprehensive)` |
 
 ### API Validation (`validateAPI`)
 
@@ -554,7 +554,7 @@ The following sections and fields are available for hot-reload:
 | `default_interval` | string (duration) | — |
 | `max_scan_timeout` | string (duration) | — |
 | `default_ports` | string | max 1000 chars |
-| `default_scan_type` | string | `connect`, `syn`, `ack`, `window`, `fin`, `null`, `xmas`, `maimon` |
+| `scan_mode` | string | `connect`, `syn`, `ack`, `udp`, `aggressive`, `comprehensive` |
 | `max_concurrent_targets` | int | 1–10000 |
 | `enable_service_detection` | bool | — |
 | `enable_os_detection` | bool | — |
@@ -634,7 +634,7 @@ scanning:
   default_interval: 1h
   max_scan_timeout: 10m
   default_ports: "22,80,443,8080,8443"
-  default_scan_type: connect
+  scan_mode: connect
   max_concurrent_targets: 50
   enable_service_detection: true
   enable_os_detection: false
@@ -748,7 +748,7 @@ scanning:
   default_interval: 5m
   max_scan_timeout: 2m
   default_ports: "22,80,443,8080"
-  default_scan_type: connect
+  scan_mode: connect
   max_concurrent_targets: 10
   enable_service_detection: true
   enable_os_detection: false
