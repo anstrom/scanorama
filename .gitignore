@@ -89,6 +89,7 @@ act-*
 .claude-*
 .claude/HANDOFF.md
 .claude/*.lock
+.claude/settings.local.json
 HANDOFF.md
 
 # ── Git worktrees ─────────────────────────────────────────────────────────────
