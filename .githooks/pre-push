@@ -10,8 +10,25 @@ cd "$(git rev-parse --show-toplevel)"
 echo "Pre-push checks..."
 
 echo "  backend tests..."
-if ! go test -short -race ./internal/...; then
+# Exclude frontend/node_modules: some npm packages ship Go sources that
+# ./... would pick up locally but CI (which has no node_modules) never sees.
+# shellcheck disable=SC2046 # word splitting the package list is intended
+if ! go test -short -race $(go list ./... | grep -v /frontend/node_modules/); then
     echo "Backend tests failed."
+    exit 1
+fi
+
+# Same frontend checks as the CI Frontend Tests job.
+echo "  frontend lint..."
+if ! (cd frontend && npm run lint --silent); then
+    echo "Frontend lint failed."
+    exit 1
+fi
+
+echo "  frontend type-check and build..."
+if ! build_output=$(cd frontend && npm run build --silent 2>&1); then
+    echo "$build_output"
+    echo "Frontend type-check or build failed."
     exit 1
 fi
 
