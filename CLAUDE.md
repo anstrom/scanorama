@@ -104,7 +104,7 @@ If either test suite is red, fix before pushing — CI round-trip is 2–3 min.
 - Use `Mentions #NNN` when the PR is related to but does not close the issue
 - Merge strategy: always `gh pr merge --rebase` — never squash unless explicitly asked
 - Update the PR title and body with `gh pr edit` after any significant change to the branch
-- Run `review-pr` after every implementation — see **Code Review** section for how to prompt it
+- Run `/review-pr` on every implementation — see **Code Review**
 
 ### Test plans
 
@@ -204,35 +204,10 @@ Tautological tests that only assert Go/TS language invariants (e.g. `assert.Equa
 
 ## Code Review
 
-Run `review-pr` after every implementation, before reporting done or creating a PR. Never claim a task is complete without it.
-
-Give the agent a targeted prompt — not just "review this". Include:
-
-1. **What changed** — list the files modified and what each does
-2. **What to check** — be specific based on what was implemented:
-   - New handler → check: HTTP status codes correct, all error paths handled, JSON keys are snake_case, nil guard before encoding slice
-   - New service method → check: error wrapping, context propagation, timeout, nil receiver guard
-   - New DB query → check: sqlmock expectations match real query, `ExpectationsWereMet()` called, `sql.ErrNoRows` handled
-   - New frontend hook → check: error state handled, loading state handled, staleTime set
-   - New frontend component → check: all hooks mocked in test file, loading/empty/error states rendered
-3. **Tests to verify** — point it at the test files and ask it to confirm coverage is non-tautological
-4. **Project conventions to enforce** — snake_case JSON, `make([]T, 0)` not nil slices at API boundaries, `apierrors.NewScanError` for typed errors, `require` for fatal assertions and `assert` for non-fatal
-
-Example prompt structure:
-```
-Review the implementation in these files: [list files]
-
-Context: [one sentence on what the feature does]
-
-Check specifically:
-- [handler/service/hook-specific items]
-- Test coverage: [list test files] — confirm happy path, error path, and bad input are covered
-- Confirm no tautological tests
-- Confirm JSON response keys are snake_case
-- Confirm empty slices serialize as [] not null
-
-Focus on the diff only. Report bugs and gaps, not style preferences.
-```
+Every implementation gets one `/review-pr` run before it is reported done. When you open a PR, a
+project hook queues the review right after `gh pr create` — don't also run it beforehand. When the
+work doesn't end in a PR, run `/review-pr --branch` yourself. The skill
+(`.claude/skills/review-pr/SKILL.md`) owns the review prompts and checklists.
 
 ## Go Code Conventions
 
