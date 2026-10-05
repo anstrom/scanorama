@@ -140,20 +140,9 @@ Concretely:
    If a previously-MERGEABLE PR is now CONFLICTING, immediately post `@dependabot rebase`
    (or check the Renovate rebase checkbox) — don't batch this up for the end.
 4. **Continue merging** any remaining PRs that are still MERGEABLE after each step.
-5. **After all rebases have been triggered**, wait 3 minutes then re-check:
-
-```bash
-echo "Waiting 3 minutes for Dependabot/Renovate to rebase..."
-sleep 180
-
-# Re-check all PRs that had rebases triggered
-gh pr list --state open --json number,title,author,mergeable,statusCheckRollup \
-  | jq -r '.[] | select(.author.login == "app/dependabot" or .author.login == "app/renovate") | "#\(.number) [\(.author.login)] \(.title) | mergeable=\(.mergeable)"'
-```
-
-For any PR that is now MERGEABLE with no failing/pending checks, merge it immediately.
-For any PR still CONFLICTING after 3 minutes, Dependabot may not have processed it yet —
-report it as "rebase pending, re-run maintenance to finish."
+5. **After all rebases have been triggered, stop.** Do not `sleep` or arm a polling loop to wait
+   for Dependabot/Renovate — report each such PR as "rebase pending, re-run maintenance to
+   finish." The user re-runs the skill later rather than waiting on a progress feed.
 
 6. **Report skipped PRs** at the end — explain clearly: failing check name, still pending,
    or "rebase pending, re-run maintenance to finish."
