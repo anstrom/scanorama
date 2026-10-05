@@ -692,36 +692,8 @@ func (r *HostRepository) UpdateHost(ctx context.Context, id uuid.UUID, input Upd
 	}
 
 	// Build dynamic SET clause from non-nil pointer fields.
-	var setParts []string
-	var args []interface{}
-	argIndex := 1
-
-	addStr := func(col string, val *string) {
-		if val != nil {
-			setParts = append(setParts, fmt.Sprintf("%s = $%d", col, argIndex))
-			args = append(args, *val)
-			argIndex++
-		}
-	}
-
-	addStr(filterFieldHostname, input.Hostname)
-	addStr(filterFieldVendor, input.Vendor)
-	addStr(filterFieldOSFamily, input.OSFamily)
-	addStr("os_name", input.OSName)
-	addStr("os_version", input.OSVersion)
-	addStr(filterFieldStatus, input.Status)
-
-	if input.IgnoreScanning != nil {
-		setParts = append(setParts, fmt.Sprintf("%s = $%d", sortColIgnoreScanning, argIndex))
-		args = append(args, *input.IgnoreScanning)
-		argIndex++
-	}
-
-	if input.Tags != nil {
-		setParts = append(setParts, fmt.Sprintf("tags = $%d", argIndex))
-		args = append(args, pq.Array(*input.Tags))
-		argIndex++
-	}
+	setParts, args := buildHostUpdateSet(input)
+	argIndex := len(args) + 1
 
 	// If no fields to update, return error.
 	if len(setParts) == 0 {
@@ -753,6 +725,35 @@ func (r *HostRepository) UpdateHost(ctx context.Context, id uuid.UUID, input Upd
 
 	// Retrieve and return the updated host.
 	return r.GetHost(ctx, id)
+}
+
+// buildHostUpdateSet returns the SET clause fragments and positional args for
+// the non-nil fields of input. Placeholders are numbered from $1.
+func buildHostUpdateSet(input UpdateHostInput) (setParts []string, args []interface{}) {
+	addArg := func(col string, val interface{}) {
+		args = append(args, val)
+		setParts = append(setParts, fmt.Sprintf("%s = $%d", col, len(args)))
+	}
+	addStr := func(col string, val *string) {
+		if val != nil {
+			addArg(col, *val)
+		}
+	}
+
+	addStr(filterFieldHostname, input.Hostname)
+	addStr(filterFieldVendor, input.Vendor)
+	addStr(filterFieldOSFamily, input.OSFamily)
+	addStr("os_name", input.OSName)
+	addStr("os_version", input.OSVersion)
+	addStr(filterFieldStatus, input.Status)
+
+	if input.IgnoreScanning != nil {
+		addArg(sortColIgnoreScanning, *input.IgnoreScanning)
+	}
+	if input.Tags != nil {
+		addArg("tags", pq.Array(*input.Tags))
+	}
+	return setParts, args
 }
 
 // UpdateCustomName sets or clears the user-defined display-name override
