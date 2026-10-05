@@ -27,10 +27,6 @@
     "ansi-styles": "6.2.3",
     "yargs": "18.2.0"
   },
-  "engines": {
-    "node": "25.9.0",
-    "npm": "11.21.0"
-  },
   "repository": {
     "type": "git",
     "url": "https://github.com/anstrom/scanorama.git"
