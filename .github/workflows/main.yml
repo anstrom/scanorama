@@ -139,16 +139,13 @@ jobs:
           fail_ci_if_error: false
           verbose: true
 
-  # Stage 3: Frontend Tests (runs in parallel with integration)
+  # Frontend Tests: lint, type-check, build and test; runs in parallel with unit tests
   frontend-tests:
     name: Frontend Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [changes, unit-tests]
-    if: |
-      always() &&
-      needs.changes.outputs.frontend == 'true' &&
-      (needs.unit-tests.result == 'success' || needs.unit-tests.result == 'skipped')
+    needs: [changes]
+    if: needs.changes.outputs.frontend == 'true'
 
     steps:
       - name: Checkout code
@@ -163,6 +160,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --prefix frontend
+
+      - name: Run linter
+        run: npm run lint --prefix frontend
+
+      - name: Type-check and build
+        run: npm run build --prefix frontend
 
       - name: Run tests
         run: npm test --prefix frontend
