@@ -699,6 +699,31 @@ definitions:
         example: Dell Inc.
         type: string
     type: object
+  docs.HostUpdateRequest:
+    properties:
+      active:
+        description: Active toggles scanning for the host.
+        example: true
+        type: boolean
+      hostname:
+        description: Hostname sets the hostname; an empty string clears it.
+        example: web-01.local
+        type: string
+      os:
+        example: Linux
+        type: string
+      os_version:
+        example: Ubuntu 22.04
+        type: string
+      tags:
+        description: Tags replaces the tag list; an empty list clears it.
+        example:
+        - web
+        - production
+        items:
+          type: string
+        type: array
+    type: object
   docs.LivenessResponse:
     properties:
       status:
@@ -2729,7 +2754,8 @@ paths:
     put:
       consumes:
       - application/json
-      description: Update host information
+      description: Partially update a host. Only fields present in the body are changed;
+        send an empty hostname to clear it.
       operationId: updateHost
       parameters:
       - description: Host ID
@@ -2738,12 +2764,12 @@ paths:
         name: hostId
         required: true
         type: string
-      - description: Updated host information
+      - description: Fields to change; omitted fields are left unchanged
         in: body
         name: host
         required: true
         schema:
-          $ref: '#/definitions/docs.HostResponse'
+          $ref: '#/definitions/docs.HostUpdateRequest'
       produces:
       - application/json
       responses:
