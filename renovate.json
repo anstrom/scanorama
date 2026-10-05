@@ -43,6 +43,12 @@
     {
       "matchUpdateTypes": ["major"],
       "enabled": false
+    },
+    {
+      "description": "Actions and base images ship majors routinely (checkout, setup-go, codecov); keep proposing them",
+      "matchManagers": ["github-actions", "dockerfile", "docker-compose"],
+      "matchUpdateTypes": ["major"],
+      "enabled": true
     }
   ]
 }
