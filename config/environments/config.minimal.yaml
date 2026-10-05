@@ -22,7 +22,7 @@ scanning:
   default_ports: "22,80,443,8080,8443"
 
   # Scan type: connect (no root needed) or syn (requires root)
-  default_scan_type: "connect"
+  scan_mode: "connect"
 
 # Network Discovery Configuration
 discovery:

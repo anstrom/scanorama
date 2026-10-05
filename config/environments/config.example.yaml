@@ -68,7 +68,7 @@ scanning:
   default_ports: "22,80,443,8080,8443"
 
   # Default scan type (connect, syn, version)
-  default_scan_type: "connect"
+  scan_mode: "connect"
 
   # Maximum number of concurrent targets per scan job
   max_concurrent_targets: 100

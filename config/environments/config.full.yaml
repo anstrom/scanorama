@@ -186,7 +186,7 @@ scanning:
   # comprehensive: Thorough scan with version detection
   # aggressive: Fast aggressive scan
   # stealth: Slow stealth scan to avoid detection
-  default_scan_type: "connect"
+  scan_mode: "connect"
 
   # Maximum concurrent targets to scan simultaneously
   max_concurrent_targets: 100
