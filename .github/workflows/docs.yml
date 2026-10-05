@@ -11,6 +11,9 @@ on:
       - "package-lock.json"
       - ".github/workflows/docs.yml"
       - "**/*.go"
+      - "tools/go.mod"
+      - "tools/go.sum"
+      - "Makefile"
   pull_request:
     branches: [main]
     paths:
@@ -21,6 +24,9 @@ on:
       - "package-lock.json"
       - ".github/workflows/docs.yml"
       - "**/*.go"
+      - "tools/go.mod"
+      - "tools/go.sum"
+      - "Makefile"
   workflow_dispatch:
 
 env:
@@ -69,6 +75,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -81,9 +90,6 @@ jobs:
 
       - name: Install Node dependencies
         run: npm install
-
-      - name: Install Swagger tools
-        run: go install github.com/swaggo/swag/cmd/swag@latest
 
       - name: Generate API documentation
         run: make docs
