@@ -1686,7 +1686,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Partially update a host. Only fields present in the body are changed; send an empty hostname to clear it.",
+                "description": "Partially update a host. Only fields present in the body are changed; send an empty hostname or notes to clear it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6353,6 +6353,11 @@ const docTemplate = `{
                     "description": "NetworkID is the network this host belongs to, if any.",
                     "type": "string"
                 },
+                "notes": {
+                    "description": "Notes holds the free-form user notes for the host; omitted when unset.",
+                    "type": "string",
+                    "example": "Rack 4, owned by infra"
+                },
                 "open_ports": {
                     "type": "array",
                     "items": {
@@ -6435,6 +6440,12 @@ const docTemplate = `{
                     "description": "Hostname sets the hostname; an empty string clears it.",
                     "type": "string",
                     "example": "web-01.local"
+                },
+                "notes": {
+                    "description": "Notes sets the free-form host notes; an empty string clears them.",
+                    "type": "string",
+                    "maxLength": 10000,
+                    "example": "Rack 4, owned by infra"
                 },
                 "os": {
                     "type": "string",
