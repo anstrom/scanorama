@@ -80,6 +80,7 @@ clean: ## Remove build artifacts and coverage files
 	@rm -f $(COVERAGE_FILE) $(COVERAGE_FILE).html
 	@find . -name "*.test" -type f -delete
 	@find . -name "coverage.txt" -type f -delete
+	@rm -f ./*.out
 	@echo "✓ Clean"
 
 # ─── Run ─────────────────────────────────────────────────────────────────────
