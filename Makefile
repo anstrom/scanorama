@@ -237,7 +237,7 @@ test-unit: ## Run unit tests (no database needed)
 .PHONY: test
 test: test-db-up ## Run all tests (starts test DB automatically)
 	@echo "Running all tests..."
-	@$(GOTEST) -v ./... || ($(MAKE) test-db-down; exit 1)
+	@$(GOTEST) -v -tags=integration ./... || ($(MAKE) test-db-down; exit 1)
 	@echo "✓ All tests passed"
 	@$(MAKE) test-db-down
 
@@ -246,7 +246,7 @@ test: test-db-up ## Run all tests (starts test DB automatically)
 .PHONY: coverage
 coverage: test-db-up ## Generate coverage report
 	@echo "Running tests with coverage..."
-	@$(GOTEST) -coverprofile=$(COVERAGE_FILE) -covermode=atomic ./... \
+	@$(GOTEST) -tags=integration -coverprofile=$(COVERAGE_FILE) -covermode=atomic ./... \
 		|| ($(MAKE) test-db-down; exit 1)
 	@$(MAKE) test-db-down
 	@$(GO) tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_FILE).html
