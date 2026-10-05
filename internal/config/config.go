@@ -5,11 +5,16 @@ package config
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -540,7 +545,7 @@ func Load(path string) (*Config, error) {
 	ext := filepath.Ext(path)
 	switch ext {
 	case ".yaml", ".yml":
-		if err := safeYAMLUnmarshal(data, config); err != nil {
+		if err := decodeYAMLConfig(path, data, config); err != nil {
 			return nil, fmt.Errorf("failed to parse YAML config: %w", err)
 		}
 	case ".json":
@@ -549,7 +554,7 @@ func Load(path string) (*Config, error) {
 		}
 	default:
 		// Default to YAML with strict parsing
-		if err := safeYAMLUnmarshal(data, config); err != nil {
+		if err := decodeYAMLConfig(path, data, config); err != nil {
 			return nil, fmt.Errorf("failed to parse config (assumed YAML): %w", err)
 		}
 	}
@@ -685,6 +690,50 @@ func safeYAMLUnmarshal(data []byte, dest interface{}) error {
 	}
 
 	return nil
+}
+
+// warnedUnknownKeys records the config contents already reported by
+// decodeYAMLConfig, keyed by path and content hash. The CLI loads the same file
+// more than once per command (logging setup, then the command itself); each
+// version of a file is reported once per process, so an edited file that is
+// reloaded is checked again.
+var warnedUnknownKeys sync.Map
+
+// decodeYAMLConfig decodes data into dest and, the first time a given file is
+// decoded, logs a warning for every key that no Config field reads.
+func decodeYAMLConfig(path string, data []byte, dest *Config) error {
+	if err := safeYAMLUnmarshal(data, dest); err != nil {
+		return err
+	}
+	key := fmt.Sprintf("%s:%x", path, sha256.Sum256(data))
+	if _, seen := warnedUnknownKeys.LoadOrStore(key, struct{}{}); seen {
+		return nil
+	}
+	for _, msg := range unknownYAMLKeys(data) {
+		slog.Warn("Ignoring unknown config key", "file", path, "detail", msg)
+	}
+	return nil
+}
+
+// unknownYAMLKeys returns one message per key in data that no Config field
+// reads. safeYAMLUnmarshal ignores such keys, so a misspelled or obsolete key
+// would otherwise fall back to its default without any feedback. Returns nil
+// for invalid YAML; the regular decode reports that.
+func unknownYAMLKeys(data []byte) []string {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	var probe Config
+	var typeErr *yaml.TypeError
+	if !errors.As(decoder.Decode(&probe), &typeErr) {
+		return nil
+	}
+	unknown := make([]string, 0, len(typeErr.Errors))
+	for _, msg := range typeErr.Errors {
+		if strings.Contains(msg, " not found in type ") {
+			unknown = append(unknown, msg)
+		}
+	}
+	return unknown
 }
 
 // safeJSONUnmarshal performs secure JSON unmarshaling with restrictions
