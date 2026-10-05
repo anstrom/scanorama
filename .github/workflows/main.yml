@@ -239,13 +239,12 @@ jobs:
     name: Integration Tests (no services)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [changes, unit-tests]
+    # Runs in parallel with Unit Tests rather than after it; CI OK still
+    # requires both, so a unit failure blocks the merge either way.
+    needs: [changes]
     if: |
-      always() &&
-      (
-        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-        (needs.changes.outputs.backend == 'true' && needs.unit-tests.result == 'success')
-      )
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      needs.changes.outputs.backend == 'true'
 
     steps:
       - name: Checkout code
@@ -287,13 +286,12 @@ jobs:
     name: Integration Tests (services)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [changes, unit-tests]
+    # Runs in parallel with Unit Tests rather than after it; CI OK still
+    # requires both, so a unit failure blocks the merge either way.
+    needs: [changes]
     if: |
-      always() &&
-      (
-        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-        (needs.changes.outputs.backend == 'true' && needs.unit-tests.result == 'success')
-      )
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      needs.changes.outputs.backend == 'true'
 
     services:
       postgres:
