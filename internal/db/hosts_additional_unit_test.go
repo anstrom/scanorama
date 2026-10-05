@@ -369,6 +369,57 @@ func TestUpdateHost_Unit(t *testing.T) {
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
+	t.Run("empty notes are stored as NULL", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		empty := ""
+		mock.ExpectBegin()
+		mock.ExpectQuery(`SELECT EXISTS`).
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectExec(`UPDATE hosts SET notes = NULL, last_seen = NOW\(\) WHERE id = \$1`).
+			WithArgs(id).
+			WillReturnError(fmt.Errorf("stop after update"))
+		mock.ExpectRollback()
+
+		_, err := NewHostRepository(db).UpdateHost(context.Background(), id, UpdateHostInput{Notes: &empty})
+		require.Error(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("non-empty notes are bound as a parameter", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		notes := "rack 4"
+		mock.ExpectBegin()
+		mock.ExpectQuery(`SELECT EXISTS`).
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectExec(`UPDATE hosts SET notes = \$1, last_seen = NOW\(\) WHERE id = \$2`).
+			WithArgs(notes, id).
+			WillReturnError(fmt.Errorf("stop after update"))
+		mock.ExpectRollback()
+
+		_, err := NewHostRepository(db).UpdateHost(context.Background(), id, UpdateHostInput{Notes: &notes})
+		require.Error(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("hostname and notes are both applied", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		hostname := "web-01"
+		notes := "rack 4"
+		mock.ExpectBegin()
+		mock.ExpectQuery(`SELECT EXISTS`).
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectExec(
+			`UPDATE hosts SET hostname = \$1, notes = \$2, last_seen = NOW\(\) WHERE id = \$3`).
+			WithArgs(hostname, notes, id).
+			WillReturnError(fmt.Errorf("stop after update"))
+		mock.ExpectRollback()
+
+		_, err := NewHostRepository(db).UpdateHost(context.Background(), id,
+			UpdateHostInput{Hostname: &hostname, Notes: &notes})
+		require.Error(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
 	t.Run("existence check error is wrapped", func(t *testing.T) {
 		db, mock := newMockDB(t)
 		mock.ExpectBegin()
@@ -519,7 +570,7 @@ var getHostColumns = []string{
 	"tags",
 	"knowledge_score",
 	"device_id", "mdns_name", "device_name",
-	"custom_name", "hostname_source",
+	"custom_name", "hostname_source", "notes",
 }
 
 func TestGetHost_Success(t *testing.T) {
@@ -540,6 +591,7 @@ func TestGetHost_Success(t *testing.T) {
 	rttAvg := 14
 	ignore := false
 	prevStatus := "down"
+	notes := "rack 4, owned by infra"
 
 	db, mock := newMockDB(t)
 
@@ -555,12 +607,13 @@ func TestGetHost_Success(t *testing.T) {
 			now, now, "up",
 			&now, &prevStatus, 3,
 			pq.StringArray{},
-			60,  // knowledge_score
-			nil, // device_id
-			nil, // mdns_name
-			nil, // device_name
-			nil, // custom_name
-			nil, // hostname_source
+			60,     // knowledge_score
+			nil,    // device_id
+			nil,    // mdns_name
+			nil,    // device_name
+			nil,    // custom_name
+			nil,    // hostname_source
+			&notes, // notes
 		))
 
 	// fetchHostPorts — return empty result set (no ports for this host).
@@ -596,5 +649,7 @@ func TestGetHost_Success(t *testing.T) {
 	assert.Equal(t, prevStatus, *host.PreviousStatus)
 	assert.Equal(t, 3, host.TimeoutCount)
 	assert.Equal(t, 5, host.ScanCount)
+	require.NotNil(t, host.Notes)
+	assert.Equal(t, notes, *host.Notes)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

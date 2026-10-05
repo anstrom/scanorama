@@ -389,6 +389,8 @@ type Host struct {
 	// HostnameSource tags the provenance of Hostname: one of
 	// manual|ptr|mdns|snmp|cert. NULL means unknown/legacy.
 	HostnameSource *string `db:"hostname_source" json:"hostname_source,omitempty"`
+	// Notes holds free-form user notes for the host. NULL means no notes.
+	Notes *string `db:"notes" json:"notes,omitempty"`
 }
 
 // GetOSFingerprint returns the OS fingerprint information.

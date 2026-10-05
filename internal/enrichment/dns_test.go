@@ -575,7 +575,7 @@ func TestEnrichHosts_EnrichHostFails(t *testing.T) {
 
 // ─── maybeSetHostname — error path ───────────────────────────────────────────
 
-// getHostCols lists the 29 columns scanned by GetHost in positional order.
+// getHostCols lists the columns scanned by GetHost in positional order.
 // Includes the three device-join columns added by the device identity feature:
 // device_id, mdns_name, device_name.
 var getHostCols = []string{
@@ -590,7 +590,7 @@ var getHostCols = []string{
 	"tags",
 	"knowledge_score",
 	"device_id", "mdns_name", "device_name",
-	"custom_name", "hostname_source",
+	"custom_name", "hostname_source", "notes",
 }
 
 // TestMaybeSetHostname_UpdateHostSucceeds verifies that maybeSetHostname logs
@@ -625,7 +625,7 @@ func TestMaybeSetHostname_UpdateHostSucceeds(t *testing.T) {
 			pq.StringArray{},
 			0,
 			nil, nil, nil, // device_id, mdns_name, device_name
-			nil, nil, // custom_name, hostname_source
+			nil, nil, nil, // custom_name, hostname_source, notes
 		))
 	hostMock.ExpectQuery("SELECT DISTINCT").
 		WillReturnRows(sqlmock.NewRows([]string{"port", "protocol", "state", "service_name", "scanned_at"}))

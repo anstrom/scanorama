@@ -238,3 +238,49 @@ func TestHostRepository_CreateOrUpdate_CoalescePreservesExisting(t *testing.T) {
 	require.NotNil(t, got.OSConfidence)
 	assert.Equal(t, 88, *got.OSConfidence)
 }
+
+// TestHostRepository_UpdateHost_NotesRoundTrip verifies that notes written by
+// UpdateHost are read back by GetHost, GetByIP and ListHosts, and that an
+// empty string clears them to NULL.
+func TestHostRepository_UpdateHost_NotesRoundTrip(t *testing.T) {
+	db := connectTestDB(t)
+	defer db.Close()
+
+	repo := NewHostRepository(db)
+	ctx := context.Background()
+
+	const ipStr = "203.0.113.31"
+	ip := IPAddr{IP: net.ParseIP(ipStr)}
+	_, _ = db.ExecContext(ctx, `DELETE FROM hosts WHERE ip_address = $1::inet`, ipStr)
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM hosts WHERE ip_address = $1::inet`, ipStr)
+	})
+
+	host := &Host{ID: uuid.New(), IPAddress: ip, Status: HostStatusUp}
+	require.NoError(t, repo.CreateOrUpdate(ctx, host))
+	stored, err := repo.GetByIP(ctx, ip)
+	require.NoError(t, err)
+	assert.Nil(t, stored.Notes, "a new host has no notes")
+
+	notes := "Rack 4, owned by infra"
+	updated, err := repo.UpdateHost(ctx, stored.ID, UpdateHostInput{Notes: &notes})
+	require.NoError(t, err)
+	require.NotNil(t, updated.Notes)
+	assert.Equal(t, notes, *updated.Notes)
+
+	byIP, err := repo.GetByIP(ctx, ip)
+	require.NoError(t, err)
+	require.NotNil(t, byIP.Notes)
+	assert.Equal(t, notes, *byIP.Notes)
+
+	listed, _, err := repo.ListHosts(ctx, &HostFilters{Search: ipStr}, 0, 10)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.NotNil(t, listed[0].Notes)
+	assert.Equal(t, notes, *listed[0].Notes)
+
+	empty := ""
+	cleared, err := repo.UpdateHost(ctx, stored.ID, UpdateHostInput{Notes: &empty})
+	require.NoError(t, err)
+	assert.Nil(t, cleared.Notes, "an empty string clears notes to NULL")
+}
