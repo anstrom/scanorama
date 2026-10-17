@@ -14,8 +14,8 @@
     "openapi:check-schema": "js-yaml docs/swagger/swagger.yaml > /dev/null && echo 'OpenAPI schema is valid YAML'"
   },
   "devDependencies": {
-    "@quobix/vacuum": "0.30.6",
-    "@redocly/cli": "2.57.0",
+    "@quobix/vacuum": "0.33.1",
+    "@redocly/cli": "2.64.1",
     "js-yaml": "4.3.2"
   },
   "overrides": {
