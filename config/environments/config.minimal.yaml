@@ -32,9 +32,7 @@ discovery:
     - name: "home_network"
       cidr: "192.168.1.0/24"
       description: "Home LAN"
-      discovery_method: "tcp_connect"
-      is_active: true
-      scan_enabled: true
+      method: "tcp"
       exclusions:
         - "192.168.1.1/32"  # Router
 
@@ -42,9 +40,7 @@ discovery:
     - name: "local_dev"
       cidr: "127.0.0.0/24"
       description: "Local development"
-      discovery_method: "tcp_connect"
-      is_active: true
-      scan_enabled: false
+      method: "tcp"
 
   # IPs to exclude from all scans
   global_exclusions:
@@ -63,25 +59,18 @@ discovery:
 # API Server Configuration
 api:
   enabled: true
-  listen_addr: "127.0.0.1"
+  host: "127.0.0.1"
   port: 8080
 
   # Disable auth for simple setup (enable in production)
-  api_key: ""
+  auth_enabled: false
 
   # CORS for web frontend
-  cors:
-    enabled: true
-    allowed_origins: ["http://localhost:3000"]
+  enable_cors: true
+  cors_origins: ["http://localhost:3000"]
 
 # Logging Configuration
 logging:
   level: "info"
   format: "text"
   output: "stdout"
-
-# Monitoring
-monitoring:
-  enabled: true
-  endpoint: "/metrics"
-  port: 0  # Use main API port

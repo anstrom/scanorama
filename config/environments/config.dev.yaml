@@ -75,22 +75,19 @@ scanning:
 # API Server Configuration - Development settings
 api:
   enabled: true
-  listen_addr: "127.0.0.1"
+  host: "127.0.0.1"
   port: 8080
 
   # Disable TLS for development
   tls:
     enabled: false
 
-  # No API key required for development
-  api_key: ""
+  # No auth for development/testing
+  auth_enabled: false
 
   # Permissive CORS for development
-  cors:
-    enabled: true
-    allowed_origins: ["*"]
-    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-    allowed_headers: ["*"]
+  enable_cors: true
+  cors_origins: ["*"]
 
   # Shorter timeout for development
   request_timeout: "15s"
