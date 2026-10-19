@@ -90,9 +90,7 @@ discovery:
     - name: "corp_network"
       cidr: "10.0.0.0/16"
       description: "Main corporate network"
-      discovery_method: "tcp_connect"
-      is_active: true
-      scan_enabled: true
+      method: "tcp"
       exclusions:
         # Exclude critical infrastructure
         - "10.0.0.1/32"      # Gateway
@@ -103,9 +101,7 @@ discovery:
     - name: "dev_network"
       cidr: "192.168.100.0/24"
       description: "Development and testing network"
-      discovery_method: "ping"
-      is_active: true
-      scan_enabled: false  # Don't auto-scan dev environments
+      method: "ping"
       exclusions:
         - "192.168.100.1/32"    # Router
         - "192.168.100.254/32"  # DHCP server
@@ -114,9 +110,7 @@ discovery:
     - name: "guest_wifi"
       cidr: "172.16.0.0/24"
       description: "Guest wireless network"
-      discovery_method: "icmp"
-      is_active: true
-      scan_enabled: false
+      method: "ping"
       exclusions:
         - "172.16.0.1/32"       # Access point
 
@@ -124,9 +118,7 @@ discovery:
     - name: "dmz"
       cidr: "203.0.113.0/24"
       description: "Demilitarized zone - public-facing services"
-      discovery_method: "tcp_connect"
-      is_active: true
-      scan_enabled: true
+      method: "tcp"
       exclusions:
         - "203.0.113.1/32"      # Firewall
 
@@ -230,7 +222,7 @@ api:
   enabled: true
 
   # Listen address (0.0.0.0 for all interfaces, 127.0.0.1 for localhost only)
-  listen_addr: "127.0.0.1"
+  host: "127.0.0.1"
 
   # Listen port
   port: 8080
@@ -249,23 +241,16 @@ api:
     # Path to CA certificate file (optional)
     ca_file: "/etc/scanorama/tls/ca.crt"
 
-  # API authentication
-  # Leave empty to disable authentication (not recommended for production)
-  api_key: "your-secure-api-key-here"
+  # API authentication. Authentication is OFF unless auth_enabled is true:
+  # set it and list keys before exposing the API beyond localhost.
+  auth_enabled: false
+  api_keys: []
 
-  # Cross-Origin Resource Sharing (CORS) configuration
-  cors:
-    # Enable CORS support
-    enabled: true
+  # Cross-Origin Resource Sharing (CORS)
+  enable_cors: true
 
-    # Allowed origins (use ["*"] for all origins in development only)
-    allowed_origins: ["http://localhost:3000", "https://scanorama.example.com"]
-
-    # Allowed HTTP methods
-    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
-
-    # Allowed request headers
-    allowed_headers: ["Content-Type", "Authorization", "X-API-Key", "X-Requested-With"]
+  # Allowed origins (use ["*"] for all origins in development only)
+  cors_origins: ["http://localhost:3000", "https://scanorama.example.com"]
 
   # Request timeout for API operations
   request_timeout: "60s"
@@ -303,13 +288,13 @@ logging:
     enabled: true
 
     # Maximum size before rotation (MB)
-    max_size: "100MB"
+    max_size_mb: 100
 
     # Maximum number of rotated files to keep
     max_backups: 10
 
     # Maximum age of rotated files
-    max_age: "30d"
+    max_age_days: 30
 
     # Compress rotated files
     compress: true
@@ -319,355 +304,3 @@ logging:
 
   # Enable HTTP request logging for API endpoints
   request_logging: true
-
-# ===========================================
-# MONITORING AND METRICS CONFIGURATION
-# ===========================================
-# Configure metrics collection and health monitoring
-monitoring:
-  # Enable metrics collection
-  enabled: true
-
-  # Prometheus metrics endpoint path
-  endpoint: "/metrics"
-
-  # Separate metrics server port (0 disables separate server)
-  # If 0, metrics are served on the main API port
-  port: 9090
-
-  # Custom labels added to all metrics
-  labels:
-    environment: "production"
-    service: "scanorama"
-    datacenter: "dc1"
-    version: "1.0.0"
-
-  # Health check configuration
-  health:
-    # Enable health check endpoint
-    enabled: true
-
-    # Health check endpoint path
-    endpoint: "/health"
-
-    # Health check timeout
-    timeout: "5s"
-
-# ===========================================
-# SCHEDULING CONFIGURATION
-# ===========================================
-# Configure automatic scanning and discovery schedules
-scheduling:
-  # Enable scheduled operations
-  enabled: true
-
-  # Timezone for cron schedules (use IANA timezone names)
-  # Examples: "UTC", "America/New_York", "Europe/London"
-  timezone: "UTC"
-
-  # Maximum concurrent scheduled jobs
-  max_concurrent_jobs: 5
-
-  # Default schedules for auto-discovered networks
-  auto_schedules:
-    # Automatic discovery schedule
-    discovery: "0 */6 * * *"  # Every 6 hours
-
-    # Automatic scanning schedule
-    scanning: "0 2 * * *"     # Daily at 2 AM
-
-# ===========================================
-# SECURITY CONFIGURATION
-# ===========================================
-# Security settings and restrictions
-security:
-  # API key requirements
-  api_auth:
-    # Require API key for all endpoints
-    required: true
-
-    # API key header name
-    header_name: "X-API-Key"
-
-    # API key minimum length
-    min_key_length: 32
-
-  # Network restrictions
-  network_restrictions:
-    # Block private networks from being scanned externally
-    block_private_networks: true
-
-    # Block localhost scanning
-    block_localhost: false
-
-    # Maximum network size (CIDR bits) - prevents /8 scans
-    max_network_size: 20
-
-  # Rate limiting per client IP
-  rate_limiting:
-    # Enable per-IP rate limiting
-    enabled: true
-
-    # Requests per minute per IP
-    requests_per_minute: 300
-
-    # Burst allowance
-    burst_size: 100
-
-# ===========================================
-# PERFORMANCE TUNING
-# ===========================================
-# Advanced performance and resource management
-performance:
-  # Memory management
-  memory:
-    # Garbage collection target percentage
-    gc_percent: 100
-
-    # Maximum memory usage (0 = unlimited)
-    max_memory: "2GB"
-
-  # CPU management
-  cpu:
-    # Maximum CPU cores to use (0 = all available)
-    max_cores: 0
-
-    # CPU priority (nice value: -20 to 19)
-    priority: 0
-
-  # Network tuning
-  network:
-    # TCP connection timeout
-    tcp_timeout: "10s"
-
-    # Maximum open file descriptors
-    max_open_files: 65536
-
-    # Socket buffer sizes
-    socket_buffer_size: 65536
-
-# ===========================================
-# NOTIFICATION CONFIGURATION
-# ===========================================
-# Configure notifications for scan results and system events
-notifications:
-  # Enable notification system
-  enabled: false
-
-  # Email notifications
-  email:
-    enabled: false
-    smtp_host: "smtp.example.com"
-    smtp_port: 587
-    username: "scanorama@example.com"
-    password: "smtp_password"
-    from: "scanorama@example.com"
-    to: ["admin@example.com"]
-
-    # When to send notifications
-    triggers:
-      - "new_hosts_discovered"
-      - "scan_failures"
-      - "critical_vulnerabilities"
-
-  # Webhook notifications
-  webhook:
-    enabled: false
-    url: "https://hooks.example.com/scanorama"
-    secret: "webhook_secret"
-    timeout: "30s"
-
-    # Custom headers
-    headers:
-      "Authorization": "Bearer token"
-      "Content-Type": "application/json"
-
-# ===========================================
-# DATA RETENTION CONFIGURATION
-# ===========================================
-# Configure how long to keep different types of data
-retention:
-  # Scan result retention
-  scan_results:
-    # How long to keep detailed scan results (0 = forever)
-    max_age: "90d"
-
-    # Cleanup interval
-    cleanup_interval: "24h"
-
-  # Discovery job retention
-  discovery_jobs:
-    # How long to keep discovery job records
-    max_age: "30d"
-
-    # Cleanup interval
-    cleanup_interval: "24h"
-
-  # Host information retention
-  hosts:
-    # How long to keep inactive host records
-    inactive_host_retention: "180d"
-
-    # Mark hosts as inactive after this period
-    inactive_threshold: "30d"
-
-  # Log retention (only applies when logging to files)
-  logs:
-    # Maximum log age
-    max_age: "30d"
-
-    # Cleanup interval
-    cleanup_interval: "24h"
-
-# ===========================================
-# INTEGRATION CONFIGURATION
-# ===========================================
-# External system integrations
-integrations:
-  # Vulnerability database integration
-  vulndb:
-    enabled: false
-    provider: "nvd"  # National Vulnerability Database
-    api_key: ""
-    update_interval: "24h"
-
-  # Asset management integration
-  cmdb:
-    enabled: false
-    provider: "custom"
-    endpoint: "https://cmdb.example.com/api"
-    api_key: ""
-    sync_interval: "1h"
-
-  # SIEM integration
-  siem:
-    enabled: false
-    provider: "splunk"
-    endpoint: "https://splunk.example.com:8088"
-    token: ""
-    index: "scanorama"
-
-# ===========================================
-# ADVANCED CONFIGURATION
-# ===========================================
-# Advanced settings for specialized use cases
-advanced:
-  # Enable experimental features
-  experimental_features: false
-
-  # Custom nmap binary path (leave empty for system default)
-  nmap_binary: ""
-
-  # Custom masscan binary path (leave empty for system default)
-  masscan_binary: ""
-
-  # Enable debug mode (very verbose logging)
-  debug_mode: false
-
-  # Enable profiling endpoint for performance analysis
-  profiling:
-    enabled: false
-    port: 6060
-
-  # Custom CA certificates for TLS connections
-  ca_certificates: []
-
-# ===========================================
-# ENVIRONMENT-SPECIFIC OVERRIDES
-# ===========================================
-# Settings that commonly differ between environments
-environments:
-  development:
-    logging:
-      level: "debug"
-      format: "text"
-    api:
-      cors:
-        allowed_origins: ["*"]
-    security:
-      api_auth:
-        required: false
-
-  staging:
-    logging:
-      level: "info"
-      format: "json"
-    monitoring:
-      enabled: true
-
-  production:
-    daemon:
-      daemonize: true
-    logging:
-      level: "warn"
-      format: "json"
-      output: "/var/log/scanorama/scanorama.log"
-    security:
-      api_auth:
-        required: true
-    monitoring:
-      enabled: true
-    notifications:
-      enabled: true
-
-# ===========================================
-# FEATURE FLAGS
-# ===========================================
-# Enable or disable specific features
-features:
-  # Enable network management API endpoints
-  network_management: true
-
-  # Enable automated vulnerability scanning
-  vulnerability_scanning: false
-
-  # Enable real-time WebSocket updates
-  websocket_updates: true
-
-  # Enable scan scheduling
-  scan_scheduling: true
-
-  # Enable host clustering and network topology detection
-  network_topology: false
-
-  # Enable integration with external security tools
-  external_integrations: false
-
-# ===========================================
-# COMPLIANCE AND AUDITING
-# ===========================================
-# Settings for regulatory compliance and audit trails
-compliance:
-  # Enable audit logging
-  audit_logging:
-    enabled: true
-    log_file: "/var/log/scanorama/audit.log"
-
-    # Events to audit
-    events:
-      - "user_login"
-      - "config_changes"
-      - "scan_initiated"
-      - "data_export"
-
-  # Data privacy settings
-  privacy:
-    # Anonymize IP addresses in logs
-    anonymize_ips: false
-
-    # Encrypt sensitive data at rest
-    encrypt_at_rest: false
-
-    # Data retention policy compliance
-    gdpr_compliance: false
-
-  # Regulatory compliance presets
-  presets:
-    # NIST Cybersecurity Framework
-    nist: false
-
-    # ISO 27001
-    iso27001: false
-
-    # SOC 2
-    soc2: false
