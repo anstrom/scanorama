@@ -5,6 +5,7 @@
   "assignees": ["anstrom"],
   "reviewers": ["anstrom"],
   "vulnerabilityAlerts": {
+    "minimumReleaseAge": "0 days",
     "labels": ["security"],
     "assignees": ["anstrom"],
     "reviewers": ["anstrom"]
@@ -18,6 +19,16 @@
     "postUpdateOptions": ["gomodTidy"]
   },
   "packageRules": [
+    {
+      "description": "Wait before proposing newly published versions; security alerts are exempt (see vulnerabilityAlerts)",
+      "matchPackageNames": ["*"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Go toolchain bumps carry stdlib CVE fixes and are not raised as vulnerability alerts; no age gate",
+      "matchDatasources": ["golang-version"],
+      "minimumReleaseAge": "0 days"
+    },
     {
       "matchManagers": ["gomod"],
       "groupName": "Go modules",
