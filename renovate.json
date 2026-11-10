@@ -36,7 +36,7 @@
       "labels": ["dependencies", "npm"]
     },
     {
-      "description": "Renovate's npm refuses to fetch @tailwindcss/oxide-wasm32-wasi (EALLOWREMOTE), so the lockfile is never regenerated and the npm group PR fails npm ci; hold tailwind until that is resolved",
+      "description": "Hold tailwind: Renovate's npm cannot fetch @tailwindcss/oxide-wasm32-wasi (EALLOWREMOTE), so the lockfile is not regenerated and npm ci fails. Build-time tooling only; may also suppress its security PRs, bump by hand. Remove when #1117 is done.",
       "matchManagers": ["npm"],
       "matchPackageNames": ["tailwindcss", "@tailwindcss/**"],
       "enabled": false
