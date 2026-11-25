@@ -38,20 +38,17 @@ scanning:
 # API Server Configuration - Test settings
 api:
   enabled: true
-  listen_addr: "127.0.0.1"
+  host: "127.0.0.1"
   port: 8081
 
   tls:
     enabled: false
 
-  # No auth required for testing
-  api_key: ""
+  # No auth for development/testing
+  auth_enabled: false
 
-  cors:
-    enabled: true
-    allowed_origins: ["*"]
-    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-    allowed_headers: ["*"]
+  enable_cors: true
+  cors_origins: ["*"]
 
   request_timeout: "10s"
   max_request_size: 1048576
@@ -63,9 +60,3 @@ logging:
   output: "stdout"
   structured: false
   request_logging: true
-
-# Monitoring Configuration
-monitoring:
-  enabled: true
-  endpoint: "/metrics"
-  port: 0

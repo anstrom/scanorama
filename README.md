@@ -298,14 +298,13 @@ scanning:
 
 api:
   enabled: true
-  listen_addr: "127.0.0.1"
+  host: "127.0.0.1"
   port: 8080
   auth_enabled: true
   api_keys:
     - "your-api-key-here"
-  cors:
-    enabled: true
-    allowed_origins: ["*"]
+  enable_cors: true
+  cors_origins: ["*"]
 
 daemon:
   pid_file: "/var/run/scanorama.pid"
