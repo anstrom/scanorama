@@ -168,10 +168,10 @@ github.com/swaggo/http-swagger/v2 v2.0.2 h1:FKCdLsl+sFCx60KFsyM0rDarwiUSZ8DqbfSy
 github.com/swaggo/http-swagger/v2 v2.0.2/go.mod h1:r7/GBkAWIfK6E/OLnE8fXnviHiDeAHmgIyooa4xm3AQ=
 github.com/swaggo/swag v1.16.6 h1:qBNcx53ZaX+M5dxVyTrgQ0PJ/ACK+NzhwcbieTt+9yI=
 github.com/swaggo/swag v1.16.6/go.mod h1:ngP2etMK5a0P3QBizic5MEwpRmluJZPHjXcMoj4Xesg=
-github.com/weppos/publicsuffix-go v0.50.4-0.20261018191641-fa5685825dd4 h1:Zwx+e2025S4t/EPesUVEsYn7FUW2GRyE4XRVgTh1J0E=
-github.com/weppos/publicsuffix-go v0.50.4-0.20261018191641-fa5685825dd4/go.mod h1:/rOa781xBykZhHK/I3QeHo92qdDKVmKZKF7s8qAEM/4=
-github.com/zmap/zcrypto v0.0.0-20261025225231-4cf7949d2321 h1:owrreE/pIIQk3gcLhMYB8ciJ0kxWPdeOs9CkLGvTOnA=
-github.com/zmap/zcrypto v0.0.0-20261025225231-4cf7949d2321/go.mod h1:/zGwzhikk5YiG/SKvbJDZnCmQne0J26gzSNH7724f3I=
+github.com/weppos/publicsuffix-go v0.50.4-0.20261109160800-8c84761b913c h1:HgAzYUTxpuCE63OgSZ0LmZtHYAAVe3K77RmZerSomR8=
+github.com/weppos/publicsuffix-go v0.50.4-0.20261109160800-8c84761b913c/go.mod h1:/rOa781xBykZhHK/I3QeHo92qdDKVmKZKF7s8qAEM/4=
+github.com/zmap/zcrypto v0.0.0-20261121201429-2f4b44a7a06d h1:ie02QpHJ+pE8YSm1yTyOHqTDH4W6zXtrYteivr4Db68=
+github.com/zmap/zcrypto v0.0.0-20261121201429-2f4b44a7a06d/go.mod h1:0CUQtlW66SKJwY3Ib2eg9pgAfGO/KCX4oJepCMSwig8=
 github.com/zmap/zflags v1.4.0-beta.1.0.20251126025438-ec78c6d2f8e9 h1:BZgsVcIPYSVdXlYFL6Ma0iNLbB/fhlyj6DaGwmppfTw=
 github.com/zmap/zflags v1.4.0-beta.1.0.20251126025438-ec78c6d2f8e9/go.mod h1:FsOB4N5XTSZ80AvFx0VV16M9slzoROippViwuiGQv2g=
 github.com/zmap/zgrab2 v1.0.0 h1:jnNPza3ZCg/1WtjaSqW/FXg6GmLZSloXgmxqVsODqTI=
