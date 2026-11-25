@@ -11,7 +11,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
-	github.com/gorilla/websocket v1.5.3
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4 // TODO(#1124): pseudo-version pin for GO-2026-6278; move to a tagged release
 	github.com/gosnmp/gosnmp v1.47.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/lib/pq v1.12.3
